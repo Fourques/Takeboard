@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildLtx23I2VPrompt,
   buildMiniMaxH3Prompt,
   buildWan22FirstLastPrompt,
   buildWan22I2VPrompt,
+  ComfyClient,
   miniMaxH3FrameCount,
   miniMaxH3Resolution,
   wanFrameCount,
@@ -196,5 +197,30 @@ describe("LTX 2.3 subgraph recipe", () => {
       format: "auto",
       codec: "auto",
     });
+  });
+
+  it("accepts ComfyUI dynamic required inputs during preflight", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          ComfyMathExpression: {
+            input: { required: { expression: ["STRING", {}], values: ["COMFY_AUTOGROW_V3", {}] } },
+          },
+        }),
+      ),
+    );
+    try {
+      const errors = await new ComfyClient("http://comfy.test").preflightPrompt({
+        math: {
+          class_type: "ComfyMathExpression",
+          inputs: { expression: "a / 2", "values.a": ["width", 0] },
+        },
+        width: { class_type: "ComfyMathExpression", inputs: { expression: "480", values: 0 } },
+      });
+      expect(errors).toEqual([]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

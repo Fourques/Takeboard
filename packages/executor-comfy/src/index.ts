@@ -540,7 +540,10 @@ export class ComfyClient {
         continue;
       }
       for (const field of Object.keys(definition.input?.required ?? {})) {
-        if (!(field in node.inputs)) errors.push(`${nodeId}: missing required input ${field}`);
+        const present =
+          field in node.inputs ||
+          Object.keys(node.inputs).some((inputField) => inputField.startsWith(`${field}.`));
+        if (!present) errors.push(`${nodeId}: missing required input ${field}`);
       }
       for (const [field, value] of Object.entries(node.inputs)) {
         if (Array.isArray(value) && value.length === 2 && typeof value[0] === "string") {
