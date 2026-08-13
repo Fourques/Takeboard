@@ -21,7 +21,8 @@ cp deploy/systemd/takeboard-comfy.service "$unit_dir/takeboard-comfy.service"
 
 systemctl --user daemon-reload
 systemctl --user enable --now takeboard-comfy.service
-systemctl --user enable --now takeboard.service
+systemctl --user enable takeboard.service
+systemctl --user restart takeboard.service
 
 systemctl --user --no-pager --full status takeboard.service
 systemctl --user --no-pager --full status takeboard-comfy.service
