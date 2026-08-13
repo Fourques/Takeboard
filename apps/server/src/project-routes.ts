@@ -1,7 +1,7 @@
 import { mkdir, readdir } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import type { AspectRatio } from "@takeboard/contracts";
-import { toIsoTimestamp } from "@takeboard/domain";
+import { approveTake, createTakeBoardId, toIsoTimestamp } from "@takeboard/domain";
 import type { FastifyInstance } from "fastify";
 import { ProjectService } from "./project-service.js";
 import { ProjectStore } from "./storage/project-store.js";
@@ -125,6 +125,87 @@ export function registerProjectRoutes(app: FastifyInstance, projectsRoot: string
         const saved = await store.save(current.snapshot, {
           type: "canvas.item_moved",
           payload: { itemId: body.itemId },
+        });
+        return { key, ...saved };
+      } finally {
+        store.close();
+      }
+    },
+  );
+
+  app.post<{ Params: { key: string; takeId: string } }>(
+    "/api/projects/:key/takes/:takeId/reject",
+    async (request, reply) => {
+      const key = projectKey(request.params.key);
+      const body =
+        typeof request.body === "object" && request.body !== null
+          ? (request.body as Record<string, unknown>)
+          : {};
+      const reason = typeof body.reason === "string" ? body.reason.trim().slice(0, 200) : "";
+      if (!key || !reason) return await reply.code(400).send({ error: "淘汰原因无效" });
+      const store = await ProjectStore.open(join(root, key));
+      try {
+        const current = store.loadCurrent();
+        const take = current?.snapshot.takes.find((item) => item.id === request.params.takeId);
+        if (!current || !take) return await reply.code(404).send({ error: "候选不存在" });
+        if (take.status === "approved") {
+          return await reply.code(409).send({ error: "已批准候选需先由另一候选替换" });
+        }
+        const timestamp = toIsoTimestamp();
+        take.status = "rejected";
+        take.rejectionReasons = [reason];
+        take.updatedAt = timestamp;
+        current.snapshot.project.updatedAt = timestamp;
+        current.snapshot.exportedAt = timestamp;
+        const saved = await store.save(current.snapshot, {
+          type: "take.rejected",
+          payload: { takeId: take.id, reason },
+        });
+        return { key, ...saved };
+      } finally {
+        store.close();
+      }
+    },
+  );
+
+  app.post<{ Params: { key: string; takeId: string } }>(
+    "/api/projects/:key/takes/:takeId/approve",
+    async (request, reply) => {
+      const key = projectKey(request.params.key);
+      if (!key) return await reply.code(400).send({ error: "项目标识无效" });
+      const body =
+        typeof request.body === "object" && request.body !== null
+          ? (request.body as Record<string, unknown>)
+          : {};
+      const reason = typeof body.reason === "string" ? body.reason.trim().slice(0, 2_000) : null;
+      const store = await ProjectStore.open(join(root, key));
+      try {
+        const current = store.loadCurrent();
+        const take = current?.snapshot.takes.find((item) => item.id === request.params.takeId);
+        const shot = current?.snapshot.shots.find((item) => item.id === take?.shotId);
+        if (!current || !take || !shot) {
+          return await reply.code(404).send({ error: "候选或镜头不存在" });
+        }
+        const timestamp = toIsoTimestamp();
+        const approved = approveTake({
+          shot,
+          takes: current.snapshot.takes,
+          approvals: current.snapshot.approvals,
+          takeId: take.id,
+          approvalId: createTakeBoardId("approval"),
+          at: timestamp,
+          reason,
+        });
+        current.snapshot.shots = current.snapshot.shots.map((item) =>
+          item.id === shot.id ? approved.shot : item,
+        );
+        current.snapshot.takes = approved.takes;
+        current.snapshot.approvals = approved.approvals;
+        current.snapshot.project.updatedAt = timestamp;
+        current.snapshot.exportedAt = timestamp;
+        const saved = await store.save(current.snapshot, {
+          type: "take.approved",
+          payload: { takeId: take.id, shotId: shot.id },
         });
         return { key, ...saved };
       } finally {

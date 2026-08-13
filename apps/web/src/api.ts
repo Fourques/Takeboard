@@ -116,6 +116,16 @@ export const projectApi = {
     jsonRequest<DemoPayload & { key: string; runId: string; status: string }>(
       `/api/projects/${encodeURIComponent(key)}/runs/${encodeURIComponent(runId)}`,
     ),
+  reject: (key: string, takeId: string, reason: string) =>
+    jsonRequest<DemoPayload & { key: string }>(
+      `/api/projects/${encodeURIComponent(key)}/takes/${encodeURIComponent(takeId)}/reject`,
+      { method: "POST", body: JSON.stringify({ reason }) },
+    ),
+  approve: (key: string, takeId: string, reason: string | null) =>
+    jsonRequest<DemoPayload & { key: string }>(
+      `/api/projects/${encodeURIComponent(key)}/takes/${encodeURIComponent(takeId)}/approve`,
+      { method: "POST", body: JSON.stringify({ reason }) },
+    ),
   assetUrl: (key: string, assetId: string) =>
     `/api/projects/${encodeURIComponent(key)}/assets/${encodeURIComponent(assetId)}/content`,
   worker: () => jsonRequest<WorkerStatus>("/api/workers/comfy"),

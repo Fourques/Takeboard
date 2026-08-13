@@ -10,7 +10,7 @@ import {
   ReactFlow,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import type { Asset, ProjectSnapshot, Shot, Take } from "@takeboard/contracts";
+import type { Asset, ProjectSnapshot, Run, Shot, Take } from "@takeboard/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { demoApi, type ProjectCatalogItem, projectApi, type WorkerStatus } from "./api";
 import { type BoardNode, boardNodeTypes } from "./board-nodes";
@@ -22,7 +22,12 @@ function shortId(value: string) {
   return value.slice(-6).toUpperCase();
 }
 
-function boardNodes(snapshot: ProjectSnapshot, selectedShotId: string | null): BoardNode[] {
+function boardNodes(
+  snapshot: ProjectSnapshot,
+  selectedShotId: string | null,
+  projectKey: string | null,
+  engine: string,
+): BoardNode[] {
   return snapshot.canvasItems.map((item): BoardNode => {
     const common = {
       id: item.id,
@@ -66,6 +71,7 @@ function boardNodes(snapshot: ProjectSnapshot, selectedShotId: string | null): B
             ? "雾港旧渡口"
             : (asset?.originalName ?? "素材"),
           body: "",
+          mediaUrl: projectKey && asset ? projectApi.assetUrl(projectKey, asset.id) : undefined,
         },
       };
     }
@@ -97,6 +103,7 @@ function boardNodes(snapshot: ProjectSnapshot, selectedShotId: string | null): B
         status: shot?.status,
         duration: shot?.durationSeconds,
         takeCount: takes.length,
+        engine,
         selected: selectedShotId === item.refId,
       },
     };
@@ -165,6 +172,8 @@ type InspectorProps = {
   workerLabel: string;
   assets: Asset[];
   projectKey: string | null;
+  isDemo: boolean;
+  runs: Run[];
 };
 
 function Inspector({
@@ -177,6 +186,8 @@ function Inspector({
   workerLabel,
   assets,
   projectKey,
+  isDemo,
+  runs,
 }: InspectorProps) {
   const [selectedTakeId, setSelectedTakeId] = useState<string | null>(null);
   const [reason, setReason] = useState(rejectionReasons[0] ?? "角色漂移");
@@ -212,7 +223,15 @@ function Inspector({
         </div>
         <button className="generate-button" type="button" onClick={onGenerate} disabled={busy}>
           {busy ? <span className="spinner" /> : <span>✦</span>}
-          {busy ? "生成中…" : takes.length > 0 ? "再抽 4 个" : "生成 4 个"}
+          {busy
+            ? "生成中…"
+            : isDemo
+              ? takes.length > 0
+                ? "再抽 4 个"
+                : "生成 4 个"
+              : takes.length > 0
+                ? "再生成 1 个"
+                : "生成视频"}
         </button>
       </div>
 
@@ -224,7 +243,11 @@ function Inspector({
             <span />
           </div>
           <strong>这个镜头还没有 Take</strong>
-          <p>Demo 会模拟 4 次独立运行，并保留 seed、来源和选择历史。</p>
+          <p>
+            {isDemo
+              ? "Demo 会模拟 4 次独立运行，并保留 seed、来源和选择历史。"
+              : "将使用最新上传的首帧，在 4090 上运行 Wan 2.2，并保留 seed、来源和选择历史。"}
+          </p>
           <button type="button" onClick={onGenerate} disabled={busy}>
             开始生成
           </button>
@@ -262,7 +285,9 @@ function Inspector({
                         : "CANDIDATE"}
                   </span>
                 </div>
-                <div className="candidate-seed">seed · {26081301 + index}</div>
+                <div className="candidate-seed">
+                  seed · {String(runs.find((run) => run.id === take.runId)?.parameters.seed ?? "—")}
+                </div>
               </button>
             ))}
           </div>
@@ -351,9 +376,16 @@ export function App() {
 
   useEffect(() => {
     if (snapshot) {
-      setNodes(boardNodes(snapshot, selectedShotId));
+      setNodes(
+        boardNodes(
+          snapshot,
+          selectedShotId,
+          projectMode === "project" ? projectKey : null,
+          projectMode === "demo" ? "Fake I2V" : "Wan 2.2 I2V",
+        ),
+      );
     }
-  }, [snapshot, selectedShotId]);
+  }, [snapshot, selectedShotId, projectMode, projectKey]);
 
   useEffect(() => {
     if (!notice) return;
@@ -726,6 +758,8 @@ export function App() {
           busy={busy}
           assets={snapshot.assets}
           projectKey={projectMode === "project" ? projectKey : null}
+          isDemo={projectMode === "demo"}
+          runs={snapshot.runs}
           workerLabel={projectMode === "demo" ? "Fake Wan I2V" : "Wan 2.2 I2V · RTX 4090"}
           onGenerate={() =>
             projectMode === "demo"
@@ -738,14 +772,20 @@ export function App() {
           }
           onReject={(takeId, reason) =>
             void runAction(
-              () => demoApi.reject(takeId, reason),
+              () =>
+                projectMode === "project" && projectKey
+                  ? projectApi.reject(projectKey, takeId, reason)
+                  : demoApi.reject(takeId, reason),
               `已淘汰候选 · ${reason}`,
               selectedShot.id,
             )
           }
           onApprove={(takeId) =>
             void runAction(
-              () => demoApi.approve(takeId, "Demo 人工批准"),
+              () =>
+                projectMode === "project" && projectKey
+                  ? projectApi.approve(projectKey, takeId, "人工批准")
+                  : demoApi.approve(takeId, "Demo 人工批准"),
               `${selectedShot.label} 已批准，决策历史已保存`,
               selectedShot.id,
             )

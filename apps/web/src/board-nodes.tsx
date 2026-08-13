@@ -10,6 +10,8 @@ export type BoardNodeData = {
   takeCount?: number;
   rejectedCount?: number;
   selected?: boolean;
+  engine?: string;
+  mediaUrl?: string | undefined;
 };
 
 export type BoardNode = Node<BoardNodeData>;
@@ -55,11 +57,17 @@ function AssetNode({ data }: NodeProps<BoardNode>) {
   return (
     <article className="board-card asset-node">
       <Port type="source" position={Position.Right} />
-      <div className="node-media harbor-art" role="img" aria-label="雾港场景参考图">
-        <span className="harbor-sun" />
-        <span className="harbor-line line-one" />
-        <span className="harbor-line line-two" />
-        <span className="harbor-boat" />
+      <div className="node-media harbor-art" role="img" aria-label="场景参考图">
+        {data.mediaUrl ? (
+          <img src={data.mediaUrl} alt="" />
+        ) : (
+          <>
+            <span className="harbor-sun" />
+            <span className="harbor-line line-one" />
+            <span className="harbor-line line-two" />
+            <span className="harbor-boat" />
+          </>
+        )}
         <span className="asset-label">LOCATION REF</span>
       </div>
       <div className="node-heading compact">
@@ -94,7 +102,7 @@ function ShotNode({ data }: NodeProps<BoardNode>) {
       <footer>
         <span>{data.duration} 秒</span>
         <span>{data.takeCount ?? 0} Takes</span>
-        <span>Fake I2V</span>
+        <span>{data.engine ?? "I2V"}</span>
       </footer>
     </article>
   );
