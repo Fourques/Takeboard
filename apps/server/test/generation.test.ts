@@ -179,6 +179,91 @@ describe("real generation routes", () => {
     });
   });
 
+  it("recovers SaveVideo MP4 metadata returned in ComfyUI's images field", async () => {
+    const { app, key, shotId } = await projectFixture();
+    const uploaded = await app.inject({
+      method: "POST",
+      url: `/api/projects/${key}/assets`,
+      ...multipartFile("frame.png", "image/png", validPng()),
+    });
+    const assetId = uploaded.json().snapshot.assets[0].id as string;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const url = String(input);
+        if (url.endsWith("/upload/image")) {
+          return Response.json({ name: "frame.png", subfolder: "", type: "input" });
+        }
+        if (url.endsWith("/object_info")) {
+          return Response.json(
+            objectInfo([
+              "LoadImage",
+              "VAELoader",
+              "CLIPLoader",
+              "CLIPTextEncode",
+              "UNETLoader",
+              "LoraLoaderModelOnly",
+              "ModelSamplingSD3",
+              "WanImageToVideo",
+              "KSamplerAdvanced",
+              "VAEDecode",
+              "CreateVideo",
+              "SaveVideo",
+            ]),
+          );
+        }
+        if (url.endsWith("/prompt")) return Response.json({ prompt_id: "prompt-video" });
+        if (url.endsWith("/history/prompt-video")) {
+          return Response.json({
+            "prompt-video": {
+              status: { status_str: "success", completed: true },
+              outputs: {
+                save: {
+                  images: [
+                    { filename: "shot_00001_.mp4", subfolder: "takeboard/test", type: "output" },
+                  ],
+                  animated: [true],
+                },
+              },
+            },
+          });
+        }
+        if (url.includes("/view?")) {
+          return new Response(new Uint8Array([0, 0, 0, 24, 102, 116, 121, 112]));
+        }
+        throw new Error(`Unexpected ComfyUI request: ${url}`);
+      }),
+    );
+
+    const submitted = await app.inject({
+      method: "POST",
+      url: `/api/projects/${key}/shots/${shotId}/generate`,
+      payload: {
+        recipePath: "Kino/Kino_Wan22_I2V.json",
+        firstFrameAssetId: assetId,
+        prompt: "人物缓慢回头",
+      },
+    });
+    expect(submitted.statusCode, submitted.body).toBe(202);
+
+    const polled = await app.inject({
+      method: "GET",
+      url: `/api/projects/${key}/runs/${submitted.json().runId}`,
+    });
+    expect(polled.statusCode).toBe(200);
+    expect(polled.json()).toMatchObject({
+      status: "completed",
+      snapshot: {
+        runs: [expect.objectContaining({ status: "completed" })],
+        takes: [expect.objectContaining({ status: "candidate" })],
+        assets: [
+          expect.objectContaining({ mediaType: "image" }),
+          expect.objectContaining({ mediaType: "video" }),
+        ],
+      },
+    });
+  });
+
   it("rejects spoofed image MIME before storing the asset", async () => {
     const { app, key } = await projectFixture();
     const response = await app.inject({

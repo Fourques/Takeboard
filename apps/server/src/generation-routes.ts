@@ -493,7 +493,10 @@ export function registerGenerationRoutes(
         }
 
         const outputs = Object.values(history.outputs ?? {});
-        const output = outputs.flatMap((item) => item.videos ?? [])[0];
+        const output = outputs.flatMap((item) => [
+          ...(item.videos ?? []),
+          ...(item.images ?? []).filter((file) => /\.(?:mp4|webm)$/i.test(file.filename)),
+        ])[0];
         if (!output) {
           if (!history.status?.completed) {
             return { key, runId: run.id, status: run.status, ...current };
