@@ -30,8 +30,20 @@ function allNodes(workflow: WorkflowJson) {
 }
 
 function detectCapability(path: string, nodes: WorkflowNode[]): Capability {
-  const haystack =
-    `${path} ${nodes.map((node) => `${node.type ?? ""} ${node.title ?? ""}`).join(" ")}`.toLowerCase();
+  const normalizedPath = path.toLowerCase();
+  if (/reference.*video|ref2v|r2v/.test(normalizedPath)) return "reference_video";
+  if (/first.*last.*video|firstlast|flf2v|首尾帧/.test(normalizedPath)) {
+    return "first_last_video";
+  }
+  if (/text.*to.*video|t2v|文生视频/.test(normalizedPath)) return "text_to_video";
+  if (/image.*to.*video|i2v|图生视频/.test(normalizedPath)) return "image_to_video";
+  if (/image.*to.*image|img2img|i2i|图生图/.test(normalizedPath)) return "image_to_image";
+  if (/text.*to.*image|txt2img|t2i|文生图/.test(normalizedPath)) return "text_to_image";
+
+  const haystack = nodes
+    .map((node) => `${node.type ?? ""} ${node.title ?? ""}`)
+    .join(" ")
+    .toLowerCase();
   if (/reference.*video|ref2v|r2v/.test(haystack)) return "reference_video";
   if (/first.*last.*video|firstlast|flf2v|首尾帧/.test(haystack)) return "first_last_video";
   if (/text.*to.*video|t2v|文生视频/.test(haystack)) return "text_to_video";

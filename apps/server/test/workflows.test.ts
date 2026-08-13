@@ -57,4 +57,45 @@ describe("ComfyUI workflow detection", () => {
       ],
     });
   });
+
+  it("prefers an explicit filename over generic helper nodes", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const url = String(input);
+        if (url.includes("/userdata?dir=workflows")) {
+          return Response.json(["Kino/Kino_MinimaxH3_T2V.json", "Kino/Kino_LTX23_I2V.json"]);
+        }
+        return Response.json({
+          nodes: [
+            { type: "ReferenceVideoConditioning", widgets_values: [] },
+            { type: "TextToVideoConditioning", widgets_values: [] },
+          ],
+        });
+      }),
+    );
+    const app = buildApp({
+      comfyUrl: "http://comfy.test",
+      comfyEditorUrl: "http://editor.test",
+      webRoot: null,
+    });
+    apps.push(app);
+
+    const response = await app.inject({ method: "GET", url: "/api/workflows" });
+    const payload = response.json() as {
+      workflows: Array<{ path: string; capability: string }>;
+    };
+    expect(payload.workflows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: "Kino/Kino_MinimaxH3_T2V.json",
+          capability: "text_to_video",
+        }),
+        expect.objectContaining({
+          path: "Kino/Kino_LTX23_I2V.json",
+          capability: "image_to_video",
+        }),
+      ]),
+    );
+  });
 });
