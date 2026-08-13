@@ -11,6 +11,8 @@ export type CreateProjectInput = {
   projectDirectory: string;
   title: string;
   defaultAspectRatio: AspectRatio;
+  sceneTitle?: string;
+  firstShotIntent?: string;
   now?: Date;
 };
 
@@ -19,26 +21,70 @@ export class ProjectService {
     const now = input.now ?? new Date();
     const timestamp = toIsoTimestamp(now);
     const milliseconds = now.getTime();
+    const projectId = createTakeBoardId("project", milliseconds);
+    const sceneId = createTakeBoardId("scene", milliseconds);
+    const shotId = createTakeBoardId("shot", milliseconds);
     const snapshot = projectSnapshotSchema.parse({
       schemaVersion,
       exportedAt: timestamp,
       project: {
-        id: createTakeBoardId("project", milliseconds),
+        id: projectId,
         schemaVersion,
         title: input.title,
         defaultAspectRatio: input.defaultAspectRatio,
         createdAt: timestamp,
         updatedAt: timestamp,
       },
-      scenes: [],
+      scenes: [
+        {
+          id: sceneId,
+          projectId,
+          label: "SC-01",
+          title: input.sceneTitle?.trim() || "第一场",
+          order: 0,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
       textItems: [],
       entities: [],
       assets: [],
-      shots: [],
+      shots: [
+        {
+          id: shotId,
+          projectId,
+          sceneId,
+          label: "SH-01",
+          order: 0,
+          intent: input.firstShotIntent?.trim() || "描述这个镜头想让观众看到的画面与动作",
+          durationSeconds: 5,
+          aspectRatio: input.defaultAspectRatio,
+          status: "draft",
+          approvedTakeId: null,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
       runs: [],
       takes: [],
       approvals: [],
-      canvasItems: [],
+      canvasItems: [
+        {
+          id: createTakeBoardId("canvas_item", milliseconds),
+          sceneId,
+          refType: "shot",
+          refId: shotId,
+          x: 180,
+          y: 180,
+          width: 280,
+          height: 180,
+          zIndex: 1,
+          parentGroupId: null,
+          collapsed: false,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
       canvasEdges: [],
     });
 

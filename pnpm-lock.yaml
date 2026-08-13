@@ -41,6 +41,9 @@ importers:
       '@takeboard/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@takeboard/executor-comfy':
+        specifier: workspace:*
+        version: link:../../packages/executor-comfy
       better-sqlite3:
         specifier: 13.0.3
         version: 13.0.3

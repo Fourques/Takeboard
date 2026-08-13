@@ -44,6 +44,369 @@ body {
   background: radial-gradient(circle at 52% -20%, #26302b 0, transparent 40%), #0d100f;
 }
 
+.hub-shell {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  color: var(--cream);
+  background:
+    radial-gradient(circle at 78% 10%, rgb(79 94 79 / 28%), transparent 32%),
+    linear-gradient(150deg, #101512 0%, #0b0e0d 58%, #15120e 100%);
+}
+
+.hub-header {
+  display: flex;
+  height: 76px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 5vw;
+  border-bottom: 1px solid rgb(255 255 255 / 8%);
+  background: rgb(11 14 13 / 74%);
+  backdrop-filter: blur(18px);
+}
+
+.hub-brand {
+  height: auto;
+  padding: 0;
+  border: 0;
+}
+
+.worker-pill {
+  display: flex;
+  align-items: center;
+  padding: 9px 14px;
+  border: 1px solid #2d4a37;
+  border-radius: 6px;
+  background: rgb(17 35 24 / 72%);
+  gap: 10px;
+}
+
+.worker-pill i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #69d18d;
+  box-shadow: 0 0 14px #69d18d;
+}
+
+.worker-pill div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.worker-pill strong {
+  font-size: 11px;
+  font-weight: 600;
+}
+.worker-pill span {
+  color: #7f9186;
+  font-size: 9px;
+}
+.worker-offline {
+  border-color: #5e3632;
+  background: #2a1715;
+}
+.worker-offline i {
+  background: var(--red);
+  box-shadow: 0 0 12px var(--red);
+}
+
+.hub-hero {
+  position: relative;
+  padding: 76px 7vw 58px;
+  border-bottom: 1px solid rgb(255 255 255 / 7%);
+}
+
+.hub-hero::after {
+  position: absolute;
+  right: 9vw;
+  bottom: -1px;
+  width: 340px;
+  height: 250px;
+  border: 1px solid rgb(216 171 96 / 13%);
+  background:
+    linear-gradient(120deg, transparent 48%, rgb(216 171 96 / 8%) 49%, transparent 50%),
+    repeating-linear-gradient(90deg, rgb(255 255 255 / 3%) 0 1px, transparent 1px 42px);
+  content: "";
+  mask-image: linear-gradient(to top, black, transparent);
+}
+
+.hub-hero h1 {
+  max-width: 760px;
+  margin: 15px 0 18px;
+  font-family: Georgia, "Songti SC", serif;
+  font-size: clamp(40px, 5vw, 68px);
+  font-weight: 400;
+  line-height: 1.1;
+  letter-spacing: -0.035em;
+}
+
+.hub-hero p {
+  max-width: 620px;
+  margin: 0;
+  color: #88938e;
+  font-size: 14px;
+}
+
+.new-project-button {
+  display: flex;
+  align-items: center;
+  margin-top: 32px;
+  padding: 13px 20px;
+  border: 1px solid #e1c48d;
+  border-radius: 4px;
+  color: #171612;
+  background: linear-gradient(135deg, #f1dfb8, #cda15d);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 12px 30px rgb(0 0 0 / 24%);
+  gap: 9px;
+}
+
+.new-project-button span {
+  font-size: 17px;
+  font-weight: 400;
+}
+
+.hub-projects {
+  padding: 34px 7vw 70px;
+}
+.hub-section-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+.hub-section-heading h2 {
+  margin: 5px 0 0;
+  font-size: 19px;
+  font-weight: 500;
+}
+.hub-section-heading button {
+  border: 0;
+  color: #8e9893;
+  background: transparent;
+  font-size: 10px;
+  cursor: pointer;
+}
+.project-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(240px, 1fr));
+  gap: 18px;
+}
+.project-card {
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid #2b322f;
+  border-radius: 7px;
+  text-align: left;
+  background: #151a18;
+  cursor: pointer;
+  transition: 160ms ease;
+}
+.project-card:hover {
+  border-color: #716040;
+  transform: translateY(-3px);
+  box-shadow: 0 18px 40px rgb(0 0 0 / 25%);
+}
+.project-card-art {
+  position: relative;
+  height: 116px;
+  background: linear-gradient(135deg, #263b36, #0f1513);
+}
+.project-card-art::after {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 70% 30%, rgb(224 196 139 / 22%), transparent 22%),
+    linear-gradient(175deg, transparent 58%, rgb(0 0 0 / 65%) 59%);
+  content: "";
+}
+.project-card-art.art-2 {
+  background: linear-gradient(135deg, #3b302a, #15100e);
+}
+.project-card-art.art-3 {
+  background: linear-gradient(135deg, #29303f, #0e1118);
+}
+.project-card-art span {
+  position: absolute;
+  z-index: 1;
+  right: 14px;
+  bottom: 8px;
+  color: rgb(255 255 255 / 22%);
+  font-family: Georgia, serif;
+  font-size: 38px;
+}
+.project-card-copy {
+  display: flex;
+  flex-direction: column;
+  padding: 14px 15px 16px;
+  gap: 4px;
+}
+.project-card-copy strong {
+  font-size: 13px;
+}
+.project-card-copy span {
+  color: #8b9490;
+  font-size: 10px;
+}
+.project-card-copy small {
+  margin-top: 8px;
+  color: #5d6662;
+  font-size: 9px;
+}
+.no-projects {
+  grid-column: 1 / -1;
+  padding: 42px;
+  border: 1px dashed #303735;
+  border-radius: 7px;
+  color: #727b77;
+  text-align: center;
+  font-size: 12px;
+}
+
+.modal-backdrop {
+  z-index: 100;
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgb(4 6 5 / 74%);
+  backdrop-filter: blur(8px);
+}
+.new-project-modal {
+  width: min(610px, 72vw);
+  padding: 28px;
+  border: 1px solid #3d443f;
+  border-radius: 9px;
+  background: linear-gradient(150deg, #1d2320, #111513);
+  box-shadow: 0 30px 100px rgb(0 0 0 / 55%);
+}
+.modal-title {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  margin-bottom: 25px;
+}
+.modal-title h2 {
+  margin: 7px 0 0;
+  font-family: Georgia, "Songti SC", serif;
+  font-size: 27px;
+  font-weight: 400;
+}
+.modal-title > button {
+  border: 0;
+  color: #8b9490;
+  background: transparent;
+  font-size: 24px;
+  cursor: pointer;
+}
+.new-project-modal label {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  color: #9aa39f;
+  font-size: 10px;
+  gap: 8px;
+}
+.new-project-modal input,
+.new-project-modal textarea,
+.new-project-modal select {
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid #353d39;
+  border-radius: 4px;
+  outline: none;
+  color: #ecebe5;
+  background: #0f1311;
+  font: inherit;
+  font-size: 12px;
+}
+.new-project-modal input:focus,
+.new-project-modal textarea:focus,
+.new-project-modal select:focus {
+  border-color: #ac8954;
+  box-shadow: 0 0 0 3px rgb(216 171 96 / 8%);
+}
+.new-project-modal textarea {
+  min-height: 88px;
+  resize: vertical;
+}
+.form-row {
+  display: flex;
+  margin: 18px 0;
+  gap: 16px;
+}
+.modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid #303633;
+}
+.modal-actions span {
+  color: #65706b;
+  font-size: 9px;
+}
+.modal-actions button {
+  padding: 11px 16px;
+  border: 1px solid #d9bb82;
+  border-radius: 4px;
+  color: #171511;
+  background: #dbb978;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.modal-actions button:disabled {
+  opacity: 0.45;
+  cursor: wait;
+}
+.form-error {
+  margin: 12px 0 0;
+  color: #e49a91;
+  font-size: 10px;
+}
+
+.asset-import {
+  display: flex;
+  flex-direction: column;
+  margin: 12px 14px;
+  padding: 12px;
+  border: 1px dashed #39413d;
+  border-radius: 5px;
+  gap: 7px;
+}
+.asset-import input {
+  display: none;
+}
+.asset-import button {
+  padding: 9px;
+  border: 1px solid #5e513b;
+  border-radius: 3px;
+  color: #d9bd87;
+  background: #211d16;
+  font-size: 10px;
+  cursor: pointer;
+}
+.asset-import button:disabled {
+  opacity: 0.5;
+}
+.asset-import small {
+  color: #68716d;
+  font-size: 8px;
+  text-align: center;
+}
+.candidate-art video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 224px minmax(520px, 1fr) 390px;

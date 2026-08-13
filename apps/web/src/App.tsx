@@ -10,10 +10,11 @@ import {
   ReactFlow,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import type { ProjectSnapshot, Shot, Take } from "@takeboard/contracts";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { demoApi } from "./api";
+import type { Asset, ProjectSnapshot, Shot, Take } from "@takeboard/contracts";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { demoApi, type ProjectCatalogItem, projectApi, type WorkerStatus } from "./api";
 import { type BoardNode, boardNodeTypes } from "./board-nodes";
+import { ProjectHub } from "./project-hub";
 
 const rejectionReasons = ["角色漂移", "运动方向错误", "构图不稳定", "细节异常"];
 
@@ -117,13 +118,37 @@ function boardEdges(snapshot: ProjectSnapshot): Edge[] {
   }));
 }
 
-function CandidateArt({ index, approved }: { index: number; approved: boolean }) {
+function CandidateArt({
+  index,
+  approved,
+  source,
+}: {
+  index: number;
+  approved: boolean;
+  source: string | undefined;
+}) {
   return (
     <div className={`candidate-art candidate-${index + 1}`}>
-      <span className="candidate-fog fog-a" />
-      <span className="candidate-fog fog-b" />
-      <span className="candidate-person" />
-      <span className="candidate-pier" />
+      {source ? (
+        <video
+          src={source}
+          muted
+          loop
+          playsInline
+          onMouseEnter={(event) => void event.currentTarget.play()}
+          onMouseLeave={(event) => {
+            event.currentTarget.pause();
+            event.currentTarget.currentTime = 0;
+          }}
+        />
+      ) : (
+        <>
+          <span className="candidate-fog fog-a" />
+          <span className="candidate-fog fog-b" />
+          <span className="candidate-person" />
+          <span className="candidate-pier" />
+        </>
+      )}
       {approved ? <span className="candidate-approved">✓ 已批准</span> : null}
       <span className="candidate-play">▶</span>
     </div>
@@ -137,9 +162,22 @@ type InspectorProps = {
   onGenerate: () => void;
   onReject: (takeId: string, reason: string) => void;
   onApprove: (takeId: string) => void;
+  workerLabel: string;
+  assets: Asset[];
+  projectKey: string | null;
 };
 
-function Inspector({ shot, takes, busy, onGenerate, onReject, onApprove }: InspectorProps) {
+function Inspector({
+  shot,
+  takes,
+  busy,
+  onGenerate,
+  onReject,
+  onApprove,
+  workerLabel,
+  assets,
+  projectKey,
+}: InspectorProps) {
   const [selectedTakeId, setSelectedTakeId] = useState<string | null>(null);
   const [reason, setReason] = useState(rejectionReasons[0] ?? "角色漂移");
   useEffect(() => {
@@ -164,7 +202,7 @@ function Inspector({ shot, takes, busy, onGenerate, onReject, onApprove }: Inspe
       <div className="shot-facts">
         <span>{shot.durationSeconds}s</span>
         <span>{shot.aspectRatio}</span>
-        <span>Fake Wan I2V</span>
+        <span>{workerLabel}</span>
       </div>
 
       <div className="candidate-title-row">
@@ -202,7 +240,18 @@ function Inspector({ shot, takes, busy, onGenerate, onReject, onApprove }: Inspe
                 onClick={() => setSelectedTakeId(take.id)}
                 aria-label={`选择候选 ${index + 1}`}
               >
-                <CandidateArt index={index % 4} approved={take.status === "approved"} />
+                <CandidateArt
+                  index={index % 4}
+                  approved={take.status === "approved"}
+                  source={
+                    projectKey
+                      ? projectApi.assetUrl(
+                          projectKey,
+                          assets.find((asset) => asset.id === take.assetId)?.id ?? "",
+                        )
+                      : undefined
+                  }
+                />
                 <div className="candidate-meta">
                   <span>TAKE {String(index + 1).padStart(2, "0")}</span>
                   <span className={`take-state state-${take.status}`}>
@@ -266,6 +315,12 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [resetArmed, setResetArmed] = useState(false);
+  const [projectKey, setProjectKey] = useState<string | null>(null);
+  const [projectMode, setProjectMode] = useState<"demo" | "project">("project");
+  const [projects, setProjects] = useState<ProjectCatalogItem[]>([]);
+  const [showHub, setShowHub] = useState(true);
+  const [worker, setWorker] = useState<WorkerStatus | null>(null);
+  const assetInput = useRef<HTMLInputElement>(null);
 
   const acceptPayload = useCallback(
     (payload: Awaited<ReturnType<typeof demoApi.get>>, preferredShotId?: string) => {
@@ -281,13 +336,13 @@ export function App() {
   );
 
   useEffect(() => {
-    demoApi
-      .get()
-      .then(acceptPayload)
-      .catch((cause: unknown) =>
-        setError(cause instanceof Error ? cause.message : "无法载入 Demo"),
-      );
-  }, [acceptPayload]);
+    void Promise.allSettled([projectApi.list(), projectApi.worker()]).then(([catalog, status]) => {
+      if (catalog.status === "fulfilled") setProjects(catalog.value.projects);
+      else setError(catalog.reason instanceof Error ? catalog.reason.message : "无法载入项目列表");
+      if (status.status === "fulfilled") setWorker(status.value);
+      else setWorker({ status: "offline", engine: "ComfyUI" });
+    });
+  }, []);
 
   useEffect(() => {
     if (snapshot) {
@@ -319,6 +374,109 @@ export function App() {
     [snapshot],
   );
 
+  const openProject = useCallback(
+    async (key: string) => {
+      setBusy(true);
+      setError(null);
+      try {
+        const payload = await projectApi.open(key);
+        setProjectKey(key);
+        setProjectMode("project");
+        acceptPayload(payload);
+        setShowHub(false);
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "项目打开失败");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [acceptPayload],
+  );
+
+  const createProject = useCallback(
+    async (input: Parameters<typeof projectApi.create>[0]) => {
+      setBusy(true);
+      setError(null);
+      try {
+        const payload = await projectApi.create(input);
+        setProjectKey(payload.key);
+        setProjectMode("project");
+        acceptPayload(payload);
+        setShowHub(false);
+        const catalog = await projectApi.list();
+        setProjects(catalog.projects);
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "项目创建失败");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [acceptPayload],
+  );
+
+  const openDemo = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const payload = await demoApi.get();
+      setProjectKey(null);
+      setProjectMode("demo");
+      acceptPayload(payload);
+      setShowHub(false);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Demo 打开失败");
+    } finally {
+      setBusy(false);
+    }
+  }, [acceptPayload]);
+
+  const uploadAsset = useCallback(
+    async (file: File) => {
+      if (!projectKey) return;
+      setBusy(true);
+      setError(null);
+      try {
+        const payload = await projectApi.uploadAsset(projectKey, file);
+        acceptPayload(payload);
+        setNotice(`已导入首帧：${file.name}`);
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "素材导入失败");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [acceptPayload, projectKey],
+  );
+
+  const generateReal = useCallback(
+    async (shot: Shot) => {
+      if (!projectKey) return;
+      setBusy(true);
+      setError(null);
+      try {
+        const submitted = await projectApi.generate(projectKey, shot.id);
+        acceptPayload(submitted, shot.id);
+        setNotice("Wan 2.2 已开始生成，运行记录已保存");
+        for (let attempt = 0; attempt < 240; attempt += 1) {
+          await new Promise((resolve) => window.setTimeout(resolve, 3_000));
+          const result = await projectApi.run(projectKey, submitted.runId);
+          acceptPayload(result, shot.id);
+          if (result.status === "completed") {
+            setNotice(`${shot.label} 已生成真实视频 Take`);
+            return;
+          }
+          if (result.status === "failed") throw new Error("4090 生成失败，请查看运行记录");
+        }
+        throw new Error("生成仍在运行，可稍后重新打开项目查看");
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "生成失败");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [acceptPayload, projectKey],
+  );
+
   const runAction = useCallback(
     async (action: () => ReturnType<typeof demoApi.get>, message: string, shotId?: string) => {
       setBusy(true);
@@ -335,6 +493,20 @@ export function App() {
     },
     [acceptPayload],
   );
+
+  if (showHub) {
+    return (
+      <ProjectHub
+        busy={busy}
+        error={error}
+        onCreate={createProject}
+        onOpen={openProject}
+        onOpenDemo={openDemo}
+        projects={projects}
+        worker={worker}
+      />
+    );
+  }
 
   if (!snapshot) {
     return (
@@ -360,7 +532,9 @@ export function App() {
           <span className="project-dot" />
           <div>
             <strong>{snapshot.project.title}</strong>
-            <span>{snapshot.scenes[0]?.title} · 本地 Demo</span>
+            <span>
+              {snapshot.scenes[0]?.title} · {projectMode === "demo" ? "功能示例" : "4090 本地项目"}
+            </span>
           </div>
         </div>
         <div className="top-actions">
@@ -368,21 +542,26 @@ export function App() {
           <span className="local-badge">
             <i /> LOCAL
           </span>
-          <button
-            className={resetArmed ? "reset-button armed" : "reset-button"}
-            type="button"
-            onClick={() => {
-              if (!resetArmed) {
-                setResetArmed(true);
-                window.setTimeout(() => setResetArmed(false), 3000);
-                return;
-              }
-              setResetArmed(false);
-              void runAction(() => demoApi.reset(), "Demo 已恢复初始状态");
-            }}
-          >
-            {resetArmed ? "确认重置" : "重置 Demo"}
+          <button className="reset-button" type="button" onClick={() => setShowHub(true)}>
+            项目主页
           </button>
+          {projectMode === "demo" ? (
+            <button
+              className={resetArmed ? "reset-button armed" : "reset-button"}
+              type="button"
+              onClick={() => {
+                if (!resetArmed) {
+                  setResetArmed(true);
+                  window.setTimeout(() => setResetArmed(false), 3000);
+                  return;
+                }
+                setResetArmed(false);
+                void runAction(() => demoApi.reset(), "Demo 已恢复初始状态");
+              }}
+            >
+              {resetArmed ? "确认重置" : "重置 Demo"}
+            </button>
+          ) : null}
         </div>
       </header>
 
@@ -434,12 +613,35 @@ export function App() {
             );
           })}
         </div>
-        <div className="sidebar-bottom">
-          <span>DEMO WORKER</span>
-          <div>
-            <i /> Fake ComfyUI · Ready
+        {projectMode === "project" ? (
+          <div className="asset-import">
+            <input
+              ref={assetInput}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) void uploadAsset(file);
+                event.target.value = "";
+              }}
+            />
+            <button type="button" disabled={busy} onClick={() => assetInput.current?.click()}>
+              ＋ 添加首帧素材
+            </button>
+            <small>
+              {snapshot.assets.filter((asset) => asset.mediaType === "image").length} 张图片已入库
+            </small>
           </div>
-          <small>无需 GPU · 不产生费用</small>
+        ) : null}
+        <div className="sidebar-bottom">
+          <span>{projectMode === "demo" ? "DEMO WORKER" : "GENERATION WORKER"}</span>
+          <div>
+            <i /> {projectMode === "demo" ? "Fake ComfyUI" : (worker?.device ?? "ComfyUI")} ·{" "}
+            {worker?.status === "ready" || projectMode === "demo" ? "Ready" : "Offline"}
+          </div>
+          <small>
+            {projectMode === "demo" ? "无需 GPU · 不产生费用" : "开源模型 · 运行在你的 4090"}
+          </small>
         </div>
       </nav>
 
@@ -468,8 +670,11 @@ export function App() {
           onNodesChange={onNodesChange}
           onNodeClick={onNodeClick}
           onNodeDragStop={(_event, node) => {
-            void demoApi
-              .move(node.id, node.position.x, node.position.y)
+            void (
+              projectMode === "project" && projectKey
+                ? projectApi.move(projectKey, node.id, node.position.x, node.position.y)
+                : demoApi.move(node.id, node.position.x, node.position.y)
+            )
               .then((payload) => {
                 setSnapshot(payload.snapshot);
                 setRevision(payload.revision);
@@ -499,12 +704,17 @@ export function App() {
           shot={selectedShot}
           takes={selectedTakes}
           busy={busy}
+          assets={snapshot.assets}
+          projectKey={projectMode === "project" ? projectKey : null}
+          workerLabel={projectMode === "demo" ? "Fake Wan I2V" : "Wan 2.2 I2V · RTX 4090"}
           onGenerate={() =>
-            void runAction(
-              () => demoApi.generate(selectedShot.id),
-              `${selectedShot.label} 已生成 4 个新候选`,
-              selectedShot.id,
-            )
+            projectMode === "demo"
+              ? void runAction(
+                  () => demoApi.generate(selectedShot.id),
+                  `${selectedShot.label} 已生成 4 个新候选`,
+                  selectedShot.id,
+                )
+              : void generateReal(selectedShot)
           }
           onReject={(takeId, reason) =>
             void runAction(
