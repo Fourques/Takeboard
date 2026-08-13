@@ -345,6 +345,11 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    if (showHub || projectMode !== "demo" || !snapshot) return;
+    window.sessionStorage.setItem("takeboard.resumeDemo", "1");
+  }, [projectMode, showHub, snapshot]);
+
+  useEffect(() => {
     if (snapshot) {
       setNodes(boardNodes(snapshot, selectedShotId));
     }
@@ -380,6 +385,7 @@ export function App() {
       setError(null);
       try {
         const payload = await projectApi.open(key);
+        window.sessionStorage.removeItem("takeboard.resumeDemo");
         setProjectKey(key);
         setProjectMode("project");
         acceptPayload(payload);
@@ -399,6 +405,7 @@ export function App() {
       setError(null);
       try {
         const payload = await projectApi.create(input);
+        window.sessionStorage.removeItem("takeboard.resumeDemo");
         setProjectKey(payload.key);
         setProjectMode("project");
         acceptPayload(payload);
@@ -429,6 +436,12 @@ export function App() {
       setBusy(false);
     }
   }, [acceptPayload]);
+
+  useEffect(() => {
+    if (window.sessionStorage.getItem("takeboard.resumeDemo") !== "1") return;
+    window.sessionStorage.removeItem("takeboard.resumeDemo");
+    void openDemo();
+  }, [openDemo]);
 
   const uploadAsset = useCallback(
     async (file: File) => {
@@ -542,7 +555,14 @@ export function App() {
           <span className="local-badge">
             <i /> LOCAL
           </span>
-          <button className="reset-button" type="button" onClick={() => setShowHub(true)}>
+          <button
+            className="reset-button"
+            type="button"
+            onClick={() => {
+              window.sessionStorage.removeItem("takeboard.resumeDemo");
+              setShowHub(true);
+            }}
+          >
             项目主页
           </button>
           {projectMode === "demo" ? (
