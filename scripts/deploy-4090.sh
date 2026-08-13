@@ -3,13 +3,17 @@ set -euo pipefail
 
 repo_dir=/home/duanqw/Opc/TakeBoard
 unit_dir=/home/duanqw/.config/systemd/user
+bin_dir=/home/duanqw/.local/bin
 
 cd "$repo_dir"
 git fetch origin main
 git merge --ff-only origin/main
 
-corepack pnpm install --frozen-lockfile
-corepack pnpm verify
+mkdir -p "$bin_dir"
+corepack enable --install-directory "$bin_dir"
+export PATH="$bin_dir:$PATH"
+pnpm install --frozen-lockfile
+pnpm verify
 
 mkdir -p "$unit_dir" /home/duanqw/TakeBoardData
 cp deploy/systemd/takeboard.service "$unit_dir/takeboard.service"
