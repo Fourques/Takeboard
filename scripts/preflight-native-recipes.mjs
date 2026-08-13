@@ -1,6 +1,7 @@
 import {
   buildLtx23I2VPrompt,
   buildMiniMaxH3Prompt,
+  buildQwenImage2512Prompt,
   buildWan22FirstLastPrompt,
   ComfyClient,
 } from "../packages/executor-comfy/dist/index.js";
@@ -19,6 +20,24 @@ const shared = {
 
 const ltxWorkflow = await comfy.workflow("Kino/Kino_LTX23_I2V_Draft.json");
 const recipes = {
+  "qwen-image-2512-t2i": buildQwenImage2512Prompt({
+    positivePrompt: shared.positivePrompt,
+    width: 928,
+    height: 1664,
+    seed: 1,
+    steps: 50,
+    filenamePrefix: shared.filenamePrefix,
+  }),
+  "qwen-image-2512-i2i-lightning": buildQwenImage2512Prompt({
+    image: "preflight-start.png",
+    positivePrompt: shared.positivePrompt,
+    width: 928,
+    height: 1664,
+    seed: 1,
+    steps: 4,
+    denoise: 0.65,
+    filenamePrefix: shared.filenamePrefix,
+  }),
   "wan22-flf2v": buildWan22FirstLastPrompt({
     ...shared,
     image: "preflight-start.png",
