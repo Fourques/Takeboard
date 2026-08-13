@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+from argparse import ArgumentParser
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -34,10 +35,10 @@ FILES = (
         "sha256": "a70580f0213e67967ee9c95f05bb400e8fb08307e017a924bf3441223e023d1f",
     },
     {
-        "repo": "lightx2v/Qwen-Image-Lightning",
-        "filename": "Qwen-Image-Lightning-4steps-V1.0.safetensors",
-        "destination": "loras/Qwen-Image-Lightning-4steps-V1.0.safetensors",
-        "sha256": "9526e90d71c4290392feeccf3c2172cb77ab3a489f1faeb956637f97acb4c8b1",
+        "repo": "lightx2v/Qwen-Image-2512-Lightning",
+        "filename": "Qwen-Image-2512-Lightning-4steps-V1.0-fp32.safetensors",
+        "destination": "loras/Qwen-Image-2512-Lightning-4steps-V1.0-fp32.safetensors",
+        "sha256": "ad12117461cb41e2ea637fec8df6392ce8e8550c47fbe2b829ed3deb98262066",
     },
 )
 
@@ -71,9 +72,25 @@ def download(item: dict[str, str]) -> tuple[dict[str, str], Path]:
 
 
 def main() -> None:
+    parser = ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--only",
+        action="append",
+        default=[],
+        metavar="FILENAME",
+        help="download only the named destination file; repeat for multiple files",
+    )
+    arguments = parser.parse_args()
+    selected = [
+        item
+        for item in FILES
+        if not arguments.only or Path(item["destination"]).name in arguments.only
+    ]
+    if not selected:
+        parser.error("--only did not match a bundle destination filename")
     DOWNLOAD_ROOT.mkdir(parents=True, exist_ok=True)
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        futures = [executor.submit(download, item) for item in FILES]
+    with ThreadPoolExecutor(max_workers=min(4, len(selected))) as executor:
+        futures = [executor.submit(download, item) for item in selected]
         for future in as_completed(futures):
             item, destination = future.result()
             print(f"verified {item['sha256']}  {destination}", flush=True)

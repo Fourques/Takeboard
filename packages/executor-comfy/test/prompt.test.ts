@@ -51,6 +51,9 @@ describe("Qwen-Image-2512 recipe", () => {
     expect(prompt.latent?.inputs.pixels).toEqual(["scaled", 0]);
     expect(prompt.sample?.inputs).toMatchObject({ steps: 4, cfg: 1, denoise: 1 });
     expect(prompt.lora?.class_type).toBe("LoraLoaderModelOnly");
+    expect(prompt.lora?.inputs.lora_name).toBe(
+      "Qwen-Image-2512-Lightning-4steps-V1.0-fp32.safetensors",
+    );
   });
 
   it("keeps requested Qwen sizes on a safe 32-pixel grid", () => {

@@ -25,7 +25,7 @@ TakeBoard 的第一条真实图片生成链路选用 **Qwen-Image-2512 FP8**。�
 | `qwen_image_2512_fp8_e4m3fn.safetensors` | 扩散模型 | 20.4 GB | `5dc80554d5d83390046a2f4a94ece06afb7700bf7b0aaf8bde9769793875876b` |
 | `qwen_2.5_vl_7b_fp8_scaled.safetensors` | 文本编码器 | 9.38 GB | `cb5636d852a0ea6a9075ab1bef496c0db7aef13c02350571e388aea959c5c0b4` |
 | `qwen_image_vae.safetensors` | VAE | 254 MB | `a70580f0213e67967ee9c95f05bb400e8fb08307e017a924bf3441223e023d1f` |
-| `Qwen-Image-Lightning-4steps-V1.0.safetensors` | 4 步快速 LoRA | 1.7 GB | `9526e90d71c4290392feeccf3c2172cb77ab3a489f1faeb956637f97acb4c8b1` |
+| `Qwen-Image-2512-Lightning-4steps-V1.0-fp32.safetensors` | 2512 专用 4 步快速 LoRA | 1.7 GB | `ad12117461cb41e2ea637fec8df6392ce8e8550c47fbe2b829ed3deb98262066` |
 
 安装脚本会并发下载、断点续传、逐文件验证上述哈希，最后才原子替换到 ComfyUI 模型目录。镜像站只作为
 传输入口，不改变仓库、文件或校验依据。

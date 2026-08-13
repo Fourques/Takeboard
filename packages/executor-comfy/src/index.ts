@@ -103,7 +103,7 @@ export function buildQwenImage2512Prompt(input: QwenImage2512Input): ComfyPrompt
       class_type: "LoraLoaderModelOnly",
       inputs: {
         model: ["unet", 0],
-        lora_name: "Qwen-Image-Lightning-4steps-V1.0.safetensors",
+        lora_name: "Qwen-Image-2512-Lightning-4steps-V1.0-fp32.safetensors",
         strength_model: 1,
       },
     };
