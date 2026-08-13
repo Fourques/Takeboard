@@ -10,6 +10,8 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@fastify/multipart": "10.1.0",
+    "@fastify/static": "10.1.3",
     "@takeboard/contracts": "workspace:*",
     "@takeboard/domain": "workspace:*",
     "better-sqlite3": "13.0.3",

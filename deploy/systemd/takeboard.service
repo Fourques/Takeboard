@@ -1,0 +1,20 @@
+[Unit]
+Description=TakeBoard local-first filmmaking canvas
+After=network.target takeboard-comfy.service
+Wants=takeboard-comfy.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/duanqw/Opc/TakeBoard
+ExecStart=/usr/bin/node apps/server/dist/index.js
+Restart=on-failure
+RestartSec=3
+Environment=NODE_ENV=production
+Environment=TAKEBOARD_HOST=127.0.0.1
+Environment=TAKEBOARD_PORT=48120
+Environment=TAKEBOARD_WEB_ROOT=/home/duanqw/Opc/TakeBoard/apps/web/dist
+Environment=TAKEBOARD_DATA_ROOT=/home/duanqw/TakeBoardData
+Environment=TAKEBOARD_COMFY_URL=http://127.0.0.1:8188
+
+[Install]
+WantedBy=default.target

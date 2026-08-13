@@ -1,0 +1,14 @@
+[Unit]
+Description=TakeBoard ComfyUI worker
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/duanqw/Opc/Stortvideo/apps/ComfyUI-H3
+ExecStart=/home/duanqw/Opc/Stortvideo/apps/ComfyUI-H3/env/bin/python main.py --listen 127.0.0.1 --port 8188 --cuda-device 0 --disable-auto-launch --disable-all-custom-nodes --preview-method none
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target

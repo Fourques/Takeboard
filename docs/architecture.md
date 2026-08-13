@@ -7,7 +7,7 @@
 
 | 层 | 选择 | 原因 |
 | --- | --- | --- |
-| 语言 | TypeScript，Node.js 24 LTS | 前后端共享契约；项目不执行模型推理，无需为首版引入 Python 服务 |
+| 语言 | TypeScript，Node.js 22+ LTS | 前后端共享契约；项目不执行模型推理，无需为首版引入 Python 服务 |
 | Web | React + Vite | 生态成熟，适合复杂交互和后续桌面封装 |
 | 画布 | React Flow (`@xyflow/react`) | MIT；内置拖放、缩放、多选、节点/边和分组；适合语义图而非通用手绘白板 |
 | 本地 API | Fastify + WebSocket | 轻量、类型友好；REST 处理命令，WS 推送 Run 状态 |
