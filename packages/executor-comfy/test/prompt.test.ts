@@ -2,13 +2,62 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildLtx23I2VPrompt,
   buildMiniMaxH3Prompt,
+  buildQwenImage2512Prompt,
   buildWan22FirstLastPrompt,
   buildWan22I2VPrompt,
   ComfyClient,
   miniMaxH3FrameCount,
   miniMaxH3Resolution,
+  qwenImage2512Resolution,
   wanFrameCount,
 } from "../src/index.js";
+
+describe("Qwen-Image-2512 recipe", () => {
+  it("builds a full-quality text-to-image prompt", () => {
+    const prompt = buildQwenImage2512Prompt({
+      positivePrompt: "电影感雪山站台，真实摄影",
+      width: 928,
+      height: 1664,
+      seed: 42,
+      steps: 50,
+      filenamePrefix: "takeboard/qwen/t2i",
+    });
+    expect(prompt.latent).toMatchObject({
+      class_type: "EmptySD3LatentImage",
+      inputs: { width: 928, height: 1664 },
+    });
+    expect(prompt.sample?.inputs).toMatchObject({ steps: 50, cfg: 4, denoise: 1 });
+    expect(prompt.lora).toBeUndefined();
+    expect(prompt.save?.class_type).toBe("SaveImage");
+  });
+
+  it("builds a fast image-to-image prompt with a bounded denoise value", () => {
+    const prompt = buildQwenImage2512Prompt({
+      image: "takeboard/reference.png",
+      positivePrompt: "保持人物身份，改为雨夜场景",
+      width: 928,
+      height: 1664,
+      seed: 7,
+      steps: 4,
+      denoise: 2,
+      filenamePrefix: "takeboard/qwen/i2i",
+    });
+    expect(prompt.image?.inputs.image).toBe("takeboard/reference.png");
+    expect(prompt.scaled).toMatchObject({
+      class_type: "ImageScale",
+      inputs: { width: 928, height: 1664, crop: "center" },
+    });
+    expect(prompt.latent?.class_type).toBe("VAEEncode");
+    expect(prompt.latent?.inputs.pixels).toEqual(["scaled", 0]);
+    expect(prompt.sample?.inputs).toMatchObject({ steps: 4, cfg: 1, denoise: 1 });
+    expect(prompt.lora?.class_type).toBe("LoraLoaderModelOnly");
+  });
+
+  it("keeps requested Qwen sizes on a safe 32-pixel grid", () => {
+    expect(qwenImage2512Resolution(928, 1664)).toEqual({ width: 928, height: 1664 });
+    expect(qwenImage2512Resolution(200, 300)).toEqual({ width: 512, height: 512 });
+  });
+});
 
 describe("Wan 2.2 I2V recipe", () => {
   it("builds a compact two-stage four-step prompt", () => {

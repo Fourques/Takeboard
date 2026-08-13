@@ -151,6 +151,7 @@ export const projectApi = {
       fps: number;
       seed: number;
       steps: number;
+      denoise: number;
     },
   ) =>
     jsonRequest<DemoPayload & { key: string; runId: string; promptId: string }>(

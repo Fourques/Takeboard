@@ -40,6 +40,7 @@ type GenerationSettings = {
   fps: number;
   seed: number;
   steps: number;
+  denoise: number;
 };
 
 const defaultGenerationSettings: GenerationSettings = {
@@ -54,6 +55,7 @@ const defaultGenerationSettings: GenerationSettings = {
   fps: 16,
   seed: 26081301,
   steps: 20,
+  denoise: 0.65,
 };
 
 const nativeWorkflowFallbacks: WorkflowSummary[] = [
@@ -136,6 +138,32 @@ const nativeWorkflowFallbacks: WorkflowSummary[] = [
     inputs: ["prompt", "first_frame", "resolution", "duration", "fps", "seed"],
     models: [],
     nodeCount: 0,
+    source: "comfyui",
+    editorUrl: "http://127.0.0.1:48188",
+    execution: "native",
+  },
+  {
+    id: "native-qwen-image-2512-t2i",
+    path: "Kino/Kino_QwenImage2512_T2I.json",
+    name: "Qwen Image 2512 T2I",
+    capability: "text_to_image",
+    capabilityLabel: "文生图",
+    inputs: ["prompt", "negative_prompt", "resolution", "seed", "steps"],
+    models: ["qwen_image_2512_fp8_e4m3fn.safetensors"],
+    nodeCount: 10,
+    source: "comfyui",
+    editorUrl: "http://127.0.0.1:48188",
+    execution: "native",
+  },
+  {
+    id: "native-qwen-image-2512-i2i",
+    path: "Kino/Kino_QwenImage2512_I2I.json",
+    name: "Qwen Image 2512 I2I",
+    capability: "image_to_image",
+    capabilityLabel: "图生图",
+    inputs: ["prompt", "negative_prompt", "first_frame", "resolution", "seed", "steps", "denoise"],
+    models: ["qwen_image_2512_fp8_e4m3fn.safetensors"],
+    nodeCount: 11,
     source: "comfyui",
     editorUrl: "http://127.0.0.1:48188",
     execution: "native",
@@ -266,14 +294,18 @@ function CandidateArt({
   index,
   approved,
   source,
+  mediaType,
 }: {
   index: number;
   approved: boolean;
   source: string | undefined;
+  mediaType: Asset["mediaType"] | undefined;
 }) {
   return (
     <div className={`candidate-art candidate-${index + 1}`}>
-      {source ? (
+      {source && mediaType === "image" ? (
+        <img src={source} alt="生成候选" />
+      ) : source ? (
         <video
           src={source}
           muted
@@ -294,7 +326,7 @@ function CandidateArt({
         </>
       )}
       {approved ? <span className="candidate-approved">✓ 已批准</span> : null}
-      <span className="candidate-play">▶</span>
+      {mediaType === "video" ? <span className="candidate-play">▶</span> : null}
     </div>
   );
 }
@@ -350,6 +382,8 @@ function Inspector({
     const asset = assets.find((candidate) => candidate.id === assetId);
     return projectKey && asset ? projectApi.assetUrl(projectKey, asset.id) : undefined;
   };
+  const mediaType = (assetId: string) =>
+    assets.find((candidate) => candidate.id === assetId)?.mediaType;
 
   return (
     <aside className="inspector" aria-label="镜头候选检查器">
@@ -466,37 +500,44 @@ function Inspector({
                 }
               />
             </label>
-            <label>
-              <span>时长</span>
-              <div>
-                <input
-                  type="number"
-                  min={1}
-                  max={15}
-                  step={0.5}
-                  value={settings.durationSeconds}
-                  onChange={(event) =>
-                    onSettingsChange({ ...settings, durationSeconds: Number(event.target.value) })
-                  }
-                />
-                <i>s</i>
-              </div>
-            </label>
-            <label>
-              <span>帧率</span>
-              <div>
-                <input
-                  type="number"
-                  min={8}
-                  max={60}
-                  value={settings.fps}
-                  onChange={(event) =>
-                    onSettingsChange({ ...settings, fps: Number(event.target.value) })
-                  }
-                />
-                <i>fps</i>
-              </div>
-            </label>
+            {workflow && !["text_to_image", "image_to_image"].includes(workflow.capability) ? (
+              <>
+                <label>
+                  <span>时长</span>
+                  <div>
+                    <input
+                      type="number"
+                      min={1}
+                      max={15}
+                      step={0.5}
+                      value={settings.durationSeconds}
+                      onChange={(event) =>
+                        onSettingsChange({
+                          ...settings,
+                          durationSeconds: Number(event.target.value),
+                        })
+                      }
+                    />
+                    <i>s</i>
+                  </div>
+                </label>
+                <label>
+                  <span>帧率</span>
+                  <div>
+                    <input
+                      type="number"
+                      min={8}
+                      max={60}
+                      value={settings.fps}
+                      onChange={(event) =>
+                        onSettingsChange({ ...settings, fps: Number(event.target.value) })
+                      }
+                    />
+                    <i>fps</i>
+                  </div>
+                </label>
+              </>
+            ) : null}
           </div>
           <label className="seed-field">
             <span>Seed</span>
@@ -530,8 +571,30 @@ function Inspector({
                 }
               />
               <small>
-                {workflow.name.toLowerCase().includes("minimax") ? "H3 建议 20" : "Recipe 默认"}
+                {workflow.name.toLowerCase().includes("qwen")
+                  ? settings.steps <= 4
+                    ? "Lightning 快速预览"
+                    : "高质量建议 50"
+                  : workflow.name.toLowerCase().includes("minimax")
+                    ? "H3 建议 20"
+                    : "Recipe 默认"}
               </small>
+            </label>
+          ) : null}
+          {workflow?.inputs.includes("denoise") ? (
+            <label className="seed-field">
+              <span>重绘强度</span>
+              <input
+                type="number"
+                min={0.05}
+                max={1}
+                step={0.05}
+                value={settings.denoise}
+                onChange={(event) =>
+                  onSettingsChange({ ...settings, denoise: Number(event.target.value) })
+                }
+              />
+              <small>0.35 保守 · 0.65 平衡 · 1.0 重构</small>
             </label>
           ) : null}
           {workflow?.execution === "comfy_only" ? (
@@ -566,7 +629,9 @@ function Inspector({
                 ? "在 ComfyUI 中打开"
                 : takes.length > 0
                   ? "再生成 1 个"
-                  : "生成视频"}
+                  : workflow && ["text_to_image", "image_to_image"].includes(workflow.capability)
+                    ? "生成图片"
+                    : "生成视频"}
         </button>
       </div>
 
@@ -608,6 +673,7 @@ function Inspector({
                   index={index % 4}
                   approved={take.status === "approved"}
                   source={mediaSource(take.assetId)}
+                  mediaType={mediaType(take.assetId)}
                 />
                 <div className="candidate-meta">
                   <span>TAKE {String(index + 1).padStart(2, "0")}</span>
@@ -772,6 +838,20 @@ export function App() {
     if (selectedWorkflow.inputs.includes("last_frame") && !lastFrameAvailable) {
       return "首尾帧模式还需要一张结束帧";
     }
+    const imageWorkflow = ["text_to_image", "image_to_image"].includes(selectedWorkflow.capability);
+    const invalidVideoParameters =
+      !imageWorkflow &&
+      (!Number.isFinite(generationSettings.durationSeconds) ||
+        generationSettings.durationSeconds < 1 ||
+        generationSettings.durationSeconds > 15 ||
+        !Number.isFinite(generationSettings.fps) ||
+        generationSettings.fps < 8 ||
+        generationSettings.fps > 60);
+    const invalidDenoise =
+      selectedWorkflow.inputs.includes("denoise") &&
+      (!Number.isFinite(generationSettings.denoise) ||
+        generationSettings.denoise < 0.05 ||
+        generationSettings.denoise > 1);
     if (
       !Number.isFinite(generationSettings.width) ||
       generationSettings.width < 256 ||
@@ -779,19 +859,17 @@ export function App() {
       !Number.isFinite(generationSettings.height) ||
       generationSettings.height < 256 ||
       generationSettings.height > 2048 ||
-      !Number.isFinite(generationSettings.durationSeconds) ||
-      generationSettings.durationSeconds < 1 ||
-      generationSettings.durationSeconds > 15 ||
-      !Number.isFinite(generationSettings.fps) ||
-      generationSettings.fps < 8 ||
-      generationSettings.fps > 60 ||
+      invalidVideoParameters ||
+      invalidDenoise ||
       !Number.isSafeInteger(generationSettings.seed) ||
       generationSettings.seed < 0 ||
       !Number.isSafeInteger(generationSettings.steps) ||
       generationSettings.steps < 1 ||
       generationSettings.steps > 100
     ) {
-      return "请检查分辨率、时长、帧率和 Seed";
+      return imageWorkflow
+        ? "请检查分辨率、Steps、重绘强度和 Seed"
+        : "请检查分辨率、时长、帧率和 Seed";
     }
     return null;
   }, [firstFrameAvailable, generationSettings, lastFrameAvailable, projectMode, selectedWorkflow]);
@@ -1335,12 +1413,21 @@ export function App() {
           setGenerationSettings((current) => ({
             ...current,
             recipePath: workflow.path,
+            ...(normalizedName.includes("qwen")
+              ? current.width >= current.height
+                ? { width: 1664, height: 928 }
+                : { width: 928, height: 1664 }
+              : {}),
             fps: normalizedName.includes("minimax")
               ? 24
               : normalizedName.includes("ltx")
                 ? 25
                 : current.fps,
-            steps: normalizedName.includes("minimax") ? 20 : current.steps,
+            steps: normalizedName.includes("qwen")
+              ? 50
+              : normalizedName.includes("minimax")
+                ? 20
+                : current.steps,
           }));
           setRecipeOpen(false);
           setNotice(`已切换：${workflow.name}`);

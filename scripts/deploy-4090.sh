@@ -19,6 +19,7 @@ mkdir -p "$unit_dir" /home/duanqw/TakeBoardData
 cp deploy/systemd/takeboard.service "$unit_dir/takeboard.service"
 cp deploy/systemd/takeboard-comfy.service "$unit_dir/takeboard-comfy.service"
 bash scripts/install-comfy-bridge.sh
+python3 scripts/install-qwen-image-workflows.py
 
 systemctl --user daemon-reload
 systemctl --user enable --now takeboard-comfy.service

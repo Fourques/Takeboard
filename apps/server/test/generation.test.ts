@@ -336,4 +336,104 @@ describe("real generation routes", () => {
       parameters: { width: 480, height: 864, steps: 20 },
     });
   });
+
+  it("stores a completed Qwen text-to-image result as a reusable image asset", async () => {
+    const { app, key, shotId } = await projectFixture();
+    let submittedPrompt: Record<string, unknown> | null = null;
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/object_info")) {
+        return Response.json(
+          objectInfo([
+            "UNETLoader",
+            "CLIPLoader",
+            "VAELoader",
+            "CLIPTextEncode",
+            "ModelSamplingAuraFlow",
+            "EmptySD3LatentImage",
+            "KSampler",
+            "VAEDecode",
+            "SaveImage",
+          ]),
+        );
+      }
+      if (url.endsWith("/prompt")) {
+        submittedPrompt = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return Response.json({ prompt_id: "qwen-image-prompt-1" });
+      }
+      if (url.endsWith("/history/qwen-image-prompt-1")) {
+        return Response.json({
+          "qwen-image-prompt-1": {
+            status: { status_str: "success", completed: true },
+            outputs: {
+              save: {
+                images: [
+                  {
+                    filename: "shot_00001_.png",
+                    subfolder: "takeboard/test",
+                    type: "output",
+                  },
+                ],
+              },
+            },
+          },
+        });
+      }
+      if (url.includes("/view?")) return new Response(validPng());
+      throw new Error(`Unexpected ComfyUI request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const submitted = await app.inject({
+      method: "POST",
+      url: `/api/projects/${key}/shots/${shotId}/generate`,
+      payload: {
+        recipePath: "Kino/Kino_QwenImage2512_T2I.json",
+        prompt: "电影感雪山站台，真实摄影，晨雾中的冷暖对比光",
+        width: 928,
+        height: 1664,
+        seed: 2512,
+        steps: 50,
+      },
+    });
+    expect(submitted.statusCode, submitted.body).toBe(202);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/upload/image"))).toBe(false);
+    expect(submittedPrompt).toMatchObject({
+      prompt: {
+        latent: {
+          class_type: "EmptySD3LatentImage",
+          inputs: { width: 928, height: 1664 },
+        },
+        sample: { inputs: { steps: 50, cfg: 4, denoise: 1 } },
+        save: { class_type: "SaveImage" },
+      },
+    });
+
+    const polled = await app.inject({
+      method: "GET",
+      url: `/api/projects/${key}/runs/${submitted.json().runId}`,
+    });
+    expect(polled.statusCode, polled.body).toBe(200);
+    expect(polled.json()).toMatchObject({
+      status: "completed",
+      snapshot: {
+        runs: [
+          expect.objectContaining({
+            recipeVersion: "qwen-image-2512-t2i@1",
+            status: "completed",
+            inputs: [],
+          }),
+        ],
+        takes: [expect.objectContaining({ status: "candidate" })],
+        assets: [
+          expect.objectContaining({
+            mediaType: "image",
+            mimeType: "image/png",
+            width: 1,
+            height: 1,
+          }),
+        ],
+      },
+    });
+  });
 });

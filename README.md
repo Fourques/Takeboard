@@ -6,7 +6,7 @@
 
 > 准备开工请从 [START-HERE](START-HERE.md) 开始；具体范围、架构和任务以执行文档为准。本 README 保留完整立项论证。
 
-> 真实工作站版本已完成首条纵向链路：新建/打开项目、角色与场景资产入库、ComfyUI Workflow 自动检测/导入、Wan 2.2 I2V 与首尾帧提交、运行轮询、视频回收和 Take 入库。部署方式见 [4090 部署与使用](docs/4090-deployment.md)，创作界面见 [创作工作站指南](docs/creator-workstation.md)；Fake Demo 仍保留为无 GPU 功能示例。
+> 真实工作站版本已完成新建/打开项目、角色与场景资产入库、ComfyUI Workflow 自动检测/导入、Qwen-Image-2512 文生图/图生图、Wan 2.2 I2V 与首尾帧、运行轮询、图片/视频回收和 Take 入库。部署方式见 [4090 部署与使用](docs/4090-deployment.md)，图片模型见 [Qwen-Image-2512](docs/qwen-image-2512.md)，创作界面见 [创作工作站指南](docs/creator-workstation.md)；Fake Demo 仍保留为无 GPU 功能示例。
 
 ## 一句话定义
 

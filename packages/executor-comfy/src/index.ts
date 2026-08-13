@@ -6,6 +6,124 @@ export type ComfyPromptNode = {
 
 export type ComfyPrompt = Record<string, ComfyPromptNode>;
 
+export type QwenImage2512Input = {
+  image?: string;
+  positivePrompt: string;
+  negativePrompt?: string;
+  width: number;
+  height: number;
+  seed: number;
+  steps?: number;
+  denoise?: number;
+  filenamePrefix: string;
+};
+
+const qwenImageNegative =
+  "低分辨率，低画质，肢体畸形，手指畸形，画面过饱和，蜡像感，人脸无细节，过度光滑，AI感，构图混乱，文字模糊，扭曲，水印";
+
+export function qwenImage2512Resolution(width: number, height: number) {
+  const safeWidth = Math.max(512, width);
+  const safeHeight = Math.max(512, height);
+  const scale = Math.min(
+    1,
+    1664 / Math.max(safeWidth, safeHeight),
+    Math.sqrt(1_800_000 / (safeWidth * safeHeight)),
+  );
+  return {
+    width: Math.max(512, Math.round((safeWidth * scale) / 32) * 32),
+    height: Math.max(512, Math.round((safeHeight * scale) / 32) * 32),
+  };
+}
+
+export function buildQwenImage2512Prompt(input: QwenImage2512Input): ComfyPrompt {
+  const size = qwenImage2512Resolution(input.width, input.height);
+  const steps = input.steps ?? 50;
+  const turbo = steps <= 4;
+  const prompt: ComfyPrompt = {
+    unet: {
+      class_type: "UNETLoader",
+      inputs: {
+        unet_name: "qwen_image_2512_fp8_e4m3fn.safetensors",
+        weight_dtype: "default",
+      },
+    },
+    clip: {
+      class_type: "CLIPLoader",
+      inputs: {
+        clip_name: "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+        type: "qwen_image",
+        device: "default",
+      },
+    },
+    vae: { class_type: "VAELoader", inputs: { vae_name: "qwen_image_vae.safetensors" } },
+    positive: {
+      class_type: "CLIPTextEncode",
+      inputs: { text: input.positivePrompt, clip: ["clip", 0] },
+    },
+    negative: {
+      class_type: "CLIPTextEncode",
+      inputs: { text: input.negativePrompt ?? qwenImageNegative, clip: ["clip", 0] },
+    },
+    sampling: {
+      class_type: "ModelSamplingAuraFlow",
+      inputs: { model: [turbo ? "lora" : "unet", 0], shift: 3.1 },
+    },
+    latent: input.image
+      ? { class_type: "VAEEncode", inputs: { pixels: ["scaled", 0], vae: ["vae", 0] } }
+      : {
+          class_type: "EmptySD3LatentImage",
+          inputs: { width: size.width, height: size.height, batch_size: 1 },
+        },
+    sample: {
+      class_type: "KSampler",
+      inputs: {
+        model: ["sampling", 0],
+        positive: ["positive", 0],
+        negative: ["negative", 0],
+        latent_image: ["latent", 0],
+        seed: input.seed,
+        steps,
+        cfg: turbo ? 1 : 4,
+        sampler_name: "euler",
+        scheduler: "simple",
+        denoise: input.image ? Math.min(1, Math.max(0.05, input.denoise ?? 0.65)) : 1,
+      },
+    },
+    decoded: {
+      class_type: "VAEDecode",
+      inputs: { samples: ["sample", 0], vae: ["vae", 0] },
+    },
+    save: {
+      class_type: "SaveImage",
+      inputs: { images: ["decoded", 0], filename_prefix: input.filenamePrefix },
+    },
+  };
+  if (turbo) {
+    prompt.lora = {
+      class_type: "LoraLoaderModelOnly",
+      inputs: {
+        model: ["unet", 0],
+        lora_name: "Qwen-Image-Lightning-4steps-V1.0.safetensors",
+        strength_model: 1,
+      },
+    };
+  }
+  if (input.image) {
+    prompt.image = { class_type: "LoadImage", inputs: { image: input.image } };
+    prompt.scaled = {
+      class_type: "ImageScale",
+      inputs: {
+        image: ["image", 0],
+        upscale_method: "lanczos",
+        width: size.width,
+        height: size.height,
+        crop: "center",
+      },
+    };
+  }
+  return prompt;
+}
+
 export type Wan22Input = {
   image: string;
   positivePrompt: string;

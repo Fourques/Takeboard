@@ -75,6 +75,7 @@ function detectInputs(capability: Capability, nodes: WorkflowNode[]) {
   if (["image_to_image", "image_to_video", "first_last_video"].includes(capability)) {
     slots.add("first_frame");
   }
+  if (capability === "image_to_image") slots.add("denoise");
   if (capability === "first_last_video" || /last[_ ]frame|end[_ ]image|结束帧|尾帧/.test(text)) {
     slots.add("last_frame");
   }
@@ -128,11 +129,19 @@ function workflowSummary(path: string, workflow: WorkflowJson, editorUrl: string
     path.endsWith("Kino_Wan22_FLF2V.json") ||
     path.endsWith("Kino_MinimaxH3_I2V.json") ||
     path.endsWith("Kino_MinimaxH3_T2V.json") ||
-    path.endsWith("Kino_LTX23_I2V_Draft.json");
+    path.endsWith("Kino_LTX23_I2V_Draft.json") ||
+    path.endsWith("Kino_QwenImage2512_T2I.json") ||
+    path.endsWith("Kino_QwenImage2512_I2I.json");
   const inputs = detectInputs(capability, nodes).filter((slot) => {
     if (!native) return true;
     if (slot === "cfg") return false;
-    if (slot === "steps" && !path.toLowerCase().includes("minimax")) return false;
+    if (
+      slot === "steps" &&
+      !path.toLowerCase().includes("minimax") &&
+      !path.toLowerCase().includes("qwenimage")
+    ) {
+      return false;
+    }
     return true;
   });
   return {
