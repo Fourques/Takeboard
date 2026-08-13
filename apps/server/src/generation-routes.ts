@@ -2,7 +2,11 @@ import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { basename, extname, join, resolve } from "node:path";
 import { createTakeBoardId, toIsoTimestamp } from "@takeboard/domain";
-import { buildWan22I2VPrompt, ComfyClient } from "@takeboard/executor-comfy";
+import {
+  buildWan22FirstLastPrompt,
+  buildWan22I2VPrompt,
+  ComfyClient,
+} from "@takeboard/executor-comfy";
 import type { FastifyInstance } from "fastify";
 import { projectKey } from "./project-routes.js";
 import { ProjectStore } from "./storage/project-store.js";
@@ -32,7 +36,10 @@ export function registerGenerationRoutes(
   const root = resolve(projectsRoot);
   const comfy = new ComfyClient(comfyUrl);
 
-  app.post<{ Params: { key: string } }>("/api/projects/:key/assets", async (request, reply) => {
+  app.post<{
+    Params: { key: string };
+    Querystring: { kind?: string; name?: string };
+  }>("/api/projects/:key/assets", async (request, reply) => {
     const key = projectKey(request.params.key);
     if (!key) return await reply.code(400).send({ error: "项目标识无效" });
     const upload = await request.file();
@@ -43,6 +50,10 @@ export function registerGenerationRoutes(
     const timestamp = toIsoTimestamp();
     const milliseconds = Date.now();
     const assetId = createTakeBoardId("asset", milliseconds);
+    const entityKind = ["character", "location", "prop"].includes(request.query.kind ?? "")
+      ? (request.query.kind as "character" | "location" | "prop")
+      : null;
+    const entityId = entityKind ? createTakeBoardId("entity", milliseconds) : null;
     const safeExtension = extname(basename(upload.filename)).toLowerCase().slice(0, 12);
     const storagePath = `assets/originals/${assetId}${safeExtension}`;
     const directory = join(root, key);
@@ -64,13 +75,27 @@ export function registerGenerationRoutes(
         createdAt: timestamp,
         updatedAt: timestamp,
       });
+      if (entityKind && entityId) {
+        current.snapshot.entities.push({
+          id: entityId,
+          projectId: current.snapshot.project.id,
+          kind: entityKind,
+          name:
+            request.query.name?.trim().slice(0, 200) ||
+            basename(upload.filename, extname(upload.filename)),
+          description: "",
+          referenceAssetIds: [assetId],
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        });
+      }
       const scene = current.snapshot.scenes[0];
       if (scene) {
         current.snapshot.canvasItems.push({
           id: createTakeBoardId("canvas_item", milliseconds),
           sceneId: scene.id,
-          refType: "asset",
-          refId: assetId,
+          refType: entityId ? "entity" : "asset",
+          refId: entityId ?? assetId,
           x: -170,
           y: 180 + Math.max(0, current.snapshot.assets.length - 1) * 190,
           width: 250,
@@ -86,7 +111,7 @@ export function registerGenerationRoutes(
       current.snapshot.exportedAt = timestamp;
       const saved = await store.save(current.snapshot, {
         type: "asset.imported",
-        payload: { assetId, mediaType: kind },
+        payload: { assetId, mediaType: kind, entityId, entityKind },
       });
       return await reply.code(201).send({ key, ...saved });
     } finally {
@@ -125,9 +150,15 @@ export function registerGenerationRoutes(
         if (!current) return await reply.code(404).send({ error: "项目不存在" });
         const shot = current.snapshot.shots.find((item) => item.id === request.params.shotId);
         if (!shot) return await reply.code(404).send({ error: "镜头不存在" });
-        const inputAsset = [...current.snapshot.assets]
-          .reverse()
-          .find((asset) => asset.mediaType === "image");
+        const body =
+          typeof request.body === "object" && request.body !== null
+            ? (request.body as Record<string, unknown>)
+            : {};
+        const requestedAssetId =
+          typeof body.firstFrameAssetId === "string" ? body.firstFrameAssetId : null;
+        const inputAsset = requestedAssetId
+          ? current.snapshot.assets.find((asset) => asset.id === requestedAssetId)
+          : [...current.snapshot.assets].reverse().find((asset) => asset.mediaType === "image");
         if (!inputAsset) return await reply.code(409).send({ error: "请先上传一张首帧图片" });
 
         const bytes = await readFile(join(directory, inputAsset.storagePath));
@@ -137,17 +168,78 @@ export function registerGenerationRoutes(
           `takeboard_${current.snapshot.project.id}_${inputAsset.id}${extension}`,
           inputAsset.mimeType,
         );
-        const seed = Math.floor(Math.random() * 2_147_483_647);
-        const size = resolution(shot.aspectRatio);
-        const prompt = buildWan22I2VPrompt({
+        const recipePath =
+          typeof body.recipePath === "string" ? body.recipePath : "Kino/Kino_Wan22_I2V.json";
+        const firstLast = recipePath.endsWith("Kino_Wan22_FLF2V.json");
+        if (!recipePath.endsWith("Kino_Wan22_I2V.json") && !firstLast) {
+          return await reply.code(422).send({
+            error:
+              "该 Workflow 已检测，但尚未映射为 TakeBoard 原生 Recipe；请进入 ComfyUI 编辑或运行",
+          });
+        }
+        const requestedLastAssetId =
+          typeof body.lastFrameAssetId === "string" ? body.lastFrameAssetId : null;
+        const lastAsset = requestedLastAssetId
+          ? current.snapshot.assets.find((asset) => asset.id === requestedLastAssetId)
+          : null;
+        if (firstLast && !lastAsset) {
+          return await reply.code(409).send({ error: "首尾帧模式需要选择结束帧" });
+        }
+        const seed =
+          typeof body.seed === "number" && Number.isSafeInteger(body.seed) && body.seed >= 0
+            ? body.seed
+            : Math.floor(Math.random() * 2_147_483_647);
+        const fallbackSize = resolution(shot.aspectRatio);
+        const width =
+          typeof body.width === "number" && body.width >= 256 && body.width <= 2048
+            ? Math.round(body.width / 32) * 32
+            : fallbackSize.width;
+        const height =
+          typeof body.height === "number" && body.height >= 256 && body.height <= 2048
+            ? Math.round(body.height / 32) * 32
+            : fallbackSize.height;
+        const durationSeconds =
+          typeof body.durationSeconds === "number" &&
+          body.durationSeconds >= 1 &&
+          body.durationSeconds <= 15
+            ? body.durationSeconds
+            : shot.durationSeconds;
+        const fps =
+          typeof body.fps === "number" && body.fps >= 8 && body.fps <= 60
+            ? Math.round(body.fps)
+            : 16;
+        const positivePrompt =
+          typeof body.prompt === "string" && body.prompt.trim()
+            ? body.prompt.trim().slice(0, 20_000)
+            : shot.intent;
+        const negativePrompt =
+          typeof body.negativePrompt === "string" && body.negativePrompt.trim()
+            ? body.negativePrompt.trim().slice(0, 10_000)
+            : undefined;
+        let lastComfyImage: string | null = null;
+        if (lastAsset) {
+          const lastBytes = await readFile(join(directory, lastAsset.storagePath));
+          lastComfyImage = await comfy.uploadImage(
+            new Uint8Array(lastBytes),
+            `takeboard_${current.snapshot.project.id}_${lastAsset.id}${extname(lastAsset.originalName) || ".png"}`,
+            lastAsset.mimeType,
+          );
+        }
+        const recipeInput = {
           image: comfyImage,
-          positivePrompt: shot.intent,
-          width: size.width,
-          height: size.height,
-          durationSeconds: shot.durationSeconds,
+          positivePrompt,
+          ...(negativePrompt ? { negativePrompt } : {}),
+          width,
+          height,
+          durationSeconds,
+          fps,
           seed,
           filenamePrefix: `takeboard/${current.snapshot.project.id}/${shot.id}`,
-        });
+        };
+        const prompt =
+          firstLast && lastComfyImage
+            ? buildWan22FirstLastPrompt({ ...recipeInput, lastImage: lastComfyImage })
+            : buildWan22I2VPrompt(recipeInput);
         const promptId = await comfy.submit(prompt);
         const timestamp = toIsoTimestamp();
         const milliseconds = Date.now();
@@ -156,7 +248,7 @@ export function registerGenerationRoutes(
           id: runId,
           shotId: shot.id,
           recipeId: createTakeBoardId("recipe", milliseconds),
-          recipeVersion: "wan22-i2v-turbo@1",
+          recipeVersion: firstLast ? "wan22-flf2v@1" : "wan22-i2v-turbo@1",
           workflowSha256: sha256(JSON.stringify(prompt)),
           workerId: createTakeBoardId("worker", milliseconds),
           promptId,
@@ -168,8 +260,26 @@ export function registerGenerationRoutes(
               refId: inputAsset.id,
               assetSha256: inputAsset.sha256,
             },
+            ...(lastAsset
+              ? [
+                  {
+                    slot: "last_image",
+                    refType: "asset" as const,
+                    refId: lastAsset.id,
+                    assetSha256: lastAsset.sha256,
+                  },
+                ]
+              : []),
           ],
-          parameters: { seed, ...size, durationSeconds: shot.durationSeconds, fps: 16 },
+          parameters: {
+            seed,
+            width,
+            height,
+            durationSeconds,
+            fps,
+            recipePath,
+            prompt: positivePrompt,
+          },
           errorCode: null,
           errorMessage: null,
           createdAt: timestamp,
@@ -181,7 +291,11 @@ export function registerGenerationRoutes(
         current.snapshot.exportedAt = timestamp;
         const saved = await store.save(current.snapshot, {
           type: "run.submitted",
-          payload: { runId, promptId, recipe: "wan22-i2v-turbo@1" },
+          payload: {
+            runId,
+            promptId,
+            recipe: firstLast ? "wan22-flf2v@1" : "wan22-i2v-turbo@1",
+          },
         });
         return await reply.code(202).send({ key, runId, promptId, ...saved });
       } catch (error) {

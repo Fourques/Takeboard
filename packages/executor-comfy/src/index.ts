@@ -150,6 +150,30 @@ export function buildWan22I2VPrompt(input: Wan22Input): ComfyPrompt {
   };
 }
 
+export type Wan22FirstLastInput = Wan22Input & { lastImage: string };
+
+export function buildWan22FirstLastPrompt(input: Wan22FirstLastInput): ComfyPrompt {
+  const fps = input.fps ?? 16;
+  const length = Math.floor(input.durationSeconds * fps + 1);
+  const base = buildWan22I2VPrompt(input);
+  base.last_image = { class_type: "LoadImage", inputs: { image: input.lastImage } };
+  base.latent = {
+    class_type: "WanFirstLastFrameToVideo",
+    inputs: {
+      width: input.width,
+      height: input.height,
+      length,
+      batch_size: 1,
+      positive: ["positive", 0],
+      negative: ["negative", 0],
+      vae: ["vae", 0],
+      start_image: ["image", 0],
+      end_image: ["last_image", 0],
+    },
+  };
+  return base;
+}
+
 export type ComfyOutputFile = { filename: string; subfolder: string; type: string };
 
 export class ComfyClient {

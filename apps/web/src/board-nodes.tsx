@@ -39,8 +39,12 @@ function EntityNode({ data }: NodeProps<BoardNode>) {
   return (
     <article className="board-card entity-node">
       <Port type="source" position={Position.Right} />
-      <div className="node-media portrait-art" role="img" aria-label="林夏角色参考图">
-        <div className="portrait-silhouette" />
+      <div className="node-media portrait-art" role="img" aria-label="人物或场景参考图">
+        {data.mediaUrl ? (
+          <img src={data.mediaUrl} alt="" />
+        ) : (
+          <div className="portrait-silhouette" />
+        )}
         <span>CHARACTER REF</span>
       </div>
       <div className="node-heading compact">

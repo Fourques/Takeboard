@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ProjectCatalogItem, WorkerStatus } from "./api";
+import { ThemeSwitcher } from "./theme-switcher";
 
 type NewProjectInput = {
   title: string;
@@ -41,17 +42,20 @@ export function ProjectHub({
             <span>OPEN FILMMAKING CANVAS</span>
           </div>
         </div>
-        <div className={`worker-pill worker-${worker?.status ?? "loading"}`}>
-          <i />
-          <div>
-            <strong>
-              {worker?.status === "ready"
-                ? "4090 工作站在线"
-                : worker?.status === "offline"
-                  ? "工作站离线"
-                  : "正在连接工作站"}
-            </strong>
-            <span>{worker?.device ?? "ComfyUI worker"}</span>
+        <div className="hub-header-actions">
+          <ThemeSwitcher />
+          <div className={`worker-pill worker-${worker?.status ?? "loading"}`}>
+            <i />
+            <div>
+              <strong>
+                {worker?.status === "ready"
+                  ? "4090 工作站在线"
+                  : worker?.status === "offline"
+                    ? "工作站离线"
+                    : "正在连接工作站"}
+              </strong>
+              <span>{worker?.device ?? "ComfyUI worker"}</span>
+            </div>
           </div>
         </div>
       </header>

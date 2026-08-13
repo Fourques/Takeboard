@@ -15,6 +15,7 @@ Environment=TAKEBOARD_PORT=48120
 Environment=TAKEBOARD_WEB_ROOT=/home/duanqw/Opc/TakeBoard/apps/web/dist
 Environment=TAKEBOARD_DATA_ROOT=/home/duanqw/TakeBoardData
 Environment=COMFY_URL=http://127.0.0.1:8188
+Environment=COMFY_EDITOR_URL=http://127.0.0.1:48188
 
 [Install]
 WantedBy=default.target

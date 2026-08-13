@@ -51,7 +51,16 @@ test("a user can create and reopen a real project", async ({ page }) => {
 
   await expect(page.getByText(title, { exact: true }).first()).toBeVisible();
   await expect(page.getByText("SH-01", { exact: true }).first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "添加首帧素材" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "快速添加首帧" })).toBeVisible();
+  await page.getByRole("button", { name: "彩色主题" }).click();
+  await page.getByRole("button", { name: "工作流", exact: false }).first().click();
+  await expect(page.getByRole("heading", { name: "工作流与模型" })).toBeVisible();
+  await page.screenshot({ path: "test-results/takeboard-workflow-studio.png", fullPage: true });
+  await page.getByRole("button", { name: "关闭工作流面板" }).click();
+  await page.getByRole("button", { name: "资产库", exact: false }).first().click();
+  await expect(page.getByRole("heading", { name: "项目资产库" })).toBeVisible();
+  await page.screenshot({ path: "test-results/takeboard-asset-library.png", fullPage: true });
+  await page.getByRole("button", { name: "关闭资产库" }).click();
   await page.screenshot({ path: "test-results/takeboard-real-project.png", fullPage: true });
 
   await page.getByRole("button", { name: "项目主页" }).click();

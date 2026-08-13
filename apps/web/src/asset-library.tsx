@@ -1,0 +1,134 @@
+import type { Asset, Entity } from "@takeboard/contracts";
+import { useMemo, useRef, useState } from "react";
+import { projectApi } from "./api";
+
+type AssetKind = "character" | "location" | "prop";
+
+export function AssetLibrary({
+  assets,
+  busy,
+  entities,
+  onClose,
+  onPickFrame,
+  onUpload,
+  open,
+  projectKey,
+}: {
+  assets: Asset[];
+  busy: boolean;
+  entities: Entity[];
+  onClose: () => void;
+  onPickFrame: (assetId: string, slot: "first" | "last") => void;
+  onUpload: (file: File, metadata: { kind: AssetKind; name: string }) => Promise<void>;
+  open: boolean;
+  projectKey: string;
+}) {
+  const [kind, setKind] = useState<AssetKind>("character");
+  const [name, setName] = useState("");
+  const input = useRef<HTMLInputElement>(null);
+  const entityCards = useMemo(
+    () => entities.filter((entity) => entity.kind === kind),
+    [entities, kind],
+  );
+
+  if (!open) return null;
+  return (
+    <div className="studio-backdrop asset-backdrop">
+      <aside className="asset-library">
+        <header className="studio-header">
+          <div>
+            <span className="section-kicker">ASSET VAULT</span>
+            <h2>项目资产库</h2>
+            <p>人物、场景和道具素材留在自己的项目中</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="关闭资产库">
+            ×
+          </button>
+        </header>
+        <div className="asset-kind-tabs">
+          {(["character", "location", "prop"] as const).map((item) => (
+            <button
+              type="button"
+              key={item}
+              className={kind === item ? "active" : ""}
+              onClick={() => setKind(item)}
+            >
+              {item === "character" ? "人物" : item === "location" ? "场景" : "道具"}
+              <span>{entities.filter((entity) => entity.kind === item).length}</span>
+            </button>
+          ))}
+        </div>
+        <div className="asset-grid">
+          {entityCards.map((entity) => {
+            const asset = assets.find((item) => entity.referenceAssetIds.includes(item.id));
+            return (
+              <article className="asset-vault-card" key={entity.id}>
+                {asset ? (
+                  <img src={projectApi.assetUrl(projectKey, asset.id)} alt="" />
+                ) : (
+                  <div className="asset-placeholder">{entity.name.slice(0, 1)}</div>
+                )}
+                <div>
+                  <strong>{entity.name}</strong>
+                  <span>
+                    {kind === "character"
+                      ? "人物参考"
+                      : kind === "location"
+                        ? "场景参考"
+                        : "道具参考"}
+                  </span>
+                </div>
+                {asset?.mediaType === "image" ? (
+                  <div className="asset-slot-actions">
+                    <button type="button" onClick={() => onPickFrame(asset.id, "first")}>
+                      设为首帧
+                    </button>
+                    <button type="button" onClick={() => onPickFrame(asset.id, "last")}>
+                      设为尾帧
+                    </button>
+                  </div>
+                ) : null}
+              </article>
+            );
+          })}
+          {entityCards.length === 0 ? (
+            <div className="asset-empty">
+              <span>◇</span>
+              <strong>
+                还没有{kind === "character" ? "人物" : kind === "location" ? "场景" : "道具"}资产
+              </strong>
+              <p>添加后可以拖入镜头，或设为首帧、尾帧和参考图。</p>
+            </div>
+          ) : null}
+        </div>
+        <div className="asset-upload-bar">
+          <input
+            ref={input}
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) void onUpload(file, { kind, name });
+              event.target.value = "";
+            }}
+          />
+          <input
+            aria-label="资产名称"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder={
+              kind === "character"
+                ? "人物名称（可选）"
+                : kind === "location"
+                  ? "场景名称（可选）"
+                  : "道具名称（可选）"
+            }
+          />
+          <button type="button" disabled={busy} onClick={() => input.current?.click()}>
+            ＋ 添加{kind === "character" ? "人物" : kind === "location" ? "场景" : "道具"}资产
+          </button>
+        </div>
+      </aside>
+    </div>
+  );
+}

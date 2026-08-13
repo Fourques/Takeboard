@@ -7,11 +7,13 @@ import { registerDemoRoutes } from "./demo/routes.js";
 import { registerGenerationRoutes } from "./generation-routes.js";
 import { registerProjectRoutes } from "./project-routes.js";
 import { registerWorkerRoutes } from "./worker-routes.js";
+import { registerWorkflowRoutes } from "./workflow-routes.js";
 
 export type AppOptions = {
   demoDirectory?: string;
   projectsRoot?: string;
   comfyUrl?: string;
+  comfyEditorUrl?: string;
   webRoot?: string | null;
 };
 
@@ -40,6 +42,11 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   registerProjectRoutes(app, projectsRoot);
   registerWorkerRoutes(app, comfyUrl);
   registerGenerationRoutes(app, projectsRoot, comfyUrl);
+  registerWorkflowRoutes(
+    app,
+    comfyUrl,
+    options.comfyEditorUrl ?? process.env.COMFY_EDITOR_URL ?? "http://127.0.0.1:48188",
+  );
 
   const webRoot = options.webRoot ?? process.env.TAKEBOARD_WEB_ROOT ?? null;
   if (webRoot && existsSync(resolve(webRoot, "index.html"))) {

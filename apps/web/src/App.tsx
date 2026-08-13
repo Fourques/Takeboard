@@ -12,11 +12,47 @@ import {
 import "@xyflow/react/dist/style.css";
 import type { Asset, ProjectSnapshot, Run, Shot, Take } from "@takeboard/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { demoApi, type ProjectCatalogItem, projectApi, type WorkerStatus } from "./api";
+import {
+  demoApi,
+  type ProjectCatalogItem,
+  projectApi,
+  type WorkerStatus,
+  type WorkflowSummary,
+  workflowApi,
+} from "./api";
+import { AssetLibrary } from "./asset-library";
 import { type BoardNode, boardNodeTypes } from "./board-nodes";
 import { ProjectHub } from "./project-hub";
+import { RecipeStudio } from "./recipe-studio";
+import { ThemeSwitcher } from "./theme-switcher";
 
 const rejectionReasons = ["角色漂移", "运动方向错误", "构图不稳定", "细节异常"];
+
+type GenerationSettings = {
+  recipePath: string;
+  prompt: string;
+  negativePrompt: string;
+  firstFrameAssetId: string | null;
+  lastFrameAssetId: string | null;
+  width: number;
+  height: number;
+  durationSeconds: number;
+  fps: number;
+  seed: number;
+};
+
+const defaultGenerationSettings: GenerationSettings = {
+  recipePath: "Kino/Kino_Wan22_I2V.json",
+  prompt: "",
+  negativePrompt: "",
+  firstFrameAssetId: null,
+  lastFrameAssetId: null,
+  width: 480,
+  height: 848,
+  durationSeconds: 5,
+  fps: 16,
+  seed: 26081301,
+};
 
 function shortId(value: string) {
   return value.slice(-6).toUpperCase();
@@ -50,13 +86,25 @@ function boardNodes(
     }
     if (item.refType === "entity") {
       const entity = snapshot.entities.find((candidate) => candidate.id === item.refId);
+      const referenceAsset = snapshot.assets.find((asset) =>
+        entity?.referenceAssetIds.includes(asset.id),
+      );
       return {
         ...common,
         data: {
           kind: "entity",
-          eyebrow: "CHARACTER",
+          eyebrow:
+            entity?.kind === "character"
+              ? "CHARACTER"
+              : entity?.kind === "location"
+                ? "LOCATION"
+                : "PROP",
           title: entity?.name ?? "角色",
           body: entity?.description ?? "",
+          mediaUrl:
+            projectKey && referenceAsset
+              ? projectApi.assetUrl(projectKey, referenceAsset.id)
+              : undefined,
         },
       };
     }
@@ -174,6 +222,11 @@ type InspectorProps = {
   projectKey: string | null;
   isDemo: boolean;
   runs: Run[];
+  settings: GenerationSettings;
+  workflow: WorkflowSummary | null;
+  onSettingsChange: (settings: GenerationSettings) => void;
+  onOpenAssets: () => void;
+  onOpenRecipes: () => void;
 };
 
 function Inspector({
@@ -188,6 +241,11 @@ function Inspector({
   projectKey,
   isDemo,
   runs,
+  settings,
+  workflow,
+  onSettingsChange,
+  onOpenAssets,
+  onOpenRecipes,
 }: InspectorProps) {
   const [selectedTakeId, setSelectedTakeId] = useState<string | null>(null);
   const [reason, setReason] = useState(rejectionReasons[0] ?? "角色漂移");
@@ -215,6 +273,157 @@ function Inspector({
         <span>{shot.aspectRatio}</span>
         <span>{workerLabel}</span>
       </div>
+
+      {!isDemo ? (
+        <section className="generation-console">
+          <button className="recipe-selector" type="button" onClick={onOpenRecipes}>
+            <span className="recipe-selector-icon">⌘</span>
+            <span>
+              <small>RECIPE</small>
+              <strong>{workflow?.name ?? "选择工作流"}</strong>
+            </span>
+            <i>{workflow?.capabilityLabel ?? "自动检测"}⌄</i>
+          </button>
+          <label className="prompt-field">
+            <span>
+              镜头提示词 <small>{settings.prompt.length}/20000</small>
+            </span>
+            <textarea
+              value={settings.prompt}
+              onChange={(event) => onSettingsChange({ ...settings, prompt: event.target.value })}
+              placeholder="描述主体、动作、镜头运动、光线与声音…"
+            />
+          </label>
+          {workflow?.inputs.includes("negative_prompt") ? (
+            <label className="negative-field">
+              <span>负面提示词</span>
+              <input
+                value={settings.negativePrompt}
+                onChange={(event) =>
+                  onSettingsChange({ ...settings, negativePrompt: event.target.value })
+                }
+                placeholder="不希望出现的内容"
+              />
+            </label>
+          ) : null}
+          <div className="frame-slots">
+            {workflow?.inputs.some(
+              (input) => input === "first_frame" || input === "reference_images",
+            ) ? (
+              <button
+                type="button"
+                className={settings.firstFrameAssetId ? "filled" : ""}
+                onClick={onOpenAssets}
+              >
+                <span>{settings.firstFrameAssetId ? "✓" : "+"}</span>
+                <div>
+                  <small>INPUT</small>
+                  <strong>
+                    {workflow.capability === "reference_video" ? "参考素材" : "起始帧"}
+                  </strong>
+                </div>
+              </button>
+            ) : null}
+            {workflow?.inputs.includes("last_frame") ? (
+              <button
+                type="button"
+                className={settings.lastFrameAssetId ? "filled" : ""}
+                onClick={onOpenAssets}
+              >
+                <span>{settings.lastFrameAssetId ? "✓" : "+"}</span>
+                <div>
+                  <small>END</small>
+                  <strong>结束帧</strong>
+                </div>
+              </button>
+            ) : null}
+          </div>
+          <div className="parameter-grid">
+            <label>
+              <span>宽度</span>
+              <input
+                type="number"
+                min={256}
+                max={2048}
+                step={32}
+                value={settings.width}
+                onChange={(event) =>
+                  onSettingsChange({ ...settings, width: Number(event.target.value) })
+                }
+              />
+            </label>
+            <label>
+              <span>高度</span>
+              <input
+                type="number"
+                min={256}
+                max={2048}
+                step={32}
+                value={settings.height}
+                onChange={(event) =>
+                  onSettingsChange({ ...settings, height: Number(event.target.value) })
+                }
+              />
+            </label>
+            <label>
+              <span>时长</span>
+              <div>
+                <input
+                  type="number"
+                  min={1}
+                  max={15}
+                  step={0.5}
+                  value={settings.durationSeconds}
+                  onChange={(event) =>
+                    onSettingsChange({ ...settings, durationSeconds: Number(event.target.value) })
+                  }
+                />
+                <i>s</i>
+              </div>
+            </label>
+            <label>
+              <span>帧率</span>
+              <div>
+                <input
+                  type="number"
+                  min={8}
+                  max={60}
+                  value={settings.fps}
+                  onChange={(event) =>
+                    onSettingsChange({ ...settings, fps: Number(event.target.value) })
+                  }
+                />
+                <i>fps</i>
+              </div>
+            </label>
+          </div>
+          <label className="seed-field">
+            <span>Seed</span>
+            <input
+              type="number"
+              min={0}
+              value={settings.seed}
+              onChange={(event) =>
+                onSettingsChange({ ...settings, seed: Number(event.target.value) })
+              }
+            />
+            <button
+              type="button"
+              onClick={() =>
+                onSettingsChange({ ...settings, seed: Math.floor(Math.random() * 2_147_483_647) })
+              }
+            >
+              随机
+            </button>
+          </label>
+          {workflow?.execution === "comfy_only" ? (
+            <div className="comfy-only-note">
+              这个 JSON 已完成检测；当前通过 ComfyUI 运行和修改，映射为原生 Recipe
+              后即可在此直接排队。
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       <div className="candidate-title-row">
         <div>
@@ -345,6 +554,12 @@ export function App() {
   const [projects, setProjects] = useState<ProjectCatalogItem[]>([]);
   const [showHub, setShowHub] = useState(true);
   const [worker, setWorker] = useState<WorkerStatus | null>(null);
+  const [workflows, setWorkflows] = useState<WorkflowSummary[]>([]);
+  const [comfyEditorUrl, setComfyEditorUrl] = useState("http://127.0.0.1:48188");
+  const [recipeOpen, setRecipeOpen] = useState(false);
+  const [assetLibraryOpen, setAssetLibraryOpen] = useState(false);
+  const [generationSettings, setGenerationSettings] =
+    useState<GenerationSettings>(defaultGenerationSettings);
   const assetInput = useRef<HTMLInputElement>(null);
 
   const acceptPayload = useCallback(
@@ -361,12 +576,19 @@ export function App() {
   );
 
   useEffect(() => {
-    void Promise.allSettled([projectApi.list(), projectApi.worker()]).then(([catalog, status]) => {
-      if (catalog.status === "fulfilled") setProjects(catalog.value.projects);
-      else setError(catalog.reason instanceof Error ? catalog.reason.message : "无法载入项目列表");
-      if (status.status === "fulfilled") setWorker(status.value);
-      else setWorker({ status: "offline", engine: "ComfyUI" });
-    });
+    void Promise.allSettled([projectApi.list(), projectApi.worker(), workflowApi.list()]).then(
+      ([catalog, status, detected]) => {
+        if (catalog.status === "fulfilled") setProjects(catalog.value.projects);
+        else
+          setError(catalog.reason instanceof Error ? catalog.reason.message : "无法载入项目列表");
+        if (status.status === "fulfilled") setWorker(status.value);
+        else setWorker({ status: "offline", engine: "ComfyUI" });
+        if (detected.status === "fulfilled") {
+          setWorkflows(detected.value.workflows);
+          setComfyEditorUrl(detected.value.editorUrl);
+        }
+      },
+    );
   }, []);
 
   useEffect(() => {
@@ -396,6 +618,12 @@ export function App() {
   const edges = useMemo(() => (snapshot ? boardEdges(snapshot) : []), [snapshot]);
   const selectedShot = snapshot?.shots.find((shot) => shot.id === selectedShotId) ?? null;
   const selectedTakes = snapshot?.takes.filter((take) => take.shotId === selectedShotId) ?? [];
+  const imageAssets = useMemo(
+    () => snapshot?.assets.filter((asset) => asset.mediaType === "image") ?? [],
+    [snapshot?.assets],
+  );
+  const selectedWorkflow =
+    workflows.find((workflow) => workflow.path === generationSettings.recipePath) ?? null;
   const approvedCount = snapshot?.shots.filter((shot) => shot.status === "approved").length ?? 0;
 
   const onNodesChange = useCallback((changes: NodeChange<BoardNode>[]) => {
@@ -470,20 +698,34 @@ export function App() {
   }, [acceptPayload]);
 
   useEffect(() => {
+    if (!selectedShot) return;
+    setGenerationSettings((current) => ({
+      ...current,
+      prompt: selectedShot.intent,
+      durationSeconds: selectedShot.durationSeconds,
+      firstFrameAssetId: current.firstFrameAssetId ?? imageAssets.at(-1)?.id ?? null,
+    }));
+  }, [imageAssets, selectedShot]);
+
+  useEffect(() => {
     if (window.sessionStorage.getItem("takeboard.resumeDemo") !== "1") return;
     window.sessionStorage.removeItem("takeboard.resumeDemo");
     void openDemo();
   }, [openDemo]);
 
   const uploadAsset = useCallback(
-    async (file: File) => {
+    async (file: File, metadata?: { kind?: "character" | "location" | "prop"; name?: string }) => {
       if (!projectKey) return;
       setBusy(true);
       setError(null);
       try {
-        const payload = await projectApi.uploadAsset(projectKey, file);
+        const payload = await projectApi.uploadAsset(projectKey, file, metadata);
         acceptPayload(payload);
-        setNotice(`已导入首帧：${file.name}`);
+        setNotice(
+          metadata?.kind
+            ? `已存入${metadata.kind === "character" ? "人物" : metadata.kind === "location" ? "场景" : "道具"}资产：${metadata.name || file.name}`
+            : `已导入首帧：${file.name}`,
+        );
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "素材导入失败");
       } finally {
@@ -493,13 +735,55 @@ export function App() {
     [acceptPayload, projectKey],
   );
 
+  const refreshWorkflows = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const detected = await workflowApi.list();
+      setWorkflows(detected.workflows);
+      setComfyEditorUrl(detected.editorUrl);
+      setNotice(`已检测 ${detected.workflows.length} 个 ComfyUI Workflow`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "工作流检测失败");
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  const importWorkflow = useCallback(
+    async (file: File) => {
+      setBusy(true);
+      setError(null);
+      try {
+        const imported = await workflowApi.import(file);
+        await refreshWorkflows();
+        setGenerationSettings((current) => ({ ...current, recipePath: imported.path }));
+        setNotice(`已导入并识别：${imported.name}`);
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "Workflow 导入失败");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [refreshWorkflows],
+  );
+
   const generateReal = useCallback(
     async (shot: Shot) => {
       if (!projectKey) return;
       setBusy(true);
       setError(null);
       try {
-        const submitted = await projectApi.generate(projectKey, shot.id);
+        if (selectedWorkflow?.execution === "comfy_only") {
+          window.open(
+            `${comfyEditorUrl}/?workflow=${encodeURIComponent(selectedWorkflow.path)}`,
+            "_blank",
+            "noopener,noreferrer",
+          );
+          setNotice("已打开 ComfyUI；这个 JSON 的输入槽位已在 TakeBoard 中识别");
+          return;
+        }
+        const submitted = await projectApi.generate(projectKey, shot.id, generationSettings);
         acceptPayload(submitted, shot.id);
         setNotice("Wan 2.2 已开始生成，运行记录已保存");
         for (let attempt = 0; attempt < 240; attempt += 1) {
@@ -519,7 +803,7 @@ export function App() {
         setBusy(false);
       }
     },
-    [acceptPayload, projectKey],
+    [acceptPayload, comfyEditorUrl, generationSettings, projectKey, selectedWorkflow],
   );
 
   const runAction = useCallback(
@@ -584,6 +868,7 @@ export function App() {
         </div>
         <div className="top-actions">
           <span className="save-status">✓ 已保存 · r{revision}</span>
+          <ThemeSwitcher compact />
           <span className="local-badge">
             <i /> LOCAL
           </span>
@@ -678,7 +963,14 @@ export function App() {
               }}
             />
             <button type="button" disabled={busy} onClick={() => assetInput.current?.click()}>
-              ＋ 添加首帧素材
+              ＋ 快速添加首帧
+            </button>
+            <button
+              type="button"
+              className="vault-button"
+              onClick={() => setAssetLibraryOpen(true)}
+            >
+              ◇ 打开资产库
             </button>
             <small>
               {snapshot.assets.filter((asset) => asset.mediaType === "image").length} 张图片已入库
@@ -704,6 +996,16 @@ export function App() {
             <strong>清晨的旧渡口</strong>
           </div>
           <div className="canvas-legend">
+            {projectMode === "project" ? (
+              <div className="canvas-primary-actions">
+                <button type="button" onClick={() => setRecipeOpen(true)}>
+                  ⌘ 工作流
+                </button>
+                <button type="button" onClick={() => setAssetLibraryOpen(true)}>
+                  ◇ 资产库
+                </button>
+              </div>
+            ) : null}
             <span>
               <i className="legend-reference" />
               引用
@@ -760,6 +1062,11 @@ export function App() {
           projectKey={projectMode === "project" ? projectKey : null}
           isDemo={projectMode === "demo"}
           runs={snapshot.runs}
+          settings={generationSettings}
+          workflow={selectedWorkflow}
+          onSettingsChange={setGenerationSettings}
+          onOpenAssets={() => setAssetLibraryOpen(true)}
+          onOpenRecipes={() => setRecipeOpen(true)}
           workerLabel={projectMode === "demo" ? "Fake Wan I2V" : "Wan 2.2 I2V · RTX 4090"}
           onGenerate={() =>
             projectMode === "demo"
@@ -790,6 +1097,45 @@ export function App() {
               selectedShot.id,
             )
           }
+        />
+      ) : null}
+
+      <RecipeStudio
+        busy={busy}
+        editorUrl={comfyEditorUrl}
+        onClose={() => setRecipeOpen(false)}
+        onImport={importWorkflow}
+        onRefresh={refreshWorkflows}
+        onSelect={(workflow) => {
+          setGenerationSettings((current) => ({
+            ...current,
+            recipePath: workflow.path,
+            fps: workflow.name.toLowerCase().includes("minimax") ? 24 : current.fps,
+          }));
+          setRecipeOpen(false);
+          setNotice(`已切换：${workflow.name}`);
+        }}
+        open={recipeOpen}
+        selectedPath={generationSettings.recipePath}
+        workflows={workflows}
+      />
+      {projectKey ? (
+        <AssetLibrary
+          assets={snapshot.assets}
+          busy={busy}
+          entities={snapshot.entities}
+          onClose={() => setAssetLibraryOpen(false)}
+          onPickFrame={(assetId, slot) => {
+            setGenerationSettings((current) => ({
+              ...current,
+              [slot === "first" ? "firstFrameAssetId" : "lastFrameAssetId"]: assetId,
+            }));
+            setAssetLibraryOpen(false);
+            setNotice(slot === "first" ? "已设为起始帧" : "已设为结束帧");
+          }}
+          onUpload={async (file, metadata) => await uploadAsset(file, metadata)}
+          open={assetLibraryOpen}
+          projectKey={projectKey}
         />
       ) : null}
 

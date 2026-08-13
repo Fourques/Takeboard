@@ -25,6 +25,28 @@ export type WorkerStatus = {
   error?: string;
 };
 
+export type WorkflowCapability =
+  | "text_to_image"
+  | "image_to_image"
+  | "text_to_video"
+  | "image_to_video"
+  | "first_last_video"
+  | "reference_video";
+
+export type WorkflowSummary = {
+  id: string;
+  path: string;
+  name: string;
+  capability: WorkflowCapability;
+  capabilityLabel: string;
+  inputs: string[];
+  models: string[];
+  nodeCount: number;
+  source: "comfyui";
+  editorUrl: string;
+  execution: "native" | "comfy_only";
+};
+
 async function request(path: string, options?: RequestInit): Promise<DemoPayload> {
   const headers = new Headers(options?.headers);
   if (options?.body !== undefined) {
@@ -99,18 +121,40 @@ export const projectApi = {
         body: JSON.stringify({ itemId, x, y }),
       },
     ),
-  uploadAsset: async (key: string, file: File) => {
+  uploadAsset: async (
+    key: string,
+    file: File,
+    metadata?: { kind?: "character" | "location" | "prop"; name?: string },
+  ) => {
     const body = new FormData();
     body.set("file", file);
+    const query = new URLSearchParams();
+    if (metadata?.kind) query.set("kind", metadata.kind);
+    if (metadata?.name) query.set("name", metadata.name);
     return await jsonRequest<DemoPayload & { key: string }>(
-      `/api/projects/${encodeURIComponent(key)}/assets`,
+      `/api/projects/${encodeURIComponent(key)}/assets${query.size ? `?${query}` : ""}`,
       { method: "POST", body },
     );
   },
-  generate: (key: string, shotId: string) =>
+  generate: (
+    key: string,
+    shotId: string,
+    settings: {
+      recipePath: string;
+      prompt: string;
+      negativePrompt: string;
+      firstFrameAssetId: string | null;
+      lastFrameAssetId: string | null;
+      width: number;
+      height: number;
+      durationSeconds: number;
+      fps: number;
+      seed: number;
+    },
+  ) =>
     jsonRequest<DemoPayload & { key: string; runId: string; promptId: string }>(
       `/api/projects/${encodeURIComponent(key)}/shots/${encodeURIComponent(shotId)}/generate`,
-      { method: "POST" },
+      { method: "POST", body: JSON.stringify(settings) },
     ),
   run: (key: string, runId: string) =>
     jsonRequest<DemoPayload & { key: string; runId: string; status: string }>(
@@ -129,4 +173,20 @@ export const projectApi = {
   assetUrl: (key: string, assetId: string) =>
     `/api/projects/${encodeURIComponent(key)}/assets/${encodeURIComponent(assetId)}/content`,
   worker: () => jsonRequest<WorkerStatus>("/api/workers/comfy"),
+};
+
+export const workflowApi = {
+  list: () =>
+    jsonRequest<{ editorUrl: string; workflows: WorkflowSummary[]; error?: string }>(
+      "/api/workflows",
+    ),
+  rawUrl: (path: string) => `/api/workflows/raw?path=${encodeURIComponent(path)}`,
+  import: async (file: File) => {
+    const body = new FormData();
+    body.set("file", file);
+    return await jsonRequest<WorkflowSummary>("/api/workflows/import", {
+      method: "POST",
+      body,
+    });
+  },
 };
