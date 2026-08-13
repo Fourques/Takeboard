@@ -23,6 +23,21 @@ function multipartFile(filename: string, mimeType: string, bytes: Uint8Array) {
   };
 }
 
+function validPng() {
+  return new Uint8Array(
+    Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+      "base64",
+    ),
+  );
+}
+
+function objectInfo(classTypes: string[]) {
+  return Object.fromEntries(
+    classTypes.map((classType) => [classType, { input: { required: {} } }]),
+  );
+}
+
 async function projectFixture() {
   const root = await mkdtemp(join(tmpdir(), "takeboard-generation-"));
   cleanup.push(() => rm(root, { recursive: true, force: true }));
@@ -49,7 +64,7 @@ describe("real generation routes", () => {
     const response = await app.inject({
       method: "POST",
       url: `/api/projects/${key}/shots/${shotId}/generate`,
-      payload: { recipePath: "Kino/Kino_MinimaxH3_T2V.json" },
+      payload: { recipePath: "Kino/Unknown_Model.json" },
     });
 
     expect(response.statusCode).toBe(422);
@@ -94,7 +109,7 @@ describe("real generation routes", () => {
     const uploaded = await app.inject({
       method: "POST",
       url: `/api/projects/${key}/assets`,
-      ...multipartFile("frame.png", "image/png", new Uint8Array([137, 80, 78, 71])),
+      ...multipartFile("frame.png", "image/png", validPng()),
     });
     const assetId = uploaded.json().snapshot.assets[0].id as string;
     vi.stubGlobal(
@@ -103,6 +118,24 @@ describe("real generation routes", () => {
         const url = String(input);
         if (url.endsWith("/upload/image")) {
           return Response.json({ name: "frame.png", subfolder: "", type: "input" });
+        }
+        if (url.endsWith("/object_info")) {
+          return Response.json(
+            objectInfo([
+              "LoadImage",
+              "VAELoader",
+              "CLIPLoader",
+              "CLIPTextEncode",
+              "UNETLoader",
+              "LoraLoaderModelOnly",
+              "ModelSamplingSD3",
+              "WanImageToVideo",
+              "KSamplerAdvanced",
+              "VAEDecode",
+              "CreateVideo",
+              "SaveVideo",
+            ]),
+          );
         }
         if (url.endsWith("/prompt")) return Response.json({ prompt_id: "prompt-1" });
         if (url.endsWith("/history/prompt-1")) {
@@ -130,7 +163,7 @@ describe("real generation routes", () => {
         prompt: "人物缓慢回头",
       },
     });
-    expect(submitted.statusCode).toBe(202);
+    expect(submitted.statusCode, submitted.body).toBe(202);
 
     const polled = await app.inject({
       method: "GET",
@@ -143,6 +176,79 @@ describe("real generation routes", () => {
         runs: [expect.objectContaining({ errorCode: "NO_VIDEO_OUTPUT" })],
         takes: [],
       },
+    });
+  });
+
+  it("rejects spoofed image MIME before storing the asset", async () => {
+    const { app, key } = await projectFixture();
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/projects/${key}/assets`,
+      ...multipartFile("fake.png", "image/png", new TextEncoder().encode("not an image")),
+    });
+    expect(response.statusCode).toBe(422);
+    expect(response.json().error).toContain("签名");
+  });
+
+  it("submits native MiniMax text-to-video without uploading a frame", async () => {
+    const { app, key, shotId } = await projectFixture();
+    let submittedPrompt: Record<string, unknown> | null = null;
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/object_info")) {
+        return Response.json(
+          objectInfo([
+            "UNETLoader",
+            "CLIPLoader",
+            "VAELoader",
+            "MiniMaxH3ImageToVideo",
+            "RandomNoise",
+            "BasicGuider",
+            "KSamplerSelect",
+            "BasicScheduler",
+            "SamplerCustomAdvanced",
+            "VAEDecode",
+            "CreateVideo",
+            "SaveVideo",
+          ]),
+        );
+      }
+      if (url.endsWith("/prompt")) {
+        submittedPrompt = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return Response.json({ prompt_id: "minimax-prompt-1" });
+      }
+      throw new Error(`Unexpected ComfyUI request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/projects/${key}/shots/${shotId}/generate`,
+      payload: {
+        recipePath: "Kino/Kino_MinimaxH3_T2V.json",
+        prompt: "A silver river at dawn.",
+        width: 480,
+        height: 848,
+        durationSeconds: 5,
+        fps: 24,
+        steps: 20,
+      },
+    });
+
+    expect(response.statusCode, response.body).toBe(202);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/upload/image"))).toBe(false);
+    expect(submittedPrompt).toMatchObject({
+      prompt: {
+        conditioning: {
+          class_type: "MiniMaxH3ImageToVideo",
+          inputs: { prompt: "A silver river at dawn.", width: 480, height: 864, length: 124 },
+        },
+      },
+    });
+    expect(response.json().snapshot.runs[0]).toMatchObject({
+      recipeVersion: "minimax-h3@1",
+      inputs: [],
+      parameters: { width: 480, height: 864, steps: 20 },
     });
   });
 });

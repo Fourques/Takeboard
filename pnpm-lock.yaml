@@ -100,7 +100,11 @@ importers:
 
   packages/executor-comfy: {}
 
-  packages/recipe: {}
+  packages/recipe:
+    dependencies:
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
 
   packages/test-fixtures: {}
 

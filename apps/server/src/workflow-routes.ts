@@ -75,7 +75,9 @@ function detectInputs(capability: Capability, nodes: WorkflowNode[]) {
   if (["image_to_image", "image_to_video", "first_last_video"].includes(capability)) {
     slots.add("first_frame");
   }
-  if (capability === "first_last_video") slots.add("last_frame");
+  if (capability === "first_last_video" || /last[_ ]frame|end[_ ]image|结束帧|尾帧/.test(text)) {
+    slots.add("last_frame");
+  }
   if (capability === "reference_video") {
     slots.add("reference_images");
     slots.add("reference_videos");
@@ -121,21 +123,30 @@ function displayName(path: string) {
 function workflowSummary(path: string, workflow: WorkflowJson, editorUrl: string) {
   const nodes = allNodes(workflow);
   const capability = detectCapability(path, nodes);
+  const native =
+    path.endsWith("Kino_Wan22_I2V.json") ||
+    path.endsWith("Kino_Wan22_FLF2V.json") ||
+    path.endsWith("Kino_MinimaxH3_I2V.json") ||
+    path.endsWith("Kino_MinimaxH3_T2V.json") ||
+    path.endsWith("Kino_LTX23_I2V_Draft.json");
+  const inputs = detectInputs(capability, nodes).filter((slot) => {
+    if (!native) return true;
+    if (slot === "cfg") return false;
+    if (slot === "steps" && !path.toLowerCase().includes("minimax")) return false;
+    return true;
+  });
   return {
     id: Buffer.from(path).toString("base64url"),
     path,
     name: displayName(path),
     capability,
     capabilityLabel: capabilityLabels[capability],
-    inputs: detectInputs(capability, nodes),
+    inputs,
     models: detectModels(nodes),
     nodeCount: nodes.length,
     source: "comfyui" as const,
     editorUrl,
-    execution:
-      path.endsWith("Kino_Wan22_I2V.json") || path.endsWith("Kino_Wan22_FLF2V.json")
-        ? ("native" as const)
-        : ("comfy_only" as const),
+    execution: native ? ("native" as const) : ("comfy_only" as const),
   };
 }
 

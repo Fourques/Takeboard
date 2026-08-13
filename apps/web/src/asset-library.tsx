@@ -97,7 +97,7 @@ export function AssetLibrary({
                 key={entity.id}
               >
                 {asset ? (
-                  <img src={projectApi.assetUrl(projectKey, asset.id)} alt="" />
+                  <img src={projectApi.assetUrl(projectKey, asset.id, true)} alt="" />
                 ) : (
                   <div className="asset-placeholder">{entity.name.slice(0, 1)}</div>
                 )}
@@ -129,7 +129,7 @@ export function AssetLibrary({
               className={`asset-vault-card ${asset.id === selectedFirstFrameId || asset.id === selectedLastFrameId ? "selected" : ""}`}
               key={asset.id}
             >
-              <img src={projectApi.assetUrl(projectKey, asset.id)} alt="" />
+              <img src={projectApi.assetUrl(projectKey, asset.id, true)} alt="" />
               <div>
                 <strong>{asset.originalName}</strong>
                 <span>未分类图片</span>

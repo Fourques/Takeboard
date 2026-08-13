@@ -37,7 +37,7 @@ export const runSchema = timestampsSchema.extend({
   workerId: workerIdSchema,
   promptId: z.string().min(1).max(500).nullable().default(null),
   status: runStatusSchema,
-  inputs: z.array(runInputSnapshotSchema).min(1),
+  inputs: z.array(runInputSnapshotSchema).default([]),
   parameters: z.record(z.string(), jsonValueSchema),
   errorCode: z.string().max(200).nullable().default(null),
   errorMessage: z.string().max(20_000).nullable().default(null),

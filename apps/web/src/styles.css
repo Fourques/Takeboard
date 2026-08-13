@@ -2088,6 +2088,7 @@ html[data-theme="chroma"] body {
 .canvas-primary-actions {
   display: flex;
   gap: 6px;
+  pointer-events: auto;
 }
 
 .canvas-primary-actions button {

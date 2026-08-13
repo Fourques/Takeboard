@@ -58,7 +58,7 @@ export function RecipeStudio({
     [group, query, workflows],
   );
   const selectedEditorUrl = selectedPath
-    ? `${editorUrl}/?workflow=${encodeURIComponent(selectedPath)}`
+    ? `${editorUrl}/?takeboard_workflow=${encodeURIComponent(selectedPath)}`
     : editorUrl;
 
   if (!open) return null;

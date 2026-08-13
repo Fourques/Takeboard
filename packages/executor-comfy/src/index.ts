@@ -178,6 +178,292 @@ export function buildWan22FirstLastPrompt(input: Wan22FirstLastInput): ComfyProm
   return base;
 }
 
+export type MiniMaxH3Input = {
+  positivePrompt: string;
+  firstImage?: string;
+  lastImage?: string;
+  width: number;
+  height: number;
+  durationSeconds: number;
+  fps?: number;
+  seed: number;
+  steps?: number;
+  filenamePrefix: string;
+};
+
+export function miniMaxH3FrameCount(durationSeconds: number, fps = 24) {
+  const desired = Math.max(5, durationSeconds * fps);
+  return Math.max(5, Math.ceil((desired - 5) / 17) * 17 + 5);
+}
+
+export function miniMaxH3Resolution(width: number, height: number) {
+  const safeWidth = Math.max(256, width);
+  const safeHeight = Math.max(256, height);
+  const scale = Math.min(
+    1,
+    768 / Math.min(safeWidth, safeHeight),
+    1344 / Math.max(safeWidth, safeHeight),
+  );
+  return {
+    width: Math.max(256, Math.round((safeWidth * scale) / 32) * 32),
+    height: Math.max(256, Math.round((safeHeight * scale) / 32) * 32),
+  };
+}
+
+export function buildMiniMaxH3Prompt(input: MiniMaxH3Input): ComfyPrompt {
+  const fps = input.fps ?? 24;
+  const steps = input.steps ?? 20;
+  const size = miniMaxH3Resolution(input.width, input.height);
+  const prompt: ComfyPrompt = {
+    model: {
+      class_type: "UNETLoader",
+      inputs: {
+        unet_name: "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+        weight_dtype: "default",
+      },
+    },
+    clip: {
+      class_type: "CLIPLoader",
+      inputs: {
+        clip_name: "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+        type: "minimax",
+        device: "default",
+      },
+    },
+    vae: {
+      class_type: "VAELoader",
+      inputs: { vae_name: "minimax_h3_video_vae_fp16.safetensors" },
+    },
+    conditioning: {
+      class_type: "MiniMaxH3ImageToVideo",
+      inputs: {
+        clip: ["clip", 0],
+        vae: ["vae", 0],
+        prompt: input.positivePrompt,
+        width: size.width,
+        height: size.height,
+        length: miniMaxH3FrameCount(input.durationSeconds, fps),
+      },
+    },
+    noise: { class_type: "RandomNoise", inputs: { noise_seed: input.seed } },
+    guider: {
+      class_type: "BasicGuider",
+      inputs: { model: ["model", 0], conditioning: ["conditioning", 0] },
+    },
+    sampler: { class_type: "KSamplerSelect", inputs: { sampler_name: "res_multistep" } },
+    scheduler: {
+      class_type: "BasicScheduler",
+      inputs: { model: ["model", 0], scheduler: "simple", steps, denoise: 1 },
+    },
+    sampled: {
+      class_type: "SamplerCustomAdvanced",
+      inputs: {
+        noise: ["noise", 0],
+        guider: ["guider", 0],
+        sampler: ["sampler", 0],
+        sigmas: ["scheduler", 0],
+        latent_image: ["conditioning", 1],
+      },
+    },
+    decoded: {
+      class_type: "VAEDecode",
+      inputs: { samples: ["sampled", 0], vae: ["vae", 0] },
+    },
+    video: {
+      class_type: "CreateVideo",
+      inputs: { images: ["decoded", 0], fps, bit_depth: 10 },
+    },
+    save: {
+      class_type: "SaveVideo",
+      inputs: {
+        video: ["video", 0],
+        filename_prefix: input.filenamePrefix,
+        format: "mp4",
+        codec: "auto",
+      },
+    },
+  };
+  const conditioning = prompt.conditioning;
+  if (!conditioning) throw new Error("MiniMax H3 conditioning node is missing");
+  if (input.firstImage) {
+    prompt.first_image = { class_type: "LoadImage", inputs: { image: input.firstImage } };
+    conditioning.inputs.first_frame = ["first_image", 0];
+  }
+  if (input.lastImage) {
+    prompt.last_image = { class_type: "LoadImage", inputs: { image: input.lastImage } };
+    conditioning.inputs.last_frame = ["last_image", 0];
+  }
+  return prompt;
+}
+
+type UiWorkflowNode = {
+  id: number | string;
+  type: string;
+  title?: string;
+  mode?: number;
+  inputs?: Array<{ name: string; link?: number | null; widget?: { name: string } }>;
+  widgets_values?: unknown[] | Record<string, unknown> | null;
+};
+
+type UiWorkflowLink = {
+  id: number;
+  origin_id: number | string;
+  origin_slot: number;
+  target_id: number | string;
+  target_slot: number;
+};
+
+type UiSubgraph = {
+  id: string;
+  nodes: UiWorkflowNode[];
+  links: UiWorkflowLink[];
+  inputs: Array<{ linkIds?: number[] }>;
+  outputs: Array<{ linkIds?: number[] }>;
+};
+
+export type UiWorkflow = {
+  nodes: UiWorkflowNode[];
+  links: Array<UiWorkflowLink | [number, number | string, number, number | string, number, string]>;
+  definitions?: { subgraphs?: UiSubgraph[] };
+};
+
+function normalizedLinks(
+  links: Array<UiWorkflowLink | [number, number | string, number, number | string, number, string]>,
+) {
+  return links.map((link) =>
+    Array.isArray(link)
+      ? {
+          id: link[0],
+          origin_id: link[1],
+          origin_slot: link[2],
+          target_id: link[3],
+          target_slot: link[4],
+        }
+      : link,
+  );
+}
+
+function widgetValues(node: UiWorkflowNode) {
+  if (Array.isArray(node.widgets_values)) return node.widgets_values;
+  return node.widgets_values ? Object.values(node.widgets_values) : [];
+}
+
+export function expandSingleSubgraphWorkflow(workflow: UiWorkflow): ComfyPrompt {
+  const subgraph = workflow.definitions?.subgraphs?.[0];
+  if (!subgraph) throw new Error("Workflow does not contain a subgraph definition");
+  const outerSubgraphNode = workflow.nodes.find((node) => node.type === subgraph.id);
+  if (!outerSubgraphNode) throw new Error("Workflow subgraph instance is missing");
+  const outerLinks = normalizedLinks(workflow.links);
+  const innerLinks = normalizedLinks(subgraph.links);
+  const innerNodes = new Map(subgraph.nodes.map((node) => [String(node.id), node]));
+  const prompt: ComfyPrompt = {};
+
+  const externalInputOrigin = (slot: number): [string, number] | null => {
+    const linkId = outerSubgraphNode.inputs?.[slot]?.link;
+    const link = outerLinks.find((candidate) => candidate.id === linkId);
+    return link ? [`outer_${link.origin_id}`, link.origin_slot] : null;
+  };
+
+  const resolveInnerOrigin = (link: UiWorkflowLink): [string, number] | null => {
+    if (link.origin_id === -10) return externalInputOrigin(link.origin_slot);
+    const origin = innerNodes.get(String(link.origin_id));
+    if (origin?.type === "Reroute") {
+      const rerouteInput = origin.inputs?.[0]?.link;
+      const upstream = innerLinks.find((candidate) => candidate.id === rerouteInput);
+      return upstream ? resolveInnerOrigin(upstream) : null;
+    }
+    return [`inner_${link.origin_id}`, link.origin_slot];
+  };
+
+  const outputOrigin = (slot: number) => {
+    const linkIds = subgraph.outputs[slot]?.linkIds ?? [];
+    const link = innerLinks.find(
+      (candidate) => linkIds.includes(candidate.id) && candidate.target_id === -20,
+    );
+    return link ? resolveInnerOrigin(link) : null;
+  };
+
+  const serializeNode = (
+    node: UiWorkflowNode,
+    id: string,
+    links: UiWorkflowLink[],
+    resolve: (link: UiWorkflowLink) => [string, number] | null,
+  ) => {
+    if (
+      node.mode === 4 ||
+      node.mode === 2 ||
+      ["Reroute", "Note", "MarkdownNote"].includes(node.type)
+    ) {
+      return;
+    }
+    const inputs: Record<string, unknown> = {};
+    const values = widgetValues(node);
+    let widgetIndex = 0;
+    for (const input of node.inputs ?? []) {
+      const widgetValue = input.widget ? values[widgetIndex++] : undefined;
+      const link =
+        input.link == null ? null : links.find((candidate) => candidate.id === input.link);
+      const origin = link ? resolve(link) : null;
+      if (origin) inputs[input.name] = origin;
+      else if (input.widget && widgetValue !== undefined) inputs[input.name] = widgetValue;
+    }
+    prompt[id] = {
+      class_type: node.type,
+      inputs,
+      ...(node.title ? { _meta: { title: node.title } } : {}),
+    };
+  };
+
+  for (const node of subgraph.nodes) {
+    serializeNode(node, `inner_${node.id}`, innerLinks, resolveInnerOrigin);
+  }
+  for (const node of workflow.nodes) {
+    if (node.id === outerSubgraphNode.id) continue;
+    serializeNode(node, `outer_${node.id}`, outerLinks, (link) => {
+      if (link.origin_id === outerSubgraphNode.id) return outputOrigin(link.origin_slot);
+      return [`outer_${link.origin_id}`, link.origin_slot];
+    });
+  }
+  return prompt;
+}
+
+export type Ltx23I2VInput = {
+  image: string;
+  positivePrompt: string;
+  width: number;
+  height: number;
+  durationSeconds: number;
+  fps: number;
+  seed: number;
+  filenamePrefix: string;
+};
+
+export function buildLtx23I2VPrompt(workflow: UiWorkflow, input: Ltx23I2VInput) {
+  const prompt = expandSingleSubgraphWorkflow(workflow);
+  const setByTitle = (title: string, field: string, value: unknown) => {
+    const node = Object.values(prompt).find((candidate) => candidate._meta?.title === title);
+    if (!node) throw new Error(`LTX Recipe node titled ${title} is missing`);
+    node.inputs[field] = value;
+  };
+  setByTitle("Prompt", "value", input.positivePrompt);
+  setByTitle("Width", "value", Math.round(input.width / 32) * 32);
+  setByTitle("Height", "value", Math.round(input.height / 32) * 32);
+  setByTitle("Duration", "value", Math.round(input.durationSeconds));
+  setByTitle("Frame Rate", "value", Math.round(input.fps));
+  const load = Object.values(prompt).find((node) => node.class_type === "LoadImage");
+  const noise = Object.values(prompt).find(
+    (node) => node.class_type === "RandomNoise" && node.inputs.noise_seed !== 42,
+  );
+  const save = Object.values(prompt).find((node) => node.class_type === "SaveVideo");
+  if (!load || !noise || !save) throw new Error("LTX Recipe input or output nodes are missing");
+  load.inputs.image = input.image;
+  noise.inputs.noise_seed = input.seed;
+  save.inputs.filename_prefix = input.filenamePrefix;
+  save.inputs.format ??= "auto";
+  save.inputs.codec ??= "auto";
+  return prompt;
+}
+
 export type ComfyOutputFile = { filename: string; subfolder: string; type: string };
 
 export class ComfyClient {
@@ -215,6 +501,54 @@ export class ComfyClient {
       throw new Error(`ComfyUI rejected prompt: ${JSON.stringify(result)}`);
     }
     return result.prompt_id;
+  }
+
+  async workflow(path: string) {
+    const response = await fetch(
+      `${this.baseUrl}/api/userdata/${encodeURIComponent(`workflows/${path}`)}`,
+      { signal: AbortSignal.timeout(30_000) },
+    );
+    if (!response.ok) throw new Error(`ComfyUI workflow failed: ${response.status}`);
+    return (await response.json()) as UiWorkflow;
+  }
+
+  async missingNodeClasses(prompt: ComfyPrompt) {
+    const response = await fetch(`${this.baseUrl}/object_info`, {
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok) throw new Error(`ComfyUI object info failed: ${response.status}`);
+    const objectInfo = (await response.json()) as Record<string, unknown>;
+    return [...new Set(Object.values(prompt).map((node) => node.class_type))].filter(
+      (classType) => !(classType in objectInfo),
+    );
+  }
+
+  async preflightPrompt(prompt: ComfyPrompt) {
+    const response = await fetch(`${this.baseUrl}/object_info`, {
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok) throw new Error(`ComfyUI object info failed: ${response.status}`);
+    const objectInfo = (await response.json()) as Record<
+      string,
+      { input?: { required?: Record<string, unknown> } }
+    >;
+    const errors: string[] = [];
+    for (const [nodeId, node] of Object.entries(prompt)) {
+      const definition = objectInfo[node.class_type];
+      if (!definition) {
+        errors.push(`${nodeId}: missing node class ${node.class_type}`);
+        continue;
+      }
+      for (const field of Object.keys(definition.input?.required ?? {})) {
+        if (!(field in node.inputs)) errors.push(`${nodeId}: missing required input ${field}`);
+      }
+      for (const [field, value] of Object.entries(node.inputs)) {
+        if (Array.isArray(value) && value.length === 2 && typeof value[0] === "string") {
+          if (!prompt[value[0]]) errors.push(`${nodeId}.${field}: missing origin node ${value[0]}`);
+        }
+      }
+    }
+    return errors;
   }
 
   async history(promptId: string) {

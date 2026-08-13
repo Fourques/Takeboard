@@ -1,14 +1,19 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { readFile, stat, writeFile } from "node:fs/promises";
+import { readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, extname, join, resolve } from "node:path";
 import { createTakeBoardId, toIsoTimestamp } from "@takeboard/domain";
 import {
+  buildLtx23I2VPrompt,
+  buildMiniMaxH3Prompt,
   buildWan22FirstLastPrompt,
   buildWan22I2VPrompt,
   ComfyClient,
+  type ComfyPrompt,
+  miniMaxH3Resolution,
 } from "@takeboard/executor-comfy";
 import type { FastifyInstance } from "fastify";
+import { createImageProxy, inspectImage } from "./asset-inspection.js";
 import { projectKey } from "./project-routes.js";
 import { ProjectStore } from "./storage/project-store.js";
 
@@ -67,6 +72,16 @@ export function registerGenerationRoutes(
     const kind = mediaType(upload.mimetype);
     if (!kind) return await reply.code(415).send({ error: "仅支持图片、视频和音频素材" });
     const bytes = await upload.toBuffer();
+    let imageInfo: ReturnType<typeof inspectImage> | null = null;
+    if (kind === "image") {
+      try {
+        imageInfo = inspectImage(bytes, upload.mimetype);
+      } catch (error) {
+        return await reply.code(422).send({
+          error: error instanceof Error ? error.message : "图片文件无效",
+        });
+      }
+    }
     const timestamp = toIsoTimestamp();
     const milliseconds = Date.now();
     const assetId = createTakeBoardId("asset", milliseconds);
@@ -76,6 +91,7 @@ export function registerGenerationRoutes(
     const entityId = entityKind ? createTakeBoardId("entity", milliseconds) : null;
     const safeExtension = extname(basename(upload.filename)).toLowerCase().slice(0, 12);
     const storagePath = `assets/originals/${assetId}${safeExtension}`;
+    const proxyStoragePath = imageInfo ? `assets/proxies/${assetId}.jpg` : null;
     const directory = join(root, key);
     const store = ProjectStore.openExisting(directory);
     if (!store) return await reply.code(404).send({ error: "项目不存在" });
@@ -83,6 +99,14 @@ export function registerGenerationRoutes(
       const current = store.loadCurrent();
       if (!current) return await reply.code(404).send({ error: "项目不存在" });
       await writeFile(join(directory, storagePath), bytes, { mode: 0o600 });
+      const proxyCreated =
+        !proxyStoragePath ||
+        (await createImageProxy(join(directory, storagePath), join(directory, proxyStoragePath)));
+      if (!proxyCreated) {
+        await unlink(join(directory, storagePath)).catch(() => undefined);
+        return await reply.code(422).send({ error: "图片无法完整解码或生成安全预览" });
+      }
+      const proxyPath = proxyStoragePath;
       current.snapshot.assets.push({
         id: assetId,
         projectId: current.snapshot.project.id,
@@ -92,7 +116,9 @@ export function registerGenerationRoutes(
         byteSize: bytes.byteLength,
         sha256: sha256(bytes),
         storagePath,
-        proxyPath: null,
+        proxyPath,
+        width: imageInfo?.width ?? null,
+        height: imageInfo?.height ?? null,
         createdAt: timestamp,
         updatedAt: timestamp,
       });
@@ -140,7 +166,7 @@ export function registerGenerationRoutes(
     }
   });
 
-  app.get<{ Params: { key: string; assetId: string } }>(
+  app.get<{ Params: { key: string; assetId: string }; Querystring: { proxy?: string } }>(
     "/api/projects/:key/assets/:assetId/content",
     async (request, reply) => {
       const key = projectKey(request.params.key);
@@ -152,10 +178,14 @@ export function registerGenerationRoutes(
         const current = store.loadCurrent();
         const asset = current?.snapshot.assets.find((item) => item.id === request.params.assetId);
         if (!asset) return await reply.code(404).send({ error: "素材不存在" });
-        const filePath = join(directory, asset.storagePath);
+        const useProxy = request.query.proxy === "1" && asset.proxyPath;
+        const filePath = join(directory, useProxy || asset.storagePath);
         const info = await stat(filePath);
         const rangeHeader = request.headers.range;
-        reply.header("accept-ranges", "bytes").type(asset.mimeType);
+        reply
+          .header("accept-ranges", "bytes")
+          .header("cache-control", "private, max-age=31536000, immutable")
+          .type(useProxy ? "image/jpeg" : asset.mimeType);
         if (rangeHeader) {
           const range = parseByteRange(rangeHeader, info.size);
           if (!range) {
@@ -194,8 +224,13 @@ export function registerGenerationRoutes(
             : {};
         const recipePath =
           typeof body.recipePath === "string" ? body.recipePath : "Kino/Kino_Wan22_I2V.json";
-        const firstLast = recipePath.endsWith("Kino_Wan22_FLF2V.json");
-        if (!recipePath.endsWith("Kino_Wan22_I2V.json") && !firstLast) {
+        const wanFirstLast = recipePath.endsWith("Kino_Wan22_FLF2V.json");
+        const wanImage = recipePath.endsWith("Kino_Wan22_I2V.json");
+        const miniMaxText = recipePath.endsWith("Kino_MinimaxH3_T2V.json");
+        const miniMaxImage = recipePath.endsWith("Kino_MinimaxH3_I2V.json");
+        const miniMax = miniMaxText || miniMaxImage;
+        const ltxImage = recipePath.endsWith("Kino_LTX23_I2V_Draft.json");
+        if (!wanImage && !wanFirstLast && !miniMax && !ltxImage) {
           return await reply.code(422).send({
             error:
               "该 Workflow 已检测，但尚未映射为 TakeBoard 原生 Recipe；请进入 ComfyUI 编辑或运行",
@@ -206,7 +241,7 @@ export function registerGenerationRoutes(
         const inputAsset = requestedAssetId
           ? current.snapshot.assets.find((asset) => asset.id === requestedAssetId)
           : [...current.snapshot.assets].reverse().find((asset) => asset.mediaType === "image");
-        if (inputAsset?.mediaType !== "image") {
+        if (!miniMaxText && inputAsset?.mediaType !== "image") {
           return await reply.code(409).send({
             error: requestedAssetId ? "选择的首帧不是可用图片" : "请先上传一张首帧图片",
           });
@@ -215,20 +250,26 @@ export function registerGenerationRoutes(
         const requestedLastAssetId =
           typeof body.lastFrameAssetId === "string" ? body.lastFrameAssetId : null;
         const lastAsset =
-          firstLast && requestedLastAssetId
+          (wanFirstLast || miniMaxImage) && requestedLastAssetId
             ? current.snapshot.assets.find((asset) => asset.id === requestedLastAssetId)
             : null;
-        if (firstLast && lastAsset?.mediaType !== "image") {
+        if (wanFirstLast && lastAsset?.mediaType !== "image") {
           return await reply.code(409).send({ error: "首尾帧模式需要选择一张可用的结束帧图片" });
         }
+        if (lastAsset && lastAsset.mediaType !== "image") {
+          return await reply.code(409).send({ error: "选择的结束帧不是可用图片" });
+        }
 
-        const bytes = await readFile(join(directory, inputAsset.storagePath));
-        const extension = extname(inputAsset.originalName) || ".png";
-        const comfyImage = await comfy.uploadImage(
-          new Uint8Array(bytes),
-          `takeboard_${current.snapshot.project.id}_${inputAsset.id}${extension}`,
-          inputAsset.mimeType,
-        );
+        let comfyImage: string | null = null;
+        if (inputAsset?.mediaType === "image" && !miniMaxText) {
+          const bytes = await readFile(join(directory, inputAsset.storagePath));
+          const extension = extname(inputAsset.originalName) || ".png";
+          comfyImage = await comfy.uploadImage(
+            new Uint8Array(bytes),
+            `takeboard_${current.snapshot.project.id}_${inputAsset.id}${extension}`,
+            inputAsset.mimeType,
+          );
+        }
         const seed =
           typeof body.seed === "number" && Number.isSafeInteger(body.seed) && body.seed >= 0
             ? body.seed
@@ -251,7 +292,20 @@ export function registerGenerationRoutes(
         const fps =
           typeof body.fps === "number" && body.fps >= 8 && body.fps <= 60
             ? Math.round(body.fps)
-            : 16;
+            : miniMax
+              ? 24
+              : ltxImage
+                ? 25
+                : 16;
+        const steps =
+          typeof body.steps === "number" &&
+          Number.isSafeInteger(body.steps) &&
+          body.steps >= 1 &&
+          body.steps <= 100
+            ? body.steps
+            : miniMax
+              ? 20
+              : 4;
         const positivePrompt =
           typeof body.prompt === "string" && body.prompt.trim()
             ? body.prompt.trim().slice(0, 20_000)
@@ -270,7 +324,6 @@ export function registerGenerationRoutes(
           );
         }
         const recipeInput = {
-          image: comfyImage,
           positivePrompt,
           ...(negativePrompt ? { negativePrompt } : {}),
           width,
@@ -280,10 +333,45 @@ export function registerGenerationRoutes(
           seed,
           filenamePrefix: `takeboard/${current.snapshot.project.id}/${shot.id}`,
         };
-        const prompt =
-          firstLast && lastComfyImage
-            ? buildWan22FirstLastPrompt({ ...recipeInput, lastImage: lastComfyImage })
-            : buildWan22I2VPrompt(recipeInput);
+        let prompt: ComfyPrompt;
+        let effectiveSize = { width, height };
+        if (miniMax) {
+          effectiveSize = miniMaxH3Resolution(width, height);
+          prompt = buildMiniMaxH3Prompt({
+            ...recipeInput,
+            ...(comfyImage ? { firstImage: comfyImage } : {}),
+            ...(lastComfyImage ? { lastImage: lastComfyImage } : {}),
+            steps,
+          });
+        } else if (ltxImage && comfyImage) {
+          const workflow = await comfy.workflow(recipePath);
+          prompt = buildLtx23I2VPrompt(workflow, {
+            image: comfyImage,
+            positivePrompt,
+            width,
+            height,
+            durationSeconds,
+            fps,
+            seed,
+            filenamePrefix: `takeboard/${current.snapshot.project.id}/${shot.id}`,
+          });
+        } else if (wanFirstLast && comfyImage && lastComfyImage) {
+          prompt = buildWan22FirstLastPrompt({
+            ...recipeInput,
+            image: comfyImage,
+            lastImage: lastComfyImage,
+          });
+        } else if (comfyImage) {
+          prompt = buildWan22I2VPrompt({ ...recipeInput, image: comfyImage });
+        } else {
+          return await reply.code(409).send({ error: "当前 Recipe 需要一张起始帧" });
+        }
+        const preflightErrors = await comfy.preflightPrompt(prompt);
+        if (preflightErrors.length > 0) {
+          return await reply.code(422).send({
+            error: `Recipe 预检失败：${preflightErrors.slice(0, 5).join("；")}`,
+          });
+        }
         const promptId = await comfy.submit(prompt);
         const timestamp = toIsoTimestamp();
         const milliseconds = Date.now();
@@ -292,18 +380,28 @@ export function registerGenerationRoutes(
           id: runId,
           shotId: shot.id,
           recipeId: createTakeBoardId("recipe", milliseconds),
-          recipeVersion: firstLast ? "wan22-flf2v@1" : "wan22-i2v-turbo@1",
+          recipeVersion: miniMax
+            ? "minimax-h3@1"
+            : ltxImage
+              ? "ltx23-i2v-draft@1"
+              : wanFirstLast
+                ? "wan22-flf2v@1"
+                : "wan22-i2v-turbo@1",
           workflowSha256: sha256(JSON.stringify(prompt)),
           workerId: createTakeBoardId("worker", milliseconds),
           promptId,
           status: "running",
           inputs: [
-            {
-              slot: "start_image",
-              refType: "asset",
-              refId: inputAsset.id,
-              assetSha256: inputAsset.sha256,
-            },
+            ...(inputAsset?.mediaType === "image" && !miniMaxText
+              ? [
+                  {
+                    slot: "start_image",
+                    refType: "asset" as const,
+                    refId: inputAsset.id,
+                    assetSha256: inputAsset.sha256,
+                  },
+                ]
+              : []),
             ...(lastAsset
               ? [
                   {
@@ -317,10 +415,11 @@ export function registerGenerationRoutes(
           ],
           parameters: {
             seed,
-            width,
-            height,
+            width: effectiveSize.width,
+            height: effectiveSize.height,
             durationSeconds,
             fps,
+            ...(ltxImage ? {} : { steps }),
             recipePath,
             prompt: positivePrompt,
             negativePrompt: negativePrompt ?? null,
@@ -339,7 +438,13 @@ export function registerGenerationRoutes(
           payload: {
             runId,
             promptId,
-            recipe: firstLast ? "wan22-flf2v@1" : "wan22-i2v-turbo@1",
+            recipe: miniMax
+              ? "minimax-h3@1"
+              : ltxImage
+                ? "ltx23-i2v-draft@1"
+                : wanFirstLast
+                  ? "wan22-flf2v@1"
+                  : "wan22-i2v-turbo@1",
           },
         });
         return await reply.code(202).send({ key, runId, promptId, ...saved });
@@ -424,6 +529,8 @@ export function registerGenerationRoutes(
           sha256: sha256(bytes),
           storagePath,
           proxyPath: null,
+          width: null,
+          height: null,
           createdAt: timestamp,
           updatedAt: timestamp,
         });

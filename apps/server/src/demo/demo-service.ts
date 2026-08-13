@@ -78,6 +78,8 @@ export class DemoService {
           sha256: (variant + 1).toString(16).repeat(64),
           storagePath: `renders/${shotId}/${runId}/candidate-${variant}.mp4`,
           proxyPath: null,
+          width: null,
+          height: null,
           createdAt: timestamp,
           updatedAt: timestamp,
         });

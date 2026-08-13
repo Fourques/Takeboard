@@ -150,6 +150,7 @@ export const projectApi = {
       durationSeconds: number;
       fps: number;
       seed: number;
+      steps: number;
     },
   ) =>
     jsonRequest<DemoPayload & { key: string; runId: string; promptId: string }>(
@@ -170,8 +171,8 @@ export const projectApi = {
       `/api/projects/${encodeURIComponent(key)}/takes/${encodeURIComponent(takeId)}/approve`,
       { method: "POST", body: JSON.stringify({ reason }) },
     ),
-  assetUrl: (key: string, assetId: string) =>
-    `/api/projects/${encodeURIComponent(key)}/assets/${encodeURIComponent(assetId)}/content`,
+  assetUrl: (key: string, assetId: string, proxy = false) =>
+    `/api/projects/${encodeURIComponent(key)}/assets/${encodeURIComponent(assetId)}/content${proxy ? "?proxy=1" : ""}`,
   worker: () => jsonRequest<WorkerStatus>("/api/workers/comfy"),
 };
 

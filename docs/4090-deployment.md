@@ -51,6 +51,13 @@ ssh -N \
 
 ## 部署更新
 
+### ComfyUI Workflow 深链接桥
+
+TakeBoard 使用 `?takeboard_workflow=<path>` 打开指定 Workflow。部署脚本会调用
+`scripts/install-comfy-bridge.sh`，将桥接脚本安装到当前 ComfyUI 前端包的 core 扩展目录；无需启用
+Python 自定义节点，也无需重启正在推理的 ComfyUI。桥接扩展只读取 ComfyUI 自身的
+`userdata/workflows`，并校验相对路径。升级 ComfyUI 前端包后，重新运行部署脚本即可恢复桥接。
+
 本机仓库已配置 `deploy-4090` remote。提交后执行：
 
 ```bash

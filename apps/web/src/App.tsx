@@ -39,6 +39,7 @@ type GenerationSettings = {
   durationSeconds: number;
   fps: number;
   seed: number;
+  steps: number;
 };
 
 const defaultGenerationSettings: GenerationSettings = {
@@ -52,6 +53,7 @@ const defaultGenerationSettings: GenerationSettings = {
   durationSeconds: 5,
   fps: 16,
   seed: 26081301,
+  steps: 20,
 };
 
 const nativeWorkflowFallbacks: WorkflowSummary[] = [
@@ -84,6 +86,54 @@ const nativeWorkflowFallbacks: WorkflowSummary[] = [
       "fps",
       "seed",
     ],
+    models: [],
+    nodeCount: 0,
+    source: "comfyui",
+    editorUrl: "http://127.0.0.1:48188",
+    execution: "native",
+  },
+  {
+    id: "native-minimax-h3-i2v",
+    path: "Kino/Kino_MinimaxH3_I2V.json",
+    name: "MinimaxH3 I2V",
+    capability: "image_to_video",
+    capabilityLabel: "图生视频",
+    inputs: [
+      "prompt",
+      "first_frame",
+      "last_frame",
+      "resolution",
+      "duration",
+      "fps",
+      "seed",
+      "steps",
+    ],
+    models: [],
+    nodeCount: 0,
+    source: "comfyui",
+    editorUrl: "http://127.0.0.1:48188",
+    execution: "native",
+  },
+  {
+    id: "native-minimax-h3-t2v",
+    path: "Kino/Kino_MinimaxH3_T2V.json",
+    name: "MinimaxH3 T2V",
+    capability: "text_to_video",
+    capabilityLabel: "文生视频",
+    inputs: ["prompt", "resolution", "duration", "fps", "seed", "steps"],
+    models: [],
+    nodeCount: 0,
+    source: "comfyui",
+    editorUrl: "http://127.0.0.1:48188",
+    execution: "native",
+  },
+  {
+    id: "native-ltx23-i2v",
+    path: "Kino/Kino_LTX23_I2V_Draft.json",
+    name: "LTX23 I2V Draft",
+    capability: "image_to_video",
+    capabilityLabel: "图生视频",
+    inputs: ["prompt", "first_frame", "resolution", "duration", "fps", "seed"],
     models: [],
     nodeCount: 0,
     source: "comfyui",
@@ -141,7 +191,7 @@ function boardNodes(
           body: entity?.description ?? "",
           mediaUrl:
             projectKey && referenceAsset
-              ? projectApi.assetUrl(projectKey, referenceAsset.id)
+              ? projectApi.assetUrl(projectKey, referenceAsset.id, true)
               : undefined,
         },
       };
@@ -157,7 +207,8 @@ function boardNodes(
             ? "雾港旧渡口"
             : (asset?.originalName ?? "素材"),
           body: "",
-          mediaUrl: projectKey && asset ? projectApi.assetUrl(projectKey, asset.id) : undefined,
+          mediaUrl:
+            projectKey && asset ? projectApi.assetUrl(projectKey, asset.id, true) : undefined,
         },
       };
     }
@@ -466,6 +517,23 @@ function Inspector({
               随机
             </button>
           </label>
+          {workflow?.inputs.includes("steps") ? (
+            <label className="seed-field">
+              <span>Steps</span>
+              <input
+                type="number"
+                min={1}
+                max={100}
+                value={settings.steps}
+                onChange={(event) =>
+                  onSettingsChange({ ...settings, steps: Number(event.target.value) })
+                }
+              />
+              <small>
+                {workflow.name.toLowerCase().includes("minimax") ? "H3 建议 20" : "Recipe 默认"}
+              </small>
+            </label>
+          ) : null}
           {workflow?.execution === "comfy_only" ? (
             <div className="comfy-only-note">
               这个 JSON 已完成检测；当前通过 ComfyUI 运行和修改，映射为原生 Recipe
@@ -718,7 +786,10 @@ export function App() {
       generationSettings.fps < 8 ||
       generationSettings.fps > 60 ||
       !Number.isSafeInteger(generationSettings.seed) ||
-      generationSettings.seed < 0
+      generationSettings.seed < 0 ||
+      !Number.isSafeInteger(generationSettings.steps) ||
+      generationSettings.steps < 1 ||
+      generationSettings.steps > 100
     ) {
       return "请检查分辨率、时长、帧率和 Seed";
     }
@@ -906,7 +977,7 @@ export function App() {
       try {
         if (selectedWorkflow?.execution === "comfy_only") {
           const opened = window.open(
-            `${comfyEditorUrl}/?workflow=${encodeURIComponent(selectedWorkflow.path)}`,
+            `${comfyEditorUrl}/?takeboard_workflow=${encodeURIComponent(selectedWorkflow.path)}`,
             "_blank",
           );
           if (!opened) throw new Error("浏览器阻止了新窗口，请允许弹窗后重试");
@@ -918,7 +989,7 @@ export function App() {
         const submitted = await projectApi.generate(projectKey, shot.id, generationSettings);
         if (generationTokenRef.current !== token) return;
         acceptPayload(submitted, shot.id);
-        setNotice("Wan 2.2 已开始生成，运行记录已保存");
+        setNotice(`${selectedWorkflow?.name ?? "Recipe"} 已开始生成，运行记录已保存`);
         for (let attempt = 0; attempt < 240; attempt += 1) {
           await new Promise((resolve) => window.setTimeout(resolve, 3_000));
           if (generationTokenRef.current !== token) return;
@@ -1260,10 +1331,16 @@ export function App() {
         onImport={importWorkflow}
         onRefresh={refreshWorkflows}
         onSelect={(workflow) => {
+          const normalizedName = workflow.name.toLowerCase();
           setGenerationSettings((current) => ({
             ...current,
             recipePath: workflow.path,
-            fps: workflow.name.toLowerCase().includes("minimax") ? 24 : current.fps,
+            fps: normalizedName.includes("minimax")
+              ? 24
+              : normalizedName.includes("ltx")
+                ? 25
+                : current.fps,
+            steps: normalizedName.includes("minimax") ? 20 : current.steps,
           }));
           setRecipeOpen(false);
           setNotice(`已切换：${workflow.name}`);

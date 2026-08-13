@@ -59,6 +59,8 @@ export const assetSchema = timestampsSchema.extend({
   sha256: sha256Schema,
   storagePath: relativeStoragePathSchema,
   proxyPath: relativeStoragePathSchema.nullable().default(null),
+  width: z.number().int().positive().nullable().default(null),
+  height: z.number().int().positive().nullable().default(null),
 });
 
 export const shotSchema = timestampsSchema.extend({
