@@ -1,0 +1,10 @@
+packages:
+  - apps/*
+  - packages/*
+
+sharedWorkspaceLockfile: true
+strictPeerDependencies: true
+
+onlyBuiltDependencies:
+  - better-sqlite3
+  - esbuild

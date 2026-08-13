@@ -1,0 +1,181 @@
+import { describe, expect, it } from "vitest";
+import {
+  approvalSchema,
+  assetSchema,
+  canvasEdgeSchema,
+  healthResponseSchema,
+  projectSnapshotJsonSchema,
+  projectSnapshotSchema,
+  runSchema,
+  schemaVersion,
+} from "../src/index.js";
+
+const ids = {
+  project: "project_018f47a0-2c91-8a4f-a812-78f12a2c4510",
+  scene: "scene_018f47a0-2c91-8a4f-a812-78f12a2c4511",
+  asset: "asset_018f47a0-2c91-8a4f-a812-78f12a2c4512",
+  shot: "shot_018f47a0-2c91-8a4f-a812-78f12a2c4513",
+  take: "take_018f47a0-2c91-8a4f-a812-78f12a2c4514",
+  recipe: "recipe_018f47a0-2c91-8a4f-a812-78f12a2c4515",
+  worker: "worker_018f47a0-2c91-8a4f-a812-78f12a2c4516",
+  run: "run_018f47a0-2c91-8a4f-a812-78f12a2c4517",
+  approval: "approval_018f47a0-2c91-8a4f-a812-78f12a2c4518",
+  canvasA: "canvas_item_018f47a0-2c91-8a4f-a812-78f12a2c4519",
+  canvasB: "canvas_item_018f47a0-2c91-8a4f-a812-78f12a2c4520",
+  edge: "canvas_edge_018f47a0-2c91-8a4f-a812-78f12a2c4521",
+  otherProject: "project_018f47a0-2c91-8a4f-a812-78f12a2c4522",
+} as const;
+
+const now = "2026-08-13T11:30:00+08:00";
+const hash = "a".repeat(64);
+
+describe("healthResponseSchema", () => {
+  it("accepts a valid local service response", () => {
+    expect(
+      healthResponseSchema.parse({
+        service: "takeboard-server",
+        status: "ok",
+        version: schemaVersion,
+      }),
+    ).toEqual({ service: "takeboard-server", status: "ok", version: schemaVersion });
+  });
+});
+
+describe("assetSchema", () => {
+  const validAsset = {
+    id: ids.asset,
+    projectId: ids.project,
+    mediaType: "image",
+    originalName: "reference.png",
+    mimeType: "image/png",
+    byteSize: 1024,
+    sha256: hash,
+    storagePath: `assets/originals/${hash}.png`,
+    proxyPath: null,
+    createdAt: now,
+    updatedAt: now,
+  } as const;
+
+  it("accepts project-relative media", () => {
+    expect(assetSchema.parse(validAsset).storagePath).toContain("assets/originals");
+  });
+
+  it.each(["/Users/person/key.png", "C:\\Users\\person\\key.png", "../secret.png"])(
+    "rejects unsafe storage path %s",
+    (storagePath) => {
+      expect(() => assetSchema.parse({ ...validAsset, storagePath })).toThrow();
+    },
+  );
+});
+
+describe("runSchema", () => {
+  it("preserves immutable provenance inputs", () => {
+    const run = runSchema.parse({
+      id: ids.run,
+      shotId: ids.shot,
+      recipeId: ids.recipe,
+      recipeVersion: "1.0.0",
+      workflowSha256: hash,
+      workerId: ids.worker,
+      promptId: null,
+      status: "validating",
+      inputs: [{ slot: "first_frame", refType: "asset", refId: ids.asset, assetSha256: hash }],
+      parameters: { seed: 42, preserveIdentity: true },
+      errorCode: null,
+      errorMessage: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    expect(run.inputs[0]?.assetSha256).toBe(hash);
+    expect(run.parameters).toEqual({ seed: 42, preserveIdentity: true });
+  });
+});
+
+describe("canvasEdgeSchema", () => {
+  it("requires generated provenance to be immutable and linked to a run", () => {
+    expect(() =>
+      canvasEdgeSchema.parse({
+        id: ids.edge,
+        sceneId: ids.scene,
+        sourceItemId: ids.canvasA,
+        targetItemId: ids.canvasB,
+        relation: "generated_from",
+        runId: null,
+        immutable: false,
+        createdAt: now,
+        updatedAt: now,
+      }),
+    ).toThrow();
+  });
+});
+
+describe("approvalSchema", () => {
+  it("requires a revocation timestamp for revoked approvals", () => {
+    expect(() =>
+      approvalSchema.parse({
+        id: ids.approval,
+        shotId: ids.shot,
+        takeId: ids.take,
+        status: "revoked",
+        reason: null,
+        createdAt: now,
+        revokedAt: null,
+      }),
+    ).toThrow();
+  });
+});
+
+describe("projectSnapshotSchema", () => {
+  const emptySnapshot = {
+    schemaVersion,
+    exportedAt: now,
+    project: {
+      id: ids.project,
+      schemaVersion,
+      title: "TakeBoard demo",
+      defaultAspectRatio: "9:16",
+      createdAt: now,
+      updatedAt: now,
+    },
+    scenes: [],
+    textItems: [],
+    entities: [],
+    assets: [],
+    shots: [],
+    runs: [],
+    takes: [],
+    approvals: [],
+    canvasItems: [],
+    canvasEdges: [],
+  } as const;
+
+  it("accepts a self-contained project export", () => {
+    expect(projectSnapshotSchema.parse(emptySnapshot).project.id).toBe(ids.project);
+  });
+
+  it("rejects objects that belong to another project", () => {
+    expect(() =>
+      projectSnapshotSchema.parse({
+        ...emptySnapshot,
+        scenes: [
+          {
+            id: ids.scene,
+            projectId: ids.otherProject,
+            label: "SC-001",
+            title: "Opening",
+            order: 0,
+            createdAt: now,
+            updatedAt: now,
+          },
+        ],
+      }),
+    ).toThrow(/another project/);
+  });
+
+  it("publishes a portable JSON Schema", () => {
+    const jsonSchema = projectSnapshotJsonSchema();
+    expect(jsonSchema.$schema).toContain("2020-12");
+    expect(jsonSchema.required).toContain("project");
+  });
+});
