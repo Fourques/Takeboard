@@ -17,7 +17,7 @@
     "format": "biome format --write .",
     "test": "pnpm -r --if-present test",
     "test:e2e": "playwright test",
-    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+    "verify": "pnpm lint && pnpm typecheck && pnpm build && pnpm test"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.8",
