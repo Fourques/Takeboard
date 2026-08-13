@@ -44,7 +44,13 @@ export function ProjectHub({
         <div className={`worker-pill worker-${worker?.status ?? "loading"}`}>
           <i />
           <div>
-            <strong>{worker?.status === "ready" ? "4090 工作站在线" : "正在连接工作站"}</strong>
+            <strong>
+              {worker?.status === "ready"
+                ? "4090 工作站在线"
+                : worker?.status === "offline"
+                  ? "工作站离线"
+                  : "正在连接工作站"}
+            </strong>
             <span>{worker?.device ?? "ComfyUI worker"}</span>
           </div>
         </div>
@@ -112,11 +118,9 @@ export function ProjectHub({
                 <span className="section-kicker">NEW PROJECT</span>
                 <h2>创建一个真实项目</h2>
               </div>
-              {projects.length > 0 ? (
-                <button type="button" onClick={() => setCreating(false)}>
-                  ×
-                </button>
-              ) : null}
+              <button type="button" aria-label="关闭新建项目" onClick={() => setCreating(false)}>
+                ×
+              </button>
             </div>
             <label>
               项目名称
