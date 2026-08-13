@@ -110,7 +110,8 @@ export function registerProjectRoutes(app: FastifyInstance, projectsRoot: string
         return await reply.code(400).send({ error: "画布位置无效" });
       }
 
-      const store = await ProjectStore.open(join(root, key));
+      const store = ProjectStore.openExisting(join(root, key));
+      if (!store) return await reply.code(404).send({ error: "项目不存在" });
       try {
         const current = store.loadCurrent();
         if (!current) return await reply.code(404).send({ error: "项目不存在" });
@@ -143,7 +144,8 @@ export function registerProjectRoutes(app: FastifyInstance, projectsRoot: string
           : {};
       const reason = typeof body.reason === "string" ? body.reason.trim().slice(0, 200) : "";
       if (!key || !reason) return await reply.code(400).send({ error: "淘汰原因无效" });
-      const store = await ProjectStore.open(join(root, key));
+      const store = ProjectStore.openExisting(join(root, key));
+      if (!store) return await reply.code(404).send({ error: "项目不存在" });
       try {
         const current = store.loadCurrent();
         const take = current?.snapshot.takes.find((item) => item.id === request.params.takeId);
@@ -178,7 +180,8 @@ export function registerProjectRoutes(app: FastifyInstance, projectsRoot: string
           ? (request.body as Record<string, unknown>)
           : {};
       const reason = typeof body.reason === "string" ? body.reason.trim().slice(0, 2_000) : null;
-      const store = await ProjectStore.open(join(root, key));
+      const store = ProjectStore.openExisting(join(root, key));
+      if (!store) return await reply.code(404).send({ error: "项目不存在" });
       try {
         const current = store.loadCurrent();
         const take = current?.snapshot.takes.find((item) => item.id === request.params.takeId);

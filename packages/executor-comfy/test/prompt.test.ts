@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildWan22FirstLastPrompt, buildWan22I2VPrompt } from "../src/index.js";
+import { buildWan22FirstLastPrompt, buildWan22I2VPrompt, wanFrameCount } from "../src/index.js";
 
 describe("Wan 2.2 I2V recipe", () => {
   it("builds a compact two-stage four-step prompt", () => {
@@ -37,5 +37,10 @@ describe("Wan 2.2 I2V recipe", () => {
     expect(prompt.last_image?.inputs.image).toBe("takeboard/end.png");
     expect(prompt.latent?.class_type).toBe("WanFirstLastFrameToVideo");
     expect(prompt.latent?.inputs.end_image).toEqual(["last_image", 0]);
+  });
+
+  it("normalizes arbitrary duration and fps to Wan-compatible 4n+1 frames", () => {
+    expect(wanFrameCount(3.3, 24)).toBe(81);
+    expect(wanFrameCount(1, 10)).toBe(13);
   });
 });

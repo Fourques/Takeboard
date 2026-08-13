@@ -22,6 +22,17 @@ const capabilityLabels = {
 
 type Capability = keyof typeof capabilityLabels;
 
+function isWorkflowPath(path: unknown): path is string {
+  return (
+    typeof path === "string" &&
+    path.length <= 500 &&
+    path.endsWith(".json") &&
+    !path.startsWith("/") &&
+    !path.includes("\\") &&
+    path.split("/").every((segment) => segment.length > 0 && segment !== "." && segment !== "..")
+  );
+}
+
 function allNodes(workflow: WorkflowJson) {
   return [
     ...(workflow.nodes ?? []),
@@ -107,6 +118,27 @@ function displayName(path: string) {
   );
 }
 
+function workflowSummary(path: string, workflow: WorkflowJson, editorUrl: string) {
+  const nodes = allNodes(workflow);
+  const capability = detectCapability(path, nodes);
+  return {
+    id: Buffer.from(path).toString("base64url"),
+    path,
+    name: displayName(path),
+    capability,
+    capabilityLabel: capabilityLabels[capability],
+    inputs: detectInputs(capability, nodes),
+    models: detectModels(nodes),
+    nodeCount: nodes.length,
+    source: "comfyui" as const,
+    editorUrl,
+    execution:
+      path.endsWith("Kino_Wan22_I2V.json") || path.endsWith("Kino_Wan22_FLF2V.json")
+        ? ("native" as const)
+        : ("comfy_only" as const),
+  };
+}
+
 async function fetchWorkflow(comfyUrl: string, path: string) {
   const response = await fetch(
     `${comfyUrl}/api/userdata/${encodeURIComponent(`workflows/${path}`)}`,
@@ -125,33 +157,25 @@ export function registerWorkflowRoutes(app: FastifyInstance, comfyUrl: string, e
         signal: AbortSignal.timeout(5_000),
       });
       if (!response.ok) throw new Error(`ComfyUI returned ${response.status}`);
-      const paths = ((await response.json()) as unknown[]).filter(
-        (path): path is string => typeof path === "string" && path.endsWith(".json"),
+      const listed = await response.json();
+      if (!Array.isArray(listed)) throw new Error("ComfyUI 工作流目录响应无效");
+      const paths = listed.filter(isWorkflowPath);
+      const detected = await Promise.allSettled(
+        paths.map(async (path) =>
+          workflowSummary(path, await fetchWorkflow(comfyUrl, path), editorUrl),
+        ),
       );
-      const workflows = await Promise.all(
-        paths.map(async (path) => {
-          const workflow = await fetchWorkflow(comfyUrl, path);
-          const nodes = allNodes(workflow);
-          const capability = detectCapability(path, nodes);
-          return {
-            id: Buffer.from(path).toString("base64url"),
-            path,
-            name: displayName(path),
-            capability,
-            capabilityLabel: capabilityLabels[capability],
-            inputs: detectInputs(capability, nodes),
-            models: detectModels(nodes),
-            nodeCount: nodes.length,
-            source: "comfyui" as const,
-            editorUrl,
-            execution:
-              path.endsWith("Kino_Wan22_I2V.json") || path.endsWith("Kino_Wan22_FLF2V.json")
-                ? "native"
-                : "comfy_only",
-          };
-        }),
+      const workflows = detected.flatMap((result) =>
+        result.status === "fulfilled" ? [result.value] : [],
       );
-      return { editorUrl, workflows };
+      const warnings = detected.flatMap((result, index) =>
+        result.status === "rejected"
+          ? [
+              `${paths[index]}：${result.reason instanceof Error ? result.reason.message : "解析失败"}`,
+            ]
+          : [],
+      );
+      return { editorUrl, workflows, warnings };
     } catch (error) {
       return await reply.code(503).send({
         editorUrl,
@@ -163,7 +187,7 @@ export function registerWorkflowRoutes(app: FastifyInstance, comfyUrl: string, e
 
   app.get<{ Querystring: { path?: string } }>("/api/workflows/raw", async (request, reply) => {
     const path = request.query.path;
-    if (!path || path.includes("..") || !path.endsWith(".json")) {
+    if (!isWorkflowPath(path)) {
       return await reply.code(400).send({ error: "工作流路径无效" });
     }
     try {
@@ -194,7 +218,8 @@ export function registerWorkflowRoutes(app: FastifyInstance, comfyUrl: string, e
       .replace(/\.json$/i, "")
       .replace(/[^a-zA-Z0-9_-]+/g, "-")
       .slice(0, 80);
-    const path = `workflows/TakeBoard/${safeName || `workflow-${Date.now()}`}.json`;
+    const suffix = Date.now().toString(36);
+    const path = `workflows/TakeBoard/${safeName || "workflow"}-${suffix}.json`;
     const response = await fetch(`${comfyUrl}/api/userdata/${encodeURIComponent(path)}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -204,17 +229,7 @@ export function registerWorkflowRoutes(app: FastifyInstance, comfyUrl: string, e
     if (!response.ok) {
       return await reply.code(502).send({ error: `ComfyUI 保存失败：${response.status}` });
     }
-    const nodes = allNodes(workflow);
     const relativePath = path.replace(/^workflows\//, "");
-    const capability = detectCapability(relativePath, nodes);
-    return await reply.code(201).send({
-      path: relativePath,
-      name: displayName(relativePath),
-      capability,
-      capabilityLabel: capabilityLabels[capability],
-      inputs: detectInputs(capability, nodes),
-      models: detectModels(nodes),
-      nodeCount: nodes.length,
-    });
+    return await reply.code(201).send(workflowSummary(relativePath, workflow, editorUrl));
   });
 }

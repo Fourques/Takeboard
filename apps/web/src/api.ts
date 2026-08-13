@@ -177,9 +177,12 @@ export const projectApi = {
 
 export const workflowApi = {
   list: () =>
-    jsonRequest<{ editorUrl: string; workflows: WorkflowSummary[]; error?: string }>(
-      "/api/workflows",
-    ),
+    jsonRequest<{
+      editorUrl: string;
+      workflows: WorkflowSummary[];
+      warnings: string[];
+      error?: string;
+    }>("/api/workflows"),
   rawUrl: (path: string) => `/api/workflows/raw?path=${encodeURIComponent(path)}`,
   import: async (file: File) => {
     const body = new FormData();

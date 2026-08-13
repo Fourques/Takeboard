@@ -98,4 +98,27 @@ describe("ComfyUI workflow detection", () => {
       ]),
     );
   });
+
+  it("keeps healthy workflows when one JSON cannot be read", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const url = decodeURIComponent(String(input));
+        if (url.includes("/userdata?dir=workflows")) {
+          return Response.json(["Kino/healthy_I2V.json", "Kino/broken_T2V.json"]);
+        }
+        if (url.includes("broken_T2V.json")) return new Response("broken", { status: 500 });
+        return Response.json({ nodes: [{ type: "WanImageToVideo", widgets_values: [] }] });
+      }),
+    );
+    const app = buildApp({ comfyUrl: "http://comfy.test", webRoot: null });
+    apps.push(app);
+
+    const response = await app.inject({ method: "GET", url: "/api/workflows" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      workflows: [expect.objectContaining({ path: "Kino/healthy_I2V.json" })],
+      warnings: [expect.stringContaining("broken_T2V.json")],
+    });
+  });
 });

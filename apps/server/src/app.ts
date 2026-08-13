@@ -5,6 +5,7 @@ import fastifyStatic from "@fastify/static";
 import Fastify, { type FastifyInstance } from "fastify";
 import { registerDemoRoutes } from "./demo/routes.js";
 import { registerGenerationRoutes } from "./generation-routes.js";
+import { registerProjectRequestLock } from "./project-request-lock.js";
 import { registerProjectRoutes } from "./project-routes.js";
 import { registerWorkerRoutes } from "./worker-routes.js";
 import { registerWorkflowRoutes } from "./workflow-routes.js";
@@ -30,6 +31,8 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     status: "ok",
     version: "0.0.0",
   }));
+
+  registerProjectRequestLock(app);
 
   registerDemoRoutes(
     app,

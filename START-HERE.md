@@ -70,5 +70,6 @@
 - [技术架构与数据边界](docs/architecture.md)
 - [架构与产品决策记录](docs/decisions.md)
 - [实施路线与任务清单](docs/roadmap.md)
+- [实现审查与升级记录](docs/review-2026-08-13.md)
 - [竞品与用户验证计划](docs/research-plan.md)
 - [完整项目论证](README.md)

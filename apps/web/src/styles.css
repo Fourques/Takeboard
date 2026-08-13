@@ -2075,6 +2075,16 @@ html[data-theme="chroma"] body {
   line-height: 1.5;
 }
 
+.generation-validation {
+  margin: -2px 0 10px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--warning) 35%, var(--line));
+  border-radius: 4px;
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 7%, transparent);
+  font-size: 8px;
+}
+
 .canvas-primary-actions {
   display: flex;
   gap: 6px;
@@ -2446,6 +2456,11 @@ html[data-theme="chroma"] body {
   background: var(--panel);
 }
 
+.asset-vault-card.selected {
+  border-color: var(--accent-strong);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-strong) 30%, transparent);
+}
+
 .asset-vault-card > img,
 .asset-placeholder {
   display: grid;
@@ -2525,11 +2540,20 @@ html[data-theme="chroma"] body {
 
 .asset-upload-bar {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   padding: 16px 22px;
   border-top: 1px solid var(--line);
   background: var(--panel);
   gap: 9px;
+}
+
+.asset-upload-bar select {
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--cream);
+  background: var(--app-bg);
+  font-size: 9px;
 }
 
 .asset-upload-bar > input:not([type="file"]) {

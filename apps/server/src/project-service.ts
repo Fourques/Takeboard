@@ -101,7 +101,8 @@ export class ProjectService {
   }
 
   async open(projectDirectory: string) {
-    const store = await ProjectStore.open(projectDirectory);
+    const store = ProjectStore.openExisting(projectDirectory);
+    if (!store) return null;
     try {
       return store.loadCurrent()?.snapshot ?? null;
     } finally {

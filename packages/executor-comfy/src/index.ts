@@ -21,9 +21,13 @@ export type Wan22Input = {
 const defaultNegative =
   "identity drift, face blur, melted face, character swap, extra limbs, fused hands, missing fingers, foot skating, floating, slow motion, pause, repeated motion, camera orbit, unmotivated zoom, camera shake, background morph, lighting change, plastic skin, flicker, text, logo, watermark";
 
+export function wanFrameCount(durationSeconds: number, fps: number) {
+  return Math.max(5, Math.round((durationSeconds * fps) / 4) * 4 + 1);
+}
+
 export function buildWan22I2VPrompt(input: Wan22Input): ComfyPrompt {
   const fps = input.fps ?? 16;
-  const length = Math.floor(input.durationSeconds * fps + 1);
+  const length = wanFrameCount(input.durationSeconds, fps);
   return {
     image: { class_type: "LoadImage", inputs: { image: input.image } },
     vae: { class_type: "VAELoader", inputs: { vae_name: "wan_2.1_vae.safetensors" } },
@@ -154,7 +158,7 @@ export type Wan22FirstLastInput = Wan22Input & { lastImage: string };
 
 export function buildWan22FirstLastPrompt(input: Wan22FirstLastInput): ComfyPrompt {
   const fps = input.fps ?? 16;
-  const length = Math.floor(input.durationSeconds * fps + 1);
+  const length = wanFrameCount(input.durationSeconds, fps);
   const base = buildWan22I2VPrompt(input);
   base.last_image = { class_type: "LoadImage", inputs: { image: input.lastImage } };
   base.latent = {
@@ -185,7 +189,11 @@ export class ComfyClient {
     copy.set(bytes);
     body.set("image", new Blob([copy.buffer], { type: mimeType }), filename);
     body.set("overwrite", "true");
-    const response = await fetch(`${this.baseUrl}/upload/image`, { method: "POST", body });
+    const response = await fetch(`${this.baseUrl}/upload/image`, {
+      method: "POST",
+      body,
+      signal: AbortSignal.timeout(30_000),
+    });
     if (!response.ok) throw new Error(`ComfyUI image upload failed: ${response.status}`);
     const result = (await response.json()) as { name: string; subfolder: string; type: string };
     return result.subfolder ? `${result.subfolder}/${result.name}` : result.name;
@@ -196,6 +204,7 @@ export class ComfyClient {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ prompt, client_id: `takeboard-${Date.now()}` }),
+      signal: AbortSignal.timeout(30_000),
     });
     const result = (await response.json()) as {
       prompt_id?: string;
@@ -209,7 +218,9 @@ export class ComfyClient {
   }
 
   async history(promptId: string) {
-    const response = await fetch(`${this.baseUrl}/history/${encodeURIComponent(promptId)}`);
+    const response = await fetch(`${this.baseUrl}/history/${encodeURIComponent(promptId)}`, {
+      signal: AbortSignal.timeout(30_000),
+    });
     if (!response.ok) throw new Error(`ComfyUI history failed: ${response.status}`);
     const history = (await response.json()) as Record<
       string,
@@ -227,7 +238,9 @@ export class ComfyClient {
       subfolder: file.subfolder,
       type: file.type,
     });
-    const response = await fetch(`${this.baseUrl}/view?${query}`);
+    const response = await fetch(`${this.baseUrl}/view?${query}`, {
+      signal: AbortSignal.timeout(120_000),
+    });
     if (!response.ok) throw new Error(`ComfyUI output download failed: ${response.status}`);
     return new Uint8Array(await response.arrayBuffer());
   }

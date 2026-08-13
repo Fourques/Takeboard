@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -42,5 +42,38 @@ describe("TakeBoard project API", () => {
 
     const opened = await app.inject({ method: "GET", url: `/api/projects/${key}` });
     expect(opened.json().snapshot.project.title).toBe("真实短片");
+  });
+
+  it("does not create a project directory while returning 404", async () => {
+    const root = await mkdtemp(join(tmpdir(), "takeboard-project-missing-"));
+    cleanup.push(() => rm(root, { recursive: true, force: true }));
+    const app = buildApp({ projectsRoot: root, webRoot: null });
+    cleanup.push(() => app.close());
+
+    const response = await app.inject({ method: "GET", url: "/api/projects/ghost.takeboard" });
+
+    expect(response.statusCode).toBe(404);
+    expect(await readdir(root)).toEqual([]);
+  });
+
+  it("serializes concurrent writes for the same project", async () => {
+    const app = buildApp({ webRoot: null });
+    cleanup.push(() => app.close());
+    let active = 0;
+    let maximumActive = 0;
+    app.post<{ Params: { key: string } }>("/api/projects/:key/test-lock", async () => {
+      active += 1;
+      maximumActive = Math.max(maximumActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      active -= 1;
+      return { ok: true };
+    });
+
+    await Promise.all([
+      app.inject({ method: "POST", url: "/api/projects/locked.takeboard/test-lock" }),
+      app.inject({ method: "POST", url: "/api/projects/locked.takeboard/test-lock" }),
+    ]);
+
+    expect(maximumActive).toBe(1);
   });
 });

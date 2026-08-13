@@ -29,6 +29,7 @@ export function RecipeStudio({
   onSelect,
   open,
   selectedPath,
+  warnings,
   workflows,
 }: {
   busy: boolean;
@@ -39,6 +40,7 @@ export function RecipeStudio({
   onSelect: (workflow: WorkflowSummary) => void;
   open: boolean;
   selectedPath: string;
+  warnings: string[];
   workflows: WorkflowSummary[];
 }) {
   const [group, setGroup] = useState<"all" | WorkflowCapability>("all");
@@ -67,7 +69,10 @@ export function RecipeStudio({
           <div>
             <span className="section-kicker">RECIPE LIBRARY</span>
             <h2>工作流与模型</h2>
-            <p>已从当前 ComfyUI 自动检测 {workflows.length} 个 Workflow</p>
+            <p>
+              已从当前 ComfyUI 自动检测 {workflows.length} 个 Workflow
+              {warnings.length > 0 ? ` · ${warnings.length} 个文件未能读取` : ""}
+            </p>
           </div>
           <div className="studio-actions">
             <button type="button" onClick={() => void onRefresh()} disabled={busy}>

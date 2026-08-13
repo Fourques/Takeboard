@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { readFile, stat, writeFile } from "node:fs/promises";
 import { basename, extname, join, resolve } from "node:path";
 import { createTakeBoardId, toIsoTimestamp } from "@takeboard/domain";
 import {
@@ -26,6 +27,25 @@ function resolution(aspectRatio: string) {
   if (aspectRatio === "4:5") return { width: 512, height: 640 };
   if (aspectRatio === "2.35:1") return { width: 848, height: 360 };
   return { width: 480, height: 848 };
+}
+
+function parseByteRange(header: string, size: number) {
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
+  if (!match) return null;
+  const [, startText = "", endText = ""] = match;
+  if (!startText && !endText) return null;
+  const requestedStart = startText ? Number(startText) : Math.max(0, size - Number(endText));
+  const requestedEnd = endText && startText ? Number(endText) : size - 1;
+  if (
+    !Number.isSafeInteger(requestedStart) ||
+    !Number.isSafeInteger(requestedEnd) ||
+    requestedStart < 0 ||
+    requestedStart >= size ||
+    requestedEnd < requestedStart
+  ) {
+    return null;
+  }
+  return { start: requestedStart, end: Math.min(requestedEnd, size - 1) };
 }
 
 export function registerGenerationRoutes(
@@ -57,7 +77,8 @@ export function registerGenerationRoutes(
     const safeExtension = extname(basename(upload.filename)).toLowerCase().slice(0, 12);
     const storagePath = `assets/originals/${assetId}${safeExtension}`;
     const directory = join(root, key);
-    const store = await ProjectStore.open(directory);
+    const store = ProjectStore.openExisting(directory);
+    if (!store) return await reply.code(404).send({ error: "项目不存在" });
     try {
       const current = store.loadCurrent();
       if (!current) return await reply.code(404).send({ error: "项目不存在" });
@@ -125,13 +146,29 @@ export function registerGenerationRoutes(
       const key = projectKey(request.params.key);
       if (!key) return await reply.code(400).send({ error: "项目标识无效" });
       const directory = join(root, key);
-      const store = await ProjectStore.open(directory);
+      const store = ProjectStore.openExisting(directory);
+      if (!store) return await reply.code(404).send({ error: "项目不存在" });
       try {
         const current = store.loadCurrent();
         const asset = current?.snapshot.assets.find((item) => item.id === request.params.assetId);
         if (!asset) return await reply.code(404).send({ error: "素材不存在" });
-        const bytes = await readFile(join(directory, asset.storagePath));
-        return await reply.type(asset.mimeType).send(bytes);
+        const filePath = join(directory, asset.storagePath);
+        const info = await stat(filePath);
+        const rangeHeader = request.headers.range;
+        reply.header("accept-ranges", "bytes").type(asset.mimeType);
+        if (rangeHeader) {
+          const range = parseByteRange(rangeHeader, info.size);
+          if (!range) {
+            return await reply.code(416).header("content-range", `bytes */${info.size}`).send();
+          }
+          const length = range.end - range.start + 1;
+          return await reply
+            .code(206)
+            .header("content-length", length)
+            .header("content-range", `bytes ${range.start}-${range.end}/${info.size}`)
+            .send(createReadStream(filePath, range));
+        }
+        return await reply.header("content-length", info.size).send(createReadStream(filePath));
       } finally {
         store.close();
       }
@@ -144,7 +181,8 @@ export function registerGenerationRoutes(
       const key = projectKey(request.params.key);
       if (!key) return await reply.code(400).send({ error: "项目标识无效" });
       const directory = join(root, key);
-      const store = await ProjectStore.open(directory);
+      const store = ProjectStore.openExisting(directory);
+      if (!store) return await reply.code(404).send({ error: "项目不存在" });
       try {
         const current = store.loadCurrent();
         if (!current) return await reply.code(404).send({ error: "项目不存在" });
@@ -154,20 +192,6 @@ export function registerGenerationRoutes(
           typeof request.body === "object" && request.body !== null
             ? (request.body as Record<string, unknown>)
             : {};
-        const requestedAssetId =
-          typeof body.firstFrameAssetId === "string" ? body.firstFrameAssetId : null;
-        const inputAsset = requestedAssetId
-          ? current.snapshot.assets.find((asset) => asset.id === requestedAssetId)
-          : [...current.snapshot.assets].reverse().find((asset) => asset.mediaType === "image");
-        if (!inputAsset) return await reply.code(409).send({ error: "请先上传一张首帧图片" });
-
-        const bytes = await readFile(join(directory, inputAsset.storagePath));
-        const extension = extname(inputAsset.originalName) || ".png";
-        const comfyImage = await comfy.uploadImage(
-          new Uint8Array(bytes),
-          `takeboard_${current.snapshot.project.id}_${inputAsset.id}${extension}`,
-          inputAsset.mimeType,
-        );
         const recipePath =
           typeof body.recipePath === "string" ? body.recipePath : "Kino/Kino_Wan22_I2V.json";
         const firstLast = recipePath.endsWith("Kino_Wan22_FLF2V.json");
@@ -177,14 +201,34 @@ export function registerGenerationRoutes(
               "该 Workflow 已检测，但尚未映射为 TakeBoard 原生 Recipe；请进入 ComfyUI 编辑或运行",
           });
         }
+        const requestedAssetId =
+          typeof body.firstFrameAssetId === "string" ? body.firstFrameAssetId : null;
+        const inputAsset = requestedAssetId
+          ? current.snapshot.assets.find((asset) => asset.id === requestedAssetId)
+          : [...current.snapshot.assets].reverse().find((asset) => asset.mediaType === "image");
+        if (inputAsset?.mediaType !== "image") {
+          return await reply.code(409).send({
+            error: requestedAssetId ? "选择的首帧不是可用图片" : "请先上传一张首帧图片",
+          });
+        }
+
         const requestedLastAssetId =
           typeof body.lastFrameAssetId === "string" ? body.lastFrameAssetId : null;
-        const lastAsset = requestedLastAssetId
-          ? current.snapshot.assets.find((asset) => asset.id === requestedLastAssetId)
-          : null;
-        if (firstLast && !lastAsset) {
-          return await reply.code(409).send({ error: "首尾帧模式需要选择结束帧" });
+        const lastAsset =
+          firstLast && requestedLastAssetId
+            ? current.snapshot.assets.find((asset) => asset.id === requestedLastAssetId)
+            : null;
+        if (firstLast && lastAsset?.mediaType !== "image") {
+          return await reply.code(409).send({ error: "首尾帧模式需要选择一张可用的结束帧图片" });
         }
+
+        const bytes = await readFile(join(directory, inputAsset.storagePath));
+        const extension = extname(inputAsset.originalName) || ".png";
+        const comfyImage = await comfy.uploadImage(
+          new Uint8Array(bytes),
+          `takeboard_${current.snapshot.project.id}_${inputAsset.id}${extension}`,
+          inputAsset.mimeType,
+        );
         const seed =
           typeof body.seed === "number" && Number.isSafeInteger(body.seed) && body.seed >= 0
             ? body.seed
@@ -279,6 +323,7 @@ export function registerGenerationRoutes(
             fps,
             recipePath,
             prompt: positivePrompt,
+            negativePrompt: negativePrompt ?? null,
           },
           errorCode: null,
           errorMessage: null,
@@ -314,7 +359,8 @@ export function registerGenerationRoutes(
       const key = projectKey(request.params.key);
       if (!key) return await reply.code(400).send({ error: "项目标识无效" });
       const directory = join(root, key);
-      const store = await ProjectStore.open(directory);
+      const store = ProjectStore.openExisting(directory);
+      if (!store) return await reply.code(404).send({ error: "项目不存在" });
       try {
         const current = store.loadCurrent();
         if (!current) return await reply.code(404).send({ error: "项目不存在" });
@@ -341,10 +387,27 @@ export function registerGenerationRoutes(
           return { key, runId: run.id, status: run.status, ...saved };
         }
 
-        const output = Object.values(history.outputs ?? {}).flatMap(
-          (item) => item.videos ?? item.images ?? [],
-        )[0];
-        if (!output) return { key, runId: run.id, status: run.status, ...current };
+        const outputs = Object.values(history.outputs ?? {});
+        const output = outputs.flatMap((item) => item.videos ?? [])[0];
+        if (!output) {
+          if (!history.status?.completed) {
+            return { key, runId: run.id, status: run.status, ...current };
+          }
+          run.status = "failed";
+          run.errorCode = "NO_VIDEO_OUTPUT";
+          run.errorMessage = "ComfyUI 已完成，但 Workflow 没有返回视频文件";
+          run.updatedAt = timestamp;
+          const shot = current.snapshot.shots.find((item) => item.id === run.shotId);
+          if (shot) {
+            shot.status = "draft";
+            shot.updatedAt = timestamp;
+          }
+          const saved = await store.save(current.snapshot, {
+            type: "run.failed",
+            payload: { runId: run.id, errorCode: run.errorCode },
+          });
+          return { key, runId: run.id, status: run.status, ...saved };
+        }
         const bytes = await comfy.download(output);
         const assetId = createTakeBoardId("asset");
         const extension = extname(output.filename) || ".mp4";
@@ -355,7 +418,7 @@ export function registerGenerationRoutes(
           id: assetId,
           projectId: current.snapshot.project.id,
           mediaType: "video",
-          originalName: output.filename,
+          originalName: basename(output.filename).slice(0, 512),
           mimeType,
           byteSize: bytes.byteLength,
           sha256: sha256(bytes),

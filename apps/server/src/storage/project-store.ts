@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { type ProjectSnapshot, projectSnapshotSchema } from "@takeboard/contracts";
@@ -34,6 +36,12 @@ export class ProjectStore {
         join(resolvedDirectory, "logs"),
       ].map((directory) => mkdir(directory, { recursive: true })),
     );
+    return new ProjectStore(resolvedDirectory);
+  }
+
+  static openExisting(projectDirectory: string) {
+    const resolvedDirectory = resolve(projectDirectory);
+    if (!existsSync(join(resolvedDirectory, databaseFileName))) return null;
     return new ProjectStore(resolvedDirectory);
   }
 
@@ -155,7 +163,10 @@ export class ProjectStore {
 
   private async writeSnapshotAtomically(snapshotJson: string) {
     const destination = join(this.projectDirectory, snapshotFileName);
-    const temporary = join(this.projectDirectory, `.${snapshotFileName}.${process.pid}.tmp`);
+    const temporary = join(
+      this.projectDirectory,
+      `.${snapshotFileName}.${process.pid}.${randomUUID()}.tmp`,
+    );
     try {
       await writeFile(temporary, snapshotJson, { encoding: "utf8", mode: 0o600 });
       await rename(temporary, destination);

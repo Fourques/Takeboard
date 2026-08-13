@@ -24,6 +24,8 @@ const ids = {
   canvasB: "canvas_item_018f47a0-2c91-8a4f-a812-78f12a2c4520",
   edge: "canvas_edge_018f47a0-2c91-8a4f-a812-78f12a2c4521",
   otherProject: "project_018f47a0-2c91-8a4f-a812-78f12a2c4522",
+  entity: "entity_018f47a0-2c91-8a4f-a812-78f12a2c4523",
+  missingAsset: "asset_018f47a0-2c91-8a4f-a812-78f12a2c4524",
 } as const;
 
 const now = "2026-08-13T11:30:00+08:00";
@@ -171,6 +173,26 @@ describe("projectSnapshotSchema", () => {
         ],
       }),
     ).toThrow(/another project/);
+  });
+
+  it("rejects entity references to assets outside the project snapshot", () => {
+    expect(() =>
+      projectSnapshotSchema.parse({
+        ...emptySnapshot,
+        entities: [
+          {
+            id: ids.entity,
+            projectId: ids.project,
+            kind: "character",
+            name: "林岚",
+            description: "",
+            referenceAssetIds: [ids.missingAsset],
+            createdAt: now,
+            updatedAt: now,
+          },
+        ],
+      }),
+    ).toThrow(/missing asset/);
   });
 
   it("publishes a portable JSON Schema", () => {

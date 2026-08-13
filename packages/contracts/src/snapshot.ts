@@ -43,7 +43,7 @@ export const projectSnapshotSchema = projectSnapshotShape.superRefine((snapshot,
   const scenes = new Map(snapshot.scenes.map((scene) => [scene.id, scene]));
   const textItems = new Set(snapshot.textItems.map((item) => item.id));
   const entities = new Set(snapshot.entities.map((entity) => entity.id));
-  const assets = new Set(snapshot.assets.map((asset) => asset.id));
+  const assets = new Map(snapshot.assets.map((asset) => [asset.id, asset]));
   const shots = new Map(snapshot.shots.map((shot) => [shot.id, shot]));
   const runs = new Map(snapshot.runs.map((run) => [run.id, run]));
   const takes = new Map(snapshot.takes.map((take) => [take.id, take]));
@@ -100,6 +100,18 @@ export const projectSnapshotSchema = projectSnapshotShape.superRefine((snapshot,
     }
   });
 
+  snapshot.entities.forEach((entity, index) => {
+    entity.referenceAssetIds.forEach((assetId, referenceIndex) => {
+      if (!assets.has(assetId)) {
+        context.addIssue({
+          code: "custom",
+          message: "Entity references a missing asset",
+          path: ["entities", index, "referenceAssetIds", referenceIndex],
+        });
+      }
+    });
+  });
+
   snapshot.shots.forEach((shot, index) => {
     if (!scenes.has(shot.sceneId)) {
       context.addIssue({
@@ -129,6 +141,34 @@ export const projectSnapshotSchema = projectSnapshotShape.superRefine((snapshot,
         path: ["runs", index, "shotId"],
       });
     }
+    run.inputs.forEach((input, inputIndex) => {
+      const referenceExists = {
+        text: textItems.has(input.refId),
+        entity: entities.has(input.refId),
+        asset: assets.has(input.refId),
+        shot: shots.has(input.refId),
+        take: takes.has(input.refId),
+      }[input.refType];
+      if (!referenceExists) {
+        context.addIssue({
+          code: "custom",
+          message: `Run input references a missing ${input.refType}`,
+          path: ["runs", index, "inputs", inputIndex, "refId"],
+        });
+      }
+      const referencedAsset = input.refType === "asset" ? assets.get(input.refId) : null;
+      if (
+        referencedAsset &&
+        input.assetSha256 !== null &&
+        input.assetSha256 !== referencedAsset.sha256
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "Run input asset hash does not match the referenced asset",
+          path: ["runs", index, "inputs", inputIndex, "assetSha256"],
+        });
+      }
+    });
   });
 
   snapshot.takes.forEach((take, index) => {
@@ -160,6 +200,14 @@ export const projectSnapshotSchema = projectSnapshotShape.superRefine((snapshot,
       });
     }
     if (approval.status === "active") {
+      const shot = shots.get(approval.shotId);
+      if (take?.status !== "approved" || shot?.approvedTakeId !== approval.takeId) {
+        context.addIssue({
+          code: "custom",
+          message: "An active approval must match the shot's approved take",
+          path: ["approvals", index, "status"],
+        });
+      }
       if (activeApprovalShots.has(approval.shotId)) {
         context.addIssue({
           code: "custom",
