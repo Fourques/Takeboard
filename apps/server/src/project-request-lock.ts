@@ -23,7 +23,7 @@ async function acquireProjectLock(projectKey: string) {
 
 function lockedProjectKey(request: FastifyRequest) {
   const pathname = request.url.split("?", 1)[0] ?? "";
-  const match = /^\/api\/projects\/([^/]+)\/(.+)$/.exec(pathname);
+  const match = /^\/api\/projects\/([^/]+)(?:\/(.+))?$/.exec(pathname);
   if (!match) return null;
   const [, encodedKey, remainder] = match;
   const writesProject = request.method !== "GET" || remainder?.startsWith("runs/");

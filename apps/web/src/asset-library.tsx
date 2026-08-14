@@ -16,17 +16,19 @@ export function AssetLibrary({
   projectKey,
   selectedFirstFrameId,
   selectedLastFrameId,
+  selectedReferenceId,
 }: {
   assets: Asset[];
   busy: boolean;
   entities: Entity[];
   onClose: () => void;
-  onPickFrame: (assetId: string, slot: "first" | "last") => void;
+  onPickFrame: (assetId: string, slot: "first" | "last" | "reference") => void;
   onUpload: (file: File, metadata: { kind: AssetKind; name: string }) => Promise<void>;
   open: boolean;
   projectKey: string;
   selectedFirstFrameId: string | null;
   selectedLastFrameId: string | null;
+  selectedReferenceId: string | null;
 }) {
   const [kind, setKind] = useState<AssetFilter>("all");
   const [uploadKind, setUploadKind] = useState<AssetKind>("character");
@@ -93,7 +95,7 @@ export function AssetLibrary({
               .find((item) => entity.referenceAssetIds.includes(item.id));
             return (
               <article
-                className={`asset-vault-card ${asset?.id === selectedFirstFrameId || asset?.id === selectedLastFrameId ? "selected" : ""}`}
+                className={`asset-vault-card ${asset?.id === selectedFirstFrameId || asset?.id === selectedLastFrameId || asset?.id === selectedReferenceId ? "selected" : ""}`}
                 key={entity.id}
               >
                 {asset ? (
@@ -119,6 +121,9 @@ export function AssetLibrary({
                     <button type="button" onClick={() => onPickFrame(asset.id, "last")}>
                       {asset.id === selectedLastFrameId ? "✓ 尾帧" : "设为尾帧"}
                     </button>
+                    <button type="button" onClick={() => onPickFrame(asset.id, "reference")}>
+                      {asset.id === selectedReferenceId ? "✓ 参考" : "设为参考"}
+                    </button>
                   </div>
                 ) : null}
               </article>
@@ -126,7 +131,7 @@ export function AssetLibrary({
           })}
           {(kind === "all" ? looseImageAssets : []).map((asset) => (
             <article
-              className={`asset-vault-card ${asset.id === selectedFirstFrameId || asset.id === selectedLastFrameId ? "selected" : ""}`}
+              className={`asset-vault-card ${asset.id === selectedFirstFrameId || asset.id === selectedLastFrameId || asset.id === selectedReferenceId ? "selected" : ""}`}
               key={asset.id}
             >
               <img src={projectApi.assetUrl(projectKey, asset.id, true)} alt="" />
@@ -140,6 +145,9 @@ export function AssetLibrary({
                 </button>
                 <button type="button" onClick={() => onPickFrame(asset.id, "last")}>
                   {asset.id === selectedLastFrameId ? "✓ 尾帧" : "设为尾帧"}
+                </button>
+                <button type="button" onClick={() => onPickFrame(asset.id, "reference")}>
+                  {asset.id === selectedReferenceId ? "✓ 参考" : "设为参考"}
                 </button>
               </div>
             </article>

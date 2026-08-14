@@ -4,10 +4,10 @@
 当前阶段：M0 真实工作站纵向切片
 执行假设：1 名主开发者，借助 AI 编码；每周 5 个有效开发日。
 
-实施状态见 [执行进度](docs/progress.md)。项目主页、新建项目、角色/场景资产库、ComfyUI Workflow 自动检测与导入、4090 Worker、Wan 2.2 I2V/首尾帧 Recipe、Run/Take 回收和画布布局持久化均已可用。
+实施状态见 [执行进度](docs/progress.md)。项目主页、新建项目、角色/场景资产库、ComfyUI Workflow 自动检测与导入、本地执行节点、I2V/首尾帧 Recipe、Run/Take 回收和画布布局持久化均已可用。
 
 当前已有可运行的纵向 Demo，启动和操作步骤见 [完整 Demo 指南](docs/demo-guide.md)。
-4090 实机部署和真实生成步骤见 [4090 部署与使用](docs/4090-deployment.md)。
+自托管部署和真实生成步骤见 [自托管指南](docs/self-hosting.md)。
 多主题创作台、Workflow/模型兼容边界和资产使用方式见 [创作工作站指南](docs/creator-workstation.md)。
 
 ## 现在只做什么

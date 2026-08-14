@@ -24,7 +24,7 @@ TakeBoard 现在把“项目管理画布”和“ComfyUI 底层工作流”分�
 
 “原生”表示 TakeBoard 已有稳定参数映射，可直接排队执行；“Comfy”表示 TakeBoard 已检测和收录，但尚未建立安全的自动参数映射，此时会打开 ComfyUI，而不会错误提交任务。
 
-当前 4090 已检测到 MiniMax H3 T2V/I2V/R2V、Wan 2.2 I2V/首尾帧和 LTX 2.3 I2V。当前可由 TakeBoard 原生提交的是 Wan 2.2 I2V 和首尾帧。文生图、图生图分类已经支持，但服务器目前没有对应 JSON；导入后即可收录，建立 Recipe Contract 后才能原生执行。
+当前内置 Recipe 覆盖 Qwen Image 文生图/图生图、MiniMax H3 T2V/I2V、Wan 2.2 I2V/首尾帧和 LTX 2.3 I2V。能否原生提交取决于执行节点是否具有对应模型和 Workflow；其他 JSON 会先被检测、收录，并可进入 ComfyUI 深度编辑。
 
 ## 精简生成参数
 
@@ -51,11 +51,11 @@ TakeBoard 现在把“项目管理画布”和“ComfyUI 底层工作流”分�
 ssh -N \
   -L 48220:127.0.0.1:48120 \
   -L 48188:127.0.0.1:8188 \
-  duanqw-kami-tail
+  your-gpu-host
 ```
 
 然后访问 `http://127.0.0.1:48220`。工作流面板中的“进入 ComfyUI 深度编辑”会打开 `http://127.0.0.1:48188`，并携带当前 Workflow 路径；不同 ComfyUI 前端对自动载入查询参数的支持可能不同，无法自动载入时从 `TakeBoard` 文件夹选择即可。
 
-## 当前验证边界
+## 验证建议
 
-本轮在 MiniMax 正占用显卡期间完成，因此没有提交新的推理任务，也没有重启 ComfyUI。代码构建、类型检查、API 检测和 Workflow 变换单元测试均可离线验证；Wan 首尾帧的真实 GPU 成片仍需在当前任务结束后补一条烟雾测试。
+代码构建、类型检查、API 检测和 Workflow 变换单元测试均可离线完成。部署到自己的执行节点后，建议分别用一张非敏感图片跑通文生图、图生图和一种视频 Recipe，并确认 Run、Asset、Take 与来源连线都能在重开项目后恢复。

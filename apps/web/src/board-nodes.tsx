@@ -12,18 +12,51 @@ export type BoardNodeData = {
   selected?: boolean;
   engine?: string;
   mediaUrl?: string | undefined;
+  details?: string[];
+  inputSlots?: Array<{
+    id: "first_frame" | "last_frame" | "reference";
+    label: string;
+    connected: boolean;
+  }>;
 };
 
 export type BoardNode = Node<BoardNodeData>;
 
-function Port({ type, position }: { type: "source" | "target"; position: Position }) {
-  return <Handle type={type} position={position} className="board-handle" />;
+function Port({
+  type,
+  position,
+  id,
+  className = "",
+}: {
+  type: "source" | "target";
+  position: Position;
+  id?: string | null;
+  className?: string;
+}) {
+  return (
+    <Handle
+      id={id ?? null}
+      type={type}
+      position={position}
+      className={`board-handle ${className}`}
+    />
+  );
+}
+
+function NodeFacts({ details }: { details: string[] | undefined }) {
+  return details?.length ? (
+    <div className="node-facts">
+      {details.map((detail) => (
+        <span key={detail}>{detail}</span>
+      ))}
+    </div>
+  ) : null;
 }
 
 function TextNode({ data }: NodeProps<BoardNode>) {
   return (
     <article className="board-card text-node">
-      <Port type="source" position={Position.Right} />
+      <Port id="media" type="source" position={Position.Right} />
       <div className="node-heading">
         <span className="node-icon text-icon">文</span>
         <span>{data.eyebrow}</span>
@@ -38,7 +71,7 @@ function TextNode({ data }: NodeProps<BoardNode>) {
 function EntityNode({ data }: NodeProps<BoardNode>) {
   return (
     <article className="board-card entity-node">
-      <Port type="source" position={Position.Right} />
+      <Port id="media" type="source" position={Position.Right} />
       <div className="node-media portrait-art" role="img" aria-label="人物或场景参考图">
         {data.mediaUrl ? (
           <img src={data.mediaUrl} alt="" />
@@ -53,6 +86,7 @@ function EntityNode({ data }: NodeProps<BoardNode>) {
       </div>
       <h3>{data.title}</h3>
       <p>{data.body}</p>
+      <NodeFacts details={data.details} />
     </article>
   );
 }
@@ -60,7 +94,7 @@ function EntityNode({ data }: NodeProps<BoardNode>) {
 function AssetNode({ data }: NodeProps<BoardNode>) {
   return (
     <article className="board-card asset-node">
-      <Port type="source" position={Position.Right} />
+      <Port id="media" type="source" position={Position.Right} />
       <div className="node-media harbor-art" role="img" aria-label="场景参考图">
         {data.mediaUrl ? (
           <img src={data.mediaUrl} alt="" />
@@ -79,6 +113,7 @@ function AssetNode({ data }: NodeProps<BoardNode>) {
         <span>{data.eyebrow}</span>
       </div>
       <h3>{data.title}</h3>
+      <NodeFacts details={data.details} />
     </article>
   );
 }
@@ -92,7 +127,23 @@ function ShotNode({ data }: NodeProps<BoardNode>) {
   }[data.status ?? "draft"];
   return (
     <article className={`board-card shot-node ${data.selected ? "selected" : ""}`}>
-      <Port type="target" position={Position.Left} />
+      <div className="shot-inputs">
+        {(data.inputSlots ?? []).map((slot, index) => (
+          <div
+            className={`shot-input ${slot.connected ? "connected" : ""}`}
+            style={{ top: `${25 + index * 25}%` }}
+            key={slot.id}
+          >
+            <Port
+              id={slot.id}
+              type="target"
+              position={Position.Left}
+              className={`slot-${slot.id}`}
+            />
+            <span>{slot.label}</span>
+          </div>
+        ))}
+      </div>
       <Port type="source" position={Position.Right} />
       <div className="shot-topline">
         <span className="shot-label">{data.title}</span>
@@ -103,6 +154,7 @@ function ShotNode({ data }: NodeProps<BoardNode>) {
         {data.status === "approved" ? <span className="approved-stamp">✓ APPROVED</span> : null}
       </div>
       <p>{data.body}</p>
+      <NodeFacts details={data.details} />
       <footer>
         <span>{data.duration} 秒</span>
         <span>{data.takeCount ?? 0} Takes</span>

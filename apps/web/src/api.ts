@@ -113,6 +113,24 @@ export const projectApi = {
       method: "POST",
       body: JSON.stringify(input),
     }),
+  rename: (key: string, title: string) =>
+    jsonRequest<DemoPayload & { key: string }>(`/api/projects/${encodeURIComponent(key)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ title }),
+    }),
+  connect: (
+    key: string,
+    sourceItemId: string,
+    targetItemId: string,
+    targetSlot: "first_frame" | "last_frame" | "reference",
+  ) =>
+    jsonRequest<DemoPayload & { key: string }>(
+      `/api/projects/${encodeURIComponent(key)}/canvas-connections`,
+      {
+        method: "POST",
+        body: JSON.stringify({ sourceItemId, targetItemId, targetSlot }),
+      },
+    ),
   move: (key: string, itemId: string, x: number, y: number) =>
     jsonRequest<DemoPayload & { key: string }>(
       `/api/projects/${encodeURIComponent(key)}/canvas-position`,

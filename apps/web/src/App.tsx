@@ -1,6 +1,7 @@
 import {
   applyNodeChanges,
   Background,
+  type Connection,
   Controls,
   type Edge,
   MarkerType,
@@ -34,6 +35,7 @@ type GenerationSettings = {
   negativePrompt: string;
   firstFrameAssetId: string | null;
   lastFrameAssetId: string | null;
+  referenceAssetId: string | null;
   width: number;
   height: number;
   durationSeconds: number;
@@ -49,6 +51,7 @@ const defaultGenerationSettings: GenerationSettings = {
   negativePrompt: "",
   firstFrameAssetId: null,
   lastFrameAssetId: null,
+  referenceAssetId: null,
   width: 480,
   height: 848,
   durationSeconds: 5,
@@ -221,6 +224,14 @@ function boardNodes(
             projectKey && referenceAsset
               ? projectApi.assetUrl(projectKey, referenceAsset.id, true)
               : undefined,
+          details: [
+            `${entity?.referenceAssetIds.length ?? 0} 张参考`,
+            entity?.kind === "character"
+              ? "人物资产"
+              : entity?.kind === "location"
+                ? "场景资产"
+                : "道具资产",
+          ],
         },
       };
     }
@@ -237,6 +248,10 @@ function boardNodes(
           body: "",
           mediaUrl:
             projectKey && asset ? projectApi.assetUrl(projectKey, asset.id, true) : undefined,
+          details: [
+            asset?.width && asset?.height ? `${asset.width} × ${asset.height}` : "尺寸待识别",
+            asset?.mimeType.split("/").at(-1)?.toUpperCase() ?? "IMAGE",
+          ],
         },
       };
     }
@@ -270,24 +285,87 @@ function boardNodes(
         takeCount: takes.length,
         engine,
         selected: selectedShotId === item.refId,
+        details: [
+          shot?.aspectRatio ?? "未设画幅",
+          `${shot?.durationSeconds ?? 0}s`,
+          `${takes.length} Takes`,
+        ],
+        inputSlots: (
+          [
+            ["first_frame", "首帧"],
+            ["last_frame", "尾帧"],
+            ["reference", "参考"],
+          ] as const
+        ).map(([id, label]) => ({
+          id,
+          label,
+          connected: snapshot.canvasEdges.some(
+            (edge) => edge.targetItemId === item.id && edge.targetSlot === id,
+          ),
+        })),
       },
     };
   });
 }
 
 function boardEdges(snapshot: ProjectSnapshot): Edge[] {
+  const slotMeta = {
+    first_frame: { label: "首帧", color: "#65cba5" },
+    last_frame: { label: "尾帧", color: "#d6a95f" },
+    reference: { label: "参考", color: "#9e8cff" },
+  } as const;
   return snapshot.canvasEdges.map((edge) => ({
     id: edge.id,
     source: edge.sourceItemId,
     target: edge.targetItemId,
+    sourceHandle: edge.targetSlot ? "media" : null,
+    targetHandle: edge.targetSlot,
+    label: edge.targetSlot ? slotMeta[edge.targetSlot].label : undefined,
+    labelStyle: {
+      fill: edge.targetSlot ? slotMeta[edge.targetSlot].color : "#89928f",
+      fontSize: 10,
+      fontWeight: 700,
+    },
+    labelBgStyle: { fill: "rgba(15, 19, 18, .88)", fillOpacity: 1 },
+    labelBgPadding: [5, 3],
+    labelBgBorderRadius: 5,
     type: "smoothstep",
     animated: edge.relation === "generated_from",
     markerEnd: { type: MarkerType.ArrowClosed, color: "#66716e", width: 16, height: 16 },
     style: {
-      stroke: edge.relation === "generated_from" ? "#d6a95f" : "#58635f",
+      stroke:
+        edge.relation === "generated_from"
+          ? "#d6a95f"
+          : edge.targetSlot
+            ? slotMeta[edge.targetSlot].color
+            : "#58635f",
       strokeWidth: edge.relation === "generated_from" ? 2 : 1.25,
     },
   }));
+}
+
+function connectedAssetId(
+  snapshot: ProjectSnapshot,
+  targetShotId: string,
+  slot: "first_frame" | "last_frame" | "reference",
+) {
+  const targetItem = snapshot.canvasItems.find(
+    (item) => item.refType === "shot" && item.refId === targetShotId,
+  );
+  const edge = snapshot.canvasEdges.find(
+    (candidate) => candidate.targetItemId === targetItem?.id && candidate.targetSlot === slot,
+  );
+  const source = snapshot.canvasItems.find((item) => item.id === edge?.sourceItemId);
+  if (source?.refType === "asset") return source.refId;
+  if (source?.refType === "entity") {
+    const entity = snapshot.entities.find((candidate) => candidate.id === source.refId);
+    return (
+      entity?.referenceAssetIds.find((assetId) =>
+        snapshot.assets.some((asset) => asset.id === assetId && asset.mediaType === "image"),
+      ) ?? null
+    );
+  }
+  return null;
 }
 
 function CandidateArt({
@@ -331,6 +409,14 @@ function CandidateArt({
   );
 }
 
+type GenerationProgress = {
+  phase: "preparing" | "queued" | "running" | "collecting";
+  label: string;
+  detail: string;
+  percent: number;
+  elapsedSeconds: number;
+};
+
 type InspectorProps = {
   shot: Shot;
   takes: Take[];
@@ -349,6 +435,7 @@ type InspectorProps = {
   onOpenAssets: () => void;
   onOpenRecipes: () => void;
   generateDisabledReason: string | null;
+  progress: GenerationProgress | null;
 };
 
 function Inspector({
@@ -369,6 +456,7 @@ function Inspector({
   onOpenAssets,
   onOpenRecipes,
   generateDisabledReason,
+  progress,
 }: InspectorProps) {
   const [selectedTakeId, setSelectedTakeId] = useState<string | null>(null);
   const [reason, setReason] = useState(rejectionReasons[0] ?? "角色漂移");
@@ -472,6 +560,17 @@ function Inspector({
                 </div>
               </button>
             ) : null}
+            <button
+              type="button"
+              className={settings.referenceAssetId ? "filled reference-slot" : "reference-slot"}
+              onClick={onOpenAssets}
+            >
+              <span>{settings.referenceAssetId ? "✓" : "+"}</span>
+              <div>
+                <small>REFERENCE</small>
+                <strong>参考图</strong>
+              </div>
+            </button>
           </div>
           <div className="parameter-grid">
             <label>
@@ -606,6 +705,31 @@ function Inspector({
         </section>
       ) : null}
 
+      {progress ? (
+        <section className="generation-progress" aria-live="polite">
+          <div className="generation-progress-head">
+            <div>
+              <i />
+              <span>{progress.label}</span>
+            </div>
+            <strong>{progress.percent}%</strong>
+          </div>
+          <div className="generation-progress-track">
+            <span style={{ width: `${progress.percent}%` }} />
+          </div>
+          <div className="generation-progress-detail">
+            <span>{progress.detail}</span>
+            <span>{progress.elapsedSeconds}s</span>
+          </div>
+          <div className="generation-phases">
+            {(["preparing", "queued", "running", "collecting"] as const).map((phase) => (
+              <i className={phase === progress.phase ? "active" : ""} key={phase} />
+            ))}
+          </div>
+          <small>阶段进度为估算值；任务在后台执行，画布仍可查看和操作。</small>
+        </section>
+      ) : null}
+
       <div className="candidate-title-row">
         <div>
           <h3>候选 Takes</h3>
@@ -620,7 +744,9 @@ function Inspector({
         >
           {busy ? <span className="spinner" /> : <span>✦</span>}
           {busy
-            ? "生成中…"
+            ? progress
+              ? `${progress.label} · ${progress.percent}%`
+              : "处理中…"
             : isDemo
               ? takes.length > 0
                 ? "再抽 4 个"
@@ -753,6 +879,9 @@ export function App() {
   const [generationSettings, setGenerationSettings] =
     useState<GenerationSettings>(defaultGenerationSettings);
   const [generationBusy, setGenerationBusy] = useState(false);
+  const [generationProgress, setGenerationProgress] = useState<GenerationProgress | null>(null);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameTitle, setRenameTitle] = useState("");
   const assetInput = useRef<HTMLInputElement>(null);
   const generationScopeRef = useRef("");
   const generationTokenRef = useRef(0);
@@ -891,10 +1020,55 @@ export function App() {
     [snapshot],
   );
 
+  const onConnect = useCallback(
+    (connection: Connection) => {
+      if (!projectKey || projectMode !== "project" || !connection.source || !connection.target) {
+        setNotice("功能示例中的连线不会写入项目");
+        return;
+      }
+      const slot = connection.targetHandle;
+      if (slot !== "first_frame" && slot !== "last_frame" && slot !== "reference") {
+        setError("请连接到镜头的首帧、尾帧或参考图端口");
+        return;
+      }
+      setBusy(true);
+      setError(null);
+      void projectApi
+        .connect(projectKey, connection.source, connection.target, slot)
+        .then((payload) => {
+          acceptPayload(payload);
+          const targetItem = payload.snapshot.canvasItems.find(
+            (item) => item.id === connection.target,
+          );
+          if (targetItem?.refType === "shot") {
+            setSelectedShotId(targetItem.refId);
+            const assetId = connectedAssetId(payload.snapshot, targetItem.refId, slot);
+            setGenerationSettings((current) => ({
+              ...current,
+              [slot === "first_frame"
+                ? "firstFrameAssetId"
+                : slot === "last_frame"
+                  ? "lastFrameAssetId"
+                  : "referenceAssetId"]: assetId,
+            }));
+          }
+          setNotice(
+            `已连接为${slot === "first_frame" ? "首帧" : slot === "last_frame" ? "尾帧" : "参考图"}`,
+          );
+        })
+        .catch((cause: unknown) =>
+          setError(cause instanceof Error ? cause.message : "连线保存失败"),
+        )
+        .finally(() => setBusy(false));
+    },
+    [acceptPayload, projectKey, projectMode],
+  );
+
   const openProject = useCallback(
     async (key: string) => {
       generationTokenRef.current += 1;
       setGenerationBusy(false);
+      setGenerationProgress(null);
       setBusy(true);
       setError(null);
       try {
@@ -917,6 +1091,7 @@ export function App() {
     async (input: Parameters<typeof projectApi.create>[0]) => {
       generationTokenRef.current += 1;
       setGenerationBusy(false);
+      setGenerationProgress(null);
       setBusy(true);
       setError(null);
       try {
@@ -937,9 +1112,30 @@ export function App() {
     [acceptPayload],
   );
 
+  const renameProject = useCallback(
+    async (key: string, title: string) => {
+      setBusy(true);
+      setError(null);
+      try {
+        const payload = await projectApi.rename(key, title);
+        if (projectKey === key) acceptPayload(payload);
+        const catalog = await projectApi.list();
+        setProjects(catalog.projects);
+        setNotice("项目名称已更新");
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "项目重命名失败");
+        throw cause;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [acceptPayload, projectKey],
+  );
+
   const openDemo = useCallback(async () => {
     generationTokenRef.current += 1;
     setGenerationBusy(false);
+    setGenerationProgress(null);
     setBusy(true);
     setError(null);
     try {
@@ -967,8 +1163,18 @@ export function App() {
       durationSeconds: selectedShot.durationSeconds,
       firstFrameAssetId: imageAssets.at(-1)?.id ?? null,
       lastFrameAssetId: null,
+      referenceAssetId: null,
     }));
-  }, [imageAssets, projectKey, projectMode, selectedShot]);
+    if (snapshot && projectMode === "project") {
+      setGenerationSettings((current) => ({
+        ...current,
+        firstFrameAssetId:
+          connectedAssetId(snapshot, selectedShot.id, "first_frame") ?? current.firstFrameAssetId,
+        lastFrameAssetId: connectedAssetId(snapshot, selectedShot.id, "last_frame"),
+        referenceAssetId: connectedAssetId(snapshot, selectedShot.id, "reference"),
+      }));
+    }
+  }, [imageAssets, projectKey, projectMode, selectedShot, snapshot]);
 
   useEffect(() => {
     if (window.sessionStorage.getItem("takeboard.resumeDemo") !== "1") return;
@@ -1051,6 +1257,14 @@ export function App() {
       const token = generationTokenRef.current + 1;
       generationTokenRef.current = token;
       setGenerationBusy(true);
+      const startedAt = Date.now();
+      setGenerationProgress({
+        phase: "preparing",
+        label: "正在准备输入",
+        detail: "校验素材、参数与工作流",
+        percent: 6,
+        elapsedSeconds: 0,
+      });
       setError(null);
       try {
         if (selectedWorkflow?.execution === "comfy_only") {
@@ -1064,21 +1278,47 @@ export function App() {
           return;
         }
         if (generationDisabledReason) throw new Error(generationDisabledReason);
+        setGenerationProgress({
+          phase: "queued",
+          label: "正在提交任务",
+          detail: "构建可复现的运行快照",
+          percent: 16,
+          elapsedSeconds: 0,
+        });
         const submitted = await projectApi.generate(projectKey, shot.id, generationSettings);
         if (generationTokenRef.current !== token) return;
         acceptPayload(submitted, shot.id);
         setNotice(`${selectedWorkflow?.name ?? "Recipe"} 已开始生成，运行记录已保存`);
         for (let attempt = 0; attempt < 240; attempt += 1) {
+          const elapsedSeconds = Math.round((Date.now() - startedAt) / 1000);
+          setGenerationProgress({
+            phase: "running",
+            label: "模型正在生成",
+            detail: `${selectedWorkflow?.name ?? "当前工作流"} · 后台任务持续运行`,
+            percent: Math.min(88, 24 + Math.round(attempt * 1.15)),
+            elapsedSeconds,
+          });
           await new Promise((resolve) => window.setTimeout(resolve, 3_000));
           if (generationTokenRef.current !== token) return;
           const result = await projectApi.run(projectKey, submitted.runId);
           if (generationTokenRef.current !== token) return;
           acceptPayload(result);
           if (result.status === "completed") {
-            setNotice(`${shot.label} 已生成真实视频 Take`);
+            setGenerationProgress({
+              phase: "collecting",
+              label: "正在整理结果",
+              detail: "写入候选、预览与运行谱系",
+              percent: 100,
+              elapsedSeconds: Math.round((Date.now() - startedAt) / 1000),
+            });
+            const isImage =
+              selectedWorkflow &&
+              ["text_to_image", "image_to_image"].includes(selectedWorkflow.capability);
+            setNotice(`${shot.label} 已生成真实${isImage ? "图片" : "视频"} Take`);
             return;
           }
-          if (result.status === "failed") throw new Error("4090 生成失败，请查看运行记录");
+          if (result.status === "failed")
+            throw new Error("生成任务失败，请查看运行记录或执行节点日志");
         }
         throw new Error("生成仍在运行，可稍后重新打开项目查看");
       } catch (cause) {
@@ -1086,7 +1326,12 @@ export function App() {
           setError(cause instanceof Error ? cause.message : "生成失败");
         }
       } finally {
-        if (generationTokenRef.current === token) setGenerationBusy(false);
+        if (generationTokenRef.current === token) {
+          setGenerationBusy(false);
+          window.setTimeout(() => {
+            if (generationTokenRef.current === token) setGenerationProgress(null);
+          }, 900);
+        }
       }
     },
     [
@@ -1124,6 +1369,7 @@ export function App() {
         onCreate={createProject}
         onOpen={openProject}
         onOpenDemo={openDemo}
+        onRename={renameProject}
         projects={projects}
         worker={worker}
       />
@@ -1150,15 +1396,25 @@ export function App() {
             <span>OPEN FILMMAKING CANVAS</span>
           </div>
         </div>
-        <div className="project-heading">
+        <button
+          className="project-heading"
+          type="button"
+          title="修改项目名称"
+          onClick={() => {
+            if (projectMode !== "project") return;
+            setRenameTitle(snapshot.project.title);
+            setRenameOpen(true);
+          }}
+        >
           <span className="project-dot" />
           <div>
             <strong>{snapshot.project.title}</strong>
             <span>
-              {snapshot.scenes[0]?.title} · {projectMode === "demo" ? "功能示例" : "4090 本地项目"}
+              {snapshot.scenes[0]?.title} · {projectMode === "demo" ? "功能示例" : "本地优先项目"}
             </span>
           </div>
-        </div>
+          {projectMode === "project" ? <span className="project-heading-edit">✎</span> : null}
+        </button>
         <div className="top-actions">
           <span className="save-status">✓ 已保存 · r{revision}</span>
           <ThemeSwitcher compact />
@@ -1171,11 +1427,12 @@ export function App() {
             onClick={() => {
               generationTokenRef.current += 1;
               setGenerationBusy(false);
+              setGenerationProgress(null);
               window.sessionStorage.removeItem("takeboard.resumeDemo");
               setShowHub(true);
             }}
           >
-            项目主页
+            切换项目
           </button>
           {projectMode === "demo" ? (
             <button
@@ -1277,11 +1534,11 @@ export function App() {
         <div className="sidebar-bottom">
           <span>{projectMode === "demo" ? "DEMO WORKER" : "GENERATION WORKER"}</span>
           <div>
-            <i /> {projectMode === "demo" ? "Fake ComfyUI" : (worker?.device ?? "ComfyUI")} ·{" "}
+            <i /> {projectMode === "demo" ? "Fake ComfyUI" : (worker?.engine ?? "ComfyUI")} ·{" "}
             {worker?.status === "ready" || projectMode === "demo" ? "Ready" : "Offline"}
           </div>
           <small>
-            {projectMode === "demo" ? "无需 GPU · 不产生费用" : "开源模型 · 运行在你的 4090"}
+            {projectMode === "demo" ? "无需计算资源 · 不产生费用" : "数据、模型与工作流由你掌控"}
           </small>
         </div>
       </nav>
@@ -1319,6 +1576,7 @@ export function App() {
           edges={edges}
           nodeTypes={boardNodeTypes as NodeTypes}
           onNodesChange={onNodesChange}
+          onConnect={onConnect}
           onNodeClick={onNodeClick}
           onNodeDragStop={(_event, node) => {
             void (
@@ -1342,7 +1600,7 @@ export function App() {
           proOptions={{ hideAttribution: true }}
           deleteKeyCode={null}
         >
-          <Background color="#29302e" gap={28} size={1} />
+          <Background color="var(--canvas-grid)" gap={28} size={1} />
           <Controls showInteractive={false} position="bottom-left" />
         </ReactFlow>
         <div className="canvas-status">
@@ -1365,10 +1623,11 @@ export function App() {
           onOpenAssets={() => setAssetLibraryOpen(true)}
           onOpenRecipes={() => setRecipeOpen(true)}
           generateDisabledReason={generationDisabledReason}
+          progress={generationProgress}
           workerLabel={
             projectMode === "demo"
               ? "Fake Wan I2V"
-              : `${selectedWorkflow?.name ?? "ComfyUI"} · ${worker?.device ?? "本地 Worker"}`
+              : `${selectedWorkflow?.name ?? "ComfyUI"} · 本地执行`
           }
           onGenerate={() =>
             projectMode === "demo"
@@ -1446,17 +1705,64 @@ export function App() {
           onPickFrame={(assetId, slot) => {
             setGenerationSettings((current) => ({
               ...current,
-              [slot === "first" ? "firstFrameAssetId" : "lastFrameAssetId"]: assetId,
+              [slot === "first"
+                ? "firstFrameAssetId"
+                : slot === "last"
+                  ? "lastFrameAssetId"
+                  : "referenceAssetId"]: assetId,
             }));
             setAssetLibraryOpen(false);
-            setNotice(slot === "first" ? "已设为起始帧" : "已设为结束帧");
+            setNotice(
+              slot === "first" ? "已设为起始帧" : slot === "last" ? "已设为结束帧" : "已设为参考图",
+            );
           }}
           onUpload={async (file, metadata) => await uploadAsset(file, metadata)}
           open={assetLibraryOpen}
           projectKey={projectKey}
           selectedFirstFrameId={generationSettings.firstFrameAssetId}
           selectedLastFrameId={generationSettings.lastFrameAssetId}
+          selectedReferenceId={generationSettings.referenceAssetId}
         />
+      ) : null}
+
+      {renameOpen && projectKey ? (
+        <div className="modal-backdrop">
+          <form
+            className="rename-project-modal"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void renameProject(projectKey, renameTitle)
+                .then(() => setRenameOpen(false))
+                .catch(() => undefined);
+            }}
+          >
+            <div className="modal-title">
+              <div>
+                <span className="section-kicker">RENAME PROJECT</span>
+                <h2>修改项目名称</h2>
+              </div>
+              <button type="button" aria-label="关闭重命名" onClick={() => setRenameOpen(false)}>
+                ×
+              </button>
+            </div>
+            <label>
+              新名称
+              <input
+                required
+                maxLength={200}
+                value={renameTitle}
+                onChange={(event) => setRenameTitle(event.target.value)}
+              />
+            </label>
+            {error ? <p className="form-error">{error}</p> : null}
+            <div className="modal-actions">
+              <span>项目素材和运行记录不会改变</span>
+              <button type="submit" disabled={busy || !renameTitle.trim()}>
+                {busy ? "正在保存…" : "保存名称"}
+              </button>
+            </div>
+          </form>
+        </div>
       ) : null}
 
       {notice ? <div className="toast success">✓ {notice}</div> : null}

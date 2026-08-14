@@ -126,6 +126,7 @@ export class DemoService {
                 sourceItemId: shotItem.id,
                 targetItemId: stackItem.id,
                 relation: "generated_from" as const,
+                targetSlot: null,
                 runId: newRuns[0]?.id ?? null,
                 immutable: true,
                 createdAt: timestamp,

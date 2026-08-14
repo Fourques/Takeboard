@@ -6,6 +6,22 @@ import { buildApp } from "../src/app.js";
 
 const cleanup: Array<() => Promise<void>> = [];
 
+function imageUpload() {
+  const boundary = "----takeboard-project-boundary";
+  const prefix = Buffer.from(
+    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="frame.png"\r\nContent-Type: image/png\r\n\r\n`,
+  );
+  const bytes = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+    "base64",
+  );
+  const suffix = Buffer.from(`\r\n--${boundary}--\r\n`);
+  return {
+    payload: Buffer.concat([prefix, bytes, suffix]),
+    headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+  };
+}
+
 afterEach(async () => {
   await Promise.all(cleanup.splice(0).map((close) => close()));
 });
@@ -42,6 +58,35 @@ describe("TakeBoard project API", () => {
 
     const opened = await app.inject({ method: "GET", url: `/api/projects/${key}` });
     expect(opened.json().snapshot.project.title).toBe("真实短片");
+
+    const renamed = await app.inject({
+      method: "PATCH",
+      url: `/api/projects/${key}`,
+      payload: { title: "新片名" },
+    });
+    expect(renamed.statusCode).toBe(200);
+    expect(renamed.json().snapshot.project.title).toBe("新片名");
+
+    const uploaded = await app.inject({
+      method: "POST",
+      url: `/api/projects/${key}/assets`,
+      ...imageUpload(),
+    });
+    const items = uploaded.json().snapshot.canvasItems as Array<{
+      id: string;
+      refType: string;
+    }>;
+    const sourceItemId = items.find((item) => item.refType === "asset")?.id;
+    const targetItemId = items.find((item) => item.refType === "shot")?.id;
+    const connected = await app.inject({
+      method: "POST",
+      url: `/api/projects/${key}/canvas-connections`,
+      payload: { sourceItemId, targetItemId, targetSlot: "first_frame" },
+    });
+    expect(connected.statusCode).toBe(200);
+    expect(connected.json().snapshot.canvasEdges).toEqual([
+      expect.objectContaining({ sourceItemId, targetItemId, targetSlot: "first_frame" }),
+    ]);
   });
 
   it("does not create a project directory while returning 404", async () => {
