@@ -64,6 +64,7 @@ function TextNode({ data }: NodeProps<BoardNode>) {
       <h3>{data.title}</h3>
       <p>{data.body}</p>
       <footer>剧本资产 · 可作为生成来源</footer>
+      {data.selected ? <span className="node-action-hint">双击编辑 · 右键更多</span> : null}
     </article>
   );
 }
@@ -87,6 +88,7 @@ function EntityNode({ data }: NodeProps<BoardNode>) {
       <h3>{data.title}</h3>
       <p>{data.body}</p>
       <NodeFacts details={data.details} />
+      {data.selected ? <span className="node-action-hint">双击编辑 · 右键更多</span> : null}
     </article>
   );
 }
@@ -114,6 +116,7 @@ function AssetNode({ data }: NodeProps<BoardNode>) {
       </div>
       <h3>{data.title}</h3>
       <NodeFacts details={data.details} />
+      {data.selected ? <span className="node-action-hint">双击编辑 · 右键更多</span> : null}
     </article>
   );
 }
@@ -160,6 +163,7 @@ function ShotNode({ data }: NodeProps<BoardNode>) {
         <span>{data.takeCount ?? 0} Takes</span>
         <span>{data.engine ?? "I2V"}</span>
       </footer>
+      {data.selected ? <span className="node-action-hint">双击编辑 · 右键更多</span> : null}
     </article>
   );
 }
@@ -186,6 +190,7 @@ function TakeStackNode({ data }: NodeProps<BoardNode>) {
         <span>{data.rejectedCount ?? 0} 已淘汰</span>
         <span>{data.status === "approved" ? "1 已批准" : "等待选择"}</span>
       </footer>
+      {data.selected ? <span className="node-action-hint">右键复制或移除</span> : null}
     </article>
   );
 }

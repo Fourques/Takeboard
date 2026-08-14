@@ -32,8 +32,11 @@ export class ProjectStore {
         join(resolvedDirectory, "assets", "originals"),
         join(resolvedDirectory, "assets", "proxies"),
         join(resolvedDirectory, "renders"),
+        join(resolvedDirectory, "runs"),
         join(resolvedDirectory, "recipes"),
         join(resolvedDirectory, "logs"),
+        join(resolvedDirectory, "exports"),
+        join(resolvedDirectory, "trash"),
       ].map((directory) => mkdir(directory, { recursive: true })),
     );
     return new ProjectStore(resolvedDirectory);

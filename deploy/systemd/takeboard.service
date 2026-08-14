@@ -16,6 +16,8 @@ Environment=TAKEBOARD_WEB_ROOT=/home/duanqw/Opc/TakeBoard/apps/web/dist
 Environment=TAKEBOARD_DATA_ROOT=/home/duanqw/TakeBoardData
 Environment=COMFY_URL=http://127.0.0.1:8188
 Environment=COMFY_EDITOR_URL=http://127.0.0.1:48188
+Environment=COMFY_INPUT_ROOT=/home/duanqw/Opc/Stortvideo/apps/ComfyUI-H3/input
+Environment=COMFY_OUTPUT_ROOT=/home/duanqw/Opc/Stortvideo/apps/ComfyUI-H3/output
 
 [Install]
 WantedBy=default.target

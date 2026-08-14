@@ -621,6 +621,70 @@ export class ComfyClient {
     return result.prompt_id;
   }
 
+  async cancel(promptId: string) {
+    const response = await fetch(
+      `${this.baseUrl}/api/jobs/${encodeURIComponent(promptId)}/cancel`,
+      {
+        method: "POST",
+        signal: AbortSignal.timeout(30_000),
+      },
+    );
+    if (response.status === 404) {
+      const [interrupt, dequeue] = await Promise.all([
+        fetch(`${this.baseUrl}/interrupt`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ prompt_id: promptId }),
+          signal: AbortSignal.timeout(30_000),
+        }),
+        fetch(`${this.baseUrl}/queue`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ delete: [promptId] }),
+          signal: AbortSignal.timeout(30_000),
+        }),
+      ]);
+      if (!interrupt.ok || !dequeue.ok) {
+        throw new Error("ComfyUI targeted cancellation failed");
+      }
+      return true;
+    }
+    if (!response.ok) throw new Error(`ComfyUI job cancellation failed: ${response.status}`);
+    const result = (await response.json()) as { cancelled?: boolean };
+    return result.cancelled ?? false;
+  }
+
+  async deleteHistory(promptId: string) {
+    const response = await fetch(`${this.baseUrl}/history`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ delete: [promptId] }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok) throw new Error(`ComfyUI history cleanup failed: ${response.status}`);
+  }
+
+  async freeResourcesIfIdle() {
+    const queueResponse = await fetch(`${this.baseUrl}/queue`, {
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!queueResponse.ok) return false;
+    const queue = (await queueResponse.json()) as {
+      queue_running?: unknown[];
+      queue_pending?: unknown[];
+    };
+    if ((queue.queue_running?.length ?? 0) > 0 || (queue.queue_pending?.length ?? 0) > 0) {
+      return false;
+    }
+    const response = await fetch(`${this.baseUrl}/free`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ unload_models: true, free_memory: true }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    return response.ok;
+  }
+
   async workflow(path: string) {
     const response = await fetch(
       `${this.baseUrl}/api/userdata/${encodeURIComponent(`workflows/${path}`)}`,

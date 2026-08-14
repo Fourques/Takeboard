@@ -23,7 +23,10 @@ export function AssetLibrary({
   entities: Entity[];
   onClose: () => void;
   onPickFrame: (assetId: string, slot: "first" | "last" | "reference") => void;
-  onUpload: (file: File, metadata: { kind: AssetKind; name: string }) => Promise<void>;
+  onUpload: (
+    file: File,
+    metadata: { kind: AssetKind; name: string },
+  ) => Promise<{ ok: boolean; error?: string }>;
   open: boolean;
   projectKey: string;
   selectedFirstFrameId: string | null;
@@ -33,6 +36,10 @@ export function AssetLibrary({
   const [kind, setKind] = useState<AssetFilter>("all");
   const [uploadKind, setUploadKind] = useState<AssetKind>("character");
   const [name, setName] = useState("");
+  const [uploadStatus, setUploadStatus] = useState<{
+    state: "idle" | "uploading" | "success" | "error";
+    message: string;
+  }>({ state: "idle", message: "PNG、JPEG、WebP · 单文件不超过 100 MB" });
   const input = useRef<HTMLInputElement>(null);
   const entityCards = useMemo(
     () => entities.filter((entity) => kind === "all" || entity.kind === kind),
@@ -174,13 +181,37 @@ export function AssetLibrary({
           <input
             ref={input}
             type="file"
-            accept="image/png,image/jpeg,image/webp"
+            accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
             onChange={(event) => {
               const file = event.target.files?.[0];
-              if (file) {
-                void onUpload(file, { kind: uploadKind, name }).then(() => setName(""));
-              }
               event.target.value = "";
+              if (!file) return;
+              if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+                setUploadStatus({
+                  state: "error",
+                  message: "暂时只支持 PNG、JPEG 和 WebP 图片",
+                });
+                return;
+              }
+              if (file.size > 100 * 1024 * 1024) {
+                setUploadStatus({ state: "error", message: "文件超过 100 MB 上传上限" });
+                return;
+              }
+              setUploadStatus({
+                state: "uploading",
+                message: `正在上传 ${file.name} 并生成安全预览…`,
+              });
+              void onUpload(file, { kind: uploadKind, name }).then((result) => {
+                if (result.ok) {
+                  setName("");
+                  setUploadStatus({ state: "success", message: `${file.name} 已加入项目资产库` });
+                } else {
+                  setUploadStatus({
+                    state: "error",
+                    message: result.error ?? "图片上传失败，请重试",
+                  });
+                }
+              });
             }}
           />
           <select
@@ -204,11 +235,19 @@ export function AssetLibrary({
                   : "道具名称（可选）"
             }
           />
-          <button type="button" disabled={busy} onClick={() => input.current?.click()}>
-            ＋ 添加
+          <button
+            type="button"
+            disabled={busy || uploadStatus.state === "uploading"}
+            onClick={() => input.current?.click()}
+          >
+            {uploadStatus.state === "uploading" ? "上传中…" : "＋ 添加"}
             {uploadKind === "character" ? "人物" : uploadKind === "location" ? "场景" : "道具"}
             资产
           </button>
+          <div className={`asset-upload-status ${uploadStatus.state}`} aria-live="polite">
+            <i />
+            <span>{uploadStatus.message}</span>
+          </div>
         </div>
       </aside>
     </div>

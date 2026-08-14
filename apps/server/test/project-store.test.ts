@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { schemaVersion } from "@takeboard/contracts";
@@ -64,6 +64,19 @@ describe("ProjectStore", () => {
     expect((await reopenedStore.readOpenSnapshot()).project.title).toBe("Renamed film");
     expect(reopenedStore.eventCount(projectId, "project.saved")).toBe(2);
     reopenedStore.close();
+    expect((await readdir(projectDirectory)).sort()).toEqual(
+      [
+        "assets",
+        "exports",
+        "logs",
+        "project.takeboard.json",
+        "recipes",
+        "renders",
+        "runs",
+        "takeboard.db",
+        "trash",
+      ].sort(),
+    );
   });
 
   it("strips unknown secrets before writing the open snapshot", async () => {

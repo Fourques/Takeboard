@@ -4361,3 +4361,305 @@ html[data-theme="light"] .universe-vignette {
     animation: none;
   }
 }
+
+/* Safe task cancellation, upload feedback and canvas editing */
+.cancel-generation-button {
+  width: 100%;
+  margin-top: 11px;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, #df766d 55%, var(--line));
+  border-radius: 5px;
+  color: #f3aaa3;
+  background: color-mix(in srgb, #6c2925 34%, var(--surface-2));
+  font-size: 8px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.cancel-generation-button:hover:not(:disabled) {
+  border-color: #eb8b82;
+  background: color-mix(in srgb, #7a2f2a 50%, var(--surface-2));
+}
+
+.cancel-generation-button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.generation-cancel-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 12px 19px 4px;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, #df766d 40%, var(--line));
+  border-radius: 5px;
+  color: var(--text-2);
+  background: color-mix(in srgb, #6c2925 14%, var(--surface-2));
+  font-size: 8px;
+  gap: 8px;
+}
+
+.generation-cancel-strip span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.generation-cancel-strip i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #df766d;
+  box-shadow: 0 0 9px #df766d;
+}
+
+.generation-cancel-strip button {
+  padding: 6px 8px;
+  border: 1px solid #7e403c;
+  border-radius: 3px;
+  color: #f0a19a;
+  background: #351c1a;
+  font-size: 7px;
+  cursor: pointer;
+}
+
+.asset-upload-status {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  min-height: 18px;
+  color: var(--faint);
+  font-size: 8px;
+  gap: 7px;
+}
+
+.asset-upload-status i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+
+.asset-upload-status.uploading i {
+  border: 1px solid var(--accent);
+  border-top-color: transparent;
+  background: transparent;
+  animation: spin 700ms linear infinite;
+}
+
+.asset-upload-status.success {
+  color: var(--green);
+}
+
+.asset-upload-status.success i {
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green);
+}
+
+.asset-upload-status.error {
+  color: #e68c84;
+}
+
+.asset-upload-status.error i {
+  background: #df766d;
+}
+
+.node-action-hint {
+  z-index: 8;
+  position: absolute;
+  right: 8px;
+  bottom: 7px;
+  padding: 4px 6px;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line));
+  border-radius: 3px;
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--surface-root) 88%, transparent);
+  font-size: 6px;
+  letter-spacing: 0.04em;
+  box-shadow: 0 4px 12px var(--shadow);
+  pointer-events: none;
+  backdrop-filter: blur(8px);
+}
+
+.canvas-context-menu {
+  z-index: 120;
+  position: fixed;
+  width: 218px;
+  padding: 7px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-1) 94%, transparent);
+  box-shadow: 0 24px 70px rgb(0 0 0 / 42%);
+  backdrop-filter: blur(24px) saturate(1.2);
+  animation: context-panel-enter 140ms ease-out;
+}
+
+.canvas-context-menu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 7px 7px;
+  color: var(--faint);
+  font:
+    7px ui-monospace,
+    monospace;
+  letter-spacing: 0.14em;
+}
+
+.canvas-context-menu-head button {
+  width: 20px;
+  padding: 0;
+  color: var(--faint);
+  background: transparent;
+}
+
+.canvas-context-menu > button {
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  align-items: center;
+  width: 100%;
+  padding: 8px 7px;
+  border: 0;
+  border-radius: 4px;
+  color: var(--text-2);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.canvas-context-menu > button:hover:not(:disabled) {
+  color: var(--text-1);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface-2));
+}
+
+.canvas-context-menu > button:disabled {
+  cursor: not-allowed;
+  opacity: 0.38;
+}
+
+.canvas-context-menu > button > span {
+  color: var(--accent-strong);
+  font-size: 11px;
+}
+
+.canvas-context-menu > button strong {
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.canvas-context-menu kbd {
+  color: var(--faint);
+  font:
+    7px ui-monospace,
+    monospace;
+}
+
+.canvas-context-menu > button.danger,
+.canvas-context-menu > button.danger span {
+  color: #e68c84;
+}
+
+.canvas-context-menu > p {
+  margin: 5px 8px 7px;
+  color: var(--faint);
+  font-size: 7px;
+  line-height: 1.5;
+}
+
+.context-menu-separator {
+  height: 1px;
+  margin: 5px 6px;
+  background: var(--line);
+}
+
+.node-editor-backdrop {
+  z-index: 180;
+}
+
+.node-editor-modal {
+  width: min(560px, calc(100vw - 40px));
+  padding: 20px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line));
+  border-radius: 10px;
+  background:
+    radial-gradient(
+      circle at 100% 0%,
+      color-mix(in srgb, var(--accent) 9%, transparent),
+      transparent 34%
+    ),
+    var(--surface-1);
+  box-shadow: 0 35px 100px rgb(0 0 0 / 52%);
+}
+
+.node-editor-modal .modal-title {
+  margin-bottom: 18px;
+}
+
+.node-editor-modal label {
+  display: flex;
+  margin-top: 12px;
+  color: var(--text-2);
+  font-size: 9px;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.node-editor-modal input,
+.node-editor-modal textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  outline: none;
+  color: var(--text-1);
+  background: var(--surface-root);
+  font:
+    10px system-ui,
+    sans-serif;
+}
+
+.node-editor-modal input:focus,
+.node-editor-modal textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.node-editor-modal textarea {
+  min-height: 170px;
+  resize: vertical;
+  line-height: 1.65;
+}
+
+.node-editor-note {
+  margin: 12px 0;
+  padding: 10px;
+  border: 1px dashed var(--line);
+  color: var(--faint);
+  font-size: 8px;
+}
+
+.node-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 20px;
+  gap: 8px;
+}
+
+.node-editor-actions button {
+  padding: 9px 14px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--text-2);
+  background: var(--surface-2);
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.node-editor-actions button[type="submit"] {
+  border-color: var(--accent);
+  color: var(--surface-root);
+  background: var(--accent-strong);
+  font-weight: 700;
+}

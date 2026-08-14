@@ -14,9 +14,11 @@ TAKEBOARD_DATA_ROOT=/srv/takeboard-data
 TAKEBOARD_WEB_ROOT=/opt/takeboard/apps/web/dist
 COMFY_URL=http://127.0.0.1:8188
 COMFY_EDITOR_URL=http://127.0.0.1:48188
+COMFY_INPUT_ROOT=/opt/comfyui/input
+COMFY_OUTPUT_ROOT=/opt/comfyui/output
 ```
 
-项目数据目录应放在容量充足、可备份的磁盘，并仅授予 TakeBoard 服务账户读写权限。
+项目数据目录应放在容量充足、可备份的磁盘，并仅授予 TakeBoard 服务账户读写权限。`COMFY_INPUT_ROOT` 和 `COMFY_OUTPUT_ROOT` 用于在任务完成、失败或取消后精准清理该次运行的临时文件；未配置时仍可取消队列任务，但不会执行文件系统清理。完整目录约定见[数据与项目目录规范](./data-layout.md)。
 
 ## 安全访问示例
 

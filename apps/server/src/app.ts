@@ -15,12 +15,15 @@ export type AppOptions = {
   projectsRoot?: string;
   comfyUrl?: string;
   comfyEditorUrl?: string;
+  comfyInputRoot?: string | null;
+  comfyOutputRoot?: string | null;
   webRoot?: string | null;
 };
 
 export function buildApp(options: AppOptions = {}): FastifyInstance {
   const app = Fastify({
     logger: process.env.NODE_ENV !== "test",
+    bodyLimit: 110 * 1024 * 1024,
   });
   void app.register(fastifyMultipart, {
     limits: { fileSize: 100 * 1024 * 1024, files: 1 },
@@ -44,7 +47,10 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   const comfyUrl = options.comfyUrl ?? process.env.COMFY_URL ?? "http://127.0.0.1:8188";
   registerProjectRoutes(app, projectsRoot);
   registerWorkerRoutes(app, comfyUrl);
-  registerGenerationRoutes(app, projectsRoot, comfyUrl);
+  registerGenerationRoutes(app, projectsRoot, comfyUrl, {
+    inputRoot: options.comfyInputRoot ?? process.env.COMFY_INPUT_ROOT ?? null,
+    outputRoot: options.comfyOutputRoot ?? process.env.COMFY_OUTPUT_ROOT ?? null,
+  });
   registerWorkflowRoutes(
     app,
     comfyUrl,

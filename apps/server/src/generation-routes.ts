@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { readFile, stat, unlink, writeFile } from "node:fs/promises";
-import { basename, extname, join, resolve } from "node:path";
+import { mkdir, readdir, readFile, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { createTakeBoardId, toIsoTimestamp } from "@takeboard/domain";
 import {
   buildLtx23I2VPrompt,
@@ -55,10 +55,40 @@ function parseByteRange(header: string, size: number) {
   return { start: requestedStart, end: Math.min(requestedEnd, size - 1) };
 }
 
+type GenerationStorageOptions = {
+  inputRoot: string | null;
+  outputRoot: string | null;
+};
+
+async function cleanupComfyRunFiles(
+  storage: GenerationStorageOptions,
+  projectId: string,
+  shotId: string,
+  runId: string,
+) {
+  if (storage.inputRoot) {
+    const inputRoot = resolve(storage.inputRoot);
+    const entries = await readdir(inputRoot, { withFileTypes: true }).catch(() => []);
+    await Promise.all(
+      entries
+        .filter((entry) => entry.isFile() && entry.name.includes(runId))
+        .map((entry) => unlink(join(inputRoot, entry.name)).catch(() => undefined)),
+    );
+  }
+  if (storage.outputRoot) {
+    const outputRoot = resolve(storage.outputRoot);
+    const runDirectory = resolve(outputRoot, "takeboard", projectId, shotId, runId);
+    if (runDirectory.startsWith(`${outputRoot}${sep}`)) {
+      await rm(runDirectory, { recursive: true, force: true }).catch(() => undefined);
+    }
+  }
+}
+
 export function registerGenerationRoutes(
   app: FastifyInstance,
   projectsRoot: string,
   comfyUrl: string,
+  storage: GenerationStorageOptions = { inputRoot: null, outputRoot: null },
 ) {
   const root = resolve(projectsRoot);
   const comfy = new ComfyClient(comfyUrl);
@@ -207,6 +237,77 @@ export function registerGenerationRoutes(
     },
   );
 
+  app.post<{ Params: { key: string; runId: string } }>(
+    "/api/projects/:key/runs/:runId/cancel",
+    async (request, reply) => {
+      const key = projectKey(request.params.key);
+      if (!key) return await reply.code(400).send({ error: "项目标识无效" });
+      const directory = join(root, key);
+      const store = ProjectStore.openExisting(directory);
+      if (!store) return await reply.code(404).send({ error: "项目不存在" });
+      try {
+        const current = store.loadCurrent();
+        const run = current?.snapshot.runs.find((item) => item.id === request.params.runId);
+        if (!current || !run?.promptId) {
+          return await reply.code(404).send({ error: "运行记录不存在" });
+        }
+        if (["completed", "failed", "cancelled"].includes(run.status)) {
+          return { key, runId: run.id, status: run.status, cancelled: false, ...current };
+        }
+
+        const dispatched = await comfy.cancel(run.promptId);
+        const timestamp = toIsoTimestamp();
+        run.status = "cancelled";
+        run.errorCode = null;
+        run.errorMessage = null;
+        run.updatedAt = timestamp;
+        const shot = current.snapshot.shots.find((item) => item.id === run.shotId);
+        if (shot) {
+          const hasAnotherActiveRun = current.snapshot.runs.some(
+            (item) =>
+              item.id !== run.id &&
+              item.shotId === run.shotId &&
+              !["completed", "failed", "cancelled", "orphaned"].includes(item.status),
+          );
+          if (!hasAnotherActiveRun) {
+            shot.status = shot.approvedTakeId ? "approved" : "draft";
+            shot.updatedAt = timestamp;
+          }
+        }
+        current.snapshot.project.updatedAt = timestamp;
+        current.snapshot.exportedAt = timestamp;
+        const saved = await store.save(current.snapshot, {
+          type: "run.cancelled",
+          payload: { runId: run.id, promptId: run.promptId, dispatched },
+        });
+
+        await Promise.allSettled([
+          comfy.deleteHistory(run.promptId),
+          cleanupComfyRunFiles(storage, current.snapshot.project.id, run.shotId, run.id),
+        ]);
+        let resourcesReleased = false;
+        for (let attempt = 0; attempt < 8 && !resourcesReleased; attempt += 1) {
+          resourcesReleased = await comfy.freeResourcesIfIdle().catch(() => false);
+          if (!resourcesReleased) await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+        return {
+          key,
+          runId: run.id,
+          status: run.status,
+          cancelled: true,
+          resourcesReleased,
+          ...saved,
+        };
+      } catch (error) {
+        return await reply.code(502).send({
+          error: error instanceof Error ? error.message : "停止生成失败",
+        });
+      } finally {
+        store.close();
+      }
+    },
+  );
+
   app.post<{ Params: { key: string; shotId: string } }>(
     "/api/projects/:key/shots/:shotId/generate",
     async (request, reply) => {
@@ -241,6 +342,9 @@ export function registerGenerationRoutes(
               "该 Workflow 已检测，但尚未映射为 TakeBoard 原生 Recipe；请进入 ComfyUI 编辑或运行",
           });
         }
+        const timestamp = toIsoTimestamp();
+        const milliseconds = Date.now();
+        const runId = createTakeBoardId("run", milliseconds);
         const requestedAssetId =
           typeof body.firstFrameAssetId === "string" ? body.firstFrameAssetId : null;
         const requiresInputImage =
@@ -275,7 +379,7 @@ export function registerGenerationRoutes(
           const extension = extname(inputAsset.originalName) || ".png";
           comfyImage = await comfy.uploadImage(
             new Uint8Array(bytes),
-            `takeboard_${current.snapshot.project.id}_${inputAsset.id}${extension}`,
+            `takeboard_${current.snapshot.project.id}_${runId}_${inputAsset.id}${extension}`,
             inputAsset.mimeType,
           );
         }
@@ -334,10 +438,11 @@ export function registerGenerationRoutes(
           const lastBytes = await readFile(join(directory, lastAsset.storagePath));
           lastComfyImage = await comfy.uploadImage(
             new Uint8Array(lastBytes),
-            `takeboard_${current.snapshot.project.id}_${lastAsset.id}${extname(lastAsset.originalName) || ".png"}`,
+            `takeboard_${current.snapshot.project.id}_${runId}_${lastAsset.id}${extname(lastAsset.originalName) || ".png"}`,
             lastAsset.mimeType,
           );
         }
+        const filenamePrefix = `takeboard/${current.snapshot.project.id}/${shot.id}/${runId}/result`;
         const recipeInput = {
           positivePrompt,
           ...(negativePrompt ? { negativePrompt } : {}),
@@ -346,7 +451,7 @@ export function registerGenerationRoutes(
           durationSeconds,
           fps,
           seed,
-          filenamePrefix: `takeboard/${current.snapshot.project.id}/${shot.id}`,
+          filenamePrefix,
         };
         let prompt: ComfyPrompt;
         let effectiveSize = { width, height };
@@ -361,7 +466,7 @@ export function registerGenerationRoutes(
             seed,
             steps,
             denoise,
-            filenamePrefix: `takeboard/${current.snapshot.project.id}/${shot.id}`,
+            filenamePrefix,
           });
         } else if (miniMax) {
           effectiveSize = miniMaxH3Resolution(width, height);
@@ -381,7 +486,7 @@ export function registerGenerationRoutes(
             durationSeconds,
             fps,
             seed,
-            filenamePrefix: `takeboard/${current.snapshot.project.id}/${shot.id}`,
+            filenamePrefix,
           });
         } else if (wanFirstLast && comfyImage && lastComfyImage) {
           prompt = buildWan22FirstLastPrompt({
@@ -401,9 +506,6 @@ export function registerGenerationRoutes(
           });
         }
         const promptId = await comfy.submit(prompt);
-        const timestamp = toIsoTimestamp();
-        const milliseconds = Date.now();
-        const runId = createTakeBoardId("run", milliseconds);
         current.snapshot.runs.push({
           id: runId,
           shotId: shot.id,
@@ -455,6 +557,10 @@ export function registerGenerationRoutes(
             recipePath,
             prompt: positivePrompt,
             negativePrompt: negativePrompt ?? null,
+            comfyInputFiles: [comfyImage, lastComfyImage].filter((value): value is string =>
+              Boolean(value),
+            ),
+            comfyOutputDirectory: `takeboard/${current.snapshot.project.id}/${shot.id}/${runId}`,
           },
           errorCode: null,
           errorMessage: null,
@@ -507,7 +613,7 @@ export function registerGenerationRoutes(
         if (!current) return await reply.code(404).send({ error: "项目不存在" });
         const run = current.snapshot.runs.find((item) => item.id === request.params.runId);
         if (!run?.promptId) return await reply.code(404).send({ error: "运行记录不存在" });
-        if (run.status === "completed" || run.status === "failed") {
+        if (["completed", "failed", "cancelled"].includes(run.status)) {
           return { key, runId: run.id, status: run.status, ...current };
         }
 
@@ -525,6 +631,10 @@ export function registerGenerationRoutes(
             type: "run.failed",
             payload: { runId: run.id },
           });
+          await Promise.allSettled([
+            comfy.deleteHistory(run.promptId),
+            cleanupComfyRunFiles(storage, current.snapshot.project.id, run.shotId, run.id),
+          ]);
           return { key, runId: run.id, status: run.status, ...saved };
         }
 
@@ -557,12 +667,17 @@ export function registerGenerationRoutes(
             type: "run.failed",
             payload: { runId: run.id, errorCode: run.errorCode },
           });
+          await Promise.allSettled([
+            comfy.deleteHistory(run.promptId),
+            cleanupComfyRunFiles(storage, current.snapshot.project.id, run.shotId, run.id),
+          ]);
           return { key, runId: run.id, status: run.status, ...saved };
         }
         const bytes = await comfy.download(output);
         const assetId = createTakeBoardId("asset");
         const extension = extname(output.filename) || (expectsImage ? ".png" : ".mp4");
-        const storagePath = `renders/${assetId}${extension}`;
+        const storagePath = `renders/${run.shotId}/${run.id}/${assetId}${extension}`;
+        await mkdir(dirname(join(directory, storagePath)), { recursive: true });
         await writeFile(join(directory, storagePath), bytes, { mode: 0o600 });
         const normalizedExtension = extension.toLowerCase();
         const mimeType = expectsImage
@@ -641,6 +756,10 @@ export function registerGenerationRoutes(
           type: "run.completed",
           payload: { runId: run.id, takeId, assetId },
         });
+        await Promise.allSettled([
+          comfy.deleteHistory(run.promptId),
+          cleanupComfyRunFiles(storage, current.snapshot.project.id, run.shotId, run.id),
+        ]);
         return { key, runId: run.id, status: run.status, ...saved };
       } finally {
         store.close();

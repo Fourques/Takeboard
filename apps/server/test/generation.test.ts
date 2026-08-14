@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -38,10 +38,16 @@ function objectInfo(classTypes: string[]) {
   );
 }
 
-async function projectFixture() {
+async function projectFixture(storage?: { inputRoot: string; outputRoot: string }) {
   const root = await mkdtemp(join(tmpdir(), "takeboard-generation-"));
   cleanup.push(() => rm(root, { recursive: true, force: true }));
-  const app = buildApp({ projectsRoot: root, webRoot: null, comfyUrl: "http://comfy.test" });
+  const app = buildApp({
+    projectsRoot: root,
+    webRoot: null,
+    comfyUrl: "http://comfy.test",
+    comfyInputRoot: storage?.inputRoot ?? null,
+    comfyOutputRoot: storage?.outputRoot ?? null,
+  });
   cleanup.push(() => app.close());
   const created = await app.inject({
     method: "POST",
@@ -179,6 +185,89 @@ describe("real generation routes", () => {
     });
   });
 
+  it("cancels one ComfyUI job and cleans only that run's temporary files", async () => {
+    const storageRoot = await mkdtemp(join(tmpdir(), "takeboard-cancel-storage-"));
+    cleanup.push(() => rm(storageRoot, { recursive: true, force: true }));
+    const inputRoot = join(storageRoot, "input");
+    const outputRoot = join(storageRoot, "output");
+    await Promise.all([
+      mkdir(inputRoot, { recursive: true }),
+      mkdir(outputRoot, { recursive: true }),
+    ]);
+    const { app, key, shotId } = await projectFixture({ inputRoot, outputRoot });
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/object_info")) {
+        return Response.json(
+          objectInfo([
+            "UNETLoader",
+            "CLIPLoader",
+            "VAELoader",
+            "MiniMaxH3ImageToVideo",
+            "RandomNoise",
+            "BasicGuider",
+            "KSamplerSelect",
+            "BasicScheduler",
+            "SamplerCustomAdvanced",
+            "VAEDecode",
+            "CreateVideo",
+            "SaveVideo",
+          ]),
+        );
+      }
+      if (url.endsWith("/prompt")) return Response.json({ prompt_id: "prompt-cancel" });
+      if (url.endsWith("/api/jobs/prompt-cancel/cancel")) {
+        return Response.json({ cancelled: true });
+      }
+      if (url.endsWith("/history")) return new Response(null, { status: 200 });
+      if (url.endsWith("/queue")) {
+        return Response.json({ queue_running: [], queue_pending: [] });
+      }
+      if (url.endsWith("/free")) return new Response(null, { status: 200 });
+      throw new Error(`Unexpected ComfyUI request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const submitted = await app.inject({
+      method: "POST",
+      url: `/api/projects/${key}/shots/${shotId}/generate`,
+      payload: {
+        recipePath: "Kino/Kino_MinimaxH3_T2V.json",
+        prompt: "取消这次测试生成",
+      },
+    });
+    expect(submitted.statusCode, submitted.body).toBe(202);
+    const runId = submitted.json().runId as string;
+    const projectId = submitted.json().snapshot.project.id as string;
+    const temporaryInput = join(inputRoot, `takeboard_${runId}_frame.png`);
+    const runOutputDirectory = join(outputRoot, "takeboard", projectId, shotId, runId);
+    await mkdir(runOutputDirectory, { recursive: true });
+    await Promise.all([
+      writeFile(temporaryInput, "input"),
+      writeFile(join(runOutputDirectory, "partial.tmp"), "partial"),
+    ]);
+
+    const cancelled = await app.inject({
+      method: "POST",
+      url: `/api/projects/${key}/runs/${runId}/cancel`,
+    });
+    expect(cancelled.statusCode, cancelled.body).toBe(200);
+    expect(cancelled.json()).toMatchObject({
+      cancelled: true,
+      resourcesReleased: true,
+      snapshot: {
+        runs: [expect.objectContaining({ id: runId, status: "cancelled" })],
+        shots: [expect.objectContaining({ id: shotId, status: "draft" })],
+      },
+    });
+    await expect(access(temporaryInput)).rejects.toThrow();
+    await expect(access(runOutputDirectory)).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://comfy.test/api/jobs/prompt-cancel/cancel",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
   it("recovers SaveVideo MP4 metadata returned in ComfyUI's images field", async () => {
     const { app, key, shotId } = await projectFixture();
     const uploaded = await app.inject({
@@ -273,6 +362,22 @@ describe("real generation routes", () => {
     });
     expect(response.statusCode).toBe(422);
     expect(response.json().error).toContain("签名");
+  });
+
+  it("accepts a valid image larger than Fastify's former one megabyte default", async () => {
+    const { app, key } = await projectFixture();
+    const paddedImage = new Uint8Array(2 * 1024 * 1024);
+    paddedImage.set(validPng());
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/projects/${key}/assets`,
+      ...multipartFile("large-frame.png", "image/png", paddedImage),
+    });
+    expect(response.statusCode, response.body).toBe(201);
+    expect(response.json().snapshot.assets[0]).toMatchObject({
+      originalName: "large-frame.png",
+      mediaType: "image",
+    });
   });
 
   it("submits native MiniMax text-to-video without uploading a frame", async () => {

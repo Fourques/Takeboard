@@ -104,12 +104,50 @@ test("a user can create and reopen a real project", async ({ page }) => {
   await page.getByRole("button", { name: "关闭工作流面板" }).click();
   await page.getByRole("button", { name: "资产库", exact: false }).first().click();
   await expect(page.getByRole("heading", { name: "项目资产库" })).toBeVisible();
+  const paddedPng = Buffer.alloc(2 * 1024 * 1024);
+  Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+    "base64",
+  ).copy(paddedPng);
+  await page.locator(".asset-library input[type=file]").setInputFiles({
+    name: "two-megabyte-reference.png",
+    mimeType: "image/png",
+    buffer: paddedPng,
+  });
+  await expect(page.getByText("two-megabyte-reference.png 已加入项目资产库")).toBeVisible();
   await page.screenshot({
     path: "test-results/takeboard-asset-library.png",
     fullPage: true,
     animations: "disabled",
   });
   await page.getByRole("button", { name: "关闭资产库" }).click();
+
+  const shotNodes = page.locator(".react-flow__node-shot");
+  const originalShotCount = await shotNodes.count();
+  await shotNodes.first().dblclick();
+  const nodeEditor = page.locator(".node-editor-modal");
+  await expect(nodeEditor.getByRole("heading", { name: "编辑镜头" })).toBeVisible();
+  await nodeEditor.getByRole("textbox").first().fill("SH-01A");
+  await nodeEditor.getByRole("button", { name: "保存修改" }).click();
+  await expect(page.getByText("SH-01A", { exact: true }).first()).toBeVisible();
+
+  await shotNodes.first().click({ button: "right" });
+  await expect(page.getByRole("menu")).toBeVisible();
+  await page.getByRole("menuitem", { name: /复制/ }).click();
+  const pane = page.locator(".react-flow__pane");
+  const paneBox = await pane.boundingBox();
+  if (!paneBox) throw new Error("画布未渲染");
+  await page.mouse.click(paneBox.x + paneBox.width / 2, paneBox.y + paneBox.height - 70, {
+    button: "right",
+  });
+  await expect(page.getByRole("menu")).toBeVisible();
+  await page.getByRole("menuitem", { name: /粘贴节点/ }).click();
+  await expect(shotNodes).toHaveCount(originalShotCount + 1);
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await shotNodes.last().click({ button: "right" });
+  await page.getByRole("menuitem", { name: /从画布移除/ }).click();
+  await expect(shotNodes).toHaveCount(originalShotCount);
   await page.screenshot({ path: "test-results/takeboard-real-project.png", fullPage: true });
 
   await page.getByRole("button", { name: "切换项目" }).click();

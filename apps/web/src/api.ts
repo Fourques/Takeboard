@@ -92,10 +92,15 @@ export const demoApi = {
 
 async function jsonRequest<T>(path: string, options?: RequestInit): Promise<T> {
   const headers = new Headers(options?.headers);
-  if (options?.body !== undefined) headers.set("content-type", "application/json");
+  if (options?.body !== undefined && !(options.body instanceof FormData)) {
+    headers.set("content-type", "application/json");
+  }
   const response = await fetch(path, { ...options, headers });
-  const payload = (await response.json()) as T & { error?: string };
-  if (!response.ok) throw new Error(payload.error ?? "TakeBoard request failed");
+  const payload = (await response.json().catch(() => ({}))) as T & { error?: string };
+  if (!response.ok) {
+    if (response.status === 413) throw new Error("文件超过 100 MB 上传上限");
+    throw new Error(payload.error ?? `TakeBoard 请求失败（${response.status}）`);
+  }
   return payload;
 }
 
@@ -179,6 +184,51 @@ export const projectApi = {
   run: (key: string, runId: string) =>
     jsonRequest<DemoPayload & { key: string; runId: string; status: string }>(
       `/api/projects/${encodeURIComponent(key)}/runs/${encodeURIComponent(runId)}`,
+    ),
+  cancelRun: (key: string, runId: string) =>
+    jsonRequest<
+      DemoPayload & {
+        key: string;
+        runId: string;
+        status: string;
+        cancelled: boolean;
+        resourcesReleased: boolean;
+      }
+    >(`/api/projects/${encodeURIComponent(key)}/runs/${encodeURIComponent(runId)}/cancel`, {
+      method: "POST",
+    }),
+  addCanvasItem: (
+    key: string,
+    input: {
+      refType: "text" | "entity" | "asset" | "shot" | "take_stack";
+      refId: string;
+      sceneId?: string;
+      x?: number;
+      y?: number;
+    },
+  ) =>
+    jsonRequest<DemoPayload & { key: string; itemId: string }>(
+      `/api/projects/${encodeURIComponent(key)}/canvas-items`,
+      { method: "POST", body: JSON.stringify(input) },
+    ),
+  duplicateCanvasItem: (key: string, itemId: string, x?: number, y?: number) =>
+    jsonRequest<DemoPayload & { key: string; itemId: string }>(
+      `/api/projects/${encodeURIComponent(key)}/canvas-items/${encodeURIComponent(itemId)}/duplicate`,
+      { method: "POST", body: JSON.stringify({ x, y }) },
+    ),
+  editCanvasItem: (
+    key: string,
+    itemId: string,
+    input: { title?: string; body?: string; durationSeconds?: number },
+  ) =>
+    jsonRequest<DemoPayload & { key: string }>(
+      `/api/projects/${encodeURIComponent(key)}/canvas-items/${encodeURIComponent(itemId)}`,
+      { method: "PATCH", body: JSON.stringify(input) },
+    ),
+  deleteCanvasItem: (key: string, itemId: string) =>
+    jsonRequest<DemoPayload & { key: string; removedItemId: string }>(
+      `/api/projects/${encodeURIComponent(key)}/canvas-items/${encodeURIComponent(itemId)}`,
+      { method: "DELETE" },
     ),
   reject: (key: string, takeId: string, reason: string) =>
     jsonRequest<DemoPayload & { key: string }>(
