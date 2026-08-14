@@ -3635,3 +3635,319 @@ html[data-theme="chroma"] .canvas-wrap {
     left: 20px;
   }
 }
+
+/* Spatial landing scene */
+.hub-hero {
+  min-height: calc(100vh - 78px);
+  overflow: hidden;
+  grid-template-columns: minmax(420px, 0.82fr) minmax(600px, 1.18fr);
+  padding-top: 38px;
+  padding-bottom: 38px;
+}
+
+.hub-hero::before {
+  position: absolute;
+  right: 24px;
+  bottom: 30px;
+  width: 1px;
+  height: 72px;
+  background: linear-gradient(to bottom, transparent, var(--accent-strong));
+  content: "";
+  animation: scroll-trace 2.4s ease-in-out infinite;
+}
+
+.hub-hero-copy {
+  max-width: 660px;
+  padding-left: 1vw;
+}
+
+.hub-hero h1 {
+  font-size: clamp(54px, 5.25vw, 82px);
+}
+
+.studio-universe {
+  position: relative;
+  width: calc(100% + 4vw);
+  height: min(70vh, 680px);
+  min-height: 520px;
+  margin-left: -3vw;
+  isolation: isolate;
+  perspective: 1200px;
+}
+
+.studio-universe::before {
+  position: absolute;
+  inset: 5% 2% 3%;
+  z-index: -2;
+  border: 1px solid color-mix(in srgb, var(--line) 54%, transparent);
+  border-radius: 50%;
+  background:
+    radial-gradient(
+      circle at 50% 48%,
+      color-mix(in srgb, var(--hero-a) 60%, transparent),
+      transparent 37%
+    ),
+    conic-gradient(
+      from 25deg,
+      transparent,
+      color-mix(in srgb, var(--accent) 6%, transparent),
+      transparent 22%
+    );
+  content: "";
+  filter: blur(0.2px);
+  transform: rotateX(63deg) rotateZ(-8deg);
+}
+
+.studio-universe::after {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 160 160' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.86' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.58'/%3E%3C/svg%3E");
+  background-size: 170px 170px;
+  content: "";
+  opacity: 0.045;
+  pointer-events: none;
+  mix-blend-mode: soft-light;
+}
+
+.universe-webgl {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  outline: none;
+}
+
+.universe-vignette {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background:
+    radial-gradient(
+      ellipse at center,
+      transparent 42%,
+      color-mix(in srgb, var(--surface-root) 42%, transparent) 82%,
+      var(--surface-root) 112%
+    ),
+    linear-gradient(
+      90deg,
+      var(--surface-root) -6%,
+      transparent 18%,
+      transparent 84%,
+      color-mix(in srgb, var(--surface-root) 55%, transparent)
+    );
+  pointer-events: none;
+}
+
+.universe-label,
+.universe-core-label,
+.universe-depth {
+  position: absolute;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.universe-label {
+  display: grid;
+  grid-template-columns: 7px auto;
+  align-items: center;
+  color: var(--text-2);
+  font:
+    7px ui-monospace,
+    "SFMono-Regular",
+    monospace;
+  letter-spacing: 0.18em;
+  gap: 6px;
+  text-shadow: 0 2px 10px var(--surface-root);
+}
+
+.universe-label i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent-strong);
+  box-shadow: 0 0 8px var(--accent);
+}
+
+.universe-label b {
+  grid-column: 2;
+  color: var(--text-1);
+  font-family: inherit;
+  font-size: 8px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+}
+
+.label-assets {
+  top: 25%;
+  left: 7%;
+}
+
+.label-shot {
+  top: 24%;
+  right: 4%;
+}
+
+.label-takes {
+  right: 6%;
+  bottom: 22%;
+}
+
+.universe-core-label {
+  top: 47%;
+  left: 51.5%;
+  display: flex;
+  flex-direction: column;
+  padding-left: 52px;
+  color: var(--text-2);
+  font:
+    7px ui-monospace,
+    "SFMono-Regular",
+    monospace;
+  letter-spacing: 0.14em;
+  transform: translate(-50%, -50%);
+  gap: 5px;
+}
+
+.universe-core-label::before {
+  position: absolute;
+  top: 6px;
+  left: 0;
+  width: 42px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--green));
+  content: "";
+}
+
+.universe-core-label span {
+  color: var(--green);
+  font-size: 6px;
+}
+
+.universe-core-label strong {
+  color: var(--text-1);
+  font-family: Inter, sans-serif;
+  font-size: 8px;
+  line-height: 1.25;
+  letter-spacing: 0.13em;
+}
+
+.universe-core-label small {
+  color: var(--faint);
+  font-size: 5px;
+}
+
+.universe-depth {
+  color: var(--faint);
+  font:
+    6px ui-monospace,
+    "SFMono-Regular",
+    monospace;
+  letter-spacing: 0.16em;
+}
+
+.depth-a {
+  top: 9%;
+  left: 24%;
+}
+
+.depth-b {
+  right: 22%;
+  bottom: 7%;
+}
+
+.universe-fallback {
+  position: absolute;
+  inset: 13% 9%;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  transform: rotate(-8deg);
+}
+
+.universe-fallback i {
+  position: absolute;
+  width: 38%;
+  height: 26%;
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--accent);
+  background: color-mix(in srgb, var(--surface-2) 82%, transparent);
+  box-shadow: 0 20px 40px var(--shadow);
+}
+
+.universe-fallback i:first-child {
+  left: 2%;
+  transform: translateY(-38%) rotate(-5deg);
+}
+
+.universe-fallback i:nth-child(2) {
+  right: 2%;
+  transform: translateY(-46%) rotate(6deg);
+}
+
+.universe-fallback i:nth-child(3) {
+  right: 4%;
+  bottom: 3%;
+  transform: rotate(-5deg);
+}
+
+.universe-fallback span {
+  width: 20%;
+  aspect-ratio: 1;
+  border: 2px solid var(--green);
+  border-radius: 50%;
+  box-shadow: 0 0 40px color-mix(in srgb, var(--green) 35%, transparent);
+}
+
+html[data-theme="light"] .universe-vignette {
+  background:
+    radial-gradient(
+      ellipse at center,
+      transparent 45%,
+      rgb(238 233 223 / 38%) 80%,
+      var(--surface-root) 112%
+    ),
+    linear-gradient(
+      90deg,
+      var(--surface-root) -6%,
+      transparent 18%,
+      transparent 84%,
+      rgb(238 233 223 / 60%)
+    );
+}
+
+@keyframes scroll-trace {
+  0%,
+  100% {
+    opacity: 0.24;
+    transform: scaleY(0.42);
+    transform-origin: top;
+  }
+
+  50% {
+    opacity: 1;
+    transform: scaleY(1);
+    transform-origin: bottom;
+  }
+}
+
+@media (max-width: 1380px) {
+  .hub-hero {
+    grid-template-columns: minmax(390px, 0.84fr) minmax(520px, 1.16fr);
+  }
+
+  .studio-universe {
+    margin-left: -5vw;
+    transform: scale(0.94);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hub-hero::before,
+  .float-run i,
+  .studio-board {
+    animation: none;
+  }
+}

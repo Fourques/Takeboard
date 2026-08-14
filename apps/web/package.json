@@ -10,14 +10,17 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@react-three/fiber": "9.7.0",
     "@takeboard/contracts": "workspace:*",
     "@xyflow/react": "12.11.3",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "three": "0.185.1"
   },
   "devDependencies": {
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
+    "@types/three": "0.185.4",
     "@vitejs/plugin-react": "6.0.5",
     "vite": "8.2.1"
   }

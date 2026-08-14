@@ -1,6 +1,10 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import type { ProjectCatalogItem, WorkerStatus } from "./api";
 import { ThemeSwitcher } from "./theme-switcher";
+
+const StudioUniverse = lazy(() =>
+  import("./studio-universe").then((module) => ({ default: module.StudioUniverse })),
+);
 
 type NewProjectInput = {
   title: string;
@@ -8,47 +12,6 @@ type NewProjectInput = {
   sceneTitle: string;
   firstShotIntent: string;
 };
-
-function StudioScene() {
-  return (
-    <div className="studio-scene" aria-hidden="true">
-      <div className="studio-orbit orbit-one" />
-      <div className="studio-orbit orbit-two" />
-      <div className="studio-board">
-        <div className="studio-board-top">
-          <i />
-          <i />
-          <i />
-          <span>SHOT GRAPH / 01</span>
-        </div>
-        <div className="studio-wire wire-a" />
-        <div className="studio-wire wire-b" />
-        <div className="studio-node studio-asset">
-          <span>REFERENCE</span>
-          <strong>Character 01</strong>
-        </div>
-        <div className="studio-node studio-shot">
-          <span>SHOT 03</span>
-          <strong>夜景 · 缓慢推进</strong>
-          <small>6s · 16:9</small>
-        </div>
-        <div className="studio-node studio-take">
-          <span>TAKE 04</span>
-          <strong>Approved</strong>
-        </div>
-      </div>
-      <div className="studio-float float-prompt">
-        <span>PROMPT</span>
-        <b>镜头语言已锁定</b>
-      </div>
-      <div className="studio-float float-run">
-        <i />
-        <span>正在渲染</span>
-        <b>68%</b>
-      </div>
-    </div>
-  );
-}
 
 export function ProjectHub({
   busy,
@@ -135,7 +98,20 @@ export function ProjectHub({
             <span>⌁ 镜头谱系</span>
           </div>
         </div>
-        <StudioScene />
+        <Suspense
+          fallback={
+            <div className="studio-universe">
+              <div className="universe-fallback" aria-hidden="true">
+                <i />
+                <i />
+                <i />
+                <span />
+              </div>
+            </div>
+          }
+        >
+          <StudioUniverse projectCount={projects.length} workerReady={worker?.status === "ready"} />
+        </Suspense>
       </section>
 
       <section className="hub-projects">
