@@ -3951,3 +3951,413 @@ html[data-theme="light"] .universe-vignette {
     animation: none;
   }
 }
+
+/* Context-aware canvas selection */
+.react-flow__node .board-card {
+  cursor: pointer;
+}
+
+.react-flow__node.selected {
+  z-index: 12;
+}
+
+.react-flow__node.selected .board-card {
+  border-color: var(--accent-strong);
+  box-shadow:
+    0 18px 44px var(--shadow),
+    0 0 0 1px color-mix(in srgb, var(--accent) 34%, transparent),
+    0 0 28px color-mix(in srgb, var(--accent) 13%, transparent);
+  transform: translateY(-2px);
+}
+
+.react-flow__node.selected .board-card::after {
+  z-index: 9;
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--accent) 75%, white 10%);
+  border-radius: 50%;
+  color: var(--surface-root);
+  background: var(--accent-strong);
+  box-shadow: 0 5px 18px color-mix(in srgb, var(--accent) 30%, transparent);
+  content: "✓";
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.node-context-inspector {
+  background:
+    radial-gradient(
+      circle at 100% 0%,
+      color-mix(in srgb, var(--accent) 9%, transparent),
+      transparent 28%
+    ),
+    color-mix(in srgb, var(--surface-1) 94%, transparent);
+  animation: context-panel-enter 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.context-hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 104px;
+  padding: 19px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--line);
+  gap: 12px;
+}
+
+.context-hero::before {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(115deg, color-mix(in srgb, var(--accent) 10%, transparent), transparent 48%),
+    repeating-linear-gradient(
+      90deg,
+      transparent 0 26px,
+      color-mix(in srgb, var(--line) 42%, transparent) 27px
+    );
+  content: "";
+  mask-image: linear-gradient(to bottom, black, transparent 90%);
+  pointer-events: none;
+}
+
+.context-hero > * {
+  z-index: 1;
+  position: relative;
+}
+
+.context-icon {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--accent) 62%, var(--line));
+  border-radius: 10px;
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent) 9%, var(--surface-2));
+  font-family: Georgia, serif;
+  font-size: 18px;
+  box-shadow: inset 0 0 18px color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.context-hero h2 {
+  max-width: 228px;
+  margin: 5px 0 3px;
+  overflow: hidden;
+  color: var(--text-1);
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-hero p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 8px;
+}
+
+.context-type-pill {
+  align-self: start;
+  padding: 5px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--faint);
+  background: color-mix(in srgb, var(--surface-2) 72%, transparent);
+  font:
+    7px ui-monospace,
+    monospace;
+  letter-spacing: 0.12em;
+}
+
+.context-section {
+  padding: 19px;
+  border-bottom: 1px solid var(--line);
+}
+
+.context-section-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 11px;
+}
+
+.context-section-heading h3,
+.context-slot-actions h3 {
+  margin: 4px 0 0;
+  color: var(--text-1);
+  font-size: 12px;
+}
+
+.context-section-heading > span {
+  color: var(--faint);
+  font:
+    8px ui-monospace,
+    monospace;
+}
+
+.context-copy {
+  max-height: 310px;
+  padding: 13px 14px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--text-2);
+  background: color-mix(in srgb, var(--surface-2) 68%, transparent);
+  font-size: 10px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+}
+
+.context-copy.compact {
+  max-height: 150px;
+}
+
+.context-action-card,
+.context-slot-actions {
+  margin: 14px 19px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
+  border-radius: 6px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 8%, transparent), transparent 65%),
+    color-mix(in srgb, var(--surface-2) 76%, transparent);
+}
+
+.context-action-card > span {
+  color: var(--faint);
+  font-size: 7px;
+  letter-spacing: 0.12em;
+}
+
+.context-action-card > strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-1);
+  font-size: 11px;
+}
+
+.context-action-card p,
+.context-slot-actions > p {
+  margin: 6px 0 11px;
+  color: var(--text-2);
+  font-size: 8px;
+  line-height: 1.6;
+}
+
+.context-action-card button,
+.context-actions-inline button,
+.context-slot-actions button {
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 58%, var(--line));
+  border-radius: 4px;
+  color: var(--surface-root);
+  background: var(--accent-strong);
+  font-size: 9px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.context-action-card button:disabled,
+.context-actions-inline button:disabled,
+.context-slot-actions button:disabled {
+  cursor: not-allowed;
+  filter: grayscale(0.7);
+  opacity: 0.42;
+}
+
+.context-media {
+  position: relative;
+  margin: 16px 19px 0;
+  min-height: 195px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-2);
+}
+
+.context-media img,
+.context-media video {
+  display: block;
+  width: 100%;
+  height: 230px;
+  object-fit: cover;
+}
+
+.context-media-portrait img {
+  object-position: center 25%;
+}
+
+.context-media > span,
+.context-media-label {
+  position: absolute;
+  bottom: 9px;
+  left: 9px;
+  padding: 4px 6px;
+  border: 1px solid rgb(255 255 255 / 16%);
+  border-radius: 3px;
+  color: rgb(255 255 255 / 78%);
+  background: rgb(8 11 10 / 66%);
+  font-size: 6px;
+  letter-spacing: 0.13em;
+  backdrop-filter: blur(8px);
+}
+
+.context-media-empty {
+  display: grid;
+  min-height: 195px;
+  place-content: center;
+  color: var(--text-2);
+  background:
+    radial-gradient(circle, color-mix(in srgb, var(--accent) 10%, transparent), transparent 58%),
+    repeating-linear-gradient(
+      135deg,
+      transparent 0 14px,
+      color-mix(in srgb, var(--line) 35%, transparent) 15px
+    );
+  text-align: center;
+  gap: 6px;
+}
+
+.context-media-empty > span {
+  position: static;
+  padding: 0;
+  border: 0;
+  color: var(--text-2);
+  background: transparent;
+  font-size: 11px;
+}
+
+.context-media-empty small {
+  color: var(--faint);
+  font-size: 8px;
+}
+
+.context-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 10px;
+  gap: 7px;
+}
+
+.context-facts span {
+  display: flex;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--text-1);
+  background: color-mix(in srgb, var(--surface-2) 66%, transparent);
+  font:
+    8px ui-monospace,
+    monospace;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.context-facts small {
+  color: var(--faint);
+  font:
+    7px system-ui,
+    sans-serif;
+}
+
+.context-actions-inline {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin: 14px 19px;
+  gap: 8px;
+}
+
+.context-actions-inline button.secondary {
+  color: var(--text-1);
+  background: var(--surface-2);
+}
+
+.context-slot-actions > div:nth-child(2) {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin-top: 12px;
+  gap: 6px;
+}
+
+.context-slot-actions button {
+  display: flex;
+  min-width: 0;
+  color: var(--text-2);
+  background: var(--surface-2);
+  flex-direction: column;
+  gap: 3px;
+}
+
+.context-slot-actions button small {
+  color: var(--faint);
+  font:
+    6px ui-monospace,
+    monospace;
+  letter-spacing: 0.12em;
+}
+
+.context-slot-actions button.active {
+  border-color: var(--green);
+  color: var(--text-1);
+  background: color-mix(in srgb, var(--green) 12%, var(--surface-2));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--green) 18%, transparent);
+}
+
+.context-selection-hint {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  align-items: center;
+  margin: 8px 19px 22px;
+  padding: 10px;
+  border: 1px dashed var(--line);
+  border-radius: 5px;
+  gap: 9px;
+}
+
+.context-selection-hint > span {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.context-selection-hint p {
+  margin: 0;
+  color: var(--faint);
+  font-size: 7px;
+  line-height: 1.55;
+}
+
+.context-selection-hint strong {
+  display: block;
+  color: var(--text-2);
+  font-size: 8px;
+}
+
+@keyframes context-panel-enter {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .node-context-inspector {
+    animation: none;
+  }
+}

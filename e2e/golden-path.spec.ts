@@ -1,10 +1,51 @@
 import { expect, test } from "@playwright/test";
 
+test("canvas nodes reveal their own contextual inspector", async ({ page }) => {
+  await page.goto("/");
+  const closeCreate = page.getByRole("button", { name: "关闭新建项目" });
+  if (await closeCreate.isVisible()) await closeCreate.click();
+  await page.getByRole("button", { name: /探索示例画布/ }).click();
+
+  const scriptNode = page.locator(".react-flow__node-text");
+  await scriptNode.click();
+  await expect(page.getByLabel("剧本节点检查器")).toBeVisible();
+  await expect(
+    page.getByLabel("剧本节点检查器").getByRole("heading", { name: "场景剧本" }),
+  ).toBeVisible();
+  await expect(scriptNode).toHaveClass(/selected/);
+
+  const entityNode = page.locator(".react-flow__node-entity");
+  await entityNode.click();
+  await expect(page.getByLabel("实体节点检查器")).toBeVisible();
+  await expect(
+    page.getByLabel("实体节点检查器").getByRole("heading", { name: "林夏" }),
+  ).toBeVisible();
+  await expect(entityNode).toHaveClass(/selected/);
+  await expect(scriptNode).not.toHaveClass(/selected/);
+
+  const assetNode = page.locator(".react-flow__node-asset");
+  await assetNode.click();
+  await expect(page.getByLabel("素材节点检查器")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "作为镜头输入" })).toBeVisible();
+  await page.screenshot({
+    path: "test-results/takeboard-context-inspector.png",
+    fullPage: true,
+    animations: "disabled",
+  });
+
+  const secondShot = page.locator(".react-flow__node-shot").nth(1);
+  await secondShot.click();
+  await expect(
+    page.getByLabel("镜头候选检查器").getByRole("heading", { name: "S002" }),
+  ).toBeVisible();
+  await expect(secondShot).toHaveClass(/selected/);
+});
+
 test("fake generation and approval survive reload", async ({ page }) => {
   await page.goto("/");
   const closeCreate = page.getByRole("button", { name: "关闭新建项目" });
   if (await closeCreate.isVisible()) await closeCreate.click();
-  await page.getByRole("button", { name: "打开功能示例" }).click();
+  await page.getByRole("button", { name: /探索示例画布/ }).click();
   await expect(page.getByText("雾港来信", { exact: true }).first()).toBeVisible();
 
   const reset = page.getByRole("button", { name: "重置 Demo" });
@@ -36,7 +77,7 @@ test("fake generation and approval survive reload", async ({ page }) => {
 test("a user can create and reopen a real project", async ({ page }) => {
   const title = `TakeBoard 真实项目 ${Date.now()}`;
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: /把一次抽卡/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /让每一个镜头/ })).toBeVisible();
 
   const nameInput = page.getByLabel("项目名称");
   if (!(await nameInput.isVisible())) {
@@ -71,6 +112,6 @@ test("a user can create and reopen a real project", async ({ page }) => {
   await page.getByRole("button", { name: "关闭资产库" }).click();
   await page.screenshot({ path: "test-results/takeboard-real-project.png", fullPage: true });
 
-  await page.getByRole("button", { name: "项目主页" }).click();
+  await page.getByRole("button", { name: "切换项目" }).click();
   await expect(page.getByText(title, { exact: true })).toBeVisible();
 });

@@ -11,7 +11,7 @@ import {
   ReactFlow,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import type { Asset, ProjectSnapshot, Run, Shot, Take } from "@takeboard/contracts";
+import type { Asset, CanvasItem, ProjectSnapshot, Run, Shot, Take } from "@takeboard/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   demoApi,
@@ -179,7 +179,7 @@ function shortId(value: string) {
 
 function boardNodes(
   snapshot: ProjectSnapshot,
-  selectedShotId: string | null,
+  selectedCanvasItemId: string | null,
   projectKey: string | null,
   engine: string,
 ): BoardNode[] {
@@ -189,7 +189,7 @@ function boardNodes(
       position: { x: item.x, y: item.y },
       style: { width: item.width },
       type: item.refType,
-      selected: false,
+      selected: selectedCanvasItemId === item.id,
     };
     if (item.refType === "text") {
       const text = snapshot.textItems.find((candidate) => candidate.id === item.refId);
@@ -269,7 +269,7 @@ function boardNodes(
           status: shot?.status,
           takeCount: takes.length,
           rejectedCount: takes.filter((take) => take.status === "rejected").length,
-          selected: selectedShotId === item.refId,
+          selected: selectedCanvasItemId === item.id,
         },
       };
     }
@@ -284,7 +284,7 @@ function boardNodes(
         duration: shot?.durationSeconds,
         takeCount: takes.length,
         engine,
-        selected: selectedShotId === item.refId,
+        selected: selectedCanvasItemId === item.id,
         details: [
           shot?.aspectRatio ?? "未设画幅",
           `${shot?.durationSeconds ?? 0}s`,
@@ -416,6 +416,264 @@ type GenerationProgress = {
   percent: number;
   elapsedSeconds: number;
 };
+
+type ContextInspectorProps = {
+  item: CanvasItem;
+  snapshot: ProjectSnapshot;
+  projectKey: string | null;
+  selectedShot: Shot | null;
+  settings: GenerationSettings;
+  onOpenAssets: () => void;
+  onUseAsset: (
+    assetId: string,
+    slot: "firstFrameAssetId" | "lastFrameAssetId" | "referenceAssetId",
+  ) => void;
+  onUseText: (body: string) => void;
+};
+
+function formatBytes(byteSize: number) {
+  if (byteSize < 1024) return `${byteSize} B`;
+  if (byteSize < 1024 * 1024) return `${(byteSize / 1024).toFixed(1)} KB`;
+  return `${(byteSize / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function NodeContextInspector({
+  item,
+  snapshot,
+  projectKey,
+  selectedShot,
+  settings,
+  onOpenAssets,
+  onUseAsset,
+  onUseText,
+}: ContextInspectorProps) {
+  const scene = snapshot.scenes.find((candidate) => candidate.id === item.sceneId);
+  const sourceUrl = (asset: Asset) =>
+    projectKey ? projectApi.assetUrl(projectKey, asset.id, true) : undefined;
+
+  if (item.refType === "text") {
+    const text = snapshot.textItems.find((candidate) => candidate.id === item.refId);
+    return (
+      <aside className="inspector node-context-inspector" aria-label="剧本节点检查器">
+        <div className="context-hero context-hero-text">
+          <div className="context-icon">文</div>
+          <div>
+            <span className="section-kicker">SCRIPT SOURCE</span>
+            <h2>{text?.title || "未命名文本"}</h2>
+            <p>
+              {scene?.label ?? "场景"} · {text?.kind === "script" ? "剧本" : "创作笔记"}
+            </p>
+          </div>
+          <span className="context-type-pill">TEXT</span>
+        </div>
+        <section className="context-section">
+          <div className="context-section-heading">
+            <div>
+              <span className="section-kicker">CONTENT</span>
+              <h3>文本内容</h3>
+            </div>
+            <span>{text?.body.length ?? 0} 字</span>
+          </div>
+          <div className="context-copy">{text?.body || "这个节点还没有内容。"}</div>
+        </section>
+        <section className="context-action-card">
+          <span>用于当前镜头</span>
+          <strong>{selectedShot?.label ?? "尚未选择镜头"}</strong>
+          <p>将文本追加到镜头提示词中，之后仍可在镜头面板继续编辑。</p>
+          <button
+            type="button"
+            disabled={!selectedShot || !text?.body.trim()}
+            onClick={() => text && onUseText(text.body)}
+          >
+            ＋ 追加到镜头提示词
+          </button>
+        </section>
+        <ContextSelectionHint />
+      </aside>
+    );
+  }
+
+  if (item.refType === "entity") {
+    const entity = snapshot.entities.find((candidate) => candidate.id === item.refId);
+    const references = snapshot.assets.filter((asset) =>
+      entity?.referenceAssetIds.includes(asset.id),
+    );
+    const firstImage = references.find((asset) => asset.mediaType === "image");
+    const typeLabel =
+      entity?.kind === "character"
+        ? "人物资产"
+        : entity?.kind === "location"
+          ? "场景资产"
+          : "道具资产";
+    return (
+      <aside className="inspector node-context-inspector" aria-label="实体节点检查器">
+        <div className="context-hero context-hero-entity">
+          <div className="context-icon">
+            {entity?.kind === "character" ? "角" : entity?.kind === "location" ? "景" : "物"}
+          </div>
+          <div>
+            <span className="section-kicker">ASSET IDENTITY</span>
+            <h2>{entity?.name ?? "未命名资产"}</h2>
+            <p>
+              {typeLabel} · {references.length} 张参考
+            </p>
+          </div>
+          <span className="context-type-pill">ENTITY</span>
+        </div>
+        {firstImage && sourceUrl(firstImage) ? (
+          <div className="context-media context-media-portrait">
+            <img src={sourceUrl(firstImage)} alt={`${entity?.name ?? "资产"}参考图`} />
+            <span>PRIMARY REFERENCE</span>
+          </div>
+        ) : (
+          <div className="context-media context-media-empty">
+            <span>{entity?.kind === "character" ? "人物参考位" : "视觉参考位"}</span>
+            <small>可从资产库补充参考图片</small>
+          </div>
+        )}
+        <section className="context-section">
+          <div className="context-section-heading">
+            <div>
+              <span className="section-kicker">PROFILE</span>
+              <h3>设定描述</h3>
+            </div>
+          </div>
+          <div className="context-copy compact">
+            {entity?.description || "这个资产还没有补充设定描述。"}
+          </div>
+          <div className="context-facts">
+            <span>
+              <small>类型</small>
+              {typeLabel}
+            </span>
+            <span>
+              <small>参考</small>
+              {references.length} 个文件
+            </span>
+            <span>
+              <small>场景</small>
+              {scene?.label ?? "全局"}
+            </span>
+          </div>
+        </section>
+        <section className="context-actions-inline">
+          <button type="button" className="secondary" onClick={onOpenAssets}>
+            打开资产库
+          </button>
+          <button
+            type="button"
+            disabled={!selectedShot || !firstImage}
+            onClick={() => firstImage && onUseAsset(firstImage.id, "referenceAssetId")}
+          >
+            设为镜头参考
+          </button>
+        </section>
+        <ContextSelectionHint />
+      </aside>
+    );
+  }
+
+  const asset = snapshot.assets.find((candidate) => candidate.id === item.refId);
+  const assetUrl = asset ? sourceUrl(asset) : undefined;
+  return (
+    <aside className="inspector node-context-inspector" aria-label="素材节点检查器">
+      <div className="context-hero context-hero-asset">
+        <div className="context-icon">素</div>
+        <div>
+          <span className="section-kicker">SOURCE ASSET</span>
+          <h2>{asset?.originalName ?? "素材"}</h2>
+          <p>
+            {asset?.mediaType.toUpperCase() ?? "FILE"} ·{" "}
+            {asset ? formatBytes(asset.byteSize) : "未知大小"}
+          </p>
+        </div>
+        <span className="context-type-pill">ASSET</span>
+      </div>
+      <div className="context-media context-media-asset">
+        {assetUrl && asset?.mediaType === "image" ? (
+          <img src={assetUrl} alt={asset.originalName} />
+        ) : assetUrl && asset?.mediaType === "video" ? (
+          <video src={assetUrl} controls muted playsInline />
+        ) : (
+          <div className="context-media-empty">
+            <span>{asset?.mediaType === "audio" ? "音频素材" : "素材预览"}</span>
+            <small>{projectKey ? "暂时无法生成预览" : "Demo 不读取本地文件"}</small>
+          </div>
+        )}
+        <span className="context-media-label">{asset?.mimeType ?? "MEDIA"}</span>
+      </div>
+      <section className="context-section">
+        <div className="context-section-heading">
+          <div>
+            <span className="section-kicker">METADATA</span>
+            <h3>素材信息</h3>
+          </div>
+        </div>
+        <div className="context-facts context-facts-wide">
+          <span>
+            <small>尺寸</small>
+            {asset?.width && asset.height ? `${asset.width} × ${asset.height}` : "待识别"}
+          </span>
+          <span>
+            <small>格式</small>
+            {asset?.mimeType.split("/").at(-1)?.toUpperCase() ?? "—"}
+          </span>
+          <span>
+            <small>大小</small>
+            {asset ? formatBytes(asset.byteSize) : "—"}
+          </span>
+        </div>
+      </section>
+      {asset?.mediaType === "image" ? (
+        <section className="context-slot-actions">
+          <div>
+            <span className="section-kicker">USE IN {selectedShot?.label ?? "SHOT"}</span>
+            <h3>作为镜头输入</h3>
+          </div>
+          <div>
+            <button
+              className={settings.firstFrameAssetId === asset.id ? "active" : ""}
+              type="button"
+              disabled={!selectedShot}
+              onClick={() => onUseAsset(asset.id, "firstFrameAssetId")}
+            >
+              <small>START</small>首帧
+            </button>
+            <button
+              className={settings.lastFrameAssetId === asset.id ? "active" : ""}
+              type="button"
+              disabled={!selectedShot}
+              onClick={() => onUseAsset(asset.id, "lastFrameAssetId")}
+            >
+              <small>END</small>尾帧
+            </button>
+            <button
+              className={settings.referenceAssetId === asset.id ? "active" : ""}
+              type="button"
+              disabled={!selectedShot}
+              onClick={() => onUseAsset(asset.id, "referenceAssetId")}
+            >
+              <small>REF</small>参考图
+            </button>
+          </div>
+          <p>这里修改生成参数；如需在画布中保留关系，请把素材端口拖到镜头输入槽。</p>
+        </section>
+      ) : null}
+      <ContextSelectionHint />
+    </aside>
+  );
+}
+
+function ContextSelectionHint() {
+  return (
+    <div className="context-selection-hint">
+      <span>⌁</span>
+      <p>
+        <strong>节点已选中</strong>继续点击画布中的其他卡片，右侧内容会随之切换。
+      </p>
+    </div>
+  );
+}
 
 type InspectorProps = {
   shot: Shot;
@@ -862,6 +1120,7 @@ export function App() {
   const [revision, setRevision] = useState(0);
   const [nodes, setNodes] = useState<BoardNode[]>([]);
   const [selectedShotId, setSelectedShotId] = useState<string | null>(null);
+  const [selectedCanvasItemId, setSelectedCanvasItemId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -926,13 +1185,28 @@ export function App() {
       setNodes(
         boardNodes(
           snapshot,
-          selectedShotId,
+          selectedCanvasItemId,
           projectMode === "project" ? projectKey : null,
           projectMode === "demo" ? "Fake I2V" : "Wan 2.2 I2V",
         ),
       );
     }
-  }, [snapshot, selectedShotId, projectMode, projectKey]);
+  }, [snapshot, selectedCanvasItemId, projectMode, projectKey]);
+
+  useEffect(() => {
+    if (!snapshot) return;
+    setSelectedCanvasItemId((current) => {
+      if (current && snapshot.canvasItems.some((item) => item.id === current)) return current;
+      return (
+        snapshot.canvasItems.find(
+          (item) => item.refType === "shot" && item.refId === selectedShotId,
+        )?.id ??
+        snapshot.canvasItems.find((item) => item.refType === "shot")?.id ??
+        snapshot.canvasItems[0]?.id ??
+        null
+      );
+    });
+  }, [selectedShotId, snapshot]);
 
   useEffect(() => {
     if (!notice) return;
@@ -942,6 +1216,8 @@ export function App() {
 
   const edges = useMemo(() => (snapshot ? boardEdges(snapshot) : []), [snapshot]);
   const selectedShot = snapshot?.shots.find((shot) => shot.id === selectedShotId) ?? null;
+  const selectedCanvasItem =
+    snapshot?.canvasItems.find((item) => item.id === selectedCanvasItemId) ?? null;
   const selectedTakes = snapshot?.takes.filter((take) => take.shotId === selectedShotId) ?? [];
   const imageAssets = useMemo(
     () => snapshot?.assets.filter((asset) => asset.mediaType === "image") ?? [],
@@ -1008,14 +1284,23 @@ export function App() {
     snapshot?.scenes.find((scene) => scene.id === selectedShot?.sceneId) ?? snapshot?.scenes[0];
 
   const onNodesChange = useCallback((changes: NodeChange<BoardNode>[]) => {
-    setNodes((currentNodes) => applyNodeChanges(changes, currentNodes));
+    setNodes((currentNodes) =>
+      applyNodeChanges(
+        changes.filter((change) => change.type !== "select"),
+        currentNodes,
+      ),
+    );
   }, []);
 
   const onNodeClick: NodeMouseHandler<BoardNode> = useCallback(
     (_event, node) => {
-      if (!snapshot || (node.data.kind !== "shot" && node.data.kind !== "take_stack")) return;
+      if (!snapshot) return;
       const item = snapshot.canvasItems.find((candidate) => candidate.id === node.id);
-      if (item) setSelectedShotId(item.refId);
+      if (!item) return;
+      setSelectedCanvasItemId(item.id);
+      if (item.refType === "shot" || item.refType === "take_stack") {
+        setSelectedShotId(item.refId);
+      }
     },
     [snapshot],
   );
@@ -1041,6 +1326,7 @@ export function App() {
             (item) => item.id === connection.target,
           );
           if (targetItem?.refType === "shot") {
+            setSelectedCanvasItemId(targetItem.id);
             setSelectedShotId(targetItem.refId);
             const assetId = connectedAssetId(payload.snapshot, targetItem.refId, slot);
             setGenerationSettings((current) => ({
@@ -1490,7 +1776,13 @@ export function App() {
                 type="button"
                 key={shot.id}
                 className={selectedShotId === shot.id ? "active" : ""}
-                onClick={() => setSelectedShotId(shot.id)}
+                onClick={() => {
+                  setSelectedShotId(shot.id);
+                  const shotItem = snapshot.canvasItems.find(
+                    (item) => item.refType === "shot" && item.refId === shot.id,
+                  );
+                  if (shotItem) setSelectedCanvasItemId(shotItem.id);
+                }}
               >
                 <span className={`shot-thumb thumb-${shot.order + 1}`}>
                   {shot.status === "approved" ? "✓" : String(shot.order + 1).padStart(2, "0")}
@@ -1608,8 +1900,34 @@ export function App() {
         </div>
       </section>
 
-      {selectedShot ? (
+      {selectedCanvasItem &&
+      selectedCanvasItem.refType !== "shot" &&
+      selectedCanvasItem.refType !== "take_stack" ? (
+        <NodeContextInspector
+          key={selectedCanvasItem.id}
+          item={selectedCanvasItem}
+          snapshot={snapshot}
+          projectKey={projectMode === "project" ? projectKey : null}
+          selectedShot={selectedShot}
+          settings={generationSettings}
+          onOpenAssets={() => setAssetLibraryOpen(true)}
+          onUseAsset={(assetId, slot) => {
+            setGenerationSettings((current) => ({ ...current, [slot]: assetId }));
+            setNotice(
+              `${slot === "firstFrameAssetId" ? "首帧" : slot === "lastFrameAssetId" ? "尾帧" : "参考图"}参数已更新`,
+            );
+          }}
+          onUseText={(body) => {
+            setGenerationSettings((current) => ({
+              ...current,
+              prompt: [current.prompt.trim(), body.trim()].filter(Boolean).join("\n\n"),
+            }));
+            setNotice("文本已追加到当前镜头提示词");
+          }}
+        />
+      ) : selectedShot ? (
         <Inspector
+          key={selectedCanvasItem?.id ?? selectedShot.id}
           shot={selectedShot}
           takes={selectedTakes}
           busy={busy || generationBusy}

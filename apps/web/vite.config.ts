@@ -7,7 +7,7 @@ export default defineConfig({
     host: "127.0.0.1",
     port: 48110,
     proxy: {
-      "/api": "http://127.0.0.1:48120",
+      "/api": process.env.TAKEBOARD_API_URL ?? "http://127.0.0.1:48120",
     },
   },
 });

@@ -5,6 +5,8 @@ const localEnvironment = {
   NO_PROXY: "127.0.0.1,localhost",
   no_proxy: "127.0.0.1,localhost",
 };
+const e2eServerPort = process.env.TAKEBOARD_E2E_SERVER_PORT ?? "48121";
+const e2eServerUrl = `http://127.0.0.1:${e2eServerPort}`;
 
 export default defineConfig({
   testDir: "./e2e",
@@ -23,8 +25,8 @@ export default defineConfig({
     : [
         {
           command: "node apps/server/dist/index.js",
-          url: "http://127.0.0.1:48120/api/health",
-          env: localEnvironment,
+          url: `${e2eServerUrl}/api/health`,
+          env: { ...localEnvironment, TAKEBOARD_PORT: e2eServerPort },
           reuseExistingServer: !process.env.CI,
           timeout: 30_000,
         },
@@ -32,7 +34,7 @@ export default defineConfig({
           command: "./node_modules/.bin/vite --config vite.config.ts",
           cwd: "apps/web",
           url: "http://127.0.0.1:48110",
-          env: localEnvironment,
+          env: { ...localEnvironment, TAKEBOARD_API_URL: e2eServerUrl },
           reuseExistingServer: !process.env.CI,
           timeout: 30_000,
         },
