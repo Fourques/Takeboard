@@ -290,6 +290,10 @@ export function registerGenerationRoutes(
           resourcesReleased = await comfy.freeResourcesIfIdle().catch(() => false);
           if (!resourcesReleased) await new Promise((resolve) => setTimeout(resolve, 500));
         }
+        await Promise.allSettled([
+          comfy.deleteHistory(run.promptId),
+          cleanupComfyRunFiles(storage, current.snapshot.project.id, run.shotId, run.id),
+        ]);
         return {
           key,
           runId: run.id,
