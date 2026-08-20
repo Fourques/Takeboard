@@ -32,4 +32,13 @@ systemctl --user restart takeboard.service
 
 systemctl --user --no-pager --full status takeboard.service
 curl --fail --silent http://127.0.0.1:8188/system_stats >/dev/null
-curl --fail --silent http://127.0.0.1:48120/api/health
+health_attempt=0
+until curl --fail --silent http://127.0.0.1:48120/api/health; do
+  health_attempt=$((health_attempt + 1))
+  if ((health_attempt >= 30)); then
+    echo "TakeBoard did not become healthy within 30 seconds" >&2
+    exit 1
+  fi
+  sleep 1
+done
+echo
