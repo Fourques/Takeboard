@@ -74,6 +74,61 @@ test("fake generation and approval survive reload", async ({ page }) => {
   await page.screenshot({ path: "test-results/takeboard-demo-approved.png", fullPage: true });
 });
 
+test("reopening a project resumes and reconciles an active generation", async ({
+  page,
+  request,
+}) => {
+  const title = `TakeBoard 恢复任务 ${Date.now()}`;
+  const created = await request.post("/api/projects", {
+    data: { title, aspectRatio: "16:9" },
+  });
+  expect(created.ok()).toBeTruthy();
+  const createdPayload = await created.json();
+  const key = createdPayload.key as string;
+  const runningSnapshot = structuredClone(createdPayload.snapshot);
+  const shot = runningSnapshot.shots[0];
+  const timestamp = new Date().toISOString();
+  const runId = "run_018f4f52-9d8b-8abc-8def-0123456789ab";
+  shot.status = "generating";
+  runningSnapshot.runs.push({
+    id: runId,
+    shotId: shot.id,
+    recipeId: "recipe_018f4f52-9d8b-8abc-8def-0123456789ac",
+    recipeVersion: "wan22-i2v-turbo@1",
+    workflowSha256: "a".repeat(64),
+    workerId: "worker_018f4f52-9d8b-8abc-8def-0123456789ad",
+    promptId: "prompt-recovery",
+    status: "running",
+    inputs: [],
+    parameters: {},
+    errorCode: null,
+    errorMessage: null,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  });
+  const completedSnapshot = structuredClone(runningSnapshot);
+  completedSnapshot.runs[0].status = "completed";
+  completedSnapshot.shots[0].status = "draft";
+  let pollCount = 0;
+
+  await page.route(`**/api/projects/${key}`, async (route) => {
+    await route.fulfill({ json: { key, revision: 2, snapshot: runningSnapshot } });
+  });
+  await page.route(`**/api/projects/${key}/runs/${runId}`, async (route) => {
+    pollCount += 1;
+    await route.fulfill({
+      json: { key, runId, status: "completed", revision: 3, snapshot: completedSnapshot },
+    });
+  });
+
+  await page.goto("/");
+  await page.getByText(title, { exact: true }).first().click();
+  await expect(page.getByText("已恢复后台生成任务", { exact: true })).toBeVisible();
+  await expect.poll(() => pollCount).toBeGreaterThan(0);
+  await expect(page.getByText("已恢复后台生成任务", { exact: true })).toBeHidden();
+  await expect(page.getByText("已保存 · r3")).toBeVisible();
+});
+
 test("a user can create and reopen a real project", async ({ page }) => {
   const title = `TakeBoard 真实项目 ${Date.now()}`;
   await page.goto("/");

@@ -1208,9 +1208,20 @@ export function App() {
   const assetInput = useRef<HTMLInputElement>(null);
   const generationScopeRef = useRef("");
   const generationTokenRef = useRef(0);
+  const acceptedProjectIdRef = useRef<string | null>(null);
+  const acceptedRevisionRef = useRef(0);
 
   const acceptPayload = useCallback(
     (payload: Awaited<ReturnType<typeof demoApi.get>>, preferredShotId?: string) => {
+      const incomingProjectId = payload.snapshot.project.id;
+      if (
+        acceptedProjectIdRef.current === incomingProjectId &&
+        payload.revision <= acceptedRevisionRef.current
+      ) {
+        return false;
+      }
+      acceptedProjectIdRef.current = incomingProjectId;
+      acceptedRevisionRef.current = payload.revision;
       setSnapshot(payload.snapshot);
       setRevision(payload.revision);
       setSelectedShotId((current) =>
@@ -1218,6 +1229,7 @@ export function App() {
           ? (preferredShotId ?? current)
           : (payload.snapshot.shots[0]?.id ?? null),
       );
+      return true;
     },
     [],
   );
@@ -1287,9 +1299,62 @@ export function App() {
     .reverse()
     .find(
       (run) =>
-        run.shotId === selectedShotId &&
-        !["completed", "failed", "cancelled", "orphaned"].includes(run.status),
+        run.shotId === selectedShotId && !["completed", "failed", "cancelled"].includes(run.status),
     );
+
+  useEffect(() => {
+    if (showHub || projectMode !== "project" || !projectKey || !snapshot || generationBusy) return;
+    const recoverableRuns = snapshot.runs.filter(
+      (run) =>
+        !["completed", "failed", "cancelled"].includes(run.status) &&
+        (run.status !== "orphaned" || Boolean(run.promptId)),
+    );
+    if (recoverableRuns.length === 0) {
+      setGenerationProgress(null);
+      return;
+    }
+
+    const selectedRun = [...recoverableRuns].reverse().find((run) => run.shotId === selectedShotId);
+    if (selectedRun) {
+      setGenerationProgress({
+        phase: selectedRun.status === "collecting_outputs" ? "collecting" : "running",
+        label: selectedRun.status === "orphaned" ? "正在核对执行端任务" : "已恢复后台生成任务",
+        detail: "页面可以安全刷新；TakeBoard 会继续同步状态与生成结果",
+        percent: selectedRun.status === "collecting_outputs" ? 92 : 48,
+        elapsedSeconds: Math.max(
+          0,
+          Math.round((Date.now() - Date.parse(selectedRun.createdAt)) / 1000),
+        ),
+      });
+    } else {
+      setGenerationProgress(null);
+    }
+
+    let stopped = false;
+    let retryTimer = 0;
+    const poll = async () => {
+      try {
+        for (const run of recoverableRuns) {
+          if (stopped) return;
+          const result = await projectApi.run(projectKey, run.id);
+          if (stopped) return;
+          acceptPayload(result, run.shotId);
+        }
+        if (!stopped) retryTimer = window.setTimeout(() => void poll(), 3_000);
+      } catch (cause) {
+        if (!stopped) {
+          setError(cause instanceof Error ? cause.message : "后台任务状态同步失败");
+          retryTimer = window.setTimeout(() => void poll(), 5_000);
+        }
+      }
+    };
+    const initialTimer = window.setTimeout(() => void poll(), 1_000);
+    return () => {
+      stopped = true;
+      window.clearTimeout(initialTimer);
+      window.clearTimeout(retryTimer);
+    };
+  }, [acceptPayload, generationBusy, projectKey, projectMode, selectedShotId, showHub, snapshot]);
   const imageAssets = useMemo(
     () => snapshot?.assets.filter((asset) => asset.mediaType === "image") ?? [],
     [snapshot?.assets],
@@ -1991,11 +2056,15 @@ export function App() {
       if (projectMode === "project" && projectKey && activeRun) {
         const result = await projectApi.cancelRun(projectKey, activeRun.id);
         acceptPayload(result, activeRun.shotId);
-        setNotice(
-          result.resourcesReleased
-            ? "生成已停止，相关文件已清理，执行资源已释放"
-            : "生成已停止，相关文件已清理",
-        );
+        if (!result.cancelled) {
+          setNotice(result.warning ?? "本地已停止跟踪，但执行端尚未确认取消，可稍后再次清理");
+        } else {
+          setNotice(
+            result.resourcesReleased
+              ? "生成已停止，相关文件已清理，执行资源已释放"
+              : "生成已停止，相关文件已清理",
+          );
+        }
       } else {
         setNotice("已停止本次生成准备");
       }
@@ -2438,7 +2507,7 @@ export function App() {
           key={selectedCanvasItem?.id ?? selectedShot.id}
           shot={selectedShot}
           takes={selectedTakes}
-          busy={busy || generationBusy}
+          busy={busy || generationBusy || Boolean(activeRun)}
           assets={snapshot.assets}
           projectKey={projectMode === "project" ? projectKey : null}
           isDemo={projectMode === "demo"}

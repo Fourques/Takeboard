@@ -110,6 +110,7 @@ describe("ProjectService", () => {
     const reopened = await service.open(projectDirectory);
 
     expect(reopened).toEqual(created);
-    expect(created.project.id).toMatch(/^project_/);
+    expect(created.revision).toBe(1);
+    expect(created.snapshot.project.id).toMatch(/^project_/);
   });
 });

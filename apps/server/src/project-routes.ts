@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdir, readdir } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import type { AspectRatio } from "@takeboard/contracts";
@@ -36,16 +37,16 @@ export function registerProjectRoutes(app: FastifyInstance, projectsRoot: string
       entries
         .filter((entry) => entry.isDirectory() && projectKey(entry.name))
         .map(async (entry) => {
-          const snapshot = await service.open(join(root, entry.name));
-          return snapshot
+          const opened = await service.open(join(root, entry.name));
+          return opened
             ? {
                 key: entry.name,
-                id: snapshot.project.id,
-                title: snapshot.project.title,
-                aspectRatio: snapshot.project.defaultAspectRatio,
-                sceneCount: snapshot.scenes.length,
-                shotCount: snapshot.shots.length,
-                updatedAt: snapshot.project.updatedAt,
+                id: opened.snapshot.project.id,
+                title: opened.snapshot.project.title,
+                aspectRatio: opened.snapshot.project.defaultAspectRatio,
+                sceneCount: opened.snapshot.scenes.length,
+                shotCount: opened.snapshot.shots.length,
+                updatedAt: opened.snapshot.project.updatedAt,
               }
             : null;
         }),
@@ -69,9 +70,9 @@ export function registerProjectRoutes(app: FastifyInstance, projectsRoot: string
     }
 
     await mkdir(root, { recursive: true });
-    const suffix = Date.now().toString(36);
+    const suffix = `${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
     const key = `${slugify(title)}-${suffix}.takeboard`;
-    const snapshot = await service.create({
+    const created = await service.create({
       projectDirectory: join(root, key),
       title,
       defaultAspectRatio: ratio as AspectRatio,
@@ -80,15 +81,15 @@ export function registerProjectRoutes(app: FastifyInstance, projectsRoot: string
         ? { firstShotIntent: body.firstShotIntent }
         : {}),
     });
-    return await reply.code(201).send({ key, revision: 1, snapshot });
+    return await reply.code(201).send({ key, ...created });
   });
 
   app.get<{ Params: { key: string } }>("/api/projects/:key", async (request, reply) => {
     const key = projectKey(request.params.key);
     if (!key) return await reply.code(400).send({ error: "项目标识无效" });
-    const snapshot = await service.open(join(root, key));
-    if (!snapshot) return await reply.code(404).send({ error: "项目不存在" });
-    return { key, revision: 1, snapshot };
+    const opened = await service.open(join(root, key));
+    if (!opened) return await reply.code(404).send({ error: "项目不存在" });
+    return { key, ...opened };
   });
 
   app.patch<{ Params: { key: string } }>("/api/projects/:key", async (request, reply) => {

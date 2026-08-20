@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { existsSync, renameSync } from "node:fs";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { type ProjectSnapshot, projectSnapshotSchema } from "@takeboard/contracts";
 import BetterSqlite3 from "better-sqlite3";
@@ -64,49 +64,68 @@ export class ProjectStore {
       throw new Error("A .takeboard directory can contain only one project");
     }
 
-    const revision = this.database.transaction((transaction) => {
-      const current = transaction
-        .select({ revision: projectStateTable.revision })
-        .from(projectStateTable)
-        .where(eq(projectStateTable.projectId, snapshot.project.id))
-        .get();
-      const nextRevision = (current?.revision ?? 0) + 1;
+    const temporarySnapshot = await this.writeSnapshotTemporary(snapshotJson);
+    const snapshotDestination = join(this.projectDirectory, snapshotFileName);
+    try {
+      const revision = this.database.transaction((transaction) => {
+        const current = transaction
+          .select({ revision: projectStateTable.revision })
+          .from(projectStateTable)
+          .where(eq(projectStateTable.projectId, snapshot.project.id))
+          .get();
+        const nextRevision = (current?.revision ?? 0) + 1;
 
-      transaction
-        .insert(projectStateTable)
-        .values({
-          projectId: snapshot.project.id,
-          schemaVersion: snapshot.schemaVersion,
-          snapshotJson,
-          revision: nextRevision,
-          updatedAt: snapshot.project.updatedAt,
-        })
-        .onConflictDoUpdate({
-          target: projectStateTable.projectId,
-          set: {
+        transaction
+          .insert(projectStateTable)
+          .values({
+            projectId: snapshot.project.id,
             schemaVersion: snapshot.schemaVersion,
             snapshotJson,
             revision: nextRevision,
             updatedAt: snapshot.project.updatedAt,
-          },
-        })
-        .run();
+          })
+          .onConflictDoUpdate({
+            target: projectStateTable.projectId,
+            set: {
+              schemaVersion: snapshot.schemaVersion,
+              snapshotJson,
+              revision: nextRevision,
+              updatedAt: snapshot.project.updatedAt,
+            },
+          })
+          .run();
 
-      transaction
-        .insert(eventLogTable)
-        .values({
-          projectId: snapshot.project.id,
-          eventType: event.type,
-          payloadJson: JSON.stringify({ revision: nextRevision, ...event.payload }),
-          createdAt: snapshot.project.updatedAt,
-        })
-        .run();
+        transaction
+          .insert(eventLogTable)
+          .values({
+            projectId: snapshot.project.id,
+            eventType: event.type,
+            payloadJson: JSON.stringify({ revision: nextRevision, ...event.payload }),
+            createdAt: snapshot.project.updatedAt,
+          })
+          .run();
 
-      return nextRevision;
-    });
+        // Publish the portable snapshot before SQLite commits. A rename failure now
+        // aborts and rolls back the database transaction instead of leaving SQLite
+        // one revision ahead of project.takeboard.json.
+        renameSync(temporarySnapshot, snapshotDestination);
+        return nextRevision;
+      });
 
-    await this.writeSnapshotAtomically(snapshotJson);
-    return { revision, snapshot };
+      return { revision, snapshot };
+    } catch (error) {
+      try {
+        await this.restorePortableSnapshotFromDatabase();
+      } catch (recoveryError) {
+        throw new AggregateError(
+          [error, recoveryError],
+          "Project save failed and the portable snapshot could not be reconciled",
+        );
+      }
+      throw error;
+    } finally {
+      await unlink(temporarySnapshot).catch(() => undefined);
+    }
   }
 
   load(projectId: string): { revision: number; snapshot: ProjectSnapshot } | null {
@@ -164,18 +183,33 @@ export class ProjectStore {
     this.client.close();
   }
 
-  private async writeSnapshotAtomically(snapshotJson: string) {
-    const destination = join(this.projectDirectory, snapshotFileName);
+  private async writeSnapshotTemporary(snapshotJson: string) {
     const temporary = join(
       this.projectDirectory,
       `.${snapshotFileName}.${process.pid}.${randomUUID()}.tmp`,
     );
     try {
       await writeFile(temporary, snapshotJson, { encoding: "utf8", mode: 0o600 });
-      await rename(temporary, destination);
+      return temporary;
     } catch (error) {
       await unlink(temporary).catch(() => undefined);
       throw error;
+    }
+  }
+
+  private async restorePortableSnapshotFromDatabase() {
+    const destination = join(this.projectDirectory, snapshotFileName);
+    const current = this.loadCurrent();
+    if (!current) {
+      await unlink(destination).catch(() => undefined);
+      return;
+    }
+    const snapshotJson = `${JSON.stringify(current.snapshot, null, 2)}\n`;
+    const recoverySnapshot = await this.writeSnapshotTemporary(snapshotJson);
+    try {
+      renameSync(recoverySnapshot, destination);
+    } finally {
+      await unlink(recoverySnapshot).catch(() => undefined);
     }
   }
 }

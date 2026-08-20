@@ -58,6 +58,7 @@ describe("TakeBoard project API", () => {
 
     const opened = await app.inject({ method: "GET", url: `/api/projects/${key}` });
     expect(opened.json().snapshot.project.title).toBe("真实短片");
+    expect(opened.json().revision).toBe(1);
 
     const renamed = await app.inject({
       method: "PATCH",
@@ -66,6 +67,7 @@ describe("TakeBoard project API", () => {
     });
     expect(renamed.statusCode).toBe(200);
     expect(renamed.json().snapshot.project.title).toBe("新片名");
+    expect(renamed.json().revision).toBe(2);
 
     const uploaded = await app.inject({
       method: "POST",
@@ -88,6 +90,8 @@ describe("TakeBoard project API", () => {
     expect(connected.json().snapshot.canvasEdges).toEqual([
       expect.objectContaining({ sourceItemId, targetItemId, targetSlot: "first_frame" }),
     ]);
+    const reopened = await app.inject({ method: "GET", url: `/api/projects/${key}` });
+    expect(reopened.json().revision).toBe(4);
   });
 
   it("edits, duplicates, removes and restores canvas nodes without deleting domain data", async () => {
@@ -174,5 +178,29 @@ describe("TakeBoard project API", () => {
     ]);
 
     expect(maximumActive).toBe(1);
+  });
+
+  it("creates unique directories for concurrent projects with the same title", async () => {
+    const root = await mkdtemp(join(tmpdir(), "takeboard-project-keys-"));
+    cleanup.push(() => rm(root, { recursive: true, force: true }));
+    const app = buildApp({ projectsRoot: root, webRoot: null });
+    cleanup.push(() => app.close());
+
+    const [first, second] = await Promise.all([
+      app.inject({
+        method: "POST",
+        url: "/api/projects",
+        payload: { title: "同名项目", aspectRatio: "16:9" },
+      }),
+      app.inject({
+        method: "POST",
+        url: "/api/projects",
+        payload: { title: "同名项目", aspectRatio: "16:9" },
+      }),
+    ]);
+
+    expect(first.statusCode, first.body).toBe(201);
+    expect(second.statusCode, second.body).toBe(201);
+    expect(first.json().key).not.toBe(second.json().key);
   });
 });

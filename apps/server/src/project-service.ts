@@ -17,7 +17,9 @@ export type CreateProjectInput = {
 };
 
 export class ProjectService {
-  async create(input: CreateProjectInput): Promise<ProjectSnapshot> {
+  async create(
+    input: CreateProjectInput,
+  ): Promise<{ revision: number; snapshot: ProjectSnapshot }> {
     const now = input.now ?? new Date();
     const timestamp = toIsoTimestamp(now);
     const milliseconds = now.getTime();
@@ -93,8 +95,7 @@ export class ProjectService {
       if (store.loadCurrent()) {
         throw new Error("The selected .takeboard directory already contains a project");
       }
-      await store.save(snapshot, { type: "project.created" });
-      return snapshot;
+      return await store.save(snapshot, { type: "project.created" });
     } finally {
       store.close();
     }
@@ -104,7 +105,7 @@ export class ProjectService {
     const store = ProjectStore.openExisting(projectDirectory);
     if (!store) return null;
     try {
-      return store.loadCurrent()?.snapshot ?? null;
+      return store.loadCurrent();
     } finally {
       store.close();
     }

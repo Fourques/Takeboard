@@ -193,6 +193,7 @@ export const projectApi = {
         status: string;
         cancelled: boolean;
         resourcesReleased: boolean;
+        warning?: string;
       }
     >(`/api/projects/${encodeURIComponent(key)}/runs/${encodeURIComponent(runId)}/cancel`, {
       method: "POST",
