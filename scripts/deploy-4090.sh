@@ -22,9 +22,14 @@ bash scripts/install-comfy-bridge.sh
 python3 scripts/install-qwen-image-workflows.py
 
 systemctl --user daemon-reload
-systemctl --user enable --now takeboard-comfy.service
+if curl --fail --silent --max-time 5 http://127.0.0.1:8188/system_stats >/dev/null; then
+  echo "Reusing the healthy ComfyUI service already listening on 127.0.0.1:8188"
+else
+  systemctl --user enable --now takeboard-comfy.service
+fi
 systemctl --user enable takeboard.service
 systemctl --user restart takeboard.service
 
 systemctl --user --no-pager --full status takeboard.service
-systemctl --user --no-pager --full status takeboard-comfy.service
+curl --fail --silent http://127.0.0.1:8188/system_stats >/dev/null
+curl --fail --silent http://127.0.0.1:48120/api/health

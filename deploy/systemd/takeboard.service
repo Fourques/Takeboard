@@ -1,7 +1,6 @@
 [Unit]
 Description=TakeBoard local-first filmmaking canvas
-After=network.target takeboard-comfy.service
-Wants=takeboard-comfy.service
+After=network.target
 
 [Service]
 Type=simple
