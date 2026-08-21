@@ -72,4 +72,4 @@
 - [实施路线与任务清单](docs/roadmap.md)
 - [实现审查与升级记录](docs/review-2026-08-13.md)
 - [竞品与用户验证计划](docs/research-plan.md)
-- [完整项目论证](README.md)
+- [完整项目论证](docs/product-strategy.md)

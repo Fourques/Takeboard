@@ -42,7 +42,7 @@ ssh -N \
 corepack enable
 pnpm install --frozen-lockfile
 pnpm verify
-TAKEBOARD_WEB_ROOT="$PWD/apps/web/dist" pnpm --filter @takeboard/server start
+TAKEBOARD_WEB_ROOT="$PWD/apps/web/dist" node apps/server/dist/index.js
 ```
 
 建议使用 systemd、Docker Compose 或其他进程管理器保存环境变量并设置自动重启。部署更新前先确认推理队列状态，避免中断正在执行的任务。
