@@ -53,7 +53,20 @@ describe("TakeBoard project API", () => {
     const key = created.json().key as string;
     const listed = await app.inject({ method: "GET", url: "/api/projects" });
     expect(listed.json().projects).toEqual([
-      expect.objectContaining({ key, title: "真实短片", sceneCount: 1, shotCount: 1 }),
+      expect.objectContaining({
+        key,
+        title: "真实短片",
+        sceneCount: 1,
+        shotCount: 1,
+        boards: [
+          expect.objectContaining({
+            label: "SC-01",
+            title: "屋顶夜景",
+            itemCount: 1,
+            nodes: [expect.objectContaining({ refType: "shot", label: "SH-01" })],
+          }),
+        ],
+      }),
     ]);
 
     const opened = await app.inject({ method: "GET", url: `/api/projects/${key}` });
@@ -92,6 +105,12 @@ describe("TakeBoard project API", () => {
     ]);
     const reopened = await app.inject({ method: "GET", url: `/api/projects/${key}` });
     expect(reopened.json().revision).toBe(4);
+
+    const deleted = await app.inject({ method: "DELETE", url: `/api/projects/${key}` });
+    expect(deleted.statusCode, deleted.body).toBe(200);
+    expect(deleted.json()).toMatchObject({ key, deleted: true, recoverable: true });
+    expect((await app.inject({ method: "GET", url: "/api/projects" })).json().projects).toEqual([]);
+    expect(await readdir(join(root, ".trash"))).toHaveLength(1);
   });
 
   it("edits, duplicates, removes and restores canvas nodes without deleting domain data", async () => {

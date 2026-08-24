@@ -1,59 +1,116 @@
-# TakeBoard 自托管指南
+# TakeBoard 自托管部署
 
-更新时间：2026-08-14
+更新时间：2026-08-24
 
-## 推荐结构
+TakeBoard 默认只监听服务器回环地址。推荐使用用户级 systemd 保持服务稳定运行，再通过 Tailscale Serve 或 SSH 隧道访问；当前版本没有账号系统，不应直接暴露到公网。
 
-TakeBoard Web/API 与 ComfyUI 可以运行在同一台 GPU 主机，也可以分开部署。生产环境建议让两个服务只监听回环地址或可信内网，并通过 SSH 隧道、反向代理或零信任网络访问；当前版本不应未经鉴权直接暴露到公网。
+## 安装稳定服务
 
-关键环境变量：
+支持 systemd user service 的 Linux 主机可直接执行：
 
 ```bash
-TAKEBOARD_PORT=48120
-TAKEBOARD_DATA_ROOT=/srv/takeboard-data
-TAKEBOARD_WEB_ROOT=/opt/takeboard/apps/web/dist
+corepack enable
+pnpm install --frozen-lockfile
+./scripts/takeboard install
+```
+
+安装脚本会完成完整验证、生产构建、用户服务模板渲染、开机启用和健康检查。生成的文件包括：
+
+- `~/.config/systemd/user/takeboard.service`：当前仓库路径对应的服务单元；
+- `~/.config/takeboard/env`：权限为 `0600` 的运行配置；
+- `~/TakeBoardData`：默认项目数据目录。
+
+服务固定监听 `127.0.0.1:48120`。安装不会把仓库路径写死在版本库中，因此其他用户和不同安装位置可以复用同一套流程。
+
+## 配置
+
+编辑 `~/.config/takeboard/env`：
+
+```dotenv
 COMFY_URL=http://127.0.0.1:8188
 COMFY_EDITOR_URL=http://127.0.0.1:48188
 COMFY_INPUT_ROOT=/opt/comfyui/input
 COMFY_OUTPUT_ROOT=/opt/comfyui/output
 ```
 
-项目数据目录应放在容量充足、可备份的磁盘，并仅授予 TakeBoard 服务账户读写权限。`COMFY_INPUT_ROOT` 和 `COMFY_OUTPUT_ROOT` 用于在任务完成、失败或取消后精准清理该次运行的临时文件；未配置时仍可取消队列任务，但不会执行文件系统清理。完整目录约定见[数据与项目目录规范](./data-layout.md)。
-
-## 安全访问示例
-
-如果服务运行在远程主机，可以在自己的电脑建立隧道：
+也可以在首次安装前设置：
 
 ```bash
-ssh -N \
-  -L 48120:127.0.0.1:48120 \
-  -L 48188:127.0.0.1:8188 \
-  your-gpu-host
+TAKEBOARD_DATA_ROOT=/srv/takeboard-data ./scripts/takeboard install
 ```
 
-随后打开：
+变量说明：
 
-- TakeBoard：<http://127.0.0.1:48120>
-- ComfyUI 编辑器：<http://127.0.0.1:48188>
+| 变量 | 默认值 | 用途 |
+| --- | --- | --- |
+| `TAKEBOARD_DATA_ROOT` | `~/TakeBoardData` | 所有 `.takeboard` 项目的父目录 |
+| `COMFY_URL` | `http://127.0.0.1:8188` | TakeBoard 服务端调用的 ComfyUI API |
+| `COMFY_EDITOR_URL` | `http://127.0.0.1:48188` | 浏览器打开 ComfyUI 编辑器的地址 |
+| `COMFY_INPUT_ROOT` | 空 | 允许清理本次 Run 创建的输入临时文件 |
+| `COMFY_OUTPUT_ROOT` | 空 | 允许清理本次 Run 创建的输出临时文件 |
 
-## 构建与启动
+修改配置后执行 `./scripts/takeboard restart`。
+
+## 日常维护
 
 ```bash
-corepack enable
+./scripts/takeboard status
+./scripts/takeboard logs
+./scripts/takeboard restart
+./scripts/takeboard doctor
+```
+
+更新代码时建议先确认没有正在生成的任务：
+
+```bash
+git pull --ff-only
 pnpm install --frozen-lockfile
 pnpm verify
-TAKEBOARD_WEB_ROOT="$PWD/apps/web/dist" node apps/server/dist/index.js
+./scripts/takeboard restart
 ```
 
-建议使用 systemd、Docker Compose 或其他进程管理器保存环境变量并设置自动重启。部署更新前先确认推理队列状态，避免中断正在执行的任务。
+`doctor` 会检查 Node.js、pnpm、服务状态、API、ComfyUI 和 Tailscale，适合作为故障排查入口。
 
-## 第一次真实使用
+## 开发与稳定服务切换
 
-1. 在主页新建项目，填写片名、画幅、第一场和镜头意图。
-2. 在资产库上传非敏感测试图片；素材会进入项目目录并成为画布节点。
-3. 从素材节点拖线到镜头的“首帧”“尾帧”或“参考”端口。
-4. 在检查器选择执行节点已经安装的 Recipe，调整提示词、尺寸、时长、帧率和 seed。
-5. 提交后观察阶段进度；完成结果会登记为 Asset 与候选 Take。
-6. 关闭并重新打开项目，确认节点位置、来源连线、运行参数和候选均能恢复。
+```bash
+./scripts/takeboard dev
+```
 
-不同模型对显存、磁盘和 Custom Node 的要求差异很大。TakeBoard 不承诺某个硬件型号一定能运行所有 Recipe；应以模型作者和 Workflow 的要求为准。
+如果稳定服务正在运行，脚本会先停止它，释放 API 端口；退出开发模式时会自动恢复。开发 UI 位于 <http://127.0.0.1:48110>，稳定 UI 位于 <http://127.0.0.1:48120>。
+
+## 远程访问
+
+优先使用：
+
+```bash
+./scripts/takeboard-share enable
+```
+
+无法使用 Tailscale Serve 时，在客户端执行：
+
+```bash
+./scripts/takeboard-tunnel start your-server
+```
+
+详细说明、访问模型和端口冲突处理见[远程访问指南](./remote-access.md)。
+
+## 备份
+
+备份时复制完整的 `TAKEBOARD_DATA_ROOT`。如果要求严格一致，应先避免新的写入或短暂停止服务：
+
+```bash
+./scripts/takeboard stop
+rsync -a ~/TakeBoardData/ /path/to/backup/TakeBoardData/
+./scripts/takeboard start
+```
+
+项目内部结构与迁移要求见[数据目录规范](./data-layout.md)。
+
+## 安全边界
+
+- 不要把 `48120` 或 `8188` 直接映射到公网；
+- 只给可信 tailnet 成员或 SSH 用户访问权限；
+- `~/.config/takeboard/env` 可能包含私有路径或令牌，应保持 `0600`；
+- `COMFY_INPUT_ROOT` 与 `COMFY_OUTPUT_ROOT` 必须精确指向对应目录，避免扩大清理范围；
+- 上线更新前先检查推理队列，避免中断正在运行的生成任务。

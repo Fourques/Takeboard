@@ -1,6 +1,6 @@
 # TakeBoard 创作工作站指南
 
-更新时间：2026-08-13
+更新时间：2026-08-24
 
 ## 这一版解决什么
 
@@ -45,16 +45,19 @@ TakeBoard 现在把“项目管理画布”和“ComfyUI 底层工作流”分�
 
 ## 访问 ComfyUI 编辑器
 
-远程部署只监听服务器回环地址。需要同时使用 TakeBoard 和 ComfyUI 编辑器时，在本机建立隧道：
+远程部署只监听服务器回环地址。长期访问 TakeBoard 推荐在服务器启用私有 Tailscale HTTPS：
 
 ```bash
-ssh -N \
-  -L 48220:127.0.0.1:48120 \
-  -L 48188:127.0.0.1:8188 \
-  your-gpu-host
+./scripts/takeboard-share enable
 ```
 
-然后访问 `http://127.0.0.1:48220`。工作流面板中的“进入 ComfyUI 深度编辑”会打开 `http://127.0.0.1:48188`，并携带当前 Workflow 路径；不同 ComfyUI 前端对自动载入查询参数的支持可能不同，无法自动载入时从 `TakeBoard` 文件夹选择即可。
+需要同时使用 TakeBoard 和 ComfyUI 编辑器，或不能使用 Tailscale Serve 时，在 Mac/Linux 客户端执行：
+
+```bash
+./scripts/takeboard-tunnel start your-gpu-host
+```
+
+脚本会输出 TakeBoard 的实际本机地址，并把 ComfyUI 转发到 `http://127.0.0.1:48188`。工作流面板中的“进入 ComfyUI 深度编辑”会携带当前 Workflow 路径；不同 ComfyUI 前端对自动载入查询参数的支持可能不同，无法自动载入时从 `TakeBoard` 文件夹选择即可。详见[远程访问指南](remote-access.md)。
 
 ## 验证建议
 

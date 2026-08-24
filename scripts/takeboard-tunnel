@@ -1,0 +1,216 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+state_root=${XDG_STATE_HOME:-$HOME/.local/state}
+state_dir="$state_root/takeboard"
+state_file="$state_dir/tunnel.state"
+control_socket="$state_dir/tunnel.sock"
+default_local_port=${TAKEBOARD_LOCAL_PORT:-48220}
+remote_port=${TAKEBOARD_REMOTE_PORT:-48120}
+comfy_local_port=${COMFY_LOCAL_PORT:-48188}
+comfy_remote_port=${COMFY_REMOTE_PORT:-8188}
+
+valid_port() {
+  local port=$1
+  [[ $port =~ ^[0-9]+$ ]] && ((port >= 1024 && port <= 65535))
+}
+
+for configured_port in "$default_local_port" "$remote_port" "$comfy_local_port" "$comfy_remote_port"; do
+  if ! valid_port "$configured_port"; then
+    echo "Invalid configured port: ${configured_port}" >&2
+    exit 2
+  fi
+done
+
+usage() {
+  cat <<'EOF'
+TakeBoard SSH tunnel fallback (macOS/Linux client)
+
+Usage:
+  ./scripts/takeboard-tunnel start <ssh-host> [local-port]
+  ./scripts/takeboard-tunnel status
+  ./scripts/takeboard-tunnel open
+  ./scripts/takeboard-tunnel stop
+
+The start command checks the requested local port. If another application
+(for example VS Code port forwarding) owns it, the next free port is chosen.
+ComfyUI is forwarded to 127.0.0.1:48188 so deep-edit links keep working.
+EOF
+}
+
+port_in_use() {
+  local port=$1
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1
+  elif command -v ss >/dev/null 2>&1; then
+    ss -ltn | awk -v suffix=":${port}" '$4 ~ suffix "$" { found=1 } END { exit !found }'
+  else
+    nc -z 127.0.0.1 "$port" >/dev/null 2>&1
+  fi
+}
+
+read_state() {
+  if [[ ! -f $state_file ]]; then
+    echo "No TakeBoard tunnel state found." >&2
+    return 1
+  fi
+  IFS=$'\t' read -r tunnel_host tunnel_port tunnel_comfy_port < "$state_file"
+  if [[ -z ${tunnel_host:-} || ! ${tunnel_port:-} =~ ^[0-9]+$ ]]; then
+    echo "Tunnel state is invalid: ${state_file}" >&2
+    return 1
+  fi
+}
+
+tunnel_active() {
+  read_state >/dev/null 2>&1 || return 1
+  ssh -S "$control_socket" -O check "$tunnel_host" >/dev/null 2>&1
+}
+
+healthy() {
+  curl --fail --silent --max-time 3 "http://127.0.0.1:${tunnel_port}/api/health" >/dev/null 2>&1
+}
+
+wait_for_health() {
+  local attempt=0
+  until healthy; do
+    attempt=$((attempt + 1))
+    if ((attempt >= 20)); then
+      echo "Tunnel started, but TakeBoard did not respond on local port ${tunnel_port}." >&2
+      return 1
+    fi
+    sleep 0.5
+  done
+}
+
+open_url() {
+  local url=$1
+  if [[ $(uname -s) == Darwin ]] && command -v open >/dev/null 2>&1; then
+    open "$url"
+  elif command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "$url" >/dev/null 2>&1
+  else
+    echo "Open this URL in a browser: ${url}"
+  fi
+}
+
+start_tunnel() {
+  local host=${1:-}
+  local requested_port=${2:-$default_local_port}
+  if [[ -z $host ]]; then
+    echo "Missing SSH host." >&2
+    usage >&2
+    exit 2
+  fi
+  if [[ $host == -* ]]; then
+    echo "SSH host must not begin with '-': ${host}" >&2
+    exit 2
+  fi
+  if ! valid_port "$requested_port"; then
+    echo "Invalid local port: ${requested_port}" >&2
+    exit 2
+  fi
+
+  mkdir -p "$state_dir"
+  chmod 700 "$state_dir"
+
+  if tunnel_active; then
+    echo "A managed TakeBoard tunnel is already active."
+    echo "URL: http://127.0.0.1:${tunnel_port}"
+    return
+  fi
+  rm -f "$control_socket" "$state_file"
+
+  local selected_port=$requested_port
+  local last_port=$((requested_port + 19))
+  while port_in_use "$selected_port"; do
+    selected_port=$((selected_port + 1))
+    if ((selected_port > last_port || selected_port > 65535)); then
+      echo "No free local port found in ${requested_port}-${last_port}." >&2
+      exit 1
+    fi
+  done
+  if ((selected_port != requested_port)); then
+    echo "Local port ${requested_port} is occupied; using ${selected_port} instead."
+  fi
+  if ((selected_port == comfy_local_port)); then
+    echo "TakeBoard and ComfyUI cannot use the same local port: ${selected_port}" >&2
+    exit 1
+  fi
+  if port_in_use "$comfy_local_port"; then
+    echo "ComfyUI local port ${comfy_local_port} is already occupied." >&2
+    echo "Stop that listener, or run with COMFY_LOCAL_PORT set to the URL configured for TakeBoard." >&2
+    exit 1
+  fi
+
+  ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" \
+    "curl --fail --silent --max-time 5 http://127.0.0.1:${remote_port}/api/health" \
+    >/dev/null
+
+  ssh -M -S "$control_socket" -fN \
+    -o ExitOnForwardFailure=yes \
+    -o ServerAliveInterval=30 \
+    -o ServerAliveCountMax=3 \
+    -L "${selected_port}:127.0.0.1:${remote_port}" \
+    -L "${comfy_local_port}:127.0.0.1:${comfy_remote_port}" \
+    "$host"
+
+  printf '%s\t%s\t%s\n' "$host" "$selected_port" "$comfy_local_port" > "$state_file"
+  chmod 600 "$state_file"
+  tunnel_host=$host
+  tunnel_port=$selected_port
+  tunnel_comfy_port=$comfy_local_port
+
+  if ! wait_for_health; then
+    ssh -S "$control_socket" -O exit "$host" >/dev/null 2>&1 || true
+    rm -f "$control_socket" "$state_file"
+    exit 1
+  fi
+  echo "TakeBoard tunnel is ready."
+  echo "URL: http://127.0.0.1:${selected_port}"
+  echo "ComfyUI: http://127.0.0.1:${comfy_local_port}"
+}
+
+command_name=${1:-help}
+case "$command_name" in
+  start)
+    start_tunnel "${2:-}" "${3:-$default_local_port}"
+    ;;
+  status)
+    if ! tunnel_active; then
+      echo "TakeBoard tunnel is not running."
+      exit 1
+    fi
+    if healthy; then
+      echo "TakeBoard tunnel is healthy."
+      echo "Host: ${tunnel_host}"
+      echo "URL: http://127.0.0.1:${tunnel_port}"
+      echo "ComfyUI: http://127.0.0.1:${tunnel_comfy_port:-$comfy_local_port}"
+    else
+      echo "Tunnel process is active, but TakeBoard is not responding." >&2
+      exit 1
+    fi
+    ;;
+  open)
+    if ! tunnel_active || ! healthy; then
+      echo "TakeBoard tunnel is not healthy. Start it first." >&2
+      exit 1
+    fi
+    open_url "http://127.0.0.1:${tunnel_port}"
+    ;;
+  stop)
+    if ! read_state; then
+      exit 0
+    fi
+    ssh -S "$control_socket" -O exit "$tunnel_host" >/dev/null 2>&1 || true
+    rm -f "$control_socket" "$state_file"
+    echo "TakeBoard tunnel stopped."
+    ;;
+  help|-h|--help)
+    usage
+    ;;
+  *)
+    echo "Unknown command: ${command_name}" >&2
+    usage >&2
+    exit 2
+    ;;
+esac

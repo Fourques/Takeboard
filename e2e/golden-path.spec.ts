@@ -1,10 +1,32 @@
 import { expect, test } from "@playwright/test";
 
+test("project hub presents a complete project overview", async ({ page, request }) => {
+  await page.setViewportSize({ width: 1600, height: 1100 });
+  for (const project of [
+    { title: "潮汐来信", aspectRatio: "9:16", sceneTitle: "雾港", firstShotIntent: "穿过雾气" },
+    { title: "纸月旅馆", aspectRatio: "16:9", sceneTitle: "前厅", firstShotIntent: "推门进入" },
+    { title: "黑曜计划", aspectRatio: "4:5", sceneTitle: "控制室", firstShotIntent: "信号亮起" },
+  ]) {
+    const response = await request.post("/api/projects", { data: project });
+    expect(response.ok()).toBeTruthy();
+  }
+
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "从素材到成片，都在一张画布。" })).toBeVisible();
+  await expect(page.getByRole("searchbox", { name: "搜索项目" })).toBeVisible();
+  await expect(page.locator(".project-card-managed")).toHaveCount(3);
+  await page.screenshot({
+    path: "test-results/takeboard-home.png",
+    fullPage: true,
+    animations: "disabled",
+  });
+});
+
 test("canvas nodes reveal their own contextual inspector", async ({ page }) => {
+  await page.addInitScript(() => window.sessionStorage.setItem("takeboard.resumeDemo", "1"));
   await page.goto("/");
   const closeCreate = page.getByRole("button", { name: "关闭新建项目" });
   if (await closeCreate.isVisible()) await closeCreate.click();
-  await page.getByRole("button", { name: /探索示例画布/ }).click();
 
   const scriptNode = page.locator(".react-flow__node-text");
   await scriptNode.click();
@@ -42,10 +64,10 @@ test("canvas nodes reveal their own contextual inspector", async ({ page }) => {
 });
 
 test("fake generation and approval survive reload", async ({ page }) => {
+  await page.addInitScript(() => window.sessionStorage.setItem("takeboard.resumeDemo", "1"));
   await page.goto("/");
   const closeCreate = page.getByRole("button", { name: "关闭新建项目" });
   if (await closeCreate.isVisible()) await closeCreate.click();
-  await page.getByRole("button", { name: /探索示例画布/ }).click();
   await expect(page.getByText("雾港来信", { exact: true }).first()).toBeVisible();
 
   const reset = page.getByRole("button", { name: "重置 Demo" });
@@ -122,17 +144,16 @@ test("reopening a project resumes and reconciles an active generation", async ({
   });
 
   await page.goto("/");
-  await page.getByText(title, { exact: true }).first().click();
-  await expect(page.getByText("已恢复后台生成任务", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: `打开 ${title} 的SC-01` }).click();
+  await expect(page.getByText("SH-01", { exact: true }).first()).toBeVisible();
   await expect.poll(() => pollCount).toBeGreaterThan(0);
-  await expect(page.getByText("已恢复后台生成任务", { exact: true })).toBeHidden();
   await expect(page.getByText("已保存 · r3")).toBeVisible();
 });
 
 test("a user can create and reopen a real project", async ({ page }) => {
   const title = `TakeBoard 真实项目 ${Date.now()}`;
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: /让每一个镜头/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "从素材到成片，都在一张画布。" })).toBeVisible();
 
   const nameInput = page.getByLabel("项目名称");
   if (!(await nameInput.isVisible())) {

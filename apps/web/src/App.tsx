@@ -1205,6 +1205,13 @@ export function App() {
   const [generationProgress, setGenerationProgress] = useState<GenerationProgress | null>(null);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameTitle, setRenameTitle] = useState("");
+  const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 1120);
+  const [inspectorOpen, setInspectorOpen] = useState(() => window.innerWidth >= 1040);
+  const [comfortableDensity, setComfortableDensity] = useState(
+    () => window.localStorage.getItem("takeboard.density") !== "compact",
+  );
+  const [shotQuery, setShotQuery] = useState("");
+  const [shotFilter, setShotFilter] = useState<"all" | "todo" | "approved">("all");
   const assetInput = useRef<HTMLInputElement>(null);
   const generationScopeRef = useRef("");
   const generationTokenRef = useRef(0);
@@ -1290,11 +1297,41 @@ export function App() {
     return () => window.clearTimeout(timeout);
   }, [notice]);
 
+  useEffect(() => {
+    window.localStorage.setItem(
+      "takeboard.density",
+      comfortableDensity ? "comfortable" : "compact",
+    );
+  }, [comfortableDensity]);
+
+  useEffect(() => {
+    let narrow = window.innerWidth <= 1120;
+    const adaptWorkspacePanels = () => {
+      const nextNarrow = window.innerWidth <= 1120;
+      if (nextNarrow === narrow) return;
+      narrow = nextNarrow;
+      setSidebarOpen(!nextNarrow);
+      setInspectorOpen(!nextNarrow);
+    };
+    window.addEventListener("resize", adaptWorkspacePanels);
+    return () => window.removeEventListener("resize", adaptWorkspacePanels);
+  }, []);
+
   const edges = useMemo(() => (snapshot ? boardEdges(snapshot) : []), [snapshot]);
   const selectedShot = snapshot?.shots.find((shot) => shot.id === selectedShotId) ?? null;
   const selectedCanvasItem =
     snapshot?.canvasItems.find((item) => item.id === selectedCanvasItemId) ?? null;
   const selectedTakes = snapshot?.takes.filter((take) => take.shotId === selectedShotId) ?? [];
+  const visibleShots = useMemo(() => {
+    const normalizedQuery = shotQuery.trim().toLocaleLowerCase("zh-CN");
+    return (snapshot?.shots ?? []).filter(
+      (shot) =>
+        `${shot.label} ${shot.intent}`.toLocaleLowerCase("zh-CN").includes(normalizedQuery) &&
+        (shotFilter === "all" ||
+          (shotFilter === "approved" && shot.status === "approved") ||
+          (shotFilter === "todo" && shot.status !== "approved")),
+    );
+  }, [shotFilter, shotQuery, snapshot?.shots]);
   const activeRun = [...(snapshot?.runs ?? [])]
     .reverse()
     .find(
@@ -1627,14 +1664,32 @@ export function App() {
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
       const target = event.target;
+      if (event.key === "Escape") {
+        setCanvasContextMenu(null);
+        setNodeEditDraft(null);
+        setRecipeOpen(false);
+        setAssetLibraryOpen(false);
+        setRenameOpen(false);
+        return;
+      }
       if (
         target instanceof HTMLElement &&
         (target.matches("input, textarea, select") || target.isContentEditable)
       ) {
         return;
       }
-      if (event.key === "Escape") {
-        setCanvasContextMenu(null);
+      if (event.key === "[") {
+        setSidebarOpen((current) => !current);
+        return;
+      }
+      if (event.key === "]") {
+        setInspectorOpen((current) => !current);
+        return;
+      }
+      if (event.key === "\\") {
+        const enteringFocus = sidebarOpen || inspectorOpen;
+        setSidebarOpen(!enteringFocus);
+        setInspectorOpen(!enteringFocus);
         return;
       }
       const command = event.metaKey || event.ctrlKey;
@@ -1664,6 +1719,8 @@ export function App() {
     duplicateCanvasItem,
     pasteCanvasItem,
     selectedCanvasItemId,
+    sidebarOpen,
+    inspectorOpen,
   ]);
 
   const openNodeContextMenu = useCallback(
@@ -1818,6 +1875,26 @@ export function App() {
       }
     },
     [acceptPayload, projectKey],
+  );
+
+  const deleteProject = useCallback(
+    async (key: string) => {
+      setBusy(true);
+      setError(null);
+      try {
+        await projectApi.delete(key);
+        if (projectKey === key) setProjectKey(null);
+        const catalog = await projectApi.list();
+        setProjects(catalog.projects);
+        setNotice("项目已移到回收区");
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "项目删除失败");
+        throw cause;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [projectKey],
   );
 
   const openDemo = useCallback(async () => {
@@ -2100,8 +2177,8 @@ export function App() {
         busy={busy}
         error={error}
         onCreate={createProject}
+        onDelete={deleteProject}
         onOpen={openProject}
-        onOpenDemo={openDemo}
         onRename={renameProject}
         projects={projects}
         worker={worker}
@@ -2120,7 +2197,9 @@ export function App() {
   }
 
   return (
-    <main className="app-shell">
+    <main
+      className={`app-shell ${sidebarOpen ? "sidebar-open" : "sidebar-collapsed"} ${inspectorOpen ? "inspector-open" : "inspector-collapsed"} ${comfortableDensity ? "density-comfortable" : "density-compact"}`}
+    >
       <header className="topbar">
         <div className="brand">
           <span className="brand-mark">T</span>
@@ -2151,6 +2230,16 @@ export function App() {
         <div className="top-actions">
           <span className="save-status">✓ 已保存 · r{revision}</span>
           <ThemeSwitcher compact />
+          <button
+            className="density-button"
+            type="button"
+            onClick={() => setComfortableDensity((current) => !current)}
+            title={comfortableDensity ? "切换为紧凑密度" : "切换为舒适密度"}
+            aria-label={comfortableDensity ? "切换为紧凑密度" : "切换为舒适密度"}
+          >
+            <span aria-hidden="true">{comfortableDensity ? "舒" : "紧"}</span>
+            {comfortableDensity ? "舒适" : "紧凑"}
+          </button>
           <span className="local-badge">
             <i /> LOCAL
           </span>
@@ -2215,8 +2304,33 @@ export function App() {
           <span className="section-kicker">SHOTS</span>
           <span>{snapshot.shots.length}</span>
         </div>
+        <div className="shot-navigator-tools">
+          <label>
+            <span aria-hidden="true">⌕</span>
+            <input
+              type="search"
+              value={shotQuery}
+              onChange={(event) => setShotQuery(event.target.value)}
+              placeholder="搜索镜头"
+              aria-label="搜索镜头"
+            />
+          </label>
+          <fieldset>
+            <legend className="visually-hidden">筛选镜头</legend>
+            {(["all", "todo", "approved"] as const).map((filter) => (
+              <button
+                type="button"
+                key={filter}
+                className={shotFilter === filter ? "active" : ""}
+                onClick={() => setShotFilter(filter)}
+              >
+                {filter === "all" ? "全部" : filter === "todo" ? "待办" : "完成"}
+              </button>
+            ))}
+          </fieldset>
+        </div>
         <div className="shot-list">
-          {snapshot.shots.map((shot) => {
+          {visibleShots.map((shot) => {
             const shotTakes = snapshot.takes.filter((take) => take.shotId === shot.id);
             return (
               <button
@@ -2264,6 +2378,12 @@ export function App() {
               </button>
             );
           })}
+          {visibleShots.length === 0 ? (
+            <div className="shot-list-empty">
+              <span>⌕</span>
+              没有匹配的镜头
+            </div>
+          ) : null}
         </div>
         {projectMode === "project" ? (
           <div className="asset-import">
@@ -2307,6 +2427,15 @@ export function App() {
       <section className="canvas-wrap" aria-label="TakeBoard 创作画布">
         <div className="canvas-toolbar">
           <div>
+            <button
+              className="panel-toggle"
+              type="button"
+              onClick={() => setSidebarOpen((current) => !current)}
+              title={`${sidebarOpen ? "隐藏" : "显示"}镜头导航（[）`}
+              aria-label={`${sidebarOpen ? "隐藏" : "显示"}镜头导航`}
+            >
+              {sidebarOpen ? "←" : "→"}
+            </button>
             <span className="scene-chip">{activeScene?.label ?? "SC-01"}</span>
             <strong>{activeScene?.title || "未命名场景"}</strong>
           </div>
@@ -2330,6 +2459,27 @@ export function App() {
               生成来源
             </span>
             <span className="drag-hint">双击编辑 · 右键更多 · ⌘C / ⌘V</span>
+            <button
+              className="panel-toggle"
+              type="button"
+              onClick={() => setInspectorOpen((current) => !current)}
+              title={`${inspectorOpen ? "隐藏" : "显示"}检查器（]）`}
+              aria-label={`${inspectorOpen ? "隐藏" : "显示"}检查器`}
+            >
+              {inspectorOpen ? "→" : "←"}
+            </button>
+            <button
+              className="focus-toggle"
+              type="button"
+              onClick={() => {
+                const enteringFocus = sidebarOpen || inspectorOpen;
+                setSidebarOpen(!enteringFocus);
+                setInspectorOpen(!enteringFocus);
+              }}
+              title="切换专注画布（\\）"
+            >
+              {sidebarOpen || inspectorOpen ? "专注" : "退出专注"}
+            </button>
           </div>
         </div>
         <ReactFlow

@@ -34,6 +34,7 @@ export function AssetLibrary({
   selectedReferenceId: string | null;
 }) {
   const [kind, setKind] = useState<AssetFilter>("all");
+  const [query, setQuery] = useState("");
   const [uploadKind, setUploadKind] = useState<AssetKind>("character");
   const [name, setName] = useState("");
   const [uploadStatus, setUploadStatus] = useState<{
@@ -42,8 +43,13 @@ export function AssetLibrary({
   }>({ state: "idle", message: "PNG、JPEG、WebP · 单文件不超过 100 MB" });
   const input = useRef<HTMLInputElement>(null);
   const entityCards = useMemo(
-    () => entities.filter((entity) => kind === "all" || entity.kind === kind),
-    [entities, kind],
+    () =>
+      entities.filter(
+        (entity) =>
+          (kind === "all" || entity.kind === kind) &&
+          `${entity.name} ${entity.description}`.toLowerCase().includes(query.trim().toLowerCase()),
+      ),
+    [entities, kind, query],
   );
   const referencedAssetIds = useMemo(
     () => new Set(entities.flatMap((entity) => entity.referenceAssetIds)),
@@ -51,8 +57,13 @@ export function AssetLibrary({
   );
   const looseImageAssets = useMemo(
     () =>
-      assets.filter((asset) => asset.mediaType === "image" && !referencedAssetIds.has(asset.id)),
-    [assets, referencedAssetIds],
+      assets.filter(
+        (asset) =>
+          asset.mediaType === "image" &&
+          !referencedAssetIds.has(asset.id) &&
+          asset.originalName.toLowerCase().includes(query.trim().toLowerCase()),
+      ),
+    [assets, query, referencedAssetIds],
   );
 
   if (!open) return null;
@@ -69,31 +80,46 @@ export function AssetLibrary({
             ×
           </button>
         </header>
-        <div className="asset-kind-tabs">
-          {(["all", "character", "location", "prop"] as const).map((item) => (
-            <button
-              type="button"
-              key={item}
-              className={kind === item ? "active" : ""}
-              onClick={() => {
-                setKind(item);
-                if (item !== "all") setUploadKind(item);
-              }}
-            >
-              {item === "all"
-                ? "全部"
-                : item === "character"
-                  ? "人物"
-                  : item === "location"
-                    ? "场景"
-                    : "道具"}
-              <span>
+        <div className="asset-library-toolbar">
+          <div className="asset-kind-tabs">
+            {(["all", "character", "location", "prop"] as const).map((item) => (
+              <button
+                type="button"
+                key={item}
+                className={kind === item ? "active" : ""}
+                onClick={() => {
+                  setKind(item);
+                  if (item !== "all") setUploadKind(item);
+                }}
+              >
                 {item === "all"
-                  ? entities.length + looseImageAssets.length
-                  : entities.filter((entity) => entity.kind === item).length}
-              </span>
-            </button>
-          ))}
+                  ? "全部"
+                  : item === "character"
+                    ? "人物"
+                    : item === "location"
+                      ? "场景"
+                      : "道具"}
+                <span>
+                  {item === "all"
+                    ? entities.length +
+                      assets.filter(
+                        (asset) => asset.mediaType === "image" && !referencedAssetIds.has(asset.id),
+                      ).length
+                    : entities.filter((entity) => entity.kind === item).length}
+                </span>
+              </button>
+            ))}
+          </div>
+          <label className="asset-search">
+            <span aria-hidden="true">⌕</span>
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="搜索名称或描述"
+              aria-label="搜索资产"
+            />
+          </label>
         </div>
         <div className="asset-grid">
           {entityCards.map((entity) => {
@@ -161,9 +187,9 @@ export function AssetLibrary({
           ))}
           {entityCards.length === 0 && (kind !== "all" || looseImageAssets.length === 0) ? (
             <div className="asset-empty">
-              <span>◇</span>
+              <span>{query ? "⌕" : "◇"}</span>
               <strong>
-                还没有
+                {query ? "没有匹配的" : "还没有"}
                 {kind === "all"
                   ? "图片"
                   : kind === "character"

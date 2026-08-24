@@ -13,6 +13,24 @@ export type ProjectCatalogItem = {
   sceneCount: number;
   shotCount: number;
   updatedAt: string;
+  boards: ProjectBoardPreview[];
+};
+
+export type ProjectBoardPreview = {
+  sceneId: string;
+  label: string;
+  title: string;
+  itemCount: number;
+  nodes: Array<{
+    id: string;
+    refType: "text" | "entity" | "asset" | "shot" | "take_stack";
+    label: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }>;
+  edges: Array<{ sourceItemId: string; targetItemId: string }>;
 };
 
 export type WorkerStatus = {
@@ -123,6 +141,11 @@ export const projectApi = {
       method: "PATCH",
       body: JSON.stringify({ title }),
     }),
+  delete: (key: string) =>
+    jsonRequest<{ key: string; deleted: true; recoverable: true }>(
+      `/api/projects/${encodeURIComponent(key)}`,
+      { method: "DELETE" },
+    ),
   connect: (
     key: string,
     sourceItemId: string,

@@ -1,13 +1,27 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readdir } from "node:fs/promises";
+import { mkdir, readdir, rename } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
-import type { AspectRatio } from "@takeboard/contracts";
+import type { AspectRatio, ProjectSnapshot } from "@takeboard/contracts";
 import { approveTake, createTakeBoardId, toIsoTimestamp } from "@takeboard/domain";
 import type { FastifyInstance } from "fastify";
 import { ProjectService } from "./project-service.js";
 import { ProjectStore } from "./storage/project-store.js";
 
 const allowedRatios = new Set<AspectRatio>(["9:16", "16:9", "1:1", "4:5", "2.35:1"]);
+
+function canvasItemLabel(snapshot: ProjectSnapshot, item: { refType: string; refId: string }) {
+  if (item.refType === "text") {
+    return snapshot.textItems.find((candidate) => candidate.id === item.refId)?.title || "文字";
+  }
+  if (item.refType === "entity") {
+    return snapshot.entities.find((candidate) => candidate.id === item.refId)?.name || "实体";
+  }
+  if (item.refType === "asset") {
+    return snapshot.assets.find((candidate) => candidate.id === item.refId)?.originalName || "素材";
+  }
+  const shot = snapshot.shots.find((candidate) => candidate.id === item.refId);
+  return shot?.label || (item.refType === "take_stack" ? "生成结果" : "镜头");
+}
 
 export function projectKey(value: unknown): string | null {
   if (typeof value !== "string" || !/^[a-z0-9][a-z0-9-]{0,80}\.takeboard$/.test(value)) {
@@ -47,6 +61,39 @@ export function registerProjectRoutes(app: FastifyInstance, projectsRoot: string
                 sceneCount: opened.snapshot.scenes.length,
                 shotCount: opened.snapshot.shots.length,
                 updatedAt: opened.snapshot.project.updatedAt,
+                boards: opened.snapshot.scenes.slice(0, 8).map((scene) => {
+                  const items = opened.snapshot.canvasItems
+                    .filter((item) => item.sceneId === scene.id)
+                    .sort((left, right) => left.zIndex - right.zIndex);
+                  const nodes = items.slice(0, 16).map((item) => ({
+                    id: item.id,
+                    refType: item.refType,
+                    label: canvasItemLabel(opened.snapshot, item),
+                    x: item.x,
+                    y: item.y,
+                    width: item.width,
+                    height: item.height,
+                  }));
+                  const nodeIds = new Set(nodes.map((node) => node.id));
+                  return {
+                    sceneId: scene.id,
+                    label: scene.label,
+                    title: scene.title,
+                    itemCount: items.length,
+                    nodes,
+                    edges: opened.snapshot.canvasEdges
+                      .filter(
+                        (edge) =>
+                          edge.sceneId === scene.id &&
+                          nodeIds.has(edge.sourceItemId) &&
+                          nodeIds.has(edge.targetItemId),
+                      )
+                      .map((edge) => ({
+                        sourceItemId: edge.sourceItemId,
+                        targetItemId: edge.targetItemId,
+                      })),
+                  };
+                }),
               }
             : null;
         }),
@@ -118,6 +165,22 @@ export function registerProjectRoutes(app: FastifyInstance, projectsRoot: string
     } finally {
       store.close();
     }
+  });
+
+  app.delete<{ Params: { key: string } }>("/api/projects/:key", async (request, reply) => {
+    const key = projectKey(request.params.key);
+    if (!key) return await reply.code(400).send({ error: "项目标识无效" });
+
+    const source = join(root, key);
+    const store = ProjectStore.openExisting(source);
+    if (!store) return await reply.code(404).send({ error: "项目不存在" });
+    store.close();
+
+    const trashRoot = join(root, ".trash");
+    await mkdir(trashRoot, { recursive: true });
+    const archivedName = `${key}.${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
+    await rename(source, join(trashRoot, archivedName));
+    return { key, deleted: true as const, recoverable: true as const };
   });
 
   app.post<{ Params: { key: string } }>(
