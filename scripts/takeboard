@@ -119,10 +119,10 @@ doctor() {
     echo "[info] ComfyUI is offline or not configured; project management remains available"
   fi
 
-  if command -v tailscale >/dev/null 2>&1 && tailscale status >/dev/null 2>&1; then
-    echo "[ok] Tailscale is connected"
+  if command -v ssh >/dev/null 2>&1; then
+    echo "[ok] SSH $(ssh -V 2>&1 | head -n 1)"
   else
-    echo "[info] Tailscale is unavailable; use the SSH tunnel fallback for remote access"
+    echo "[warn] SSH is unavailable; remote tunnel access cannot be established"
   fi
 
   return "$failed"

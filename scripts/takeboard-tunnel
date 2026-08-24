@@ -24,17 +24,22 @@ done
 
 usage() {
   cat <<'EOF'
-TakeBoard SSH tunnel fallback (macOS/Linux client)
+TakeBoard SSH tunnel (macOS/Linux client)
 
 Usage:
+  ./scripts/takeboard-tunnel connect <ssh-host> [local-port]
   ./scripts/takeboard-tunnel start <ssh-host> [local-port]
   ./scripts/takeboard-tunnel status
   ./scripts/takeboard-tunnel open
   ./scripts/takeboard-tunnel stop
 
-The start command checks the requested local port. If another application
-(for example VS Code port forwarding) owns it, the next free port is chosen.
-ComfyUI is forwarded to 127.0.0.1:48188 so deep-edit links keep working.
+connect/start keeps the tunnel attached to this terminal and opens TakeBoard.
+Press Ctrl-C or close the terminal to release every port automatically.
+
+The requested TakeBoard port defaults to 48220. If another application owns
+it, the next free port is selected. ComfyUI is forwarded to 127.0.0.1:48188.
+The SSH host may be a normal hostname, IP address, SSH alias, or a Tailscale
+hostname; Tailscale Serve is not used.
 EOF
 }
 
@@ -54,8 +59,8 @@ read_state() {
     echo "No TakeBoard tunnel state found." >&2
     return 1
   fi
-  IFS=$'\t' read -r tunnel_host tunnel_port tunnel_comfy_port < "$state_file"
-  if [[ -z ${tunnel_host:-} || ! ${tunnel_port:-} =~ ^[0-9]+$ ]]; then
+  IFS=$'\t' read -r tunnel_host tunnel_port tunnel_comfy_port tunnel_pid < "$state_file"
+  if [[ -z ${tunnel_host:-} ]] || ! valid_port "${tunnel_port:-0}"; then
     echo "Tunnel state is invalid: ${state_file}" >&2
     return 1
   fi
@@ -73,9 +78,13 @@ healthy() {
 wait_for_health() {
   local attempt=0
   until healthy; do
+    if [[ -n ${tunnel_pid:-} ]] && ! kill -0 "$tunnel_pid" >/dev/null 2>&1; then
+      echo "SSH exited before the TakeBoard tunnel became healthy." >&2
+      return 1
+    fi
     attempt=$((attempt + 1))
     if ((attempt >= 20)); then
-      echo "Tunnel started, but TakeBoard did not respond on local port ${tunnel_port}." >&2
+      echo "TakeBoard did not respond on local port ${tunnel_port} within 10 seconds." >&2
       return 1
     fi
     sleep 0.5
@@ -86,14 +95,30 @@ open_url() {
   local url=$1
   if [[ $(uname -s) == Darwin ]] && command -v open >/dev/null 2>&1; then
     open "$url"
-  elif command -v xdg-open >/dev/null 2>&1; then
+  elif command -v xdg-open >/dev/null 2>&1 && [[ -n ${DISPLAY:-}${WAYLAND_DISPLAY:-} ]]; then
     xdg-open "$url" >/dev/null 2>&1
   else
     echo "Open this URL in a browser: ${url}"
   fi
 }
 
-start_tunnel() {
+cleanup_tunnel() {
+  trap - EXIT INT TERM HUP
+  if [[ -n ${tunnel_host:-} ]]; then
+    ssh -S "$control_socket" -O exit "$tunnel_host" >/dev/null 2>&1 || true
+  fi
+  if [[ -n ${tunnel_pid:-} ]] && kill -0 "$tunnel_pid" >/dev/null 2>&1; then
+    kill "$tunnel_pid" >/dev/null 2>&1 || true
+    wait "$tunnel_pid" 2>/dev/null || true
+  fi
+  rm -f "$control_socket" "$state_file"
+  if [[ ${tunnel_ready:-0} == 1 ]]; then
+    echo
+    echo "TakeBoard tunnel closed; local ports released."
+  fi
+}
+
+connect_tunnel() {
   local host=${1:-}
   local requested_port=${2:-$default_local_port}
   if [[ -z $host ]]; then
@@ -109,6 +134,10 @@ start_tunnel() {
     echo "Invalid local port: ${requested_port}" >&2
     exit 2
   fi
+  if ! command -v ssh >/dev/null 2>&1 || ! command -v curl >/dev/null 2>&1; then
+    echo "ssh and curl are required." >&2
+    exit 1
+  fi
 
   mkdir -p "$state_dir"
   chmod 700 "$state_dir"
@@ -122,9 +151,12 @@ start_tunnel() {
 
   local selected_port=$requested_port
   local last_port=$((requested_port + 19))
+  if ((last_port > 65535)); then
+    last_port=65535
+  fi
   while port_in_use "$selected_port"; do
     selected_port=$((selected_port + 1))
-    if ((selected_port > last_port || selected_port > 65535)); then
+    if ((selected_port > last_port)); then
       echo "No free local port found in ${requested_port}-${last_port}." >&2
       exit 1
     fi
@@ -138,42 +170,45 @@ start_tunnel() {
   fi
   if port_in_use "$comfy_local_port"; then
     echo "ComfyUI local port ${comfy_local_port} is already occupied." >&2
-    echo "Stop that listener, or run with COMFY_LOCAL_PORT set to the URL configured for TakeBoard." >&2
+    echo "Stop that listener, or set COMFY_LOCAL_PORT to the URL configured for TakeBoard." >&2
     exit 1
   fi
 
-  ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" \
-    "curl --fail --silent --max-time 5 http://127.0.0.1:${remote_port}/api/health" \
-    >/dev/null
+  tunnel_host=$host
+  tunnel_port=$selected_port
+  tunnel_comfy_port=$comfy_local_port
+  tunnel_ready=0
 
-  ssh -M -S "$control_socket" -fN \
+  ssh -M -S "$control_socket" -N \
+    -o ConnectTimeout=10 \
     -o ExitOnForwardFailure=yes \
     -o ServerAliveInterval=30 \
     -o ServerAliveCountMax=3 \
     -L "${selected_port}:127.0.0.1:${remote_port}" \
     -L "${comfy_local_port}:127.0.0.1:${comfy_remote_port}" \
-    "$host"
+    "$host" &
+  tunnel_pid=$!
 
-  printf '%s\t%s\t%s\n' "$host" "$selected_port" "$comfy_local_port" > "$state_file"
+  printf '%s\t%s\t%s\t%s\n' "$host" "$selected_port" "$comfy_local_port" "$tunnel_pid" > "$state_file"
   chmod 600 "$state_file"
-  tunnel_host=$host
-  tunnel_port=$selected_port
-  tunnel_comfy_port=$comfy_local_port
+  trap cleanup_tunnel EXIT
+  trap 'exit 130' INT TERM HUP
 
-  if ! wait_for_health; then
-    ssh -S "$control_socket" -O exit "$host" >/dev/null 2>&1 || true
-    rm -f "$control_socket" "$state_file"
-    exit 1
-  fi
+  wait_for_health
+  tunnel_ready=1
   echo "TakeBoard tunnel is ready."
   echo "URL: http://127.0.0.1:${selected_port}"
   echo "ComfyUI: http://127.0.0.1:${comfy_local_port}"
+  echo "Keep this terminal open. Press Ctrl-C to disconnect."
+  open_url "http://127.0.0.1:${selected_port}"
+
+  wait "$tunnel_pid"
 }
 
 command_name=${1:-help}
 case "$command_name" in
-  start)
-    start_tunnel "${2:-}" "${3:-$default_local_port}"
+  connect|start)
+    connect_tunnel "${2:-}" "${3:-$default_local_port}"
     ;;
   status)
     if ! tunnel_active; then
@@ -202,8 +237,11 @@ case "$command_name" in
       exit 0
     fi
     ssh -S "$control_socket" -O exit "$tunnel_host" >/dev/null 2>&1 || true
+    if [[ -n ${tunnel_pid:-} ]] && kill -0 "$tunnel_pid" >/dev/null 2>&1; then
+      kill "$tunnel_pid" >/dev/null 2>&1 || true
+    fi
     rm -f "$control_socket" "$state_file"
-    echo "TakeBoard tunnel stopped."
+    echo "TakeBoard tunnel stopped; local ports released."
     ;;
   help|-h|--help)
     usage

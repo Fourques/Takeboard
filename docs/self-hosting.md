@@ -2,7 +2,7 @@
 
 更新时间：2026-08-24
 
-TakeBoard 默认只监听服务器回环地址。推荐使用用户级 systemd 保持服务稳定运行，再通过 Tailscale Serve 或 SSH 隧道访问；当前版本没有账号系统，不应直接暴露到公网。
+TakeBoard 默认只监听服务器回环地址。推荐使用用户级 systemd 保持服务稳定运行，再通过标准 SSH 隧道访问；当前版本没有账号系统，不应直接暴露到公网。
 
 ## 安装稳定服务
 
@@ -69,7 +69,7 @@ pnpm verify
 ./scripts/takeboard restart
 ```
 
-`doctor` 会检查 Node.js、pnpm、服务状态、API、ComfyUI 和 Tailscale，适合作为故障排查入口。
+`doctor` 会检查 Node.js、pnpm、服务状态、API、ComfyUI 和 SSH 客户端，适合作为故障排查入口。
 
 ## 开发与稳定服务切换
 
@@ -81,19 +81,13 @@ pnpm verify
 
 ## 远程访问
 
-优先使用：
+在 Mac 或 Linux 客户端执行：
 
 ```bash
-./scripts/takeboard-share enable
+./scripts/takeboard-tunnel connect your-server
 ```
 
-无法使用 Tailscale Serve 时，在客户端执行：
-
-```bash
-./scripts/takeboard-tunnel start your-server
-```
-
-详细说明、访问模型和端口冲突处理见[远程访问指南](./remote-access.md)。
+终端退出时隧道和本地端口会一同释放。服务器可以通过普通公网 SSH、局域网或 Tailscale 网络抵达，隧道方式保持一致。详细说明和端口冲突处理见[远程访问指南](./remote-access.md)。
 
 ## 备份
 

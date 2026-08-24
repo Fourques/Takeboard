@@ -19,7 +19,7 @@ TakeBoard 不重做 ComfyUI 的节点系统。它在现有 Workflow 和算力之
 模型、工作流、素材和项目文件始终保存在自己的设备上。没有 ComfyUI 时，也可以完整使用项目管理和画布界面。
 
 > [!IMPORTANT]
-> 当前版本适合个人创作和可信团队试用，尚未提供账号与权限系统。服务默认只监听 `127.0.0.1`；请使用 Tailscale 或 SSH 隧道远程访问，不要直接开放到公网。
+> 当前版本适合个人创作和可信团队试用，尚未提供账号与权限系统。服务默认只监听 `127.0.0.1`；请使用 SSH 隧道或带身份认证的反向代理远程访问，不要直接开放到公网。
 
 ## 能力概览
 
@@ -77,34 +77,20 @@ Linux 主机推荐安装用户级 systemd 服务：
 
 配置文件位于 `~/.config/takeboard/env`，修改后运行 `./scripts/takeboard restart` 生效。
 
-### Tailscale 远程访问（推荐）
+### SSH 远程访问
 
-服务器和自己的电脑加入同一 tailnet 后，在服务器执行一次：
-
-```bash
-./scripts/takeboard-share enable
-```
-
-脚本会输出稳定的私有 HTTPS 地址。之后无需保持 SSH 窗口，也不用记端口；访问仍受 tailnet 身份与 ACL 控制。查看或关闭共享：
+在 Mac 或 Linux 客户端的项目目录执行：
 
 ```bash
-./scripts/takeboard-share status
-./scripts/takeboard-share disable
+./scripts/takeboard-tunnel connect your-server
 ```
 
-### SSH 隧道回退
+脚本会自动打开浏览器，并同时转发 ComfyUI 到 `48188`。默认使用 `48220`；如果端口已被 VS Code 等程序占用，会自动选择下一个可用端口。隧道保持在前台，按 `Ctrl-C` 或关闭终端后会自动释放端口，不会留下长期占用。
 
-无法使用 Tailscale Serve 时，在 Mac 或 Linux 客户端的项目目录执行：
-
-```bash
-./scripts/takeboard-tunnel start your-server
-```
-
-默认打开 `48220`。如果端口已被 VS Code 或旧隧道占用，脚本会自动选择下一个可用端口，并同时转发 ComfyUI 到 `48188`：
+`your-server` 可以是普通 SSH 地址、`~/.ssh/config` 别名、局域网地址，也可以是 Tailscale 主机名；无论网络如何连通，使用的都是标准 SSH 隧道。
 
 ```bash
 ./scripts/takeboard-tunnel status
-./scripts/takeboard-tunnel open
 ./scripts/takeboard-tunnel stop
 ```
 
@@ -185,7 +171,7 @@ pnpm format       # 格式化代码
 | 文档 | 内容 |
 | --- | --- |
 | [创作工作站](docs/creator-workstation.md) | 画布、素材、Workflow 与生成流程 |
-| [远程访问](docs/remote-access.md) | Tailscale Serve、SSH 回退与端口诊断 |
+| [远程访问](docs/remote-access.md) | 标准 SSH 隧道、自动清理与端口诊断 |
 | [自托管部署](docs/self-hosting.md) | systemd、配置、升级与运行维护 |
 | [数据目录](docs/data-layout.md) | 项目隔离、备份与迁移 |
 | [技术架构](docs/architecture.md) | 模块边界、数据流与安全约束 |
