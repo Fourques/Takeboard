@@ -1,0 +1,213 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+service_name=${TAKEBOARD_SERVICE_NAME:-takeboard.service}
+app_port=${TAKEBOARD_PORT:-48120}
+dev_port=${TAKEBOARD_DEV_PORT:-48110}
+health_url="http://127.0.0.1:${app_port}/api/health"
+
+if command -v pnpm >/dev/null 2>&1; then
+  package_manager=(pnpm)
+elif command -v corepack >/dev/null 2>&1; then
+  package_manager=(corepack pnpm)
+else
+  package_manager=()
+fi
+
+usage() {
+  cat <<'EOF'
+TakeBoard local service manager
+
+Usage: ./scripts/takeboard <command>
+
+Commands:
+  install   Build TakeBoard and install the user-level systemd service
+  start     Start the installed production service
+  stop      Stop the production service
+  restart   Restart the production service and wait for health
+  status    Show service and health status
+  logs      Follow production logs
+  open      Start if needed, then open TakeBoard in the local browser
+  dev       Run API + Web development servers; restore production on exit
+  doctor    Check runtime, ports, service, API, and optional ComfyUI
+EOF
+}
+
+service_installed() {
+  systemctl --user cat "$service_name" >/dev/null 2>&1
+}
+
+service_active() {
+  systemctl --user is-active --quiet "$service_name" 2>/dev/null
+}
+
+healthy() {
+  curl --fail --silent --max-time 3 "$health_url" >/dev/null 2>&1
+}
+
+wait_for_health() {
+  local attempt=0
+  until healthy; do
+    attempt=$((attempt + 1))
+    if ((attempt >= 30)); then
+      echo "TakeBoard did not become healthy at ${health_url} within 30 seconds." >&2
+      return 1
+    fi
+    sleep 1
+  done
+  echo "TakeBoard is ready: http://127.0.0.1:${app_port}"
+}
+
+open_url() {
+  local url=$1
+  if [[ $(uname -s) == Darwin ]] && command -v open >/dev/null 2>&1; then
+    open "$url" >/dev/null 2>&1 || echo "Open this URL in a browser: ${url}"
+  elif command -v xdg-open >/dev/null 2>&1 && [[ -n ${DISPLAY:-}${WAYLAND_DISPLAY:-} ]]; then
+    xdg-open "$url" >/dev/null 2>&1 || echo "Open this URL in a browser: ${url}"
+  else
+    echo "Open this URL in a browser: ${url}"
+  fi
+}
+
+require_service() {
+  if service_installed; then
+    return
+  fi
+  echo "TakeBoard service is not installed. Run: ./scripts/takeboard install" >&2
+  exit 1
+}
+
+doctor() {
+  local failed=0
+  echo "TakeBoard doctor"
+  echo "Repository: ${repo_dir}"
+
+  if command -v node >/dev/null 2>&1; then
+    echo "[ok] Node $(node --version)"
+  else
+    echo "[error] Node.js is not installed"
+    failed=1
+  fi
+
+  if ((${#package_manager[@]} > 0)); then
+    echo "[ok] pnpm $("${package_manager[@]}" --version)"
+  else
+    echo "[error] pnpm is not available; run: corepack enable"
+    failed=1
+  fi
+
+  if service_installed; then
+    if service_active; then
+      echo "[ok] ${service_name} is active"
+    else
+      echo "[warn] ${service_name} is installed but inactive"
+    fi
+  else
+    echo "[warn] ${service_name} is not installed"
+  fi
+
+  if healthy; then
+    echo "[ok] API ${health_url}"
+  else
+    echo "[warn] API is not responding at ${health_url}"
+  fi
+
+  if curl --fail --silent --max-time 3 http://127.0.0.1:8188/system_stats >/dev/null 2>&1; then
+    echo "[ok] ComfyUI http://127.0.0.1:8188"
+  else
+    echo "[info] ComfyUI is offline or not configured; project management remains available"
+  fi
+
+  if command -v ssh >/dev/null 2>&1; then
+    echo "[ok] SSH $(ssh -V 2>&1 | head -n 1)"
+  else
+    echo "[warn] SSH is unavailable; remote tunnel access cannot be established"
+  fi
+
+  return "$failed"
+}
+
+command_name=${1:-help}
+case "$command_name" in
+  install)
+    exec bash "$repo_dir/scripts/install-service.sh"
+    ;;
+  start)
+    require_service
+    systemctl --user start "$service_name"
+    wait_for_health
+    ;;
+  stop)
+    require_service
+    systemctl --user stop "$service_name"
+    echo "TakeBoard stopped."
+    ;;
+  restart)
+    require_service
+    systemctl --user restart "$service_name"
+    wait_for_health
+    ;;
+  status)
+    require_service
+    systemctl --user --no-pager --full status "$service_name" || true
+    if healthy; then
+      echo "Health: ok (${health_url})"
+    else
+      echo "Health: unavailable (${health_url})"
+      exit 1
+    fi
+    ;;
+  logs)
+    require_service
+    exec journalctl --user --unit "$service_name" --follow --lines 80
+    ;;
+  open)
+    if ! healthy; then
+      require_service
+      systemctl --user start "$service_name"
+      wait_for_health
+    fi
+    open_url "http://127.0.0.1:${app_port}"
+    ;;
+  dev)
+    production_was_active=0
+    if service_active; then
+      production_was_active=1
+      echo "Stopping ${service_name} while development servers use port ${app_port}..."
+      systemctl --user stop "$service_name"
+    elif healthy; then
+      echo "Port ${app_port} is already serving another TakeBoard process." >&2
+      echo "Stop that process before entering development mode." >&2
+      exit 1
+    fi
+
+    restore_production() {
+      if ((production_was_active == 1)); then
+        production_was_active=0
+        echo
+        echo "Restoring ${service_name}..."
+        systemctl --user start "$service_name"
+      fi
+    }
+    trap restore_production EXIT
+    echo "Development UI: http://127.0.0.1:${dev_port}"
+    cd "$repo_dir"
+    if ((${#package_manager[@]} == 0)); then
+      echo "pnpm is unavailable. Install Corepack or pnpm first." >&2
+      exit 1
+    fi
+    "${package_manager[@]}" dev
+    ;;
+  doctor)
+    doctor
+    ;;
+  help|-h|--help)
+    usage
+    ;;
+  *)
+    echo "Unknown command: ${command_name}" >&2
+    usage >&2
+    exit 2
+    ;;
+esac

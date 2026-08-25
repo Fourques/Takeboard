@@ -1,10 +1,213 @@
 import { expect, test } from "@playwright/test";
 
+test("project hub presents a complete project overview", async ({ page, request }) => {
+  test.setTimeout(90_000);
+  await page.setViewportSize({ width: 1600, height: 1100 });
+  const projectFixtures = [
+    { title: "潮汐来信", aspectRatio: "9:16", sceneTitle: "雾港", firstShotIntent: "穿过雾气" },
+    { title: "纸月旅馆", aspectRatio: "16:9", sceneTitle: "前厅", firstShotIntent: "推门进入" },
+    { title: "黑曜计划", aspectRatio: "4:5", sceneTitle: "控制室", firstShotIntent: "信号亮起" },
+  ];
+  const fixtureTitles = new Set(projectFixtures.map((project) => project.title));
+  const existingProjects = (await (await request.get("/api/projects")).json()).projects as Array<{
+    key: string;
+    title: string;
+  }>;
+  for (const project of existingProjects.filter((candidate) =>
+    fixtureTitles.has(candidate.title),
+  )) {
+    const deleted = await request.delete(`/api/projects/${project.key}`);
+    expect(deleted.ok()).toBeTruthy();
+  }
+  for (const project of projectFixtures) {
+    const response = await request.post("/api/projects", { data: project });
+    expect(response.ok()).toBeTruthy();
+  }
+
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "从素材到成片，都在一张画布。" })).toBeVisible();
+  await expect(page.locator(".project-card-managed")).toHaveCount(3);
+  const projectShelf = page.locator(".hub-projects");
+  const shelfBox = await projectShelf.boundingBox();
+  expect(shelfBox?.y).toBeGreaterThanOrEqual(1100);
+  const projectBackdropTop = await projectShelf.evaluate((element) =>
+    Number.parseFloat(window.getComputedStyle(element, "::before").top),
+  );
+  expect(projectBackdropTop).toBe(0);
+  await expect(projectShelf).not.toHaveClass(/is-visible/);
+  await page.screenshot({
+    path: "test-results/takeboard-home.png",
+    fullPage: true,
+    animations: "disabled",
+  });
+
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 1365, height: 1600 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/");
+    const responsiveShelfBox = await projectShelf.boundingBox();
+    expect(responsiveShelfBox?.y).toBeGreaterThanOrEqual(viewport.height);
+    const responsiveBackdropWidth = await projectShelf.evaluate((element) =>
+      Number.parseFloat(window.getComputedStyle(element, "::before").width),
+    );
+    expect(responsiveBackdropWidth).toBeGreaterThanOrEqual(viewport.width);
+    await expect(projectShelf).not.toHaveClass(/is-visible/);
+    if (viewport.width === 390) {
+      await page.screenshot({
+        path: "test-results/takeboard-home-mobile.png",
+        animations: "disabled",
+      });
+    }
+  }
+
+  await page.setViewportSize({ width: 1600, height: 1100 });
+  await page.goto("/");
+  const measuredTerminalTop = await projectShelf.evaluate((section) => {
+    const shell = section.closest(".hub-shell");
+    const header = shell?.querySelector<HTMLElement>(".hub-header");
+    return section.offsetTop - (header?.offsetHeight ?? 72);
+  });
+  expect(measuredTerminalTop).toBeGreaterThan(900);
+  const crewCompanion = page.getByRole("button", { name: "触发场记 · 这一条保留" });
+  await crewCompanion.click();
+  await expect(crewCompanion).toHaveClass(/is-active/);
+  await page.locator(".universe-webgl").hover({ position: { x: 800, y: 470 } });
+  await page.mouse.wheel(0, 160);
+  await expect
+    .poll(async () => page.locator(".hub-shell").evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(0);
+  const firstWheelTop = await page.locator(".hub-shell").evaluate((element) => element.scrollTop);
+  expect(firstWheelTop).toBeLessThan(1028);
+  const firstWheelShelfY = (await projectShelf.boundingBox())?.y ?? 0;
+  expect(firstWheelShelfY).toBeGreaterThan(72);
+  expect(firstWheelShelfY).toBeLessThan(1100);
+  await page.mouse.wheel(0, measuredTerminalTop - firstWheelTop);
+  await expect(projectShelf).toHaveClass(/is-visible/);
+  await expect(page.locator(".hub-shell")).toHaveClass(/project-stage-active/);
+  await expect.poll(async () => Math.round((await projectShelf.boundingBox())?.y ?? -1)).toBe(72);
+  const fittedLibraryTop = await page
+    .locator(".hub-shell")
+    .evaluate((element) => element.scrollTop);
+  await page.mouse.wheel(0, 1200);
+  await expect
+    .poll(async () => page.locator(".hub-shell").evaluate((element) => element.scrollTop))
+    .toBe(fittedLibraryTop);
+  await expect
+    .poll(async () => (await page.getByRole("heading", { name: "继续创作" }).boundingBox())?.y)
+    .toBeLessThanOrEqual(138);
+  expect((await page.getByRole("heading", { name: "继续创作" }).boundingBox())?.y).toBeGreaterThan(
+    72,
+  );
+  await expect(page.getByRole("searchbox", { name: "搜索项目" })).toBeVisible();
+  await expect(page.locator(".project-curiosities")).toBeVisible();
+  const curiositiesBox = await page.locator(".project-curiosities").boundingBox();
+  expect((curiositiesBox?.y ?? 0) + (curiositiesBox?.height ?? 0)).toBeLessThanOrEqual(1100);
+  const rhythmTool = page.getByRole("button", { name: /剪辑节拍预演/ });
+  await expect(rhythmTool).toHaveAccessibleName(/96 BPM/);
+  await rhythmTool.click();
+  await expect(rhythmTool).toHaveAccessibleName(/120 BPM/);
+  const framingTool = page.getByRole("button", { name: /画幅试镜/ });
+  await expect(framingTool).toHaveAccessibleName(/16:9/);
+  await framingTool.click();
+  await expect(framingTool).toHaveAccessibleName(/9:16/);
+  const axisTool = page.getByRole("button", { name: /轴线检查/ });
+  await expect(axisTool).toHaveAccessibleName(/当前守轴/);
+  await axisTool.click();
+  await expect(axisTool).toHaveAccessibleName(/当前越轴/);
+  const projectBackdropWidth = await projectShelf.evaluate((element) =>
+    Number.parseFloat(window.getComputedStyle(element, "::before").width),
+  );
+  expect(projectBackdropWidth).toBeGreaterThanOrEqual(1600);
+  await page.screenshot({
+    path: "test-results/takeboard-project-shelf.png",
+    animations: "disabled",
+  });
+  await page.getByRole("button", { name: "柔彩主题" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "chroma");
+  await page.screenshot({
+    path: "test-results/takeboard-project-shelf-chroma.png",
+    animations: "disabled",
+  });
+  await page.locator(".project-card-managed").first().hover();
+  await page.mouse.wheel(0, -1600);
+  await expect(page.locator(".hub-shell")).not.toHaveClass(/project-stage-active/);
+  await expect
+    .poll(async () => page.locator(".hub-shell").evaluate((element) => element.scrollTop))
+    .toBe(0);
+  await page.screenshot({
+    path: "test-results/takeboard-home-chroma.png",
+    animations: "disabled",
+  });
+  await page.getByRole("button", { name: "ComfyUI 连接与安全启动" }).click();
+  const workerPanel = page.getByLabel("ComfyUI 连接与安全启动面板");
+  await expect(workerPanel).toBeVisible();
+  const safeStart = workerPanel.getByRole("button", { name: "安全启动", exact: true });
+  if (await safeStart.count()) await expect(safeStart).toBeDisabled();
+  else await expect(workerPanel.getByText("执行端已连接")).toBeVisible();
+  await page.screenshot({
+    path: "test-results/takeboard-worker-panel.png",
+    animations: "disabled",
+  });
+  await page.getByRole("button", { name: "关闭 ComfyUI 面板" }).click();
+});
+
+test("a larger project library keeps scrolling below its sticky heading", async ({
+  page,
+  request,
+}) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  for (let index = 0; index < 9; index += 1) {
+    const response = await request.post("/api/projects", {
+      data: {
+        title: `扩展项目 ${String(index + 1).padStart(2, "0")}`,
+        aspectRatio: index % 2 ? "16:9" : "9:16",
+      },
+    });
+    expect(response.ok()).toBeTruthy();
+  }
+
+  await page.goto("/");
+  const shell = page.locator(".hub-shell");
+  const shelf = page.locator(".hub-projects");
+  const heading = page.locator(".hub-section-heading");
+  const chapterTop = await shelf.evaluate((section) => {
+    const header = section.closest(".hub-shell")?.querySelector<HTMLElement>(".hub-header");
+    return section.offsetTop - (header?.offsetHeight ?? 72);
+  });
+
+  await page.locator(".universe-webgl").hover({ position: { x: 800, y: 380 } });
+  await page.mouse.wheel(0, chapterTop);
+  await expect.poll(async () => Math.round((await shelf.boundingBox())?.y ?? -1)).toBe(72);
+  const settledTop = await shell.evaluate((element) => element.scrollTop);
+
+  await page.mouse.wheel(0, 420);
+  await expect
+    .poll(async () => shell.evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(settledTop);
+  await expect.poll(async () => Math.round((await heading.boundingBox())?.y ?? -1)).toBe(72);
+  await page.screenshot({
+    path: "test-results/takeboard-project-library-scrolling.png",
+    animations: "disabled",
+  });
+});
+
 test("canvas nodes reveal their own contextual inspector", async ({ page }) => {
+  await page.addInitScript(() => window.sessionStorage.setItem("takeboard.resumeDemo", "1"));
   await page.goto("/");
   const closeCreate = page.getByRole("button", { name: "关闭新建项目" });
   if (await closeCreate.isVisible()) await closeCreate.click();
-  await page.getByRole("button", { name: /探索示例画布/ }).click();
+
+  for (const nodeType of ["text", "entity", "asset", "shot"]) {
+    await expect(
+      page.locator(`.react-flow__node-${nodeType}`).first().locator(".board-output-handle"),
+    ).toBeVisible();
+  }
+  await page.getByRole("button", { name: "开始生成" }).click();
+  await expect(
+    page.locator(".react-flow__node-take_stack").first().locator(".board-output-handle"),
+  ).toBeVisible();
 
   const scriptNode = page.locator(".react-flow__node-text");
   await scriptNode.click();
@@ -12,6 +215,9 @@ test("canvas nodes reveal their own contextual inspector", async ({ page }) => {
   await expect(
     page.getByLabel("剧本节点检查器").getByRole("heading", { name: "场景剧本" }),
   ).toBeVisible();
+  await expect(
+    page.getByLabel("剧本节点检查器").getByRole("button", { name: "＋ 追加到镜头提示词" }),
+  ).toBeEnabled();
   await expect(scriptNode).toHaveClass(/selected/);
 
   const entityNode = page.locator(".react-flow__node-entity");
@@ -26,7 +232,8 @@ test("canvas nodes reveal their own contextual inspector", async ({ page }) => {
   const assetNode = page.locator(".react-flow__node-asset");
   await assetNode.click();
   await expect(page.getByLabel("素材节点检查器")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "作为镜头输入" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "连接用途" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "自定义标签" })).toBeVisible();
   await page.screenshot({
     path: "test-results/takeboard-context-inspector.png",
     fullPage: true,
@@ -35,17 +242,15 @@ test("canvas nodes reveal their own contextual inspector", async ({ page }) => {
 
   const secondShot = page.locator(".react-flow__node-shot").nth(1);
   await secondShot.click();
-  await expect(
-    page.getByLabel("镜头候选检查器").getByRole("heading", { name: "S002" }),
-  ).toBeVisible();
+  await expect(page.getByLabel("镜头候选检查器").getByLabel("镜头名称")).toHaveValue("S002");
   await expect(secondShot).toHaveClass(/selected/);
 });
 
 test("fake generation and approval survive reload", async ({ page }) => {
+  await page.addInitScript(() => window.sessionStorage.setItem("takeboard.resumeDemo", "1"));
   await page.goto("/");
   const closeCreate = page.getByRole("button", { name: "关闭新建项目" });
   if (await closeCreate.isVisible()) await closeCreate.click();
-  await page.getByRole("button", { name: /探索示例画布/ }).click();
   await expect(page.getByText("雾港来信", { exact: true }).first()).toBeVisible();
 
   const reset = page.getByRole("button", { name: "重置 Demo" });
@@ -63,9 +268,21 @@ test("fake generation and approval survive reload", async ({ page }) => {
   await expect(page.getByText("REJECTED")).toBeVisible();
 
   await page.getByRole("button", { name: "选择候选 2" }).click();
+  await page.locator(".react-flow__node-shot").first().click();
+  await expect(page.locator(".shot-inline-console")).toBeVisible();
   await page.getByRole("button", { name: "批准此 Take" }).click();
   await expect(page.getByText("APPROVED").first()).toBeVisible();
   await expect(page.getByText("镜头完成度").locator("..").getByText("1/3")).toBeVisible();
+  await expect(page.locator(".shot-inline-console")).toHaveCount(0);
+
+  await page.locator(".react-flow__node-shot").first().click();
+  await expect(page.locator(".shot-inline-console")).toBeVisible();
+  page.once("dialog", async (dialog) => {
+    expect(dialog.message()).toContain("已有采用结果");
+    await dialog.dismiss();
+  });
+  await page.locator(".shot-inline-generate").click();
+  await expect(page.getByRole("button", { name: /选择候选/ })).toHaveCount(4);
 
   await page.reload();
   await expect(page.getByText("APPROVED").first()).toBeVisible();
@@ -122,41 +339,291 @@ test("reopening a project resumes and reconciles an active generation", async ({
   });
 
   await page.goto("/");
-  await page.getByText(title, { exact: true }).first().click();
-  await expect(page.getByText("已恢复后台生成任务", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: `打开 ${title} 的SC-01` }).click();
+  await expect(page.getByText("SH-01", { exact: true }).first()).toBeVisible();
   await expect.poll(() => pollCount).toBeGreaterThan(0);
-  await expect(page.getByText("已恢复后台生成任务", { exact: true })).toBeHidden();
   await expect(page.getByText("已保存 · r3")).toBeVisible();
 });
 
-test("a user can create and reopen a real project", async ({ page }) => {
-  const title = `TakeBoard 真实项目 ${Date.now()}`;
+test("a generated shot becomes the full visual node on canvas", async ({ page, request }) => {
+  const title = `TakeBoard 画面节点 ${Date.now()}`;
+  const created = await request.post("/api/projects", {
+    data: { title, aspectRatio: "16:9", firstShotIntent: "雨中的霓虹街道" },
+  });
+  expect(created.ok()).toBeTruthy();
+  const payload = await created.json();
+  const snapshot = structuredClone(payload.snapshot);
+  const shot = snapshot.shots[0];
+  const timestamp = new Date().toISOString();
+  const assetId = "asset_018f4f52-9d8b-8abc-8def-0123456789d1";
+  const takeId = "take_018f4f52-9d8b-8abc-8def-0123456789d2";
+  const runId = "run_018f4f52-9d8b-8abc-8def-0123456789d3";
+  snapshot.assets.push({
+    id: assetId,
+    projectId: snapshot.project.id,
+    mediaType: "image",
+    originalName: "generated-frame.png",
+    mimeType: "image/png",
+    byteSize: 68,
+    sha256: "d".repeat(64),
+    storagePath: "renders/generated-frame.png",
+    proxyPath: null,
+    width: 1,
+    height: 1,
+    customTags: [],
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  });
+  snapshot.takes.push({
+    id: takeId,
+    runId,
+    shotId: shot.id,
+    assetId,
+    status: "approved",
+    rejectionReasons: [],
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  });
+  shot.approvedTakeId = takeId;
+  shot.status = "approved";
+  shot.workflowPath = "Kino/Kino_QwenImage2512_T2I.json";
+  snapshot.runs.push({
+    id: runId,
+    shotId: shot.id,
+    recipeId: "recipe_018f4f52-9d8b-8abc-8def-0123456789d4",
+    recipeVersion: "qwen-image-2512-t2i@1",
+    workflowSha256: "e".repeat(64),
+    workerId: "worker_018f4f52-9d8b-8abc-8def-0123456789d5",
+    promptId: "prompt-generated-frame",
+    status: "completed",
+    inputs: [],
+    parameters: { recipePath: "Kino/Kino_QwenImage2512_T2I.json" },
+    errorCode: null,
+    errorMessage: null,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  });
+
+  await page.route(`**/api/projects/${payload.key}`, async (route) => {
+    await route.fulfill({ json: { key: payload.key, revision: 2, snapshot } });
+  });
+  await page.route(`**/api/projects/${payload.key}/assets/${assetId}/content`, async (route) => {
+    await route.fulfill({
+      contentType: "image/png",
+      body: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+        "base64",
+      ),
+    });
+  });
+
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: /让每一个镜头/ })).toBeVisible();
+  await page.getByRole("button", { name: `打开 ${title} 的SC-01` }).click();
+  const generatedNode = page.locator(".react-flow__node-shot .shot-generated-media");
+  await expect(generatedNode).toBeVisible();
+  await expect(generatedNode.locator("img")).toHaveAttribute("src", /\/content$/);
+  await expect(page.locator(".react-flow__node-shot .board-output-handle")).toBeVisible();
+  await expect(generatedNode.locator(".approved-stamp")).toHaveCount(0);
+  await expect(generatedNode.locator(".shot-generated-overlay")).toContainText(
+    /Qwen\s*Image\s*2512 T2I/,
+  );
+  await expect(generatedNode.locator(".shot-generated-overlay")).toContainText("5 秒");
+  await expect(generatedNode.locator(".shot-generated-overlay")).not.toContainText("已批准");
+  await expect(page.locator(".react-flow__node-shot")).not.toContainText("未选择模型");
+  await page.locator(".react-flow__node-shot").click();
+  await expect(page.locator(".recipe-selector")).toBeDisabled();
+  await expect(page.locator(".recipe-selector")).toContainText("已随镜头锁定");
+  await page.screenshot({
+    path: "test-results/takeboard-generated-shot-node.png",
+    fullPage: true,
+    animations: "disabled",
+  });
+});
+
+test("a user can create and reopen a real project", async ({ page }) => {
+  test.setTimeout(60_000);
+  const title = `TakeBoard 真实项目 ${Date.now()}`;
+  const workflowFixture = (input: {
+    path: string;
+    name: string;
+    capability: string;
+    capabilityLabel: string;
+    inputs: string[];
+    mediaInputs: {
+      first_frame: number;
+      last_frame: number;
+      reference: number;
+      reference_video?: number;
+    };
+    origin?: "built_in" | "imported" | "comfyui";
+  }) => ({
+    id: Buffer.from(input.path).toString("base64url"),
+    ...input,
+    models: [],
+    nodeCount: 12,
+    source: "comfyui",
+    editorUrl: "http://127.0.0.1:48188",
+    execution: "native",
+    origin: input.origin ?? "built_in",
+  });
+  await page.route("**/api/workflows", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        editorUrl: "http://127.0.0.1:48188",
+        warnings: [],
+        workflows: [
+          workflowFixture({
+            path: "Kino/Kino_Wan22_I2V.json",
+            name: "Wan22 I2V",
+            capability: "image_to_video",
+            capabilityLabel: "图生视频",
+            inputs: [
+              "prompt",
+              "negative_prompt",
+              "first_frame",
+              "resolution",
+              "duration",
+              "fps",
+              "seed",
+            ],
+            mediaInputs: { first_frame: 1, last_frame: 0, reference: 0 },
+          }),
+          workflowFixture({
+            path: "Kino/Kino_Wan22_FLF2V.json",
+            name: "Wan22 FLF2V",
+            capability: "first_last_video",
+            capabilityLabel: "首尾帧视频",
+            inputs: [
+              "prompt",
+              "negative_prompt",
+              "first_frame",
+              "last_frame",
+              "resolution",
+              "duration",
+              "fps",
+              "seed",
+            ],
+            mediaInputs: { first_frame: 1, last_frame: 1, reference: 0 },
+          }),
+          workflowFixture({
+            path: "Kino/Kino_QwenImage2512_T2I.json",
+            name: "Qwen Image 2512 T2I",
+            capability: "text_to_image",
+            capabilityLabel: "文生图",
+            inputs: ["prompt", "negative_prompt", "resolution", "seed", "steps"],
+            mediaInputs: { first_frame: 0, last_frame: 0, reference: 0 },
+          }),
+          workflowFixture({
+            path: "Kino/Kino_MiniMaxH3_R2V.json",
+            name: "MiniMax H3 R2V",
+            capability: "reference_video",
+            capabilityLabel: "参考图生视频",
+            inputs: [
+              "prompt",
+              "reference_images",
+              "reference_videos",
+              "resolution",
+              "duration",
+              "seed",
+            ],
+            mediaInputs: {
+              first_frame: 0,
+              last_frame: 0,
+              reference: 9,
+              reference_video: 3,
+            },
+          }),
+        ],
+      }),
+    });
+  });
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "从素材到成片，都在一张画布。" })).toBeVisible();
 
   const nameInput = page.getByLabel("项目名称");
   if (!(await nameInput.isVisible())) {
     await page.getByRole("button", { name: /新建项目/ }).click();
   }
   await nameInput.fill(title);
-  await page.getByLabel("第一场名称").fill("潮汐站台");
-  await page
-    .getByLabel("第一个镜头意图")
-    .fill("人物迎着海风回头，镜头缓慢推进。保持身份、服装和背景稳定。");
-  await page.getByRole("button", { name: "创建并打开 →" }).click();
+  await expect(page.getByLabel("默认画幅")).toHaveCount(0);
+  await expect(page.getByLabel("第一场名称")).toHaveCount(0);
+  await expect(page.getByLabel("第一个镜头意图")).toHaveCount(0);
+  await expect(page.locator(".project-start-card")).toContainText("不预设镜头");
+  await page.screenshot({
+    path: "test-results/takeboard-new-project.png",
+    animations: "disabled",
+  });
+  await page.getByRole("button", { name: "进入画布 →" }).click();
 
   await expect(page.getByText(title, { exact: true }).first()).toBeVisible();
+  await expect(page.getByLabel("空白工作画板")).toBeVisible();
+  await expect(page.locator(".react-flow__node-shot")).toHaveCount(0);
+  await page.screenshot({
+    path: "test-results/takeboard-blank-workspace.png",
+    animations: "disabled",
+  });
+  await page.getByRole("button", { name: "添加第一个镜头" }).click();
   await expect(page.getByText("SH-01", { exact: true }).first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "快速添加首帧" })).toBeVisible();
-  await page.getByRole("button", { name: "彩色主题" }).click();
-  await page.getByRole("button", { name: "工作流", exact: false }).first().click();
+  await expect(page.getByRole("button", { name: "导入参考素材" })).toBeVisible();
+  const canvasToolbar = page.locator(".canvas-toolbar");
+  await expect(canvasToolbar.locator(".canvas-primary-actions")).toHaveCount(0);
+  await expect(canvasToolbar).not.toContainText("工作流");
+  await expect(canvasToolbar).not.toContainText("资产库");
+  await canvasToolbar.getByRole("button", { name: "查看画布操作" }).click();
+  await expect(page.getByRole("complementary", { name: "画布操作说明" })).toContainText(
+    "双击或右键空白处",
+  );
+  await page.getByRole("button", { name: "关闭画布操作说明" }).click();
+  await page.getByRole("button", { name: "柔彩主题" }).click();
+  await page.locator(".recipe-selector").click();
   await expect(page.getByRole("heading", { name: "工作流与模型" })).toBeVisible();
+  await expect(page.getByText("TakeBoard 内置")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Wan22 FLF2V/ })).toContainText("2 个画面位置");
+  await expect(page.getByRole("button", { name: /MiniMax H3 R2V/ })).toContainText("12 个画面位置");
+  await page.getByRole("button", { name: /MiniMax H3 R2V/ }).click();
+  await expect(page.locator(".react-flow__node-shot")).toContainText("参考 0/9");
+  await expect(page.locator(".react-flow__node-shot")).toContainText("参考视频 0/3");
+  await expect(page.getByLabel("画布工作流")).toHaveValue("Kino/Kino_MiniMaxH3_R2V.json");
+  await expect(page.getByLabel("画布提示词")).toBeVisible();
+  await page.locator(".recipe-selector").click();
+  await page.getByRole("button", { name: /Qwen Image 2512 T2I/ }).click();
+  await expect(page.getByText("无需图片输入")).toBeVisible();
+  await expect(page.locator(".react-flow__node-shot .shot-input")).toHaveCount(0);
+  await expect(page.getByLabel("宽度", { exact: true })).toHaveValue("1664");
+  await page.screenshot({
+    path: "test-results/takeboard-qwen-text-page.png",
+    fullPage: true,
+    animations: "disabled",
+  });
+  await page
+    .getByRole("button", { name: /Qwen Image 2512 T2I/ })
+    .first()
+    .click();
+  await page.getByRole("button", { name: /Wan22 FLF2V/ }).click();
+  await expect(page.locator(".react-flow__node-shot .shot-input")).toHaveCount(2);
+  await expect(page.locator(".react-flow__node-shot")).toContainText("首帧 0/1");
+  await expect(page.locator(".react-flow__node-shot")).toContainText("尾帧 0/1");
+  await expect(page.locator(".react-flow__node-shot")).toContainText("Wan22 FLF2V");
+  await page.locator(".advanced-generation-settings summary").click();
+  await page.getByLabel("宽度", { exact: true }).fill("1024");
+  await page
+    .getByRole("button", { name: /Wan22 FLF2V/ })
+    .first()
+    .click();
+  await page.getByRole("button", { name: /Qwen Image 2512 T2I/ }).click();
+  await expect(page.getByLabel("宽度", { exact: true })).toHaveValue("1664");
+  await page
+    .getByRole("button", { name: /Qwen Image 2512 T2I/ })
+    .first()
+    .click();
+  await page.getByRole("button", { name: /Wan22 FLF2V/ }).click();
+  await expect(page.getByLabel("宽度", { exact: true })).toHaveValue("1024");
   await page.screenshot({
     path: "test-results/takeboard-workflow-studio.png",
     fullPage: true,
     animations: "disabled",
   });
-  await page.getByRole("button", { name: "关闭工作流面板" }).click();
   await page.getByRole("button", { name: "资产库", exact: false }).first().click();
   await expect(page.getByRole("heading", { name: "项目资产库" })).toBeVisible();
   const paddedPng = Buffer.alloc(2 * 1024 * 1024);
@@ -176,27 +643,142 @@ test("a user can create and reopen a real project", async ({ page }) => {
     animations: "disabled",
   });
   await page.getByRole("button", { name: "关闭资产库" }).click();
+  await page
+    .locator(".asset-import input[type=file]")
+    .setInputFiles("apps/web/public/scene/takeboard-crew-mascot.webp");
+  await expect(page.getByText("已导入参考素材：takeboard-crew-mascot.webp")).toBeVisible();
+  const originalAssetNode = page.locator(".react-flow__node-asset").last();
+  await expect(originalAssetNode).toContainText("SOURCE");
+  await expect(originalAssetNode).not.toContainText("takeboard-crew-mascot.webp");
+  const originalImage = originalAssetNode.locator("img");
+  await expect(originalImage).toHaveAttribute("src", /\/content$/);
+  expect(await originalImage.evaluate((image) => getComputedStyle(image).objectFit)).toBe(
+    "contain",
+  );
+  await originalAssetNode.click();
+  await expect(page.getByText("原始文件只读保存")).toBeVisible();
+  await expect(page.getByText("尚未连接到模型输入")).toBeVisible();
+  const customTagInput = page.getByLabel("新增自定义标签");
+  await customTagInput.fill("夜景");
+  await customTagInput.press("Enter");
+  await expect(page.getByRole("button", { name: "移除标签 夜景" })).toBeVisible();
+  await page.getByRole("button", { name: "移除标签 夜景" }).click();
+  await expect(page.getByRole("button", { name: "移除标签 夜景" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "查看原图 ↗" })).toHaveAttribute(
+    "href",
+    /\/content$/,
+  );
+  await page.screenshot({
+    path: "test-results/takeboard-original-asset-node.png",
+    fullPage: true,
+    animations: "disabled",
+  });
 
+  const sourceHandle = originalAssetNode.locator(".board-output-handle");
+  const targetHandle = page.locator(".react-flow__node-shot .slot-first_frame").first();
+  await expect(sourceHandle).toBeVisible();
+  await expect(targetHandle).toBeVisible();
+  const sourceBox = await sourceHandle.boundingBox();
+  const targetBox = await targetHandle.boundingBox();
+  if (!sourceBox || !targetBox) throw new Error("画布连接端口未渲染");
+  await page.mouse.move(sourceBox.x + sourceBox.width / 2, sourceBox.y + sourceBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height / 2, {
+    steps: 12,
+  });
+  await page.mouse.up();
+  await expect(page.getByText("已连接为首帧")).toBeVisible();
+  await expect(page.locator(".react-flow__edge")).toHaveCount(1);
   const shotNodes = page.locator(".react-flow__node-shot");
+  await shotNodes.first().click();
+  const inlinePrompt = page.getByLabel("画布提示词");
+  await inlinePrompt.click();
+  await inlinePrompt.pressSequentially("镜头内中文输入正常");
+  await expect(inlinePrompt).toHaveValue("镜头内中文输入正常");
+  await expect(inlinePrompt).toBeFocused();
+  await expect(page.getByLabel("画布生成方式")).toHaveValue("first_last_video");
+  await expect(page.getByLabel("画布生成方式")).toContainText("文生图");
+  await page.locator(".react-flow__pane").click({ position: { x: 720, y: 120 } });
+  await expect(page.locator(".shot-inline-console")).toHaveCount(0);
+  await shotNodes.first().click();
+  await expect(
+    page.locator(".prompt-mention-chips").getByText("@takeboard-crew-mascot"),
+  ).toBeVisible();
+  await expect(page.locator(".shot-inline-mentions")).toContainText("@takeboard-crew-mascot");
+  const prompt = page.locator(".prompt-with-mentions textarea");
+  await prompt.fill("让 ");
+  await prompt.press("@");
+  await page
+    .locator(".prompt-mention-menu")
+    .getByRole("button", { name: /@takeboard-crew-mascot/ })
+    .click();
+  await expect(prompt).toHaveValue("让 @takeboard-crew-mascot");
+  await originalAssetNode.click();
+  await expect(
+    page.locator(".connection-role-badges").getByText("首帧", { exact: true }),
+  ).toBeVisible();
+
   const originalShotCount = await shotNodes.count();
-  await shotNodes.first().dblclick();
-  const nodeEditor = page.locator(".node-editor-modal");
-  await expect(nodeEditor.getByRole("heading", { name: "编辑镜头" })).toBeVisible();
-  await nodeEditor.getByRole("textbox").first().fill("SH-01A");
-  await nodeEditor.getByRole("button", { name: "保存修改" }).click();
+  await shotNodes.first().click();
+  const inspector = page.getByLabel("镜头候选检查器");
+  await inspector.getByLabel("镜头名称").fill("SH-01A");
+  await inspector.getByLabel("镜头画幅").selectOption("9:16");
+  await inspector.getByRole("button", { name: "保存镜头" }).click();
   await expect(page.getByText("SH-01A", { exact: true }).first()).toBeVisible();
+
+  await page.locator(".react-flow__edge").click({ button: "right", force: true });
+  await expect(page.getByRole("menu")).toContainText("CONNECTION");
+  await page.getByRole("menuitem", { name: /断开连接/ }).click();
+  await expect(page.locator(".react-flow__edge")).toHaveCount(0);
+  await expect(page.getByText("连线已删除")).toBeVisible();
+
+  await page.locator(".asset-import input[type=file]").setInputFiles({
+    name: "camera-motion-reference.mp4",
+    mimeType: "video/mp4",
+    buffer: Buffer.from("00000018667479706d70343200000000", "hex"),
+  });
+  await expect(page.getByText("已导入参考素材：camera-motion-reference.mp4")).toBeVisible();
+  const videoNode = page.locator(".react-flow__node-asset").filter({ has: page.locator("video") });
+  await expect(videoNode).toBeVisible();
+  await page.locator(".recipe-selector").click();
+  await page.getByRole("button", { name: /MiniMax H3 R2V/ }).click();
+  const videoSourceHandle = videoNode.locator(".board-output-handle");
+  const videoTargetHandle = page.locator(".react-flow__node-shot .slot-reference_video").first();
+  const videoSourceBox = await videoSourceHandle.boundingBox();
+  const videoTargetBox = await videoTargetHandle.boundingBox();
+  if (!videoSourceBox || !videoTargetBox) throw new Error("参考视频连接端口未渲染");
+  await page.mouse.move(
+    videoSourceBox.x + videoSourceBox.width / 2,
+    videoSourceBox.y + videoSourceBox.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    videoTargetBox.x + videoTargetBox.width / 2,
+    videoTargetBox.y + videoTargetBox.height / 2,
+    { steps: 12 },
+  );
+  await page.mouse.up();
+  await expect(page.getByText("已连接为参考视频")).toBeVisible();
+  await expect(page.locator(".react-flow__node-shot")).toContainText("参考视频 1/3");
+  await expect(page.locator(".shot-inline-mentions")).toContainText("@camera-motion-reference");
+  await page.locator(".react-flow__edge").click({ button: "right", force: true });
+  await page.getByRole("menuitem", { name: /断开连接/ }).click();
+  await expect(page.locator(".react-flow__edge")).toHaveCount(0);
+
+  const textNodes = page.locator(".react-flow__node-text");
+  const originalTextCount = await textNodes.count();
+  const pane = page.locator(".react-flow__pane");
+  const paneBox = await pane.boundingBox();
+  if (!paneBox) throw new Error("画布未渲染");
+  await page.mouse.dblclick(paneBox.x + 340, paneBox.y + paneBox.height - 90);
+  await expect(page.getByRole("menu")).toContainText("ADD TO CANVAS");
+  await page.getByRole("menuitem", { name: /添加文字笔记/ }).click();
+  await expect(textNodes).toHaveCount(originalTextCount + 1);
 
   await shotNodes.first().click({ button: "right" });
   await expect(page.getByRole("menu")).toBeVisible();
   await page.getByRole("menuitem", { name: /复制/ }).click();
-  const pane = page.locator(".react-flow__pane");
-  const paneBox = await pane.boundingBox();
-  if (!paneBox) throw new Error("画布未渲染");
-  await page.mouse.click(paneBox.x + paneBox.width / 2, paneBox.y + paneBox.height - 70, {
-    button: "right",
-  });
-  await expect(page.getByRole("menu")).toBeVisible();
-  await page.getByRole("menuitem", { name: /粘贴节点/ }).click();
+  await page.keyboard.press("Meta+V");
   await expect(shotNodes).toHaveCount(originalShotCount + 1);
 
   page.once("dialog", (dialog) => dialog.accept());

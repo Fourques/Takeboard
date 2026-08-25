@@ -53,6 +53,8 @@ describe("ComfyUI workflow detection", () => {
           execution: "native",
           inputs: expect.arrayContaining(["prompt", "first_frame", "last_frame"]),
           models: ["wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors"],
+          modelStatus: "ready",
+          missingModels: [],
         },
       ],
     });

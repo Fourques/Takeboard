@@ -29,6 +29,7 @@ export function RecipeStudio({
   onSelect,
   open,
   selectedPath,
+  selectionLocked,
   warnings,
   workflows,
 }: {
@@ -40,10 +41,12 @@ export function RecipeStudio({
   onSelect: (workflow: WorkflowSummary) => void;
   open: boolean;
   selectedPath: string;
+  selectionLocked: boolean;
   warnings: string[];
   workflows: WorkflowSummary[];
 }) {
   const [group, setGroup] = useState<"all" | WorkflowCapability>("all");
+  const [origin, setOrigin] = useState<"all" | "built_in" | "imported" | "comfyui">("all");
   const [query, setQuery] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
   const filtered = useMemo(
@@ -51,11 +54,12 @@ export function RecipeStudio({
       workflows.filter(
         (workflow) =>
           (group === "all" || workflow.capability === group) &&
+          (origin === "all" || workflow.origin === origin) &&
           `${workflow.name} ${workflow.models.join(" ")}`
             .toLowerCase()
             .includes(query.toLowerCase()),
       ),
-    [group, query, workflows],
+    [group, origin, query, workflows],
   );
   const selectedEditorUrl = selectedPath
     ? `${editorUrl}/?takeboard_workflow=${encodeURIComponent(selectedPath)}`
@@ -70,7 +74,9 @@ export function RecipeStudio({
             <span className="section-kicker">RECIPE LIBRARY</span>
             <h2>工作流与模型</h2>
             <p>
-              已从当前 ComfyUI 自动检测 {workflows.length} 个 Workflow
+              {selectionLocked
+                ? "当前镜头已有结果，工作流已锁定"
+                : `共 ${workflows.length} 个可用工作流`}
               {warnings.length > 0 ? ` · ${warnings.length} 个文件未能读取` : ""}
             </p>
           </div>
@@ -84,6 +90,24 @@ export function RecipeStudio({
           </div>
         </header>
         <div className="recipe-toolbar">
+          <fieldset className="recipe-origin-tabs">
+            <legend>工作流来源</legend>
+            {[
+              ["all", "全部来源"],
+              ["built_in", "TakeBoard 内置"],
+              ["imported", "我的导入"],
+              ["comfyui", "ComfyUI 现有"],
+            ].map(([id, label]) => (
+              <button
+                type="button"
+                key={id}
+                className={origin === id ? "active" : ""}
+                onClick={() => setOrigin(id as typeof origin)}
+              >
+                {label}
+              </button>
+            ))}
+          </fieldset>
           <div className="recipe-tabs">
             {groups.map((item) => (
               <button
@@ -110,6 +134,7 @@ export function RecipeStudio({
                 type="button"
                 key={workflow.path}
                 className={`recipe-card ${selectedPath === workflow.path ? "selected" : ""}`}
+                disabled={selectionLocked}
                 onClick={() => onSelect(workflow)}
               >
                 <span className={`recipe-icon capability-${workflow.capability}`}>
@@ -118,7 +143,12 @@ export function RecipeStudio({
                 <span className="recipe-copy">
                   <strong>{workflow.name}</strong>
                   <small>
-                    {workflow.capabilityLabel} · {workflow.nodeCount} 节点
+                    {workflow.capabilityLabel} ·{" "}
+                    {(workflow.mediaInputs?.first_frame ?? 0) +
+                      (workflow.mediaInputs?.last_frame ?? 0) +
+                      (workflow.mediaInputs?.reference ?? 0) +
+                      (workflow.mediaInputs?.reference_video ?? 0)}{" "}
+                    个画面位置 · {workflow.inputs.length} 项参数
                   </small>
                   <span>
                     {workflow.models
@@ -127,9 +157,24 @@ export function RecipeStudio({
                       .join(" · ") || "未检测到固定模型"}
                   </span>
                 </span>
-                <i className={workflow.execution === "native" ? "native" : "comfy"}>
-                  {workflow.execution === "native" ? "原生" : "Comfy"}
+                <i
+                  className={`${workflow.execution === "native" ? "native" : "comfy"} model-${workflow.modelStatus ?? "unknown"}`}
+                >
+                  {workflow.modelStatus === "missing"
+                    ? "缺模型"
+                    : workflow.modelStatus === "ready"
+                      ? "可用"
+                      : workflow.execution === "native"
+                        ? "原生"
+                        : "Comfy"}
                 </i>
+                <b className={`workflow-origin origin-${workflow.origin ?? "comfyui"}`}>
+                  {workflow.origin === "built_in"
+                    ? "内置"
+                    : workflow.origin === "imported"
+                      ? "我的"
+                      : "ComfyUI"}
+                </b>
               </button>
             ))}
             {filtered.length === 0 ? (
@@ -167,7 +212,7 @@ export function RecipeStudio({
         </div>
         <footer className="studio-footer">
           <div>
-            <i /> TakeBoard 参数层保持简洁；节点级编辑仍由 ComfyUI 完成
+            {selectionLocked ? "当前镜头保留原工作流，确保结果可复现" : "选择后将绑定到当前镜头"}
           </div>
           <a href={selectedEditorUrl} target="_blank" rel="noreferrer">
             进入 ComfyUI 深度编辑 ↗

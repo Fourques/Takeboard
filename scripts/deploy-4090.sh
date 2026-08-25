@@ -16,7 +16,6 @@ pnpm install --frozen-lockfile
 pnpm verify
 
 mkdir -p "$unit_dir" /home/duanqw/TakeBoardData
-cp deploy/systemd/takeboard.service "$unit_dir/takeboard.service"
 cp deploy/systemd/takeboard-comfy.service "$unit_dir/takeboard-comfy.service"
 bash scripts/install-comfy-bridge.sh
 python3 scripts/install-qwen-image-workflows.py
@@ -27,18 +26,10 @@ if curl --fail --silent --max-time 5 http://127.0.0.1:8188/system_stats >/dev/nu
 else
   systemctl --user enable --now takeboard-comfy.service
 fi
-systemctl --user enable takeboard.service
-systemctl --user restart takeboard.service
-
-systemctl --user --no-pager --full status takeboard.service
 curl --fail --silent http://127.0.0.1:8188/system_stats >/dev/null
-health_attempt=0
-until curl --fail --silent http://127.0.0.1:48120/api/health; do
-  health_attempt=$((health_attempt + 1))
-  if ((health_attempt >= 30)); then
-    echo "TakeBoard did not become healthy within 30 seconds" >&2
-    exit 1
-  fi
-  sleep 1
-done
-echo
+
+export COMFY_URL=http://127.0.0.1:8188
+export COMFY_EDITOR_URL=http://127.0.0.1:48188
+export COMFY_INPUT_ROOT=/home/duanqw/Opc/Stortvideo/apps/ComfyUI-H3/input
+export COMFY_OUTPUT_ROOT=/home/duanqw/Opc/Stortvideo/apps/ComfyUI-H3/output
+bash scripts/install-service.sh --skip-build

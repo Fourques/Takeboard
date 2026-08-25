@@ -133,8 +133,20 @@ describe("real generation routes", () => {
     const reopened = await app.inject({ method: "GET", url: `/api/projects/${key}` });
     expect(reopened.json().snapshot).toMatchObject({
       runs: [expect.objectContaining({ status: "failed", errorCode: "SUBMISSION_FAILED" })],
-      shots: [expect.objectContaining({ status: "draft" })],
+      shots: [
+        expect.objectContaining({
+          status: "draft",
+          workflowPath: "Kino/Kino_MinimaxH3_T2V.json",
+        }),
+      ],
     });
+    const switched = await app.inject({
+      method: "POST",
+      url: `/api/projects/${key}/shots/${shotId}/generate`,
+      payload: { recipePath: "Kino/Kino_QwenImage2512_T2I.json", prompt: "更换模型" },
+    });
+    expect(switched.statusCode).toBe(409);
+    expect(switched.json().error).toContain("工作流不能直接更换");
   });
 
   it("rejects non-image frame assets before touching ComfyUI", async () => {

@@ -29,7 +29,11 @@ export const canvasEdgeSchema = timestampsSchema
     sourceItemId: canvasItemIdSchema,
     targetItemId: canvasItemIdSchema,
     relation: z.enum(["reference", "generated_from", "approved_for"]),
-    targetSlot: z.enum(["first_frame", "last_frame", "reference"]).nullable().default(null),
+    targetSlot: z
+      .enum(["first_frame", "last_frame", "reference", "reference_video"])
+      .nullable()
+      .default(null),
+    targetSlotIndex: z.number().int().nonnegative().max(99).default(0),
     runId: runIdSchema.nullable().default(null),
     immutable: z.boolean(),
   })

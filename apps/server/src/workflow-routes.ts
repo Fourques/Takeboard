@@ -11,6 +11,8 @@ type WorkflowJson = {
   definitions?: { subgraphs?: Array<{ nodes?: WorkflowNode[] }> };
 };
 
+const modelExtension = /\.(?:safetensors|ckpt|pt|pth|gguf)$/i;
+
 const capabilityLabels = {
   text_to_image: "文生图",
   image_to_image: "图生图",
@@ -102,12 +104,34 @@ function detectModels(nodes: WorkflowNode[]) {
   const models = new Set<string>();
   for (const node of nodes) {
     for (const value of node.widgets_values ?? []) {
-      if (typeof value === "string" && /\.(?:safetensors|ckpt|pt|pth|gguf)$/i.test(value)) {
+      if (typeof value === "string" && modelExtension.test(value)) {
         models.add(value);
       }
     }
   }
   return [...models];
+}
+
+function installedModels(value: unknown) {
+  const models = new Set<string>();
+  const visit = (entry: unknown) => {
+    if (typeof entry === "string") {
+      if (modelExtension.test(entry)) {
+        const normalized = entry.replaceAll("\\", "/").toLowerCase();
+        models.add(normalized);
+        const filename = normalized.split("/").at(-1);
+        if (filename) models.add(filename);
+      }
+      return;
+    }
+    if (Array.isArray(entry)) {
+      entry.forEach(visit);
+      return;
+    }
+    if (entry && typeof entry === "object") Object.values(entry).forEach(visit);
+  };
+  visit(value);
+  return models;
 }
 
 function displayName(path: string) {
@@ -121,7 +145,12 @@ function displayName(path: string) {
   );
 }
 
-function workflowSummary(path: string, workflow: WorkflowJson, editorUrl: string) {
+function workflowSummary(
+  path: string,
+  workflow: WorkflowJson,
+  editorUrl: string,
+  inventory: Set<string> | null,
+) {
   const nodes = allNodes(workflow);
   const capability = detectCapability(path, nodes);
   const native =
@@ -144,6 +173,20 @@ function workflowSummary(path: string, workflow: WorkflowJson, editorUrl: string
     }
     return true;
   });
+  const models = detectModels(nodes);
+  const mediaInputs = {
+    first_frame: inputs.includes("first_frame") ? 1 : 0,
+    last_frame: inputs.includes("last_frame") ? 1 : 0,
+    reference: inputs.includes("reference_images") ? 9 : 0,
+    reference_video: inputs.includes("reference_videos") ? 3 : 0,
+  };
+  const missingModels = inventory
+    ? models.filter((model) => {
+        const normalized = model.replaceAll("\\", "/").toLowerCase();
+        const filename = normalized.split("/").at(-1) ?? normalized;
+        return !inventory.has(normalized) && !inventory.has(filename);
+      })
+    : [];
   return {
     id: Buffer.from(path).toString("base64url"),
     path,
@@ -151,11 +194,24 @@ function workflowSummary(path: string, workflow: WorkflowJson, editorUrl: string
     capability,
     capabilityLabel: capabilityLabels[capability],
     inputs,
-    models: detectModels(nodes),
+    mediaInputs,
+    models,
+    modelStatus:
+      inventory === null || models.length === 0
+        ? ("unknown" as const)
+        : missingModels.length > 0
+          ? ("missing" as const)
+          : ("ready" as const),
+    missingModels,
     nodeCount: nodes.length,
     source: "comfyui" as const,
     editorUrl,
     execution: native ? ("native" as const) : ("comfy_only" as const),
+    origin: path.startsWith("Kino/")
+      ? ("built_in" as const)
+      : path.startsWith("TakeBoard/")
+        ? ("imported" as const)
+        : ("comfyui" as const),
   };
 }
 
@@ -180,9 +236,14 @@ export function registerWorkflowRoutes(app: FastifyInstance, comfyUrl: string, e
       const listed = await response.json();
       if (!Array.isArray(listed)) throw new Error("ComfyUI 工作流目录响应无效");
       const paths = listed.filter(isWorkflowPath);
+      const inventory = await fetch(`${comfyUrl}/object_info`, {
+        signal: AbortSignal.timeout(5_000),
+      })
+        .then(async (result) => (result.ok ? installedModels(await result.json()) : null))
+        .catch(() => null);
       const detected = await Promise.allSettled(
         paths.map(async (path) =>
-          workflowSummary(path, await fetchWorkflow(comfyUrl, path), editorUrl),
+          workflowSummary(path, await fetchWorkflow(comfyUrl, path), editorUrl, inventory),
         ),
       );
       const workflows = detected.flatMap((result) =>
@@ -250,6 +311,6 @@ export function registerWorkflowRoutes(app: FastifyInstance, comfyUrl: string, e
       return await reply.code(502).send({ error: `ComfyUI 保存失败：${response.status}` });
     }
     const relativePath = path.replace(/^workflows\//, "");
-    return await reply.code(201).send(workflowSummary(relativePath, workflow, editorUrl));
+    return await reply.code(201).send(workflowSummary(relativePath, workflow, editorUrl, null));
   });
 }
