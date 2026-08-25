@@ -1,5 +1,5 @@
-import { spawn } from "node:child_process";
 import { unlink } from "node:fs/promises";
+import sharp from "sharp";
 
 export type ImageInfo = {
   mimeType: "image/png" | "image/jpeg" | "image/webp";
@@ -91,23 +91,20 @@ export function inspectImage(bytes: Uint8Array, declaredMimeType: string) {
 }
 
 export async function createImageProxy(source: string, destination: string) {
-  const run = (command: string, args: string[]) =>
-    new Promise<boolean>((resolve) => {
-      const child = spawn(command, args, { stdio: "ignore", timeout: 30_000 });
-      child.once("error", () => resolve(false));
-      child.once("close", (code) => resolve(code === 0));
-    });
-  const succeeded =
-    (await run("convert", [
-      `${source}[0]`,
-      "-auto-orient",
-      "-thumbnail",
-      "512x512>",
-      "-strip",
-      "-quality",
-      "82",
-      destination,
-    ])) || (await run("sips", ["-s", "format", "jpeg", "-Z", "512", source, "--out", destination]));
-  if (!succeeded) await unlink(destination).catch(() => undefined);
-  return succeeded;
+  try {
+    await sharp(source, {
+      animated: false,
+      failOn: "error",
+      limitInputPixels: 100_000_000,
+    })
+      .rotate()
+      .resize({ width: 512, height: 512, fit: "inside", withoutEnlargement: true })
+      .flatten({ background: "#f4f1ea" })
+      .jpeg({ quality: 82 })
+      .toFile(destination);
+    return true;
+  } catch {
+    await unlink(destination).catch(() => undefined);
+    return false;
+  }
 }
