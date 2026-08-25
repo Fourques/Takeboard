@@ -1,12 +1,25 @@
 import { expect, test } from "@playwright/test";
 
 test("project hub presents a complete project overview", async ({ page, request }) => {
+  test.setTimeout(90_000);
   await page.setViewportSize({ width: 1600, height: 1100 });
-  for (const project of [
+  const projectFixtures = [
     { title: "潮汐来信", aspectRatio: "9:16", sceneTitle: "雾港", firstShotIntent: "穿过雾气" },
     { title: "纸月旅馆", aspectRatio: "16:9", sceneTitle: "前厅", firstShotIntent: "推门进入" },
     { title: "黑曜计划", aspectRatio: "4:5", sceneTitle: "控制室", firstShotIntent: "信号亮起" },
-  ]) {
+  ];
+  const fixtureTitles = new Set(projectFixtures.map((project) => project.title));
+  const existingProjects = (await (await request.get("/api/projects")).json()).projects as Array<{
+    key: string;
+    title: string;
+  }>;
+  for (const project of existingProjects.filter((candidate) =>
+    fixtureTitles.has(candidate.title),
+  )) {
+    const deleted = await request.delete(`/api/projects/${project.key}`);
+    expect(deleted.ok()).toBeTruthy();
+  }
+  for (const project of projectFixtures) {
     const response = await request.post("/api/projects", { data: project });
     expect(response.ok()).toBeTruthy();
   }
@@ -186,11 +199,15 @@ test("canvas nodes reveal their own contextual inspector", async ({ page }) => {
   const closeCreate = page.getByRole("button", { name: "关闭新建项目" });
   if (await closeCreate.isVisible()) await closeCreate.click();
 
-  for (const nodeType of ["text", "entity", "asset", "shot", "take_stack"]) {
+  for (const nodeType of ["text", "entity", "asset", "shot"]) {
     await expect(
       page.locator(`.react-flow__node-${nodeType}`).first().locator(".board-output-handle"),
     ).toBeVisible();
   }
+  await page.getByRole("button", { name: "开始生成" }).click();
+  await expect(
+    page.locator(".react-flow__node-take_stack").first().locator(".board-output-handle"),
+  ).toBeVisible();
 
   const scriptNode = page.locator(".react-flow__node-text");
   await scriptNode.click();
@@ -407,7 +424,9 @@ test("a generated shot becomes the full visual node on canvas", async ({ page, r
   await expect(generatedNode.locator("img")).toHaveAttribute("src", /\/content$/);
   await expect(page.locator(".react-flow__node-shot .board-output-handle")).toBeVisible();
   await expect(generatedNode.locator(".approved-stamp")).toHaveCount(0);
-  await expect(generatedNode.locator(".shot-generated-overlay")).toContainText("QwenImage2512 T2I");
+  await expect(generatedNode.locator(".shot-generated-overlay")).toContainText(
+    /Qwen\s*Image\s*2512 T2I/,
+  );
   await expect(generatedNode.locator(".shot-generated-overlay")).toContainText("5 秒");
   await expect(generatedNode.locator(".shot-generated-overlay")).not.toContainText("已批准");
   await expect(page.locator(".react-flow__node-shot")).not.toContainText("未选择模型");

@@ -11,6 +11,8 @@ const e2eWebPort = process.env.TAKEBOARD_E2E_WEB_PORT ?? "48111";
 const e2eServerUrl = `http://127.0.0.1:${e2eServerPort}`;
 const e2eWebUrl = `http://127.0.0.1:${e2eWebPort}`;
 const e2eDataRoot = process.env.TAKEBOARD_E2E_DATA_ROOT ?? resolve("test-results/e2e-data");
+const e2eDemoDirectory =
+  process.env.TAKEBOARD_E2E_DEMO_DIRECTORY ?? resolve(e2eDataRoot, "demo.takeboard");
 const chromiumExecutable = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
 
 export default defineConfig({
@@ -42,6 +44,7 @@ export default defineConfig({
           env: {
             ...localEnvironment,
             TAKEBOARD_DATA_ROOT: e2eDataRoot,
+            TAKEBOARD_DEMO_DIRECTORY: e2eDemoDirectory,
             TAKEBOARD_PORT: e2eServerPort,
             COMFY_START_SERVICE: "takeboard-e2e-disabled.service",
           },
