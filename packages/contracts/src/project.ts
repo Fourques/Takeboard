@@ -61,6 +61,7 @@ export const assetSchema = timestampsSchema.extend({
   proxyPath: relativeStoragePathSchema.nullable().default(null),
   width: z.number().int().positive().nullable().default(null),
   height: z.number().int().positive().nullable().default(null),
+  customTags: z.array(z.string().trim().min(1).max(40)).max(24).default([]),
 });
 
 export const shotSchema = timestampsSchema.extend({
@@ -72,6 +73,7 @@ export const shotSchema = timestampsSchema.extend({
   intent: z.string().max(20_000),
   durationSeconds: z.number().positive().max(300),
   aspectRatio: aspectRatioSchema,
+  workflowPath: z.string().trim().min(1).max(1_000).nullable().default(null),
   status: z.enum(["draft", "generating", "review", "approved"]),
   approvedTakeId: takeIdSchema.nullable().default(null),
 });

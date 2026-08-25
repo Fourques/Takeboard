@@ -62,9 +62,9 @@ wait_for_health() {
 open_url() {
   local url=$1
   if [[ $(uname -s) == Darwin ]] && command -v open >/dev/null 2>&1; then
-    open "$url"
+    open "$url" >/dev/null 2>&1 || echo "Open this URL in a browser: ${url}"
   elif command -v xdg-open >/dev/null 2>&1 && [[ -n ${DISPLAY:-}${WAYLAND_DISPLAY:-} ]]; then
-    xdg-open "$url" >/dev/null 2>&1
+    xdg-open "$url" >/dev/null 2>&1 || echo "Open this URL in a browser: ${url}"
   else
     echo "Open this URL in a browser: ${url}"
   fi

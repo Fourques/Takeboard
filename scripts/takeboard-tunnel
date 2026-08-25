@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 state_root=${XDG_STATE_HOME:-$HOME/.local/state}
 state_dir="$state_root/takeboard"
@@ -94,9 +95,9 @@ wait_for_health() {
 open_url() {
   local url=$1
   if [[ $(uname -s) == Darwin ]] && command -v open >/dev/null 2>&1; then
-    open "$url"
+    open "$url" >/dev/null 2>&1 || echo "Open this URL in a browser: ${url}"
   elif command -v xdg-open >/dev/null 2>&1 && [[ -n ${DISPLAY:-}${WAYLAND_DISPLAY:-} ]]; then
-    xdg-open "$url" >/dev/null 2>&1
+    xdg-open "$url" >/dev/null 2>&1 || echo "Open this URL in a browser: ${url}"
   else
     echo "Open this URL in a browser: ${url}"
   fi
@@ -170,7 +171,7 @@ connect_tunnel() {
   fi
   if port_in_use "$comfy_local_port"; then
     echo "ComfyUI local port ${comfy_local_port} is already occupied." >&2
-    echo "Stop that listener, or set COMFY_LOCAL_PORT to the URL configured for TakeBoard." >&2
+    echo "Stop that listener, or set COMFY_LOCAL_PORT to another free port." >&2
     exit 1
   fi
 
@@ -237,9 +238,6 @@ case "$command_name" in
       exit 0
     fi
     ssh -S "$control_socket" -O exit "$tunnel_host" >/dev/null 2>&1 || true
-    if [[ -n ${tunnel_pid:-} ]] && kill -0 "$tunnel_pid" >/dev/null 2>&1; then
-      kill "$tunnel_pid" >/dev/null 2>&1 || true
-    fi
     rm -f "$control_socket" "$state_file"
     echo "TakeBoard tunnel stopped; local ports released."
     ;;

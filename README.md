@@ -24,7 +24,9 @@ TakeBoard 不重做 ComfyUI 的节点系统。它在现有 Workflow 和算力之
 ## 能力概览
 
 - 以可旋转的导演板作为项目入口，在同一界面创建、预览、重命名和删除项目；
+- 新项目只需命名即可进入空白工作画板，不预设第一场、首镜意图或项目级画幅；
 - 为每个项目维护独立画板、素材库、镜头、Workflow、Run 与 Take；
+- 画幅属于具体镜头，可在同一项目中并存横屏、竖屏与宽银幕内容；
 - 用首帧、尾帧和参考输入等影视语义连接素材与镜头；
 - 检测和导入 ComfyUI Workflow，仅展示创作阶段真正需要的参数；
 - 执行文生图、图生图、图生视频和首尾帧视频任务；
@@ -109,6 +111,19 @@ export COMFY_OUTPUT_ROOT=/path/to/ComfyUI/output
 ```
 
 稳定服务则编辑 `~/.config/takeboard/env`。其中 `COMFY_URL` 是服务端访问的 API 地址，`COMFY_EDITOR_URL` 是用户浏览器打开编辑器时使用的地址；远程部署时两者通常不同。配置输入和输出根目录后，TakeBoard 才会清理由本次 Run 创建的临时文件。
+
+首页右上角的 ComfyUI 状态面板可以重新检测连接，并在安全预检通过后启动本机执行端。启动方式按平台配置：
+
+| 平台 / 安装方式 | `COMFY_LAUNCH_PROVIDER` | 需要配置 |
+| --- | --- | --- |
+| Linux user systemd | `systemd` | `COMFY_START_SERVICE=takeboard-comfy.service` |
+| macOS LaunchAgent | `launchd` | `COMFY_LAUNCHD_LABEL=your.comfyui.label` |
+| Windows Service | `windows-service` | `COMFY_WINDOWS_SERVICE=ComfyUI` |
+| 任意平台独立进程 | `process` | `COMFY_START_EXECUTABLE`、`COMFY_START_ARGS_JSON`、`COMFY_START_CWD` |
+
+独立进程模式直接调用明确的可执行文件和参数数组，不使用 shell，也不会执行网页传入的命令。`COMFY_ACCELERATOR` 可设为 `auto`、`nvidia`、`apple` 或 `cpu`；默认至少需要 6 GB 可用内存，NVIDIA 模式还需要 4 GB 空闲显存且 GPU 负载不高于 85%。阈值可用 `COMFY_MIN_FREE_RAM_GB`、`COMFY_MIN_FREE_VRAM_GB` 和 `COMFY_MAX_GPU_UTILIZATION` 调整。
+
+TakeBoard 只启动指向 `127.0.0.1`、`localhost` 或 `::1` 的 ComfyUI。启动目标无法验证、资源不足、已有异常进程或启动超时时都会中止；超时后会停止本次启动的服务。
 
 模型与 Custom Node 的可用性取决于自己的 ComfyUI 环境。TakeBoard 不会自动下载来源不明的模型或节点。
 

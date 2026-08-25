@@ -80,6 +80,7 @@ export class DemoService {
           proxyPath: null,
           width: null,
           height: null,
+          customTags: [],
           createdAt: timestamp,
           updatedAt: timestamp,
         });
@@ -127,6 +128,7 @@ export class DemoService {
                 targetItemId: stackItem.id,
                 relation: "generated_from" as const,
                 targetSlot: null,
+                targetSlotIndex: 0,
                 runId: newRuns[0]?.id ?? null,
                 immutable: true,
                 createdAt: timestamp,

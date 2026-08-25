@@ -31,11 +31,20 @@ import {
 } from "./api";
 import { AssetLibrary } from "./asset-library";
 import { type BoardNode, boardNodeTypes } from "./board-nodes";
+import {
+  loadModelPreferences,
+  type ModelProfile,
+  modelProfile,
+  saveModelPreferences,
+  workflowInputSlots,
+} from "./model-profiles";
 import { ProjectHub } from "./project-hub";
 import { RecipeStudio } from "./recipe-studio";
 import { ThemeSwitcher } from "./theme-switcher";
 
 const rejectionReasons = ["角色漂移", "运动方向错误", "构图不稳定", "细节异常"];
+const canvasSnapGrid: [number, number] = [12, 12];
+const alignmentThreshold = 7;
 
 type GenerationSettings = {
   recipePath: string;
@@ -51,6 +60,27 @@ type GenerationSettings = {
   seed: number;
   steps: number;
   denoise: number;
+};
+
+type PromptMention = {
+  assetId: string;
+  alias: string;
+  role: string;
+  thumbnailUrl: string | undefined;
+};
+
+type ShotCanvasControls = {
+  settings: GenerationSettings;
+  workflows: WorkflowSummary[];
+  workflowLocked: boolean;
+  mentionAliases: string[];
+  busy: boolean;
+  disabledReason: string | null;
+  onWorkflowChange: (path: string) => void;
+  onSettingsChange: (input: Partial<GenerationSettings>) => void;
+  onGenerate: (input: Partial<GenerationSettings>) => void;
+  onOpenDetails: () => void;
+  onCommitTitle: (title: string) => void;
 };
 
 const defaultGenerationSettings: GenerationSettings = {
@@ -185,11 +215,29 @@ function shortId(value: string) {
   return value.slice(-6).toUpperCase();
 }
 
+function runWorkflowPath(snapshot: ProjectSnapshot, shotId: string) {
+  const value = [...snapshot.runs].reverse().find((run) => run.shotId === shotId)
+    ?.parameters.recipePath;
+  return typeof value === "string" ? value : null;
+}
+
+function findWorkflow(path: string | null | undefined, workflows: WorkflowSummary[]) {
+  if (!path) return null;
+  return (
+    workflows.find((workflow) => workflow.path === path) ??
+    nativeWorkflowFallbacks.find((workflow) => workflow.path === path) ??
+    null
+  );
+}
+
 function boardNodes(
   snapshot: ProjectSnapshot,
   selectedCanvasItemId: string | null,
   projectKey: string | null,
-  engine: string,
+  workflows: WorkflowSummary[],
+  selectedWorkflow: WorkflowSummary | null,
+  selectedShotId: string | null,
+  controls: ShotCanvasControls | null,
 ): BoardNode[] {
   return snapshot.canvasItems.map((item): BoardNode => {
     const common = {
@@ -232,8 +280,10 @@ function boardNodes(
           selected: selectedCanvasItemId === item.id,
           mediaUrl:
             projectKey && referenceAsset
-              ? projectApi.assetUrl(projectKey, referenceAsset.id, true)
+              ? projectApi.assetUrl(projectKey, referenceAsset.id)
               : undefined,
+          mediaWidth: referenceAsset?.width ?? undefined,
+          mediaHeight: referenceAsset?.height ?? undefined,
           details: [
             `${entity?.referenceAssetIds.length ?? 0} 张参考`,
             entity?.kind === "character"
@@ -257,8 +307,10 @@ function boardNodes(
             : (asset?.originalName ?? "素材"),
           body: "",
           selected: selectedCanvasItemId === item.id,
-          mediaUrl:
-            projectKey && asset ? projectApi.assetUrl(projectKey, asset.id, true) : undefined,
+          mediaUrl: projectKey && asset ? projectApi.assetUrl(projectKey, asset.id) : undefined,
+          mediaType: asset?.mediaType,
+          mediaWidth: asset?.width ?? undefined,
+          mediaHeight: asset?.height ?? undefined,
           details: [
             asset?.width && asset?.height ? `${asset.width} × ${asset.height}` : "尺寸待识别",
             asset?.mimeType.split("/").at(-1)?.toUpperCase() ?? "IMAGE",
@@ -268,6 +320,10 @@ function boardNodes(
     }
 
     const shot = snapshot.shots.find((candidate) => candidate.id === item.refId);
+    const workflow =
+      findWorkflow(shot?.workflowPath ?? runWorkflowPath(snapshot, item.refId), workflows) ??
+      (item.refId === selectedShotId ? selectedWorkflow : null);
+    const profile = modelProfile(workflow, shot?.aspectRatio ?? "16:9");
     const takes = snapshot.takes.filter((take) => take.shotId === item.refId);
     if (item.refType === "take_stack") {
       return {
@@ -284,8 +340,15 @@ function boardNodes(
         },
       };
     }
+    const previewTake =
+      takes.find((take) => take.id === shot?.approvedTakeId) ??
+      [...takes].reverse().find((take) => take.status !== "rejected");
+    const previewAsset = snapshot.assets.find((asset) => asset.id === previewTake?.assetId);
     return {
       ...common,
+      style: {
+        width: Math.max(item.width, 470),
+      },
       data: {
         kind: "shot",
         eyebrow: "SHOT",
@@ -294,71 +357,235 @@ function boardNodes(
         status: shot?.status,
         duration: shot?.durationSeconds,
         takeCount: takes.length,
-        engine,
+        engine: workflow?.name ?? "未选择模型",
+        mediaUrl:
+          projectKey && previewAsset ? projectApi.assetUrl(projectKey, previewAsset.id) : undefined,
+        mediaType: previewAsset?.mediaType,
+        mediaWidth: previewAsset?.width ?? undefined,
+        mediaHeight: previewAsset?.height ?? undefined,
+        aspectRatio: shot?.aspectRatio,
         selected: selectedCanvasItemId === item.id,
         details: [
           shot?.aspectRatio ?? "未设画幅",
-          `${shot?.durationSeconds ?? 0}s`,
-          `${takes.length} Takes`,
+          profile.slots.length
+            ? `${profile.slots.reduce((sum, slot) => sum + slot.maxCount, 0)} 个画面位置`
+            : "纯文字输入",
+          profile.outputLabel,
         ],
-        inputSlots: (
-          [
-            ["first_frame", "首帧"],
-            ["last_frame", "尾帧"],
-            ["reference", "参考"],
-          ] as const
-        ).map(([id, label]) => ({
+        inputSlots: profile.slots.map(({ id, label, maxCount, required, mediaType }) => ({
           id,
           label,
-          connected: snapshot.canvasEdges.some(
+          connectedCount: snapshot.canvasEdges.filter(
             (edge) => edge.targetItemId === item.id && edge.targetSlot === id,
-          ),
+          ).length,
+          maxCount,
+          required,
+          mediaType,
         })),
+        ...(selectedCanvasItemId === item.id && controls
+          ? {
+              inlineControls: {
+                workflowPath: controls.settings.recipePath,
+                workflows: controls.workflows.map((candidate) => ({
+                  path: candidate.path,
+                  name: candidate.name,
+                  capability: candidate.capability,
+                  capabilityLabel: candidate.capabilityLabel,
+                })),
+                workflowLocked: controls.workflowLocked,
+                prompt: controls.settings.prompt,
+                width: controls.settings.width,
+                height: controls.settings.height,
+                durationSeconds: controls.settings.durationSeconds,
+                seed: controls.settings.seed,
+                outputLabel: profile.outputLabel,
+                mentionAliases: controls.mentionAliases,
+                busy: controls.busy,
+                disabledReason: controls.disabledReason,
+                onWorkflowChange: controls.onWorkflowChange,
+                onSettingsChange: controls.onSettingsChange,
+                onGenerate: controls.onGenerate,
+                onOpenDetails: controls.onOpenDetails,
+                onCommitTitle: controls.onCommitTitle,
+              },
+            }
+          : {}),
       },
     };
   });
 }
 
-function boardEdges(snapshot: ProjectSnapshot): Edge[] {
+function boardEdges(
+  snapshot: ProjectSnapshot,
+  workflows: WorkflowSummary[],
+  selectedWorkflow: WorkflowSummary | null,
+  selectedShotId: string | null,
+  selectedEdgeId: string | null,
+): Edge[] {
   const slotMeta = {
     first_frame: { label: "首帧", color: "#65cba5" },
     last_frame: { label: "尾帧", color: "#d6a95f" },
     reference: { label: "参考", color: "#9e8cff" },
+    reference_video: { label: "参考视频", color: "#63a9d8" },
   } as const;
-  return snapshot.canvasEdges.map((edge) => ({
-    id: edge.id,
-    source: edge.sourceItemId,
-    target: edge.targetItemId,
-    sourceHandle: edge.targetSlot ? "media" : null,
-    targetHandle: edge.targetSlot,
-    label: edge.targetSlot ? slotMeta[edge.targetSlot].label : undefined,
-    labelStyle: {
-      fill: edge.targetSlot ? slotMeta[edge.targetSlot].color : "#89928f",
-      fontSize: 10,
-      fontWeight: 700,
-    },
-    labelBgStyle: { fill: "rgba(15, 19, 18, .88)", fillOpacity: 1 },
-    labelBgPadding: [5, 3],
-    labelBgBorderRadius: 5,
-    type: "smoothstep",
-    animated: edge.relation === "generated_from",
-    markerEnd: { type: MarkerType.ArrowClosed, color: "#66716e", width: 16, height: 16 },
-    style: {
-      stroke:
-        edge.relation === "generated_from"
-          ? "#d6a95f"
-          : edge.targetSlot
-            ? slotMeta[edge.targetSlot].color
-            : "#58635f",
-      strokeWidth: edge.relation === "generated_from" ? 2 : 1.25,
-    },
-  }));
+  return snapshot.canvasEdges
+    .filter((edge) => {
+      if (!edge.targetSlot) return true;
+      const targetItem = snapshot.canvasItems.find((item) => item.id === edge.targetItemId);
+      const shot = snapshot.shots.find((candidate) => candidate.id === targetItem?.refId);
+      const workflow =
+        findWorkflow(shot?.workflowPath ?? runWorkflowPath(snapshot, shot?.id ?? ""), workflows) ??
+        (shot?.id === selectedShotId ? selectedWorkflow : null);
+      return workflowInputSlots(workflow).some((slot) => slot.id === edge.targetSlot);
+    })
+    .map((edge) => ({
+      id: edge.id,
+      source: edge.sourceItemId,
+      target: edge.targetItemId,
+      ...(edge.targetSlot ? { sourceHandle: "media", targetHandle: edge.targetSlot } : {}),
+      selected: edge.id === selectedEdgeId,
+      label: edge.targetSlot ? slotMeta[edge.targetSlot].label : undefined,
+      labelStyle: {
+        fill: edge.targetSlot ? slotMeta[edge.targetSlot].color : "#89928f",
+        fontSize: 10,
+        fontWeight: 700,
+      },
+      labelBgStyle: { fill: "rgba(15, 19, 18, .88)", fillOpacity: 1 },
+      labelBgPadding: [5, 3],
+      labelBgBorderRadius: 5,
+      type: "smoothstep",
+      animated: edge.relation === "generated_from",
+      markerEnd: { type: MarkerType.ArrowClosed, color: "#66716e", width: 16, height: 16 },
+      style: {
+        stroke:
+          edge.relation === "generated_from"
+            ? "#d6a95f"
+            : edge.targetSlot
+              ? slotMeta[edge.targetSlot].color
+              : "#58635f",
+        strokeWidth: edge.relation === "generated_from" ? 2 : 1.25,
+      },
+    }));
+}
+
+function resolveSnapshotEdge(snapshot: ProjectSnapshot, edge: Edge) {
+  const byId = snapshot.canvasEdges.find((candidate) => candidate.id === edge.id);
+  if (byId) return byId;
+  const targetSlot = edge.targetHandle;
+  const exactConnection = [...snapshot.canvasEdges]
+    .reverse()
+    .find(
+      (candidate) =>
+        candidate.sourceItemId === edge.source &&
+        candidate.targetItemId === edge.target &&
+        (targetSlot ? candidate.targetSlot === targetSlot : !candidate.targetSlot),
+    );
+  if (exactConnection) return exactConnection;
+  const targetCandidates = snapshot.canvasEdges.filter(
+    (candidate) => candidate.targetItemId === edge.target,
+  );
+  return targetCandidates.length === 1 ? targetCandidates[0] : undefined;
+}
+
+function edgeIdentityFromPointer(event: ReactMouseEvent): CanvasEdgeIdentity | null {
+  const target = event.target;
+  if (!(target instanceof Element)) return null;
+  const edgeElement = target.closest(".react-flow__edge");
+  const labelledElement =
+    edgeElement?.querySelector('[aria-label^="Edge from "]') ??
+    (edgeElement?.matches('[aria-label^="Edge from "]') ? edgeElement : null);
+  const label = labelledElement?.getAttribute("aria-label") ?? "";
+  const match = /^Edge from (\S+) to (\S+)$/.exec(label);
+  if (!match) return null;
+  const visibleLabel = edgeElement?.textContent ?? "";
+  const targetSlot = visibleLabel.includes("参考视频")
+    ? "reference_video"
+    : visibleLabel.includes("首帧")
+      ? "first_frame"
+      : visibleLabel.includes("尾帧")
+        ? "last_frame"
+        : visibleLabel.includes("参考")
+          ? "reference"
+          : null;
+  return { sourceItemId: match[1] as string, targetItemId: match[2] as string, targetSlot };
+}
+
+function gentlyAlignedPosition(node: BoardNode, nodes: BoardNode[]) {
+  let x = Math.round(node.position.x / canvasSnapGrid[0]) * canvasSnapGrid[0];
+  let y = Math.round(node.position.y / canvasSnapGrid[1]) * canvasSnapGrid[1];
+  const width = node.measured?.width ?? 0;
+  const height = node.measured?.height ?? 0;
+  let closestX = alignmentThreshold + 1;
+  let closestY = alignmentThreshold + 1;
+  let alignXBy = 0;
+  let alignYBy = 0;
+
+  for (const other of nodes) {
+    if (other.id === node.id) continue;
+    const otherWidth = other.measured?.width ?? 0;
+    const otherHeight = other.measured?.height ?? 0;
+    const horizontalDeltas = [
+      other.position.x - x,
+      other.position.x + otherWidth / 2 - (x + width / 2),
+      other.position.x + otherWidth - (x + width),
+    ];
+    const verticalDeltas = [
+      other.position.y - y,
+      other.position.y + otherHeight / 2 - (y + height / 2),
+      other.position.y + otherHeight - (y + height),
+    ];
+    for (const delta of horizontalDeltas) {
+      if (Math.abs(delta) < closestX && Math.abs(delta) <= alignmentThreshold) {
+        closestX = Math.abs(delta);
+        alignXBy = delta;
+      }
+    }
+    for (const delta of verticalDeltas) {
+      if (Math.abs(delta) < closestY && Math.abs(delta) <= alignmentThreshold) {
+        closestY = Math.abs(delta);
+        alignYBy = delta;
+      }
+    }
+  }
+  x += alignXBy;
+  y += alignYBy;
+  return { x, y };
+}
+
+function sourceAssetId(
+  snapshot: ProjectSnapshot,
+  source: ProjectSnapshot["canvasItems"][number] | undefined,
+  mediaType: "image" | "video",
+) {
+  if (source?.refType === "asset") return source.refId;
+  if (source?.refType === "entity") {
+    const entity = snapshot.entities.find((candidate) => candidate.id === source.refId);
+    return (
+      entity?.referenceAssetIds.find((assetId) =>
+        snapshot.assets.some((asset) => asset.id === assetId && asset.mediaType === mediaType),
+      ) ?? null
+    );
+  }
+  if (source?.refType === "shot") {
+    const shot = snapshot.shots.find((candidate) => candidate.id === source.refId);
+    const take =
+      snapshot.takes.find((candidate) => candidate.id === shot?.approvedTakeId) ??
+      [...snapshot.takes]
+        .reverse()
+        .find((candidate) => candidate.shotId === source.refId && candidate.status !== "rejected");
+    return snapshot.assets.some(
+      (asset) => asset.id === take?.assetId && asset.mediaType === mediaType,
+    )
+      ? (take?.assetId ?? null)
+      : null;
+  }
+  return null;
 }
 
 function connectedAssetId(
   snapshot: ProjectSnapshot,
   targetShotId: string,
-  slot: "first_frame" | "last_frame" | "reference",
+  slot: "first_frame" | "last_frame" | "reference" | "reference_video",
 ) {
   const targetItem = snapshot.canvasItems.find(
     (item) => item.refType === "shot" && item.refId === targetShotId,
@@ -367,16 +594,7 @@ function connectedAssetId(
     (candidate) => candidate.targetItemId === targetItem?.id && candidate.targetSlot === slot,
   );
   const source = snapshot.canvasItems.find((item) => item.id === edge?.sourceItemId);
-  if (source?.refType === "asset") return source.refId;
-  if (source?.refType === "entity") {
-    const entity = snapshot.entities.find((candidate) => candidate.id === source.refId);
-    return (
-      entity?.referenceAssetIds.find((assetId) =>
-        snapshot.assets.some((asset) => asset.id === assetId && asset.mediaType === "image"),
-      ) ?? null
-    );
-  }
-  return null;
+  return sourceAssetId(snapshot, source, slot === "reference_video" ? "video" : "image");
 }
 
 function CandidateArt({
@@ -433,12 +651,12 @@ type ContextInspectorProps = {
   snapshot: ProjectSnapshot;
   projectKey: string | null;
   selectedShot: Shot | null;
-  settings: GenerationSettings;
   onOpenAssets: () => void;
   onUseAsset: (
     assetId: string,
     slot: "firstFrameAssetId" | "lastFrameAssetId" | "referenceAssetId",
   ) => void;
+  onSetAssetCustomTags: (assetId: string, tags: string[]) => void;
   onUseText: (body: string) => void;
 };
 
@@ -453,14 +671,15 @@ function NodeContextInspector({
   snapshot,
   projectKey,
   selectedShot,
-  settings,
   onOpenAssets,
   onUseAsset,
+  onSetAssetCustomTags,
   onUseText,
 }: ContextInspectorProps) {
+  const [customTagDraft, setCustomTagDraft] = useState("");
   const scene = snapshot.scenes.find((candidate) => candidate.id === item.sceneId);
-  const sourceUrl = (asset: Asset) =>
-    projectKey ? projectApi.assetUrl(projectKey, asset.id, true) : undefined;
+  const sourceUrl = (asset: Asset, proxy = true) =>
+    projectKey ? projectApi.assetUrl(projectKey, asset.id, proxy) : undefined;
 
   if (item.refType === "text") {
     const text = snapshot.textItems.find((candidate) => candidate.id === item.refId);
@@ -585,7 +804,24 @@ function NodeContextInspector({
   }
 
   const asset = snapshot.assets.find((candidate) => candidate.id === item.refId);
-  const assetUrl = asset ? sourceUrl(asset) : undefined;
+  const assetUrl = asset ? sourceUrl(asset, false) : undefined;
+  const assetCanvasItemIds = new Set(
+    snapshot.canvasItems
+      .filter((candidate) => candidate.refType === "asset" && candidate.refId === item.refId)
+      .map((candidate) => candidate.id),
+  );
+  const connectedRoles = new Set(
+    snapshot.canvasEdges
+      .filter((edge) => assetCanvasItemIds.has(edge.sourceItemId) && edge.targetSlot)
+      .map((edge) => edge.targetSlot),
+  );
+  const addCustomTag = () => {
+    if (!asset) return;
+    const tag = customTagDraft.trim();
+    if (!tag || asset.customTags.includes(tag)) return;
+    onSetAssetCustomTags(asset.id, [...asset.customTags, tag]);
+    setCustomTagDraft("");
+  };
   return (
     <aside className="inspector node-context-inspector" aria-label="素材节点检查器">
       <div className="context-hero context-hero-asset">
@@ -613,6 +849,19 @@ function NodeContextInspector({
         )}
         <span className="context-media-label">{asset?.mimeType ?? "MEDIA"}</span>
       </div>
+      {assetUrl && asset?.mediaType === "image" ? (
+        <div className="original-asset-actions">
+          <span>原始文件只读保存；后续裁切、扩图或重绘将创建新的衍生节点。</span>
+          <div>
+            <a href={assetUrl} target="_blank" rel="noreferrer">
+              查看原图 ↗
+            </a>
+            <a href={assetUrl} download={asset.originalName}>
+              下载原图
+            </a>
+          </div>
+        </div>
+      ) : null}
       <section className="context-section">
         <div className="context-section-heading">
           <div>
@@ -636,39 +885,66 @@ function NodeContextInspector({
         </div>
       </section>
       {asset?.mediaType === "image" ? (
-        <section className="context-slot-actions">
-          <div>
-            <span className="section-kicker">USE IN {selectedShot?.label ?? "SHOT"}</span>
-            <h3>作为镜头输入</h3>
-          </div>
-          <div>
-            <button
-              className={settings.firstFrameAssetId === asset.id ? "active" : ""}
-              type="button"
-              disabled={!selectedShot}
-              onClick={() => onUseAsset(asset.id, "firstFrameAssetId")}
-            >
-              <small>START</small>首帧
-            </button>
-            <button
-              className={settings.lastFrameAssetId === asset.id ? "active" : ""}
-              type="button"
-              disabled={!selectedShot}
-              onClick={() => onUseAsset(asset.id, "lastFrameAssetId")}
-            >
-              <small>END</small>尾帧
-            </button>
-            <button
-              className={settings.referenceAssetId === asset.id ? "active" : ""}
-              type="button"
-              disabled={!selectedShot}
-              onClick={() => onUseAsset(asset.id, "referenceAssetId")}
-            >
-              <small>REF</small>参考图
-            </button>
-          </div>
-          <p>这里修改生成参数；如需在画布中保留关系，请把素材端口拖到镜头输入槽。</p>
-        </section>
+        <>
+          <section className="context-connection-roles">
+            <div>
+              <span className="section-kicker">CONNECTED AS</span>
+              <h3>连接用途</h3>
+            </div>
+            <div className="connection-role-badges">
+              {connectedRoles.has("first_frame") ? <span>首帧</span> : null}
+              {connectedRoles.has("last_frame") ? <span>尾帧</span> : null}
+              {connectedRoles.has("reference") ? <span>参考图</span> : null}
+              {connectedRoles.size === 0 ? <em>尚未连接到模型输入</em> : null}
+            </div>
+            <p>从照片右侧端口拖到模型输入，系统会自动记录用途并占用对应输入。</p>
+          </section>
+          <section className="context-custom-tags">
+            <div>
+              <span className="section-kicker">CUSTOM TAGS</span>
+              <h3>自定义标签</h3>
+            </div>
+            {asset.customTags.length ? (
+              <div className="custom-tag-list">
+                {asset.customTags.map((tag) => (
+                  <button
+                    type="button"
+                    key={tag}
+                    aria-label={`移除标签 ${tag}`}
+                    onClick={() =>
+                      onSetAssetCustomTags(
+                        asset.id,
+                        asset.customTags.filter((candidate) => candidate !== tag),
+                      )
+                    }
+                  >
+                    {tag}
+                    <span>×</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            <div className="custom-tag-entry">
+              <input
+                aria-label="新增自定义标签"
+                value={customTagDraft}
+                maxLength={40}
+                placeholder="例如：冷色、夜景、定妆"
+                onChange={(event) => setCustomTagDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    addCustomTag();
+                  }
+                }}
+              />
+              <button type="button" disabled={!customTagDraft.trim()} onClick={addCustomTag}>
+                添加
+              </button>
+            </div>
+            <p>自定义标签只用于整理与检索，不会改变模型输入。</p>
+          </section>
+        </>
       ) : null}
       <ContextSelectionHint />
     </aside>
@@ -703,7 +979,18 @@ type InspectorProps = {
   runs: Run[];
   settings: GenerationSettings;
   workflow: WorkflowSummary | null;
+  profile: ModelProfile;
+  workflowDetected: boolean;
+  workflowLocked: boolean;
+  inputCounts: Record<"first_frame" | "last_frame" | "reference" | "reference_video", number>;
+  mentions: PromptMention[];
   onSettingsChange: (settings: GenerationSettings) => void;
+  onUpdateShot: (input: {
+    title: string;
+    body: string;
+    durationSeconds: number;
+    aspectRatio: Shot["aspectRatio"];
+  }) => void;
   onOpenAssets: () => void;
   onOpenRecipes: () => void;
   generateDisabledReason: string | null;
@@ -727,7 +1014,13 @@ function Inspector({
   runs,
   settings,
   workflow,
+  profile,
+  workflowDetected,
+  workflowLocked,
+  inputCounts,
+  mentions,
   onSettingsChange,
+  onUpdateShot,
   onOpenAssets,
   onOpenRecipes,
   generateDisabledReason,
@@ -735,6 +1028,22 @@ function Inspector({
 }: InspectorProps) {
   const [selectedTakeId, setSelectedTakeId] = useState<string | null>(null);
   const [reason, setReason] = useState(rejectionReasons[0] ?? "角色漂移");
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const promptRef = useRef<HTMLTextAreaElement>(null);
+  const [shotDraft, setShotDraft] = useState(() => ({
+    title: shot.label,
+    body: shot.intent,
+    durationSeconds: shot.durationSeconds,
+    aspectRatio: shot.aspectRatio,
+  }));
+  useEffect(() => {
+    setShotDraft({
+      title: shot.label,
+      body: shot.intent,
+      durationSeconds: shot.durationSeconds,
+      aspectRatio: shot.aspectRatio,
+    });
+  }, [shot]);
   useEffect(() => {
     const approved = takes.find((take) => take.status === "approved");
     const candidate = takes.find((take) => take.status === "candidate");
@@ -747,13 +1056,29 @@ function Inspector({
   };
   const mediaType = (assetId: string) =>
     assets.find((candidate) => candidate.id === assetId)?.mediaType;
+  const modelCheckLabel =
+    workflow?.modelStatus === "ready"
+      ? "所需模型已在当前 ComfyUI 检测"
+      : workflow?.modelStatus === "missing"
+        ? `缺少 ${workflow.missingModels?.length ?? 0} 个模型文件`
+        : workflowDetected
+          ? "Workflow 已检测，模型清单待确认"
+          : "本地参考配置";
 
   return (
     <aside className="inspector" aria-label="镜头候选检查器">
       <div className="inspector-heading">
         <div>
           <span className="section-kicker">SHOT INSPECTOR</span>
-          <h2>{shot.label}</h2>
+          <input
+            className="shot-title-input"
+            aria-label="镜头名称"
+            value={shotDraft.title}
+            maxLength={80}
+            onChange={(event) =>
+              setShotDraft((current) => ({ ...current, title: event.target.value }))
+            }
+          />
         </div>
         <span className={`large-status status-${shot.status}`}>
           {shot.status === "approved"
@@ -765,32 +1090,145 @@ function Inspector({
                 : "待生成"}
         </span>
       </div>
-      <p className="shot-intent">{shot.intent}</p>
-      <div className="shot-facts">
-        <span>{shot.durationSeconds}s</span>
-        <span>{shot.aspectRatio}</span>
-        <span>{workerLabel}</span>
+      <div className="shot-quick-edit">
+        <textarea
+          aria-label="镜头备注"
+          value={shotDraft.body}
+          placeholder="一句话记录镜头意图（可留空）"
+          onChange={(event) =>
+            setShotDraft((current) => ({ ...current, body: event.target.value }))
+          }
+        />
+        <div>
+          <label>
+            <span>画幅</span>
+            <select
+              aria-label="镜头画幅"
+              value={shotDraft.aspectRatio}
+              onChange={(event) =>
+                setShotDraft((current) => ({
+                  ...current,
+                  aspectRatio: event.target.value as Shot["aspectRatio"],
+                }))
+              }
+            >
+              {(["16:9", "9:16", "1:1", "4:5", "2.35:1"] as const).map((ratio) => (
+                <option key={ratio}>{ratio}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>时长</span>
+            <input
+              aria-label="镜头时长"
+              type="number"
+              min={0.5}
+              max={300}
+              step={0.5}
+              value={shotDraft.durationSeconds}
+              onChange={(event) =>
+                setShotDraft((current) => ({
+                  ...current,
+                  durationSeconds: Number(event.target.value),
+                }))
+              }
+            />
+          </label>
+          <button type="button" onClick={() => onUpdateShot(shotDraft)}>
+            保存镜头
+          </button>
+        </div>
+        <small>{workerLabel}</small>
       </div>
 
       {!isDemo ? (
         <section className="generation-console">
-          <button className="recipe-selector" type="button" onClick={onOpenRecipes}>
+          <button
+            className={`recipe-selector ${workflowLocked ? "locked" : ""}`}
+            type="button"
+            disabled={workflowLocked}
+            onClick={onOpenRecipes}
+          >
             <span className="recipe-selector-icon">⌘</span>
             <span>
               <small>RECIPE</small>
               <strong>{workflow?.name ?? "选择工作流"}</strong>
             </span>
-            <i>{workflow?.capabilityLabel ?? "自动检测"}⌄</i>
+            <i>{workflowLocked ? "已随镜头锁定" : `${workflow?.capabilityLabel ?? "选择"}⌄`}</i>
           </button>
-          <label className="prompt-field">
+          <div
+            className={`model-profile-summary ${workflow?.modelStatus === "missing" ? "is-missing" : workflowDetected ? "is-detected" : "is-fallback"}`}
+          >
+            <div>
+              <span>{profile.outputLabel.toUpperCase()} PROFILE</span>
+              <strong>{profile.title}</strong>
+              <p>{profile.description}</p>
+            </div>
+            <small>{modelCheckLabel}</small>
+          </div>
+          <label className="prompt-field prompt-with-mentions">
             <span>
               镜头提示词 <small>{settings.prompt.length}/20000</small>
             </span>
             <textarea
+              ref={promptRef}
               value={settings.prompt}
-              onChange={(event) => onSettingsChange({ ...settings, prompt: event.target.value })}
-              placeholder="描述主体、动作、镜头运动、光线与声音…"
+              onChange={(event) => {
+                onSettingsChange({ ...settings, prompt: event.target.value });
+                setMentionOpen(/@[^\s，。；：,.!?]*$/.test(event.target.value));
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "@" && mentions.length > 0) setMentionOpen(true);
+                if (event.key === "Escape") setMentionOpen(false);
+              }}
+              placeholder={
+                mentions.length ? "输入 @ 引用已连接画面…" : "描述画面、动作、镜头和光线…"
+              }
             />
+            {mentions.length ? (
+              <div className={`prompt-mention-menu ${mentionOpen ? "open" : ""}`}>
+                {mentions.map((mention) => (
+                  <button
+                    type="button"
+                    key={`${mention.assetId}-${mention.alias}`}
+                    onClick={() => {
+                      const textarea = promptRef.current;
+                      const cursor = textarea?.selectionStart ?? settings.prompt.length;
+                      const before = settings.prompt
+                        .slice(0, cursor)
+                        .replace(/@[^\s，。；：,.!?]*$/, "");
+                      const after = settings.prompt.slice(cursor);
+                      const token = `@${mention.alias}`;
+                      onSettingsChange({ ...settings, prompt: `${before}${token}${after}` });
+                      setMentionOpen(false);
+                      window.requestAnimationFrame(() => {
+                        textarea?.focus();
+                        const nextCursor = before.length + token.length;
+                        textarea?.setSelectionRange(nextCursor, nextCursor);
+                      });
+                    }}
+                  >
+                    {mention.thumbnailUrl ? (
+                      <img src={mention.thumbnailUrl} alt="" />
+                    ) : (
+                      <span>图</span>
+                    )}
+                    <strong>@{mention.alias}</strong>
+                    <small>{mention.role}</small>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            {mentions.length ? (
+              <div className="prompt-mention-chips">
+                {mentions.map((mention) => (
+                  <button type="button" key={mention.alias} onClick={() => setMentionOpen(true)}>
+                    @{mention.alias}
+                    <small>{mention.role}</small>
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </label>
           {workflow?.inputs.includes("negative_prompt") ? (
             <label className="negative-field">
@@ -804,178 +1242,159 @@ function Inspector({
               />
             </label>
           ) : null}
-          <div className="frame-slots">
-            {workflow?.inputs.some(
-              (input) => input === "first_frame" || input === "reference_images",
-            ) ? (
-              <button
-                type="button"
-                className={settings.firstFrameAssetId ? "filled" : ""}
-                onClick={onOpenAssets}
-              >
-                <span>{settings.firstFrameAssetId ? "✓" : "+"}</span>
-                <div>
-                  <small>INPUT</small>
-                  <strong>
-                    {workflow.capability === "reference_video" ? "参考素材" : "起始帧"}
-                  </strong>
-                </div>
-              </button>
-            ) : null}
-            {workflow?.inputs.includes("last_frame") ? (
-              <button
-                type="button"
-                className={settings.lastFrameAssetId ? "filled" : ""}
-                onClick={onOpenAssets}
-              >
-                <span>{settings.lastFrameAssetId ? "✓" : "+"}</span>
-                <div>
-                  <small>END</small>
-                  <strong>结束帧</strong>
-                </div>
-              </button>
-            ) : null}
-            <button
-              type="button"
-              className={settings.referenceAssetId ? "filled reference-slot" : "reference-slot"}
-              onClick={onOpenAssets}
-            >
-              <span>{settings.referenceAssetId ? "✓" : "+"}</span>
-              <div>
-                <small>REFERENCE</small>
-                <strong>参考图</strong>
-              </div>
-            </button>
-          </div>
-          <div className="parameter-grid">
-            <label>
-              <span>宽度</span>
-              <input
-                type="number"
-                min={256}
-                max={2048}
-                step={32}
-                value={settings.width}
-                onChange={(event) =>
-                  onSettingsChange({ ...settings, width: Number(event.target.value) })
-                }
-              />
-            </label>
-            <label>
-              <span>高度</span>
-              <input
-                type="number"
-                min={256}
-                max={2048}
-                step={32}
-                value={settings.height}
-                onChange={(event) =>
-                  onSettingsChange({ ...settings, height: Number(event.target.value) })
-                }
-              />
-            </label>
-            {workflow && !["text_to_image", "image_to_image"].includes(workflow.capability) ? (
-              <>
-                <label>
-                  <span>时长</span>
-                  <div>
-                    <input
-                      type="number"
-                      min={1}
-                      max={15}
-                      step={0.5}
-                      value={settings.durationSeconds}
-                      onChange={(event) =>
-                        onSettingsChange({
-                          ...settings,
-                          durationSeconds: Number(event.target.value),
-                        })
-                      }
-                    />
-                    <i>s</i>
-                  </div>
-                </label>
-                <label>
-                  <span>帧率</span>
-                  <div>
-                    <input
-                      type="number"
-                      min={8}
-                      max={60}
-                      value={settings.fps}
-                      onChange={(event) =>
-                        onSettingsChange({ ...settings, fps: Number(event.target.value) })
-                      }
-                    />
-                    <i>fps</i>
-                  </div>
-                </label>
-              </>
-            ) : null}
-          </div>
-          <label className="seed-field">
-            <span>Seed</span>
-            <input
-              type="number"
-              min={0}
-              value={settings.seed}
-              onChange={(event) =>
-                onSettingsChange({ ...settings, seed: Number(event.target.value) })
-              }
-            />
-            <button
-              type="button"
-              onClick={() =>
-                onSettingsChange({ ...settings, seed: Math.floor(Math.random() * 2_147_483_647) })
-              }
-            >
-              随机
-            </button>
-          </label>
-          {workflow?.inputs.includes("steps") ? (
-            <label className="seed-field">
-              <span>Steps</span>
-              <input
-                type="number"
-                min={1}
-                max={100}
-                value={settings.steps}
-                onChange={(event) =>
-                  onSettingsChange({ ...settings, steps: Number(event.target.value) })
-                }
-              />
-              <small>
-                {workflow.name.toLowerCase().includes("qwen")
-                  ? settings.steps <= 4
-                    ? "Lightning 快速预览"
-                    : "高质量建议 50"
-                  : workflow.name.toLowerCase().includes("minimax")
-                    ? "H3 建议 20"
-                    : "Recipe 默认"}
-              </small>
-            </label>
-          ) : null}
-          {workflow?.inputs.includes("denoise") ? (
-            <label className="seed-field">
-              <span>重绘强度</span>
-              <input
-                type="number"
-                min={0.05}
-                max={1}
-                step={0.05}
-                value={settings.denoise}
-                onChange={(event) =>
-                  onSettingsChange({ ...settings, denoise: Number(event.target.value) })
-                }
-              />
-              <small>0.35 保守 · 0.65 平衡 · 1.0 重构</small>
-            </label>
-          ) : null}
-          {workflow?.execution === "comfy_only" ? (
-            <div className="comfy-only-note">
-              这个 JSON 已完成检测；当前通过 ComfyUI 运行和修改，映射为原生 Recipe
-              后即可在此直接排队。
+          {profile.slots.length > 0 ? (
+            <div className="frame-slots model-driven-slots">
+              {profile.slots.map((slot) => {
+                const connectedCount = inputCounts[slot.id];
+                return (
+                  <button
+                    type="button"
+                    className={connectedCount > 0 ? "filled" : ""}
+                    onClick={onOpenAssets}
+                    key={slot.id}
+                  >
+                    <span>{connectedCount > 0 ? connectedCount : "+"}</span>
+                    <div>
+                      <small>
+                        {slot.required ? "必需" : "可选"} · {connectedCount}/{slot.maxCount}
+                      </small>
+                      <strong>{slot.label}</strong>
+                      <em>
+                        {slot.maxCount > 1
+                          ? `最多 ${slot.maxCount} ${slot.mediaType === "video" ? "段" : "张"}`
+                          : slot.hint}
+                      </em>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
+          ) : (
+            <div className="text-only-workflow-note">
+              <span>文</span>
+              <div>
+                <strong>无需图片输入</strong>
+                <p>这个模型从文字开始，画布节点不会显示多余的图片端口。</p>
+              </div>
+            </div>
+          )}
+          <details className="advanced-generation-settings">
+            <summary>
+              生成参数 <span>分辨率、Seed 与采样</span>
+            </summary>
+            {workflow?.inputs.includes("resolution") ? (
+              <div className="parameter-grid">
+                <label>
+                  <span>宽度</span>
+                  <input
+                    type="number"
+                    min={256}
+                    max={2048}
+                    step={32}
+                    value={settings.width}
+                    onChange={(event) =>
+                      onSettingsChange({ ...settings, width: Number(event.target.value) })
+                    }
+                  />
+                </label>
+                <label>
+                  <span>高度</span>
+                  <input
+                    type="number"
+                    min={256}
+                    max={2048}
+                    step={32}
+                    value={settings.height}
+                    onChange={(event) =>
+                      onSettingsChange({ ...settings, height: Number(event.target.value) })
+                    }
+                  />
+                </label>
+                {workflow.inputs.includes("fps") ? (
+                  <label>
+                    <span>帧率</span>
+                    <div>
+                      <input
+                        type="number"
+                        min={8}
+                        max={60}
+                        value={settings.fps}
+                        onChange={(event) =>
+                          onSettingsChange({ ...settings, fps: Number(event.target.value) })
+                        }
+                      />
+                      <i>fps</i>
+                    </div>
+                  </label>
+                ) : null}
+              </div>
+            ) : null}
+            {workflow?.inputs.includes("seed") ? (
+              <label className="seed-field">
+                <span>Seed</span>
+                <input
+                  type="number"
+                  min={0}
+                  value={settings.seed}
+                  onChange={(event) =>
+                    onSettingsChange({ ...settings, seed: Number(event.target.value) })
+                  }
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    onSettingsChange({
+                      ...settings,
+                      seed: Math.floor(Math.random() * 2_147_483_647),
+                    })
+                  }
+                >
+                  随机
+                </button>
+              </label>
+            ) : null}
+            {workflow?.inputs.includes("steps") ? (
+              <label className="seed-field">
+                <span>Steps</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={settings.steps}
+                  onChange={(event) =>
+                    onSettingsChange({ ...settings, steps: Number(event.target.value) })
+                  }
+                />
+                <small>
+                  {workflow.name.toLowerCase().includes("qwen")
+                    ? settings.steps <= 4
+                      ? "Lightning 快速预览"
+                      : "标准采样配置"
+                    : workflow.name.toLowerCase().includes("minimax")
+                      ? "由当前 JSON 暴露"
+                      : "当前工作流参数"}
+                </small>
+              </label>
+            ) : null}
+            {workflow?.inputs.includes("denoise") ? (
+              <label className="seed-field">
+                <span>重绘强度</span>
+                <input
+                  type="number"
+                  min={0.05}
+                  max={1}
+                  step={0.05}
+                  value={settings.denoise}
+                  onChange={(event) =>
+                    onSettingsChange({ ...settings, denoise: Number(event.target.value) })
+                  }
+                />
+                <small>0.35 保守 · 0.65 平衡 · 1.0 重构</small>
+              </label>
+            ) : null}
+          </details>
+          {workflow?.execution === "comfy_only" ? (
+            <div className="comfy-only-note">这个 JSON 目前从 ComfyUI 打开运行。</div>
           ) : null}
         </section>
       ) : null}
@@ -1159,7 +1578,19 @@ type CanvasContextMenuState = {
   flowX: number;
   flowY: number;
   itemId: string | null;
+  edge: {
+    id: string;
+    sourceItemId: string;
+    targetItemId: string;
+    targetSlot: ProjectSnapshot["canvasEdges"][number]["targetSlot"];
+    immutable: boolean;
+  } | null;
 };
+
+type CanvasEdgeIdentity = Pick<
+  NonNullable<CanvasContextMenuState["edge"]>,
+  "sourceItemId" | "targetItemId" | "targetSlot"
+>;
 
 type CanvasClipboardState = {
   itemId: string;
@@ -1172,6 +1603,7 @@ type NodeEditDraft = {
   title: string;
   body: string;
   durationSeconds: number | null;
+  aspectRatio: Shot["aspectRatio"] | null;
 };
 
 export function App() {
@@ -1180,7 +1612,9 @@ export function App() {
   const [nodes, setNodes] = useState<BoardNode[]>([]);
   const [selectedShotId, setSelectedShotId] = useState<string | null>(null);
   const [selectedCanvasItemId, setSelectedCanvasItemId] = useState<string | null>(null);
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [canvasContextMenu, setCanvasContextMenu] = useState<CanvasContextMenuState | null>(null);
+  const [canvasGuideOpen, setCanvasGuideOpen] = useState(false);
   const [canvasClipboard, setCanvasClipboard] = useState<CanvasClipboardState | null>(null);
   const [nodeEditDraft, setNodeEditDraft] = useState<NodeEditDraft | null>(null);
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<BoardNode> | null>(null);
@@ -1193,13 +1627,16 @@ export function App() {
   const [projects, setProjects] = useState<ProjectCatalogItem[]>([]);
   const [showHub, setShowHub] = useState(true);
   const [worker, setWorker] = useState<WorkerStatus | null>(null);
+  const [workerBusy, setWorkerBusy] = useState(false);
   const [workflows, setWorkflows] = useState<WorkflowSummary[]>([]);
   const [workflowWarnings, setWorkflowWarnings] = useState<string[]>([]);
   const [comfyEditorUrl, setComfyEditorUrl] = useState("http://127.0.0.1:48188");
   const [recipeOpen, setRecipeOpen] = useState(false);
   const [assetLibraryOpen, setAssetLibraryOpen] = useState(false);
-  const [generationSettings, setGenerationSettings] =
-    useState<GenerationSettings>(defaultGenerationSettings);
+  const [generationSettings, setGenerationSettings] = useState<GenerationSettings>(() => ({
+    ...defaultGenerationSettings,
+    ...loadModelPreferences(defaultGenerationSettings.recipePath),
+  }));
   const [generationBusy, setGenerationBusy] = useState(false);
   const [generationCancelling, setGenerationCancelling] = useState(false);
   const [generationProgress, setGenerationProgress] = useState<GenerationProgress | null>(null);
@@ -1213,10 +1650,27 @@ export function App() {
   const [shotQuery, setShotQuery] = useState("");
   const [shotFilter, setShotFilter] = useState<"all" | "todo" | "approved">("all");
   const assetInput = useRef<HTMLInputElement>(null);
+  const pendingAssetPosition = useRef<{ x: number; y: number } | null>(null);
   const generationScopeRef = useRef("");
   const generationTokenRef = useRef(0);
   const acceptedProjectIdRef = useRef<string | null>(null);
   const acceptedRevisionRef = useRef(0);
+  const selectedEdgeIdentityRef = useRef<CanvasEdgeIdentity | null>(null);
+  const latestSnapshotRef = useRef(snapshot);
+  const selectionProjectRef = useRef<string | null>(null);
+  latestSnapshotRef.current = snapshot;
+  const selectedShot = snapshot?.shots.find((shot) => shot.id === selectedShotId) ?? null;
+  const selectedShotWorkflowPath =
+    selectedShot && snapshot
+      ? (selectedShot.workflowPath ?? runWorkflowPath(snapshot, selectedShot.id))
+      : null;
+  const selectedWorkflow = useMemo(
+    () => findWorkflow(selectedShotWorkflowPath ?? generationSettings.recipePath, workflows),
+    [generationSettings.recipePath, selectedShotWorkflowPath, workflows],
+  );
+  const workflowLocked = Boolean(
+    selectedShotId && snapshot?.runs.some((run) => run.shotId === selectedShotId),
+  );
 
   const acceptPayload = useCallback(
     (payload: Awaited<ReturnType<typeof demoApi.get>>, preferredShotId?: string) => {
@@ -1229,6 +1683,7 @@ export function App() {
       }
       acceptedProjectIdRef.current = incomingProjectId;
       acceptedRevisionRef.current = payload.revision;
+      latestSnapshotRef.current = payload.snapshot;
       setSnapshot(payload.snapshot);
       setRevision(payload.revision);
       setSelectedShotId((current) =>
@@ -1264,22 +1719,12 @@ export function App() {
   }, [projectMode, showHub, snapshot]);
 
   useEffect(() => {
-    if (snapshot) {
-      setNodes(
-        boardNodes(
-          snapshot,
-          selectedCanvasItemId,
-          projectMode === "project" ? projectKey : null,
-          projectMode === "demo" ? "Fake I2V" : "Wan 2.2 I2V",
-        ),
-      );
-    }
-  }, [snapshot, selectedCanvasItemId, projectMode, projectKey]);
-
-  useEffect(() => {
     if (!snapshot) return;
+    const projectChanged = selectionProjectRef.current !== snapshot.project.id;
+    selectionProjectRef.current = snapshot.project.id;
     setSelectedCanvasItemId((current) => {
       if (current && snapshot.canvasItems.some((item) => item.id === current)) return current;
+      if (!projectChanged) return null;
       return (
         snapshot.canvasItems.find(
           (item) => item.refType === "shot" && item.refId === selectedShotId,
@@ -1317,10 +1762,116 @@ export function App() {
     return () => window.removeEventListener("resize", adaptWorkspacePanels);
   }, []);
 
-  const edges = useMemo(() => (snapshot ? boardEdges(snapshot) : []), [snapshot]);
-  const selectedShot = snapshot?.shots.find((shot) => shot.id === selectedShotId) ?? null;
+  const edges = useMemo(
+    () =>
+      snapshot
+        ? boardEdges(snapshot, workflows, selectedWorkflow, selectedShotId, selectedEdgeId)
+        : [],
+    [selectedEdgeId, selectedShotId, selectedWorkflow, snapshot, workflows],
+  );
+  const selectedModelProfile = useMemo(
+    () => modelProfile(selectedWorkflow, selectedShot?.aspectRatio ?? "16:9"),
+    [selectedShot?.aspectRatio, selectedWorkflow],
+  );
   const selectedCanvasItem =
     snapshot?.canvasItems.find((item) => item.id === selectedCanvasItemId) ?? null;
+  const selectedShotItem = snapshot?.canvasItems.find(
+    (item) => item.refType === "shot" && item.refId === selectedShotId,
+  );
+  const selectedShotInputEdges = useMemo(
+    () =>
+      snapshot && selectedShotItem
+        ? snapshot.canvasEdges
+            .filter(
+              (edge) =>
+                edge.targetItemId === selectedShotItem.id &&
+                edge.targetSlot &&
+                selectedModelProfile.slots.some((slot) => slot.id === edge.targetSlot),
+            )
+            .sort((a, b) => {
+              const order = {
+                first_frame: 0,
+                reference: 1,
+                reference_video: 2,
+                last_frame: 3,
+              } as const;
+              return (
+                order[a.targetSlot as keyof typeof order] -
+                  order[b.targetSlot as keyof typeof order] || a.targetSlotIndex - b.targetSlotIndex
+              );
+            })
+        : [],
+    [selectedModelProfile.slots, selectedShotItem, snapshot],
+  );
+  const promptMentions = useMemo<PromptMention[]>(() => {
+    if (!snapshot) return [];
+    const aliases = new Map<string, number>();
+    const mentions: PromptMention[] = [];
+    for (const edge of selectedShotInputEdges) {
+      const source = snapshot.canvasItems.find((item) => item.id === edge.sourceItemId);
+      const expectedMedia = edge.targetSlot === "reference_video" ? "video" : "image";
+      const assetId = sourceAssetId(snapshot, source, expectedMedia);
+      const asset = snapshot.assets.find(
+        (candidate) => candidate.id === assetId && candidate.mediaType === expectedMedia,
+      );
+      if (!asset) continue;
+      const baseAlias =
+        asset.originalName
+          .replace(/\.[^.]+$/, "")
+          .trim()
+          .replace(/[\s@，。；：,.!?]+/g, "_")
+          .slice(0, 32) || (asset.mediaType === "video" ? "参考视频" : "参考图");
+      const count = (aliases.get(baseAlias) ?? 0) + 1;
+      aliases.set(baseAlias, count);
+      mentions.push({
+        assetId: asset.id,
+        alias: `${baseAlias}${count > 1 ? `_${count}` : ""}`,
+        role:
+          edge.targetSlot === "first_frame"
+            ? "首帧"
+            : edge.targetSlot === "last_frame"
+              ? "尾帧"
+              : edge.targetSlot === "reference_video"
+                ? `参考视频 ${edge.targetSlotIndex + 1}`
+                : `参考图 ${edge.targetSlotIndex + 1}`,
+        thumbnailUrl:
+          asset.mediaType === "image" && projectMode === "project" && projectKey
+            ? projectApi.assetUrl(projectKey, asset.id, true)
+            : undefined,
+      });
+    }
+    return mentions;
+  }, [projectKey, projectMode, selectedShotInputEdges, snapshot]);
+  const selectedInputCounts = useMemo(
+    () => ({
+      first_frame: selectedShotInputEdges.filter((edge) => edge.targetSlot === "first_frame")
+        .length,
+      last_frame: selectedShotInputEdges.filter((edge) => edge.targetSlot === "last_frame").length,
+      reference: selectedShotInputEdges.filter((edge) => edge.targetSlot === "reference").length,
+      reference_video: selectedShotInputEdges.filter(
+        (edge) => edge.targetSlot === "reference_video",
+      ).length,
+    }),
+    [selectedShotInputEdges],
+  );
+  const selectedReferenceVideoIds = useMemo(
+    () =>
+      selectedShotInputEdges.flatMap((edge) => {
+        if (edge.targetSlot !== "reference_video") return [];
+        const source = snapshot?.canvasItems.find((item) => item.id === edge.sourceItemId);
+        if (source?.refType === "asset") return [source.refId];
+        if (source?.refType === "entity") {
+          const assetId = snapshot?.entities
+            .find((entity) => entity.id === source.refId)
+            ?.referenceAssetIds.find((id) =>
+              snapshot.assets.some((asset) => asset.id === id && asset.mediaType === "video"),
+            );
+          return assetId ? [assetId] : [];
+        }
+        return [];
+      }),
+    [selectedShotInputEdges, snapshot],
+  );
   const selectedTakes = snapshot?.takes.filter((take) => take.shotId === selectedShotId) ?? [];
   const visibleShots = useMemo(() => {
     const normalizedQuery = shotQuery.trim().toLocaleLowerCase("zh-CN");
@@ -1338,6 +1889,34 @@ export function App() {
       (run) =>
         run.shotId === selectedShotId && !["completed", "failed", "cancelled"].includes(run.status),
     );
+
+  useEffect(() => {
+    if (!selectedShot || !selectedWorkflow || projectMode !== "project") return;
+    const workflowPath = selectedShotWorkflowPath ?? defaultGenerationSettings.recipePath;
+    const synchronizedScope = `${projectMode}:${projectKey ?? "demo"}:${selectedShot.id}:${workflowPath}`;
+    if (
+      generationScopeRef.current !== synchronizedScope ||
+      generationSettings.recipePath !== workflowPath ||
+      selectedWorkflow.path !== workflowPath
+    ) {
+      return;
+    }
+    saveModelPreferences(workflowPath, {
+      width: generationSettings.width,
+      height: generationSettings.height,
+      durationSeconds: generationSettings.durationSeconds,
+      fps: generationSettings.fps,
+      steps: generationSettings.steps,
+      denoise: generationSettings.denoise,
+    });
+  }, [
+    generationSettings,
+    projectKey,
+    projectMode,
+    selectedShot,
+    selectedShotWorkflowPath,
+    selectedWorkflow,
+  ]);
 
   useEffect(() => {
     if (showHub || projectMode !== "project" || !projectKey || !snapshot || generationBusy) return;
@@ -1396,10 +1975,6 @@ export function App() {
     () => snapshot?.assets.filter((asset) => asset.mediaType === "image") ?? [],
     [snapshot?.assets],
   );
-  const selectedWorkflow =
-    workflows.find((workflow) => workflow.path === generationSettings.recipePath) ??
-    nativeWorkflowFallbacks.find((workflow) => workflow.path === generationSettings.recipePath) ??
-    null;
   const firstFrameAvailable = imageAssets.some(
     (asset) => asset.id === generationSettings.firstFrameAssetId,
   );
@@ -1409,6 +1984,9 @@ export function App() {
   const generationDisabledReason = useMemo(() => {
     if (projectMode === "demo" || selectedWorkflow?.execution === "comfy_only") return null;
     if (!selectedWorkflow) return "请先选择一个可用 Workflow";
+    if (selectedWorkflow.modelStatus === "missing") {
+      return `当前电脑缺少模型：${(selectedWorkflow.missingModels ?? []).slice(0, 2).join("、")}`;
+    }
     if (!generationSettings.prompt.trim()) return "请先输入镜头提示词";
     if (selectedWorkflow.inputs.includes("first_frame") && !firstFrameAvailable) {
       return "请从资产库选择一张起始帧";
@@ -1455,6 +2033,7 @@ export function App() {
   const totalDuration = snapshot?.shots.reduce((sum, shot) => sum + shot.durationSeconds, 0) ?? 0;
   const activeScene =
     snapshot?.scenes.find((scene) => scene.id === selectedShot?.sceneId) ?? snapshot?.scenes[0];
+  const contextEdge = canvasContextMenu?.edge ?? null;
 
   const onNodesChange = useCallback((changes: NodeChange<BoardNode>[]) => {
     setNodes((currentNodes) =>
@@ -1471,6 +2050,7 @@ export function App() {
       const item = snapshot.canvasItems.find((candidate) => candidate.id === node.id);
       if (!item) return;
       setSelectedCanvasItemId(item.id);
+      setSelectedEdgeId(null);
       if (item.refType === "shot" || item.refType === "take_stack") {
         setSelectedShotId(item.refId);
       }
@@ -1499,6 +2079,7 @@ export function App() {
             title: text.title,
             body: text.body,
             durationSeconds: null,
+            aspectRatio: null,
           });
         }
         return;
@@ -1512,6 +2093,7 @@ export function App() {
             title: entity.name,
             body: entity.description,
             durationSeconds: null,
+            aspectRatio: null,
           });
         }
         return;
@@ -1525,6 +2107,7 @@ export function App() {
             title: asset.originalName,
             body: "",
             durationSeconds: null,
+            aspectRatio: null,
           });
         }
         return;
@@ -1537,6 +2120,7 @@ export function App() {
           title: shot.label,
           body: shot.intent,
           durationSeconds: shot.durationSeconds,
+          aspectRatio: shot.aspectRatio,
         });
       }
     },
@@ -1554,6 +2138,7 @@ export function App() {
         ...(nodeEditDraft.durationSeconds !== null
           ? { durationSeconds: nodeEditDraft.durationSeconds }
           : {}),
+        ...(nodeEditDraft.aspectRatio !== null ? { aspectRatio: nodeEditDraft.aspectRatio } : {}),
       });
       acceptPayload(payload);
       setNodeEditDraft(null);
@@ -1564,6 +2149,40 @@ export function App() {
       setBusy(false);
     }
   }, [acceptPayload, nodeEditDraft, projectKey]);
+
+  const updateSelectedShot = useCallback(
+    async (input: {
+      title: string;
+      body: string;
+      durationSeconds: number;
+      aspectRatio: Shot["aspectRatio"];
+    }) => {
+      if (!projectKey || projectMode !== "project" || !selectedShotId || !snapshot) {
+        setNotice("示例镜头不会写入修改");
+        return;
+      }
+      const item = snapshot.canvasItems.find(
+        (candidate) => candidate.refType === "shot" && candidate.refId === selectedShotId,
+      );
+      if (!item) return;
+      setBusy(true);
+      setError(null);
+      try {
+        const payload = await projectApi.editCanvasItem(projectKey, item.id, input);
+        acceptPayload(payload, selectedShotId);
+        setGenerationSettings((current) => ({
+          ...current,
+          durationSeconds: input.durationSeconds,
+        }));
+        setNotice("镜头信息已保存");
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "镜头保存失败");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [acceptPayload, projectKey, projectMode, selectedShotId, snapshot],
+  );
 
   const deleteCanvasItem = useCallback(
     async (itemId: string) => {
@@ -1593,6 +2212,57 @@ export function App() {
       }
     },
     [acceptPayload, projectKey, projectMode, snapshot?.canvasItems],
+  );
+
+  const deleteCanvasEdge = useCallback(
+    async (edgeId: string, requestedIdentity?: CanvasEdgeIdentity) => {
+      if (!projectKey || projectMode !== "project" || !snapshot) return;
+      const identity = requestedIdentity ?? selectedEdgeIdentityRef.current;
+      const edge =
+        (identity
+          ? snapshot.canvasEdges.find(
+              (candidate) =>
+                candidate.sourceItemId === identity.sourceItemId &&
+                candidate.targetItemId === identity.targetItemId &&
+                candidate.targetSlot === identity.targetSlot,
+            )
+          : null) ?? snapshot.canvasEdges.find((candidate) => candidate.id === edgeId);
+      if (edge?.immutable) {
+        setNotice("生成溯源连线需要保留，不能删除");
+        return;
+      }
+      setBusy(true);
+      setError(null);
+      try {
+        const payload = identity
+          ? await projectApi.disconnectMatching(projectKey, identity)
+          : await projectApi.disconnect(projectKey, edgeId);
+        acceptPayload(payload);
+        setSelectedEdgeId(null);
+        setCanvasContextMenu(null);
+        selectedEdgeIdentityRef.current = null;
+        const targetItemId = identity?.targetItemId ?? edge?.targetItemId;
+        const targetSlot = identity?.targetSlot ?? edge?.targetSlot;
+        const targetItem = payload.snapshot.canvasItems.find((item) => item.id === targetItemId);
+        if (targetItem?.refType === "shot" && targetSlot) {
+          const assetId = connectedAssetId(payload.snapshot, targetItem.refId, targetSlot);
+          setGenerationSettings((current) => ({
+            ...current,
+            [targetSlot === "first_frame"
+              ? "firstFrameAssetId"
+              : targetSlot === "last_frame"
+                ? "lastFrameAssetId"
+                : "referenceAssetId"]: assetId,
+          }));
+        }
+        setNotice("连线已删除，输入位置已释放");
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "连线删除失败");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [acceptPayload, projectKey, projectMode, snapshot],
   );
 
   const duplicateCanvasItem = useCallback(
@@ -1666,6 +2336,7 @@ export function App() {
       const target = event.target;
       if (event.key === "Escape") {
         setCanvasContextMenu(null);
+        setCanvasGuideOpen(false);
         setNodeEditDraft(null);
         setRecipeOpen(false);
         setAssetLibraryOpen(false);
@@ -1705,6 +2376,9 @@ export function App() {
       } else if (command && event.key.toLowerCase() === "d" && selectedCanvasItemId) {
         event.preventDefault();
         void duplicateCanvasItem(selectedCanvasItemId);
+      } else if ((event.key === "Delete" || event.key === "Backspace") && selectedEdgeId) {
+        event.preventDefault();
+        void deleteCanvasEdge(selectedEdgeId);
       } else if ((event.key === "Delete" || event.key === "Backspace") && selectedCanvasItemId) {
         event.preventDefault();
         void deleteCanvasItem(selectedCanvasItemId);
@@ -1715,10 +2389,12 @@ export function App() {
   }, [
     canvasClipboard,
     copyCanvasItem,
+    deleteCanvasEdge,
     deleteCanvasItem,
     duplicateCanvasItem,
     pasteCanvasItem,
     selectedCanvasItemId,
+    selectedEdgeId,
     sidebarOpen,
     inspectorOpen,
   ]);
@@ -1741,6 +2417,7 @@ export function App() {
         flowX: point.x,
         flowY: point.y,
         itemId: node.id,
+        edge: null,
       });
     },
     [flowInstance, snapshot?.canvasItems],
@@ -1749,6 +2426,9 @@ export function App() {
   const openPaneContextMenu = useCallback(
     (event: ReactMouseEvent | MouseEvent) => {
       event.preventDefault();
+      setSelectedCanvasItemId(null);
+      setSelectedShotId(null);
+      setSelectedEdgeId(null);
       const point = flowInstance?.screenToFlowPosition({ x: event.clientX, y: event.clientY }) ?? {
         x: 180,
         y: 180,
@@ -1759,6 +2439,51 @@ export function App() {
         flowX: point.x,
         flowY: point.y,
         itemId: null,
+        edge: null,
+      });
+    },
+    [flowInstance],
+  );
+
+  const openEdgeContextMenu = useCallback(
+    (event: ReactMouseEvent, edge: Edge) => {
+      event.preventDefault();
+      const currentSnapshot = latestSnapshotRef.current;
+      const snapshotEdge = currentSnapshot ? resolveSnapshotEdge(currentSnapshot, edge) : null;
+      const resolvedEdgeId = snapshotEdge?.id ?? edge.id;
+      const targetSlot =
+        snapshotEdge?.targetSlot ??
+        (edge.targetHandle === "first_frame" ||
+        edge.targetHandle === "last_frame" ||
+        edge.targetHandle === "reference" ||
+        edge.targetHandle === "reference_video"
+          ? edge.targetHandle
+          : null);
+      const identity =
+        edgeIdentityFromPointer(event) ??
+        ({
+          sourceItemId: snapshotEdge?.sourceItemId ?? edge.source,
+          targetItemId: snapshotEdge?.targetItemId ?? edge.target,
+          targetSlot,
+        } satisfies CanvasEdgeIdentity);
+      selectedEdgeIdentityRef.current = identity;
+      setSelectedEdgeId(resolvedEdgeId);
+      setSelectedCanvasItemId(null);
+      const point = flowInstance?.screenToFlowPosition({ x: event.clientX, y: event.clientY }) ?? {
+        x: 180,
+        y: 180,
+      };
+      setCanvasContextMenu({
+        clientX: event.clientX,
+        clientY: event.clientY,
+        flowX: point.x,
+        flowY: point.y,
+        itemId: null,
+        edge: {
+          id: resolvedEdgeId,
+          ...identity,
+          immutable: snapshotEdge?.immutable ?? false,
+        },
       });
     },
     [flowInstance],
@@ -1771,8 +2496,13 @@ export function App() {
         return;
       }
       const slot = connection.targetHandle;
-      if (slot !== "first_frame" && slot !== "last_frame" && slot !== "reference") {
-        setError("请连接到镜头的首帧、尾帧或参考图端口");
+      if (
+        slot !== "first_frame" &&
+        slot !== "last_frame" &&
+        slot !== "reference" &&
+        slot !== "reference_video"
+      ) {
+        setError("请连接到镜头的图片或视频输入端口");
         return;
       }
       setBusy(true);
@@ -1798,7 +2528,7 @@ export function App() {
             }));
           }
           setNotice(
-            `已连接为${slot === "first_frame" ? "首帧" : slot === "last_frame" ? "尾帧" : "参考图"}`,
+            `已连接为${slot === "first_frame" ? "首帧" : slot === "last_frame" ? "尾帧" : slot === "reference_video" ? "参考视频" : "参考图"}`,
           );
         })
         .catch((cause: unknown) =>
@@ -1807,6 +2537,101 @@ export function App() {
         .finally(() => setBusy(false));
     },
     [acceptPayload, projectKey, projectMode],
+  );
+
+  const connectAssetFromLibrary = useCallback(
+    async (assetId: string, slot: "first" | "last" | "reference" | "referenceVideo") => {
+      if (!projectKey || projectMode !== "project" || !snapshot || !selectedShot) return;
+      const target = snapshot.canvasItems.find(
+        (item) => item.refType === "shot" && item.refId === selectedShot.id,
+      );
+      if (!target) return;
+      setBusy(true);
+      setError(null);
+      try {
+        let source = snapshot.canvasItems.find(
+          (item) =>
+            (item.refType === "asset" && item.refId === assetId) ||
+            (item.refType === "entity" &&
+              snapshot.entities
+                .find((entity) => entity.id === item.refId)
+                ?.referenceAssetIds.includes(assetId)),
+        );
+        if (!source) {
+          const added = await projectApi.addCanvasItem(projectKey, {
+            refType: "asset",
+            refId: assetId,
+            sceneId: selectedShot.sceneId,
+            x: target.x - 300,
+            y: target.y + 36,
+          });
+          acceptPayload(added, selectedShot.id);
+          source = added.snapshot.canvasItems.find((item) => item.id === added.itemId);
+        }
+        if (!source) throw new Error("素材无法加入当前画布");
+        const targetSlot =
+          slot === "first"
+            ? "first_frame"
+            : slot === "last"
+              ? "last_frame"
+              : slot === "referenceVideo"
+                ? "reference_video"
+                : "reference";
+        const connected = await projectApi.connect(projectKey, source.id, target.id, targetSlot);
+        acceptPayload(connected, selectedShot.id);
+        setGenerationSettings((current) => ({
+          ...current,
+          [slot === "first"
+            ? "firstFrameAssetId"
+            : slot === "last"
+              ? "lastFrameAssetId"
+              : "referenceAssetId"]: assetId,
+        }));
+        setAssetLibraryOpen(false);
+        setNotice(
+          `${slot === "first" ? "首帧" : slot === "last" ? "尾帧" : slot === "referenceVideo" ? "参考视频" : "参考图"}已连接到 ${selectedShot.label}`,
+        );
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "素材连接失败");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [acceptPayload, projectKey, projectMode, selectedShot, snapshot],
+  );
+
+  const setAssetCustomTags = useCallback(
+    async (assetId: string, customTags: string[]) => {
+      const asset = snapshot?.assets.find((candidate) => candidate.id === assetId);
+      if (!asset) return;
+
+      if (projectMode !== "project" || !projectKey) {
+        setSnapshot((current) =>
+          current
+            ? {
+                ...current,
+                assets: current.assets.map((candidate) =>
+                  candidate.id === assetId ? { ...candidate, customTags } : candidate,
+                ),
+              }
+            : current,
+        );
+        setNotice("自定义标签已更新");
+        return;
+      }
+
+      setError(null);
+      try {
+        const payload = await projectApi.editCanvasItem(projectKey, selectedCanvasItemId ?? "", {
+          customTags,
+        });
+        acceptPayload(payload);
+        setNotice("自定义标签已更新");
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "素材标签保存失败");
+      }
+    },
+    [acceptPayload, projectKey, projectMode, selectedCanvasItemId, snapshot?.assets],
   );
 
   const openProject = useCallback(
@@ -1917,29 +2742,42 @@ export function App() {
   }, [acceptPayload]);
 
   useEffect(() => {
-    if (!selectedShot) return;
-    const scope = `${projectMode}:${projectKey ?? "demo"}:${selectedShot.id}`;
+    if (!selectedShot || !snapshot) return;
+    const workflowPath = selectedShotWorkflowPath ?? defaultGenerationSettings.recipePath;
+    const scope = `${projectMode}:${projectKey ?? "demo"}:${selectedShot.id}:${workflowPath}`;
     if (generationScopeRef.current === scope) return;
     generationScopeRef.current = scope;
+    const workflow = findWorkflow(workflowPath, workflows);
+    const profile = modelProfile(workflow, selectedShot.aspectRatio);
+    const preferred = { ...profile.defaults, ...loadModelPreferences(workflowPath) };
+    const lastRun = [...snapshot.runs].reverse().find((run) => run.shotId === selectedShot.id);
+    const parameter = (name: string, fallback: number) => {
+      const value = lastRun?.parameters[name];
+      return typeof value === "number" ? value : fallback;
+    };
     setGenerationSettings((current) => ({
       ...current,
-      prompt: selectedShot.intent,
-      negativePrompt: "",
-      durationSeconds: selectedShot.durationSeconds,
-      firstFrameAssetId: imageAssets.at(-1)?.id ?? null,
-      lastFrameAssetId: null,
-      referenceAssetId: null,
+      recipePath: workflowPath,
+      prompt:
+        typeof lastRun?.parameters.prompt === "string"
+          ? lastRun.parameters.prompt
+          : selectedShot.intent,
+      negativePrompt:
+        typeof lastRun?.parameters.negativePrompt === "string"
+          ? lastRun.parameters.negativePrompt
+          : "",
+      width: parameter("width", preferred.width),
+      height: parameter("height", preferred.height),
+      durationSeconds: parameter("durationSeconds", selectedShot.durationSeconds),
+      fps: parameter("fps", preferred.fps),
+      steps: parameter("steps", preferred.steps),
+      denoise: parameter("denoise", preferred.denoise),
+      seed: parameter("seed", current.seed),
+      firstFrameAssetId: connectedAssetId(snapshot, selectedShot.id, "first_frame"),
+      lastFrameAssetId: connectedAssetId(snapshot, selectedShot.id, "last_frame"),
+      referenceAssetId: connectedAssetId(snapshot, selectedShot.id, "reference"),
     }));
-    if (snapshot && projectMode === "project") {
-      setGenerationSettings((current) => ({
-        ...current,
-        firstFrameAssetId:
-          connectedAssetId(snapshot, selectedShot.id, "first_frame") ?? current.firstFrameAssetId,
-        lastFrameAssetId: connectedAssetId(snapshot, selectedShot.id, "last_frame"),
-        referenceAssetId: connectedAssetId(snapshot, selectedShot.id, "reference"),
-      }));
-    }
-  }, [imageAssets, projectKey, projectMode, selectedShot, snapshot]);
+  }, [projectKey, projectMode, selectedShot, selectedShotWorkflowPath, snapshot, workflows]);
 
   useEffect(() => {
     if (window.sessionStorage.getItem("takeboard.resumeDemo") !== "1") return;
@@ -1947,31 +2785,70 @@ export function App() {
     void openDemo();
   }, [openDemo]);
 
+  const createShot = useCallback(
+    async (position?: { x: number; y: number }) => {
+      if (!projectKey || projectMode !== "project") return;
+      setBusy(true);
+      setError(null);
+      try {
+        const payload = await projectApi.createShot(projectKey, position);
+        acceptPayload(payload, payload.shotId);
+        setSelectedCanvasItemId(payload.itemId);
+        setNotice("已添加一个空白镜头；在右侧设置镜头内容与工作流");
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "镜头创建失败");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [acceptPayload, projectKey, projectMode],
+  );
+
+  const createTextNode = useCallback(
+    async (position: { x: number; y: number }) => {
+      if (!projectKey || projectMode !== "project") return;
+      setBusy(true);
+      setError(null);
+      try {
+        const payload = await projectApi.createTextNode(projectKey, {
+          title: "新笔记",
+          x: position.x,
+          y: position.y,
+          ...(activeScene ? { sceneId: activeScene.id } : {}),
+        });
+        acceptPayload(payload);
+        setSelectedCanvasItemId(payload.itemId);
+        setCanvasContextMenu(null);
+        setNotice("笔记已加入画布；双击即可编辑");
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "笔记创建失败");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [acceptPayload, activeScene, projectKey, projectMode],
+  );
+
   const uploadAsset = useCallback(
-    async (file: File, metadata?: { kind?: "character" | "location" | "prop"; name?: string }) => {
+    async (
+      file: File,
+      metadata?: {
+        kind?: "character" | "location" | "prop";
+        name?: string;
+        x?: number;
+        y?: number;
+      },
+    ) => {
       if (!projectKey) return { ok: false, error: "请先打开一个项目" };
       setBusy(true);
       setError(null);
       try {
-        const previousAssetIds = new Set(snapshot?.assets.map((asset) => asset.id) ?? []);
         const payload = await projectApi.uploadAsset(projectKey, file, metadata);
-        const uploadedAsset = payload.snapshot.assets.find(
-          (asset) => !previousAssetIds.has(asset.id),
-        );
         acceptPayload(payload);
-        if (uploadedAsset?.mediaType === "image") {
-          setGenerationSettings((current) => ({
-            ...current,
-            firstFrameAssetId:
-              !metadata?.kind || !current.firstFrameAssetId
-                ? uploadedAsset.id
-                : current.firstFrameAssetId,
-          }));
-        }
         setNotice(
           metadata?.kind
             ? `已存入${metadata.kind === "character" ? "人物" : metadata.kind === "location" ? "场景" : "道具"}资产：${metadata.name || file.name}`
-            : `已导入首帧：${file.name}`,
+            : `已导入参考素材：${file.name}`,
         );
         return { ok: true };
       } catch (cause) {
@@ -1982,7 +2859,7 @@ export function App() {
         setBusy(false);
       }
     },
-    [acceptPayload, projectKey, snapshot?.assets],
+    [acceptPayload, projectKey],
   );
 
   const refreshWorkflows = useCallback(async () => {
@@ -2001,6 +2878,45 @@ export function App() {
     }
   }, []);
 
+  const bindWorkflowToSelectedShot = useCallback(
+    async (workflow: WorkflowSummary) => {
+      if (!selectedShot || !snapshot) return;
+      if (workflowLocked) {
+        setNotice("这个镜头已有运行记录；工作流已锁定");
+        return;
+      }
+      setBusy(true);
+      setError(null);
+      try {
+        const profile = modelProfile(workflow, selectedShot.aspectRatio);
+        const saved = loadModelPreferences(workflow.path);
+        if (projectMode === "project" && projectKey) {
+          const item = snapshot.canvasItems.find(
+            (candidate) => candidate.refType === "shot" && candidate.refId === selectedShot.id,
+          );
+          if (!item) throw new Error("镜头不在当前画布中");
+          const payload = await projectApi.editCanvasItem(projectKey, item.id, {
+            workflowPath: workflow.path,
+          });
+          acceptPayload(payload, selectedShot.id);
+        }
+        setGenerationSettings((current) => ({
+          ...current,
+          recipePath: workflow.path,
+          ...profile.defaults,
+          ...saved,
+        }));
+        setRecipeOpen(false);
+        setNotice(`已为 ${selectedShot.label} 绑定：${workflow.name}`);
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "工作流绑定失败");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [acceptPayload, projectKey, projectMode, selectedShot, snapshot, workflowLocked],
+  );
+
   const importWorkflow = useCallback(
     async (file: File) => {
       setBusy(true);
@@ -2008,7 +2924,7 @@ export function App() {
       try {
         const imported = await workflowApi.import(file);
         await refreshWorkflows();
-        setGenerationSettings((current) => ({ ...current, recipePath: imported.path }));
+        await bindWorkflowToSelectedShot({ ...imported, origin: "imported" });
         setNotice(`已导入并识别：${imported.name}`);
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "Workflow 导入失败");
@@ -2016,12 +2932,17 @@ export function App() {
         setBusy(false);
       }
     },
-    [refreshWorkflows],
+    [bindWorkflowToSelectedShot, refreshWorkflows],
   );
 
   const generateReal = useCallback(
-    async (shot: Shot) => {
+    async (shot: Shot, settingsOverride: Partial<GenerationSettings> = {}) => {
       if (!projectKey) return;
+      const submittedSettings = { ...generationSettings, ...settingsOverride };
+      const effectiveDisabledReason =
+        generationDisabledReason === "请先输入镜头提示词" && submittedSettings.prompt.trim()
+          ? null
+          : generationDisabledReason;
       const token = generationTokenRef.current + 1;
       generationTokenRef.current = token;
       setGenerationBusy(true);
@@ -2045,7 +2966,7 @@ export function App() {
           setNotice("已打开 ComfyUI；这个 JSON 的输入槽位已在 TakeBoard 中识别");
           return;
         }
-        if (generationDisabledReason) throw new Error(generationDisabledReason);
+        if (effectiveDisabledReason) throw new Error(effectiveDisabledReason);
         setGenerationProgress({
           phase: "queued",
           label: "正在提交任务",
@@ -2053,7 +2974,7 @@ export function App() {
           percent: 16,
           elapsedSeconds: 0,
         });
-        const submitted = await projectApi.generate(projectKey, shot.id, generationSettings);
+        const submitted = await projectApi.generate(projectKey, shot.id, submittedSettings);
         if (generationTokenRef.current !== token) {
           await projectApi.cancelRun(projectKey, submitted.runId).catch(() => undefined);
           return;
@@ -2162,14 +3083,139 @@ export function App() {
         const payload = await action();
         acceptPayload(payload, shotId);
         setNotice(message);
+        return true;
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "操作失败");
+        return false;
       } finally {
         setBusy(false);
       }
     },
     [acceptPayload],
   );
+
+  const requestShotGeneration = useCallback(
+    async (shot: Shot, settingsOverride: Partial<GenerationSettings> = {}) => {
+      if (
+        shot.status === "approved" &&
+        !window.confirm(
+          `“${shot.label}”已有采用结果。\n\n继续生成会开启一轮新候选，当前采用记录仍会保留。是否继续？`,
+        )
+      ) {
+        return;
+      }
+      if (projectMode === "demo") {
+        await runAction(
+          () => demoApi.generate(shot.id),
+          `${shot.label} 已生成 4 个新候选`,
+          shot.id,
+        );
+        return;
+      }
+      await generateReal(shot, settingsOverride);
+    },
+    [generateReal, projectMode, runAction],
+  );
+
+  useEffect(() => {
+    if (!snapshot) return;
+    const availableWorkflows = [...workflows];
+    if (
+      selectedWorkflow &&
+      !availableWorkflows.some((workflow) => workflow.path === selectedWorkflow.path)
+    ) {
+      availableWorkflows.push(selectedWorkflow);
+    }
+    setNodes(
+      boardNodes(
+        snapshot,
+        selectedCanvasItemId,
+        projectMode === "project" ? projectKey : null,
+        workflows,
+        selectedWorkflow,
+        selectedShotId,
+        selectedShot
+          ? {
+              settings: generationSettings,
+              workflows: availableWorkflows,
+              workflowLocked,
+              mentionAliases: promptMentions.map((mention) => mention.alias),
+              busy: busy || generationBusy || Boolean(activeRun),
+              disabledReason:
+                projectMode === "project" && selectedWorkflow?.execution === "comfy_only"
+                  ? "这个工作流需要在 ComfyUI 中运行"
+                  : generationDisabledReason,
+              onWorkflowChange: (path) => {
+                const workflow = findWorkflow(path, availableWorkflows);
+                if (workflow) void bindWorkflowToSelectedShot(workflow);
+              },
+              onSettingsChange: (input) =>
+                setGenerationSettings((current) => ({ ...current, ...input })),
+              onGenerate: (input) => {
+                void requestShotGeneration(selectedShot, input);
+              },
+              onOpenDetails: () => setInspectorOpen(true),
+              onCommitTitle: (title) =>
+                void updateSelectedShot({
+                  title,
+                  body: selectedShot.intent,
+                  durationSeconds: selectedShot.durationSeconds,
+                  aspectRatio: selectedShot.aspectRatio,
+                }),
+            }
+          : null,
+      ),
+    );
+  }, [
+    activeRun,
+    bindWorkflowToSelectedShot,
+    busy,
+    generationBusy,
+    generationDisabledReason,
+    generationSettings,
+    projectKey,
+    projectMode,
+    promptMentions,
+    requestShotGeneration,
+    selectedCanvasItemId,
+    selectedShot,
+    selectedShotId,
+    selectedWorkflow,
+    snapshot,
+    updateSelectedShot,
+    workflowLocked,
+    workflows,
+  ]);
+
+  const refreshWorker = useCallback(async () => {
+    setWorkerBusy(true);
+    try {
+      setWorker(await projectApi.worker());
+    } catch (cause) {
+      setWorker({
+        status: "offline",
+        engine: "ComfyUI",
+        error: cause instanceof Error ? cause.message : "无法检测 ComfyUI",
+      });
+    } finally {
+      setWorkerBusy(false);
+    }
+  }, []);
+
+  const startWorker = useCallback(async () => {
+    setWorkerBusy(true);
+    try {
+      setWorker(await projectApi.startWorker());
+    } catch (cause) {
+      setWorker({
+        status: "offline",
+        engine: "ComfyUI",
+        error: cause instanceof Error ? cause.message : "ComfyUI 启动失败",
+      });
+    } finally {
+      setWorkerBusy(false);
+    }
+  }, []);
 
   if (showHub) {
     return (
@@ -2179,9 +3225,12 @@ export function App() {
         onCreate={createProject}
         onDelete={deleteProject}
         onOpen={openProject}
+        onRefreshWorker={refreshWorker}
         onRename={renameProject}
+        onStartWorker={startWorker}
         projects={projects}
         worker={worker}
+        workerBusy={workerBusy}
       />
     );
   }
@@ -2222,7 +3271,8 @@ export function App() {
           <div>
             <strong>{snapshot.project.title}</strong>
             <span>
-              {snapshot.scenes[0]?.title} · {projectMode === "demo" ? "功能示例" : "本地优先项目"}
+              {snapshot.scenes[0]?.title || "工作画板"} ·{" "}
+              {projectMode === "demo" ? "功能示例" : "本地优先项目"}
             </span>
           </div>
           {projectMode === "project" ? <span className="project-heading-edit">✎</span> : null}
@@ -2297,7 +3347,11 @@ export function App() {
             </strong>
           </div>
           <div className="progress-track">
-            <span style={{ width: `${(approvedCount / snapshot.shots.length) * 100}%` }} />
+            <span
+              style={{
+                width: `${snapshot.shots.length ? (approvedCount / snapshot.shots.length) * 100 : 0}%`,
+              }}
+            />
           </div>
         </div>
         <div className="shot-list-heading">
@@ -2380,8 +3434,8 @@ export function App() {
           })}
           {visibleShots.length === 0 ? (
             <div className="shot-list-empty">
-              <span>⌕</span>
-              没有匹配的镜头
+              <span>{snapshot.shots.length === 0 ? "＋" : "⌕"}</span>
+              {snapshot.shots.length === 0 ? "还没有镜头" : "没有匹配的镜头"}
             </div>
           ) : null}
         </div>
@@ -2390,15 +3444,17 @@ export function App() {
             <input
               ref={assetInput}
               type="file"
-              accept="image/png,image/jpeg,image/webp"
+              accept="image/png,image/jpeg,image/webp,video/mp4,video/webm,video/quicktime"
               onChange={(event) => {
                 const file = event.target.files?.[0];
-                if (file) void uploadAsset(file);
+                const position = pendingAssetPosition.current;
+                pendingAssetPosition.current = null;
+                if (file) void uploadAsset(file, position ?? undefined);
                 event.target.value = "";
               }}
             />
             <button type="button" disabled={busy} onClick={() => assetInput.current?.click()}>
-              ＋ 快速添加首帧
+              ＋ 导入参考素材
             </button>
             <button
               type="button"
@@ -2408,7 +3464,11 @@ export function App() {
               ◇ 打开资产库
             </button>
             <small>
-              {snapshot.assets.filter((asset) => asset.mediaType === "image").length} 张图片已入库
+              {
+                snapshot.assets.filter((asset) => ["image", "video"].includes(asset.mediaType))
+                  .length
+              }{" "}
+              个素材已入库
             </small>
           </div>
         ) : null}
@@ -2439,26 +3499,7 @@ export function App() {
             <span className="scene-chip">{activeScene?.label ?? "SC-01"}</span>
             <strong>{activeScene?.title || "未命名场景"}</strong>
           </div>
-          <div className="canvas-legend">
-            {projectMode === "project" ? (
-              <div className="canvas-primary-actions">
-                <button type="button" onClick={() => setRecipeOpen(true)}>
-                  ⌘ 工作流
-                </button>
-                <button type="button" onClick={() => setAssetLibraryOpen(true)}>
-                  ◇ 资产库
-                </button>
-              </div>
-            ) : null}
-            <span>
-              <i className="legend-reference" />
-              引用
-            </span>
-            <span>
-              <i className="legend-generated" />
-              生成来源
-            </span>
-            <span className="drag-hint">双击编辑 · 右键更多 · ⌘C / ⌘V</span>
+          <div className="canvas-utility">
             <button
               className="panel-toggle"
               type="button"
@@ -2480,8 +3521,68 @@ export function App() {
             >
               {sidebarOpen || inspectorOpen ? "专注" : "退出专注"}
             </button>
+            <button
+              className={`canvas-guide-toggle ${canvasGuideOpen ? "active" : ""}`}
+              type="button"
+              aria-label="查看画布操作"
+              aria-expanded={canvasGuideOpen}
+              onClick={() => setCanvasGuideOpen((current) => !current)}
+            >
+              ?
+            </button>
+            {canvasGuideOpen ? (
+              <aside className="canvas-guide" aria-label="画布操作说明">
+                <header>
+                  <div>
+                    <span>CANVAS GUIDE</span>
+                    <strong>需要时，再看这里。</strong>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label="关闭画布操作说明"
+                    onClick={() => setCanvasGuideOpen(false)}
+                  >
+                    ×
+                  </button>
+                </header>
+                <dl>
+                  <div>
+                    <dt>添加</dt>
+                    <dd>双击或右键空白处</dd>
+                  </div>
+                  <div>
+                    <dt>编辑</dt>
+                    <dd>单击镜头；空白处退出</dd>
+                  </div>
+                  <div>
+                    <dt>连接</dt>
+                    <dd>素材或生成结果都可继续连线</dd>
+                  </div>
+                  <div>
+                    <dt>更多</dt>
+                    <dd>右键节点或连线</dd>
+                  </div>
+                </dl>
+                <p>复制、粘贴和删除仍支持系统常用快捷键。</p>
+              </aside>
+            ) : null}
           </div>
         </div>
+        {projectMode === "project" && nodes.length === 0 ? (
+          <section className="blank-canvas-start" aria-label="空白工作画板">
+            <span className="blank-canvas-index">01 / START</span>
+            <h2>从你手里已有的东西开始。</h2>
+            <p>可以先放一张参考图，也可以先建立镜头。画幅只属于镜头，不属于整张画布。</p>
+            <div>
+              <button type="button" disabled={busy} onClick={() => void createShot()}>
+                添加第一个镜头
+              </button>
+              <button type="button" disabled={busy} onClick={() => assetInput.current?.click()}>
+                导入参考素材
+              </button>
+            </div>
+          </section>
+        ) : null}
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -2490,15 +3591,62 @@ export function App() {
           onNodesChange={onNodesChange}
           onConnect={onConnect}
           onNodeClick={onNodeClick}
-          onNodeDoubleClick={(_event, node) => openNodeEditor(node.id)}
+          onEdgeClick={(event, edge) => {
+            const snapshotEdge = resolveSnapshotEdge(latestSnapshotRef.current ?? snapshot, edge);
+            selectedEdgeIdentityRef.current =
+              edgeIdentityFromPointer(event) ??
+              ({
+                sourceItemId: snapshotEdge?.sourceItemId ?? edge.source,
+                targetItemId: snapshotEdge?.targetItemId ?? edge.target,
+                targetSlot:
+                  snapshotEdge?.targetSlot ??
+                  (edge.targetHandle === "first_frame" ||
+                  edge.targetHandle === "last_frame" ||
+                  edge.targetHandle === "reference" ||
+                  edge.targetHandle === "reference_video"
+                    ? edge.targetHandle
+                    : null),
+              } satisfies CanvasEdgeIdentity);
+            setSelectedEdgeId(snapshotEdge?.id ?? edge.id);
+            setSelectedCanvasItemId(null);
+            setNotice("连线已选中 · 按 Delete 删除");
+          }}
+          onEdgeContextMenu={openEdgeContextMenu}
+          onNodeDoubleClick={(_event, node) => {
+            const item = snapshot.canvasItems.find((candidate) => candidate.id === node.id);
+            if (item?.refType === "shot") {
+              setSelectedShotId(item.refId);
+              setSelectedCanvasItemId(item.id);
+              setInspectorOpen(true);
+              return;
+            }
+            openNodeEditor(node.id);
+          }}
           onNodeContextMenu={openNodeContextMenu}
           onPaneContextMenu={openPaneContextMenu}
-          onPaneClick={() => setCanvasContextMenu(null)}
+          onPaneClick={(event) => {
+            if (event.detail === 2) {
+              openPaneContextMenu(event);
+              return;
+            }
+            setCanvasContextMenu(null);
+            setCanvasGuideOpen(false);
+            setSelectedEdgeId(null);
+            setSelectedCanvasItemId(null);
+            setSelectedShotId(null);
+            setNodeEditDraft(null);
+          }}
           onNodeDragStop={(_event, node) => {
+            const position = gentlyAlignedPosition(node, nodes);
+            setNodes((current) =>
+              current.map((candidate) =>
+                candidate.id === node.id ? { ...candidate, position } : candidate,
+              ),
+            );
             void (
               projectMode === "project" && projectKey
-                ? projectApi.move(projectKey, node.id, node.position.x, node.position.y)
-                : demoApi.move(node.id, node.position.x, node.position.y)
+                ? projectApi.move(projectKey, node.id, position.x, position.y)
+                : demoApi.move(node.id, position.x, position.y)
             )
               .then((payload) => {
                 setSnapshot(payload.snapshot);
@@ -2510,17 +3658,20 @@ export function App() {
           }}
           minZoom={0.35}
           maxZoom={1.5}
+          snapToGrid
+          snapGrid={canvasSnapGrid}
           defaultViewport={{ x: 60, y: 30, zoom: 0.78 }}
           fitView
           fitViewOptions={{ padding: 0.12, maxZoom: 0.9 }}
           proOptions={{ hideAttribution: true }}
           deleteKeyCode={null}
+          disableKeyboardA11y
         >
           <Background color="var(--canvas-grid)" gap={28} size={1} />
           <Controls showInteractive={false} position="bottom-left" />
         </ReactFlow>
         <div className="canvas-status">
-          {nodes.length} 节点 · {edges.length} 关系
+          {nodes.length} 节点 · {edges.length} 关系 · 轻量对齐
         </div>
       </section>
 
@@ -2535,25 +3686,77 @@ export function App() {
           onContextMenu={(event) => event.preventDefault()}
         >
           <div className="canvas-context-menu-head">
-            <span>{canvasContextMenu.itemId ? "NODE ACTIONS" : "CANVAS ACTIONS"}</span>
+            <span>
+              {canvasContextMenu.edge
+                ? "CONNECTION"
+                : canvasContextMenu.itemId
+                  ? "NODE ACTIONS"
+                  : "ADD TO CANVAS"}
+            </span>
             <button type="button" onClick={() => setCanvasContextMenu(null)} aria-label="关闭菜单">
               ×
             </button>
           </div>
-          {canvasContextMenu.itemId ? (
+          {canvasContextMenu.edge && contextEdge ? (
             <>
               <button
                 type="button"
                 role="menuitem"
                 onClick={() => {
-                  openNodeEditor(canvasContextMenu.itemId as string);
+                  setSelectedCanvasItemId(contextEdge.sourceItemId);
+                  setSelectedEdgeId(null);
                   setCanvasContextMenu(null);
                 }}
               >
-                <span>✎</span>
-                <strong>编辑节点</strong>
-                <kbd>双击</kbd>
+                <span>↖</span>
+                <strong>定位来源节点</strong>
               </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  const target = snapshot.canvasItems.find(
+                    (item) => item.id === contextEdge.targetItemId,
+                  );
+                  setSelectedCanvasItemId(contextEdge.targetItemId);
+                  if (target?.refType === "shot") setSelectedShotId(target.refId);
+                  setSelectedEdgeId(null);
+                  setCanvasContextMenu(null);
+                }}
+              >
+                <span>↘</span>
+                <strong>定位输入节点</strong>
+              </button>
+              <div className="context-menu-separator" />
+              <button
+                type="button"
+                role="menuitem"
+                className="danger"
+                disabled={contextEdge.immutable}
+                onClick={() => void deleteCanvasEdge(contextEdge.id, contextEdge)}
+              >
+                <span>⌫</span>
+                <strong>{contextEdge.immutable ? "生成溯源不可删除" : "断开连接"}</strong>
+                <kbd>Delete</kbd>
+              </button>
+            </>
+          ) : canvasContextMenu.itemId ? (
+            <>
+              {snapshot.canvasItems.find((item) => item.id === canvasContextMenu.itemId)
+                ?.refType !== "shot" ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    openNodeEditor(canvasContextMenu.itemId as string);
+                    setCanvasContextMenu(null);
+                  }}
+                >
+                  <span>✎</span>
+                  <strong>编辑节点</strong>
+                  <kbd>双击</kbd>
+                </button>
+              ) : null}
               <button
                 type="button"
                 role="menuitem"
@@ -2603,6 +3806,43 @@ export function App() {
               <button
                 type="button"
                 role="menuitem"
+                onClick={() => {
+                  void createShot({ x: canvasContextMenu.flowX, y: canvasContextMenu.flowY });
+                  setCanvasContextMenu(null);
+                }}
+              >
+                <span>＋</span>
+                <strong>添加生成镜头</strong>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() =>
+                  void createTextNode({ x: canvasContextMenu.flowX, y: canvasContextMenu.flowY })
+                }
+              >
+                <span>文</span>
+                <strong>添加文字笔记</strong>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  pendingAssetPosition.current = {
+                    x: canvasContextMenu.flowX,
+                    y: canvasContextMenu.flowY,
+                  };
+                  assetInput.current?.click();
+                  setCanvasContextMenu(null);
+                }}
+              >
+                <span>◇</span>
+                <strong>导入图片或视频</strong>
+              </button>
+              <div className="context-menu-separator" />
+              <button
+                type="button"
+                role="menuitem"
                 disabled={!canvasClipboard}
                 onClick={() =>
                   void pasteCanvasItem({
@@ -2636,14 +3876,18 @@ export function App() {
           snapshot={snapshot}
           projectKey={projectMode === "project" ? projectKey : null}
           selectedShot={selectedShot}
-          settings={generationSettings}
           onOpenAssets={() => setAssetLibraryOpen(true)}
           onUseAsset={(assetId, slot) => {
-            setGenerationSettings((current) => ({ ...current, [slot]: assetId }));
-            setNotice(
-              `${slot === "firstFrameAssetId" ? "首帧" : slot === "lastFrameAssetId" ? "尾帧" : "参考图"}参数已更新`,
+            void connectAssetFromLibrary(
+              assetId,
+              slot === "firstFrameAssetId"
+                ? "first"
+                : slot === "lastFrameAssetId"
+                  ? "last"
+                  : "reference",
             );
           }}
+          onSetAssetCustomTags={(assetId, tags) => void setAssetCustomTags(assetId, tags)}
           onUseText={(body) => {
             setGenerationSettings((current) => ({
               ...current,
@@ -2664,7 +3908,13 @@ export function App() {
           runs={snapshot.runs}
           settings={generationSettings}
           workflow={selectedWorkflow}
+          profile={selectedModelProfile}
+          workflowDetected={workflows.some((workflow) => workflow.path === selectedWorkflow?.path)}
+          workflowLocked={workflowLocked}
+          inputCounts={selectedInputCounts}
+          mentions={promptMentions}
           onSettingsChange={setGenerationSettings}
+          onUpdateShot={(input) => void updateSelectedShot(input)}
           onOpenAssets={() => setAssetLibraryOpen(true)}
           onOpenRecipes={() => setRecipeOpen(true)}
           generateDisabledReason={generationDisabledReason}
@@ -2674,15 +3924,7 @@ export function App() {
               ? "Fake Wan I2V"
               : `${selectedWorkflow?.name ?? "ComfyUI"} · 本地执行`
           }
-          onGenerate={() =>
-            projectMode === "demo"
-              ? void runAction(
-                  () => demoApi.generate(selectedShot.id),
-                  `${selectedShot.label} 已生成 4 个新候选`,
-                  selectedShot.id,
-                )
-              : void generateReal(selectedShot)
-          }
+          onGenerate={() => void requestShotGeneration(selectedShot)}
           onCancel={() => void cancelGeneration()}
           canCancel={generationBusy || Boolean(activeRun)}
           cancelling={generationCancelling}
@@ -2696,16 +3938,17 @@ export function App() {
               selectedShot.id,
             )
           }
-          onApprove={(takeId) =>
+          onApprove={(takeId) => {
+            setSelectedCanvasItemId(null);
             void runAction(
               () =>
                 projectMode === "project" && projectKey
-                  ? projectApi.approve(projectKey, takeId, "人工批准")
-                  : demoApi.approve(takeId, "Demo 人工批准"),
-              `${selectedShot.label} 已批准，决策历史已保存`,
+                  ? projectApi.approve(projectKey, takeId, "人工采用")
+                  : demoApi.approve(takeId, "Demo 人工采用"),
+              `${selectedShot.label} 已采用，决策历史已保存`,
               selectedShot.id,
-            )
-          }
+            );
+          }}
         />
       ) : null}
 
@@ -2715,32 +3958,10 @@ export function App() {
         onClose={() => setRecipeOpen(false)}
         onImport={importWorkflow}
         onRefresh={refreshWorkflows}
-        onSelect={(workflow) => {
-          const normalizedName = workflow.name.toLowerCase();
-          setGenerationSettings((current) => ({
-            ...current,
-            recipePath: workflow.path,
-            ...(normalizedName.includes("qwen")
-              ? current.width >= current.height
-                ? { width: 1664, height: 928 }
-                : { width: 928, height: 1664 }
-              : {}),
-            fps: normalizedName.includes("minimax")
-              ? 24
-              : normalizedName.includes("ltx")
-                ? 25
-                : current.fps,
-            steps: normalizedName.includes("qwen")
-              ? 50
-              : normalizedName.includes("minimax")
-                ? 20
-                : current.steps,
-          }));
-          setRecipeOpen(false);
-          setNotice(`已切换：${workflow.name}`);
-        }}
+        onSelect={(workflow) => void bindWorkflowToSelectedShot(workflow)}
         open={recipeOpen}
         selectedPath={generationSettings.recipePath}
+        selectionLocked={workflowLocked}
         warnings={workflowWarnings}
         workflows={workflows}
       />
@@ -2750,26 +3971,22 @@ export function App() {
           busy={busy}
           entities={snapshot.entities}
           onClose={() => setAssetLibraryOpen(false)}
-          onPickFrame={(assetId, slot) => {
-            setGenerationSettings((current) => ({
-              ...current,
-              [slot === "first"
-                ? "firstFrameAssetId"
-                : slot === "last"
-                  ? "lastFrameAssetId"
-                  : "referenceAssetId"]: assetId,
-            }));
-            setAssetLibraryOpen(false);
-            setNotice(
-              slot === "first" ? "已设为起始帧" : slot === "last" ? "已设为结束帧" : "已设为参考图",
-            );
-          }}
+          onPickFrame={(assetId, slot) => void connectAssetFromLibrary(assetId, slot)}
           onUpload={async (file, metadata) => await uploadAsset(file, metadata)}
           open={assetLibraryOpen}
           projectKey={projectKey}
           selectedFirstFrameId={generationSettings.firstFrameAssetId}
           selectedLastFrameId={generationSettings.lastFrameAssetId}
           selectedReferenceId={generationSettings.referenceAssetId}
+          selectedReferenceVideoIds={selectedReferenceVideoIds}
+          allowedSlots={{
+            first: selectedModelProfile.slots.some((slot) => slot.id === "first_frame"),
+            last: selectedModelProfile.slots.some((slot) => slot.id === "last_frame"),
+            reference: selectedModelProfile.slots.some((slot) => slot.id === "reference"),
+            referenceVideo: selectedModelProfile.slots.some(
+              (slot) => slot.id === "reference_video",
+            ),
+          }}
         />
       ) : null}
 
@@ -2832,23 +4049,47 @@ export function App() {
               <p className="node-editor-note">这里只修改项目中的显示名称，不会改变原始文件内容。</p>
             )}
             {nodeEditDraft.kind === "shot" ? (
-              <label>
-                <span>镜头时长（秒）</span>
-                <input
-                  type="number"
-                  min={0.5}
-                  max={300}
-                  step={0.5}
-                  value={nodeEditDraft.durationSeconds ?? 5}
-                  onChange={(event) =>
-                    setNodeEditDraft((current) =>
-                      current
-                        ? { ...current, durationSeconds: Number(event.target.value) }
-                        : current,
-                    )
-                  }
-                />
-              </label>
+              <div className="node-editor-field-row">
+                <label>
+                  <span>镜头画幅</span>
+                  <select
+                    value={nodeEditDraft.aspectRatio ?? "16:9"}
+                    onChange={(event) =>
+                      setNodeEditDraft((current) =>
+                        current
+                          ? {
+                              ...current,
+                              aspectRatio: event.target.value as Shot["aspectRatio"],
+                            }
+                          : current,
+                      )
+                    }
+                  >
+                    <option value="16:9">16:9 · 横屏</option>
+                    <option value="9:16">9:16 · 竖屏</option>
+                    <option value="1:1">1:1 · 方形</option>
+                    <option value="4:5">4:5 · 社交媒体</option>
+                    <option value="2.35:1">2.35:1 · 宽银幕</option>
+                  </select>
+                </label>
+                <label>
+                  <span>镜头时长（秒）</span>
+                  <input
+                    type="number"
+                    min={0.5}
+                    max={300}
+                    step={0.5}
+                    value={nodeEditDraft.durationSeconds ?? 5}
+                    onChange={(event) =>
+                      setNodeEditDraft((current) =>
+                        current
+                          ? { ...current, durationSeconds: Number(event.target.value) }
+                          : current,
+                      )
+                    }
+                  />
+                </label>
+              </div>
             ) : null}
             <div className="node-editor-actions">
               <button type="button" onClick={() => setNodeEditDraft(null)}>

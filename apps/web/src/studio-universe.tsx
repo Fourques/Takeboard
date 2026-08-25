@@ -50,15 +50,15 @@ const palettes: Record<
     dust: "#58675e",
   },
   chroma: {
-    accent: "#c8b5ff",
-    signal: "#61d6b3",
-    violet: "#b49cff",
-    surface: "#141020",
-    raised: "#28203d",
-    ink: "#f2eefb",
-    screen: "#334c46",
-    line: "#71678d",
-    dust: "#eee9ff",
+    accent: "#b89550",
+    signal: "#4c9d8c",
+    violet: "#8172cf",
+    surface: "#e9e9f2",
+    raised: "#fffdfb",
+    ink: "#24283b",
+    screen: "#dfe9e7",
+    line: "#81879a",
+    dust: "#747b91",
   },
 };
 
@@ -356,7 +356,7 @@ function useReducedMotion() {
 function EnvironmentController({ theme }: { theme: ThemeName }) {
   const { gl, scene } = useThree();
   useEffect(() => {
-    gl.toneMappingExposure = theme === "light" ? 1.08 : 1.18;
+    gl.toneMappingExposure = theme === "noir" ? 1.18 : 1.08;
     const generator = new THREE.PMREMGenerator(gl);
     const environment = generator.fromScene(new RoomEnvironment(), 0.04).texture;
     scene.environment = environment;
@@ -630,15 +630,16 @@ function ArtifactScene({
   recentProjectTitle: string | null;
 }) {
   const palette = palettes[theme];
+  const brightTheme = theme !== "noir";
   const { size } = useThree();
   const artifactScale = size.width < 500 ? 0.62 : size.width < 880 ? 0.82 : 1;
   return (
     <>
       <EnvironmentController theme={theme} />
-      <ambientLight intensity={theme === "light" ? 1.65 : 0.72} />
+      <ambientLight intensity={brightTheme ? 1.65 : 0.72} />
       <directionalLight
         position={[-3, 4, 5]}
-        intensity={theme === "light" ? 2.3 : 1.7}
+        intensity={brightTheme ? 2.3 : 1.7}
         color={palette.accent}
       />
       <directionalLight position={[4, -1, 3]} intensity={1.1} color={palette.signal} />
@@ -699,10 +700,6 @@ export function StudioUniverse({
       className="studio-universe artifact-universe"
       role="img"
       aria-label="可旋转的 TakeBoard 三维导演板，正面是产品主页，背面展示创作谱系"
-      onWheel={(event) => {
-        const shell = event.currentTarget.closest(".hub-shell");
-        if (shell instanceof HTMLElement) shell.scrollTop += event.deltaY;
-      }}
     >
       <SceneBoundary fallback={<SceneFallback />}>
         <Canvas

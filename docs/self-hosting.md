@@ -51,6 +51,10 @@ TAKEBOARD_DATA_ROOT=/srv/takeboard-data ./scripts/takeboard install
 
 修改配置后执行 `./scripts/takeboard restart`。
 
+安全启动 ComfyUI 所需的 provider、进程参数和资源阈值见
+[`deploy/takeboard.env.example`](../deploy/takeboard.env.example)。未明确配置可验证的启动方式时，
+TakeBoard 只检测连接，不会尝试启动未知进程。
+
 ## 日常维护
 
 ```bash

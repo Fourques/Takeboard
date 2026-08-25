@@ -10,7 +10,8 @@ import { ProjectStore } from "./storage/project-store.js";
 export type CreateProjectInput = {
   projectDirectory: string;
   title: string;
-  defaultAspectRatio: AspectRatio;
+  defaultAspectRatio?: AspectRatio;
+  createStarterShot?: boolean;
   sceneTitle?: string;
   firstShotIntent?: string;
   now?: Date;
@@ -26,6 +27,8 @@ export class ProjectService {
     const projectId = createTakeBoardId("project", milliseconds);
     const sceneId = createTakeBoardId("scene", milliseconds);
     const shotId = createTakeBoardId("shot", milliseconds);
+    const defaultAspectRatio = input.defaultAspectRatio ?? "16:9";
+    const createStarterShot = input.createStarterShot ?? false;
     const snapshot = projectSnapshotSchema.parse({
       schemaVersion,
       exportedAt: timestamp,
@@ -33,7 +36,9 @@ export class ProjectService {
         id: projectId,
         schemaVersion,
         title: input.title,
-        defaultAspectRatio: input.defaultAspectRatio,
+        // Kept as a file-format fallback for older snapshots. New projects set
+        // framing on each shot instead of asking for a project-wide format.
+        defaultAspectRatio,
         createdAt: timestamp,
         updatedAt: timestamp,
       },
@@ -42,7 +47,7 @@ export class ProjectService {
           id: sceneId,
           projectId,
           label: "SC-01",
-          title: input.sceneTitle?.trim() || "第一场",
+          title: input.sceneTitle?.trim() || "工作画板",
           order: 0,
           createdAt: timestamp,
           updatedAt: timestamp,
@@ -51,42 +56,47 @@ export class ProjectService {
       textItems: [],
       entities: [],
       assets: [],
-      shots: [
-        {
-          id: shotId,
-          projectId,
-          sceneId,
-          label: "SH-01",
-          order: 0,
-          intent: input.firstShotIntent?.trim() || "描述这个镜头想让观众看到的画面与动作",
-          durationSeconds: 5,
-          aspectRatio: input.defaultAspectRatio,
-          status: "draft",
-          approvedTakeId: null,
-          createdAt: timestamp,
-          updatedAt: timestamp,
-        },
-      ],
+      shots: createStarterShot
+        ? [
+            {
+              id: shotId,
+              projectId,
+              sceneId,
+              label: "SH-01",
+              order: 0,
+              intent: input.firstShotIntent?.trim() || "",
+              durationSeconds: 5,
+              aspectRatio: defaultAspectRatio,
+              workflowPath: null,
+              status: "draft",
+              approvedTakeId: null,
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            },
+          ]
+        : [],
       runs: [],
       takes: [],
       approvals: [],
-      canvasItems: [
-        {
-          id: createTakeBoardId("canvas_item", milliseconds),
-          sceneId,
-          refType: "shot",
-          refId: shotId,
-          x: 180,
-          y: 180,
-          width: 280,
-          height: 180,
-          zIndex: 1,
-          parentGroupId: null,
-          collapsed: false,
-          createdAt: timestamp,
-          updatedAt: timestamp,
-        },
-      ],
+      canvasItems: createStarterShot
+        ? [
+            {
+              id: createTakeBoardId("canvas_item", milliseconds),
+              sceneId,
+              refType: "shot",
+              refId: shotId,
+              x: 180,
+              y: 180,
+              width: 280,
+              height: 180,
+              zIndex: 1,
+              parentGroupId: null,
+              collapsed: false,
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            },
+          ]
+        : [],
       canvasEdges: [],
     });
 

@@ -7,7 +7,7 @@ import { registerDemoRoutes } from "./demo/routes.js";
 import { registerGenerationRoutes } from "./generation-routes.js";
 import { registerProjectRequestLock } from "./project-request-lock.js";
 import { registerProjectRoutes } from "./project-routes.js";
-import { registerWorkerRoutes } from "./worker-routes.js";
+import { registerWorkerRoutes, type WorkerRouteOptions } from "./worker-routes.js";
 import { registerWorkflowRoutes } from "./workflow-routes.js";
 
 export type AppOptions = {
@@ -17,6 +17,7 @@ export type AppOptions = {
   comfyEditorUrl?: string;
   comfyInputRoot?: string | null;
   comfyOutputRoot?: string | null;
+  workerOptions?: WorkerRouteOptions;
   webRoot?: string | null;
 };
 
@@ -46,7 +47,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     options.projectsRoot ?? resolve(process.env.TAKEBOARD_DATA_ROOT ?? ".takeboard-data/projects");
   const comfyUrl = options.comfyUrl ?? process.env.COMFY_URL ?? "http://127.0.0.1:8188";
   registerProjectRoutes(app, projectsRoot);
-  registerWorkerRoutes(app, comfyUrl);
+  registerWorkerRoutes(app, comfyUrl, options.workerOptions);
   registerGenerationRoutes(app, projectsRoot, comfyUrl, {
     inputRoot: options.comfyInputRoot ?? process.env.COMFY_INPUT_ROOT ?? null,
     outputRoot: options.comfyOutputRoot ?? process.env.COMFY_OUTPUT_ROOT ?? null,

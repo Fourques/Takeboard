@@ -1,10 +1,29 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { ProjectBoardPreview, ProjectCatalogItem, WorkerStatus } from "./api";
 import { ThemeSwitcher } from "./theme-switcher";
 
 const StudioUniverse = lazy(() =>
   import("./studio-universe").then((module) => ({ default: module.StudioUniverse })),
 );
+
+const roomToneBars = Array.from({ length: 13 }, (_, index) => `room-tone-${index + 1}`);
+const filmSprockets = Array.from({ length: 8 }, (_, index) => `film-sprocket-${index + 1}`);
+const tempoModes = [
+  { bpm: 72, label: "缓慢铺陈" },
+  { bpm: 96, label: "叙事节拍" },
+  { bpm: 120, label: "快速剪辑" },
+] as const;
+const frameModes = [
+  { ratio: "16:9", label: "横向叙事", scale: 0.84 },
+  { ratio: "9:16", label: "竖屏焦点", scale: 0.38 },
+  { ratio: "2.35:1", label: "宽银幕", scale: 1 },
+] as const;
+const companionMessages = {
+  crew: "场记 · 这一条保留",
+  lens: "镜头 · 焦点锁定",
+  dragonfly: "收音 · 安全入画",
+  moth: "分镜 · 已标记此帧",
+} as const;
 
 function formatUpdatedAt(value: string) {
   const date = new Date(value);
@@ -20,11 +39,22 @@ function formatUpdatedAt(value: string) {
   return `${prefix} ${date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })} 更新`;
 }
 
+function projectScrollLimit(shell: HTMLElement, section: HTMLElement) {
+  const header = shell.querySelector<HTMLElement>(".hub-header");
+  const headerHeight = header?.offsetHeight ?? 72;
+  const chapterTop = Math.max(0, section.offsetTop - headerHeight);
+  const chapterViewportHeight = Math.max(0, shell.clientHeight - headerHeight);
+  const contentBottom = Array.from(section.children).reduce((bottom, child) => {
+    if (!(child instanceof HTMLElement)) return bottom;
+    return Math.max(bottom, child.offsetTop + child.offsetHeight);
+  }, 0);
+  const breathingRoom = 24;
+  const overflow = Math.max(0, contentBottom + breathingRoom - chapterViewportHeight);
+  return Math.min(chapterTop + overflow, Math.max(0, shell.scrollHeight - shell.clientHeight));
+}
+
 type NewProjectInput = {
   title: string;
-  aspectRatio: string;
-  sceneTitle: string;
-  firstShotIntent: string;
 };
 
 function ActionIcon({ name }: { name: "open" | "rename" | "delete" }) {
@@ -215,31 +245,46 @@ export function ProjectHub({
   onCreate,
   onDelete,
   onOpen,
+  onRefreshWorker,
   onRename,
+  onStartWorker,
   projects,
   worker,
+  workerBusy,
 }: {
   busy: boolean;
   error: string | null;
   onCreate: (input: NewProjectInput) => Promise<void>;
   onDelete: (key: string) => Promise<void>;
   onOpen: (key: string) => Promise<void>;
+  onRefreshWorker: () => Promise<void>;
   onRename: (key: string, title: string) => Promise<void>;
+  onStartWorker: () => Promise<void>;
   projects: ProjectCatalogItem[];
   worker: WorkerStatus | null;
+  workerBusy: boolean;
 }) {
   const [creating, setCreating] = useState(false);
   const [renaming, setRenaming] = useState<ProjectCatalogItem | null>(null);
   const [deleting, setDeleting] = useState<ProjectCatalogItem | null>(null);
   const [renameTitle, setRenameTitle] = useState("");
   const [title, setTitle] = useState("");
-  const [aspectRatio, setAspectRatio] = useState("9:16");
-  const [sceneTitle, setSceneTitle] = useState("第一场");
-  const [firstShotIntent, setFirstShotIntent] = useState("");
   const [projectQuery, setProjectQuery] = useState("");
   const [projectSort, setProjectSort] = useState<"recent" | "name">("recent");
+  const [projectsVisible, setProjectsVisible] = useState(false);
+  const [projectStageActive, setProjectStageActive] = useState(false);
+  const [workerPanelOpen, setWorkerPanelOpen] = useState(false);
+  const [tempoMode, setTempoMode] = useState(1);
+  const [frameMode, setFrameMode] = useState(0);
+  const [axisCrossed, setAxisCrossed] = useState(false);
+  const [companionMoment, setCompanionMoment] = useState<keyof typeof companionMessages | null>(
+    null,
+  );
   const titleInput = useRef<HTMLInputElement>(null);
   const renameInput = useRef<HTMLInputElement>(null);
+  const shellRef = useRef<HTMLElement>(null);
+  const projectsRef = useRef<HTMLElement>(null);
+  const companionTimer = useRef<number | null>(null);
   const recentProject = useMemo(
     () =>
       [...projects].sort(
@@ -257,26 +302,93 @@ export function ProjectHub({
           : Date.parse(right.updatedAt) - Date.parse(left.updatedAt),
       );
   }, [projectQuery, projectSort, projects]);
+  const activeTempo = tempoModes[tempoMode] ?? tempoModes[0];
+  const activeFrame = frameModes[frameMode] ?? frameModes[0];
 
   useEffect(() => {
-    if (!creating && !renaming && !deleting) return;
+    if (!creating && !renaming && !deleting && !workerPanelOpen) return;
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       setCreating(false);
       setRenaming(null);
       setDeleting(null);
+      setWorkerPanelOpen(false);
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [creating, deleting, renaming]);
+  }, [creating, deleting, renaming, workerPanelOpen]);
 
   useEffect(() => {
     if (creating) titleInput.current?.focus();
     if (renaming) renameInput.current?.focus();
   }, [creating, renaming]);
 
+  useEffect(() => {
+    const section = projectsRef.current;
+    if (!section || typeof IntersectionObserver === "undefined") {
+      setProjectsVisible(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry?.isIntersecting) return;
+        setProjectsVisible(true);
+        observer.disconnect();
+      },
+      { threshold: 0.04 },
+    );
+    observer.observe(section);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (companionTimer.current !== null) window.clearTimeout(companionTimer.current);
+    },
+    [],
+  );
+
+  const revealCompanionMoment = (moment: keyof typeof companionMessages) => {
+    if (companionTimer.current !== null) window.clearTimeout(companionTimer.current);
+    setCompanionMoment(moment);
+    companionTimer.current = window.setTimeout(() => {
+      setCompanionMoment(null);
+      companionTimer.current = null;
+    }, 2200);
+  };
+
   return (
-    <main className="hub-shell">
+    <main
+      ref={shellRef}
+      className={`hub-shell ${projectStageActive ? "project-stage-active" : ""}`}
+      onWheelCapture={(event) => {
+        const target = event.target;
+        if (!(target instanceof Element) || target.closest(".worker-panel, .modal-backdrop"))
+          return;
+        if (event.deltaY === 0) return;
+        const shell = event.currentTarget;
+        const section = projectsRef.current;
+        if (!section) return;
+        const deltaUnit =
+          event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? shell.clientHeight : 1;
+        const maxTop = projectScrollLimit(shell, section);
+        const nextTop = Math.max(0, Math.min(maxTop, shell.scrollTop + event.deltaY * deltaUnit));
+        event.preventDefault();
+        if (shell.scrollTop !== nextTop) shell.scrollTop = nextTop;
+      }}
+      onScroll={(event) => {
+        const shell = event.currentTarget;
+        const section = projectsRef.current;
+        const boundedTop = section
+          ? Math.min(shell.scrollTop, projectScrollLimit(shell, section))
+          : shell.scrollTop;
+        if (shell.scrollTop !== boundedTop) shell.scrollTop = boundedTop;
+        const nextStageActive = boundedTop > Math.max(48, window.innerHeight * 0.16);
+        setProjectStageActive((current) =>
+          current === nextStageActive ? current : nextStageActive,
+        );
+      }}
+    >
       <div className="hub-ambient ambient-one" />
       <div className="hub-ambient ambient-two" />
       <header className="hub-header">
@@ -290,18 +402,95 @@ export function ProjectHub({
           </div>
           <div className="hub-header-actions">
             <ThemeSwitcher />
-            <div className={`worker-pill worker-${worker?.status ?? "loading"}`} aria-live="polite">
-              <i />
-              <div>
-                <strong>
-                  {worker?.status === "ready"
-                    ? "ComfyUI 可用"
-                    : worker?.status === "offline"
-                      ? "ComfyUI 未连接"
-                      : "正在连接 ComfyUI"}
-                </strong>
-                <span>{worker?.engine ?? "本地执行节点"}</span>
-              </div>
+            <div className="worker-control">
+              <button
+                className={`worker-pill worker-${worker?.status ?? "loading"}`}
+                type="button"
+                aria-expanded={workerPanelOpen}
+                aria-label="ComfyUI 连接与安全启动"
+                onClick={() => setWorkerPanelOpen((current) => !current)}
+              >
+                <i />
+                <div>
+                  <strong>
+                    {workerBusy
+                      ? "正在检查 ComfyUI"
+                      : worker?.status === "ready"
+                        ? "ComfyUI 可用"
+                        : worker?.status === "offline"
+                          ? "ComfyUI 未连接"
+                          : "正在连接 ComfyUI"}
+                  </strong>
+                  <span>{worker?.device ?? worker?.engine ?? "本地执行节点"}</span>
+                </div>
+                <b aria-hidden="true">⌄</b>
+              </button>
+              {workerPanelOpen ? (
+                <aside className="worker-panel" aria-label="ComfyUI 连接与安全启动面板">
+                  <div className="worker-panel-heading">
+                    <div>
+                      <span>COMPUTE NODE</span>
+                      <strong>
+                        {worker?.status === "ready" ? "执行端已连接" : "执行端未连接"}
+                      </strong>
+                    </div>
+                    <button
+                      type="button"
+                      aria-label="关闭 ComfyUI 面板"
+                      onClick={() => setWorkerPanelOpen(false)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                  {worker?.status === "ready" ? (
+                    <div className="worker-ready-detail">
+                      <span>
+                        <i /> {worker.device ?? "执行设备"}
+                      </span>
+                      <small>{worker.version ? `ComfyUI ${worker.version}` : "连接状态正常"}</small>
+                    </div>
+                  ) : (
+                    <>
+                      <p>{worker?.startup?.message ?? worker?.error ?? "尚未完成安全预检"}</p>
+                      {worker?.startup?.checks.length ? (
+                        <ul className="worker-safety-checks">
+                          {worker.startup.checks.map((check) => (
+                            <li className={`check-${check.status}`} key={check.id}>
+                              <i />
+                              <div>
+                                <strong>{check.label}</strong>
+                                <span>{check.detail}</span>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </>
+                  )}
+                  <div className="worker-panel-actions">
+                    <button
+                      type="button"
+                      disabled={workerBusy}
+                      onClick={() => void onRefreshWorker()}
+                    >
+                      {workerBusy ? "检查中…" : "重新检测"}
+                    </button>
+                    {worker?.status !== "ready" ? (
+                      <button
+                        className="worker-safe-start"
+                        type="button"
+                        disabled={workerBusy || !worker?.startup?.canStart}
+                        onClick={() => void onStartWorker()}
+                      >
+                        {workerBusy ? "正在启动…" : "安全启动"}
+                      </button>
+                    ) : null}
+                  </div>
+                  <small className="worker-safety-note">
+                    预检不通过时，TakeBoard 不会启动服务。
+                  </small>
+                </aside>
+              ) : null}
             </div>
             <button
               className="hub-header-create"
@@ -316,9 +505,40 @@ export function ProjectHub({
       </header>
 
       <div className="hub-artifact-background">
-        <div className="scene-companions" aria-hidden="true">
-          <img src="/scene/takeboard-crew-mascot.webp" alt="" />
-          <img src="/scene/takeboard-lens-orbit.webp" alt="" />
+        <div className="scene-companions">
+          {(Object.keys(companionMessages) as Array<keyof typeof companionMessages>).map(
+            (companion) => (
+              <button
+                className={`scene-companion scene-${companion} ${companionMoment === companion ? "is-active" : ""}`}
+                type="button"
+                key={companion}
+                aria-label={`触发${companionMessages[companion]}`}
+                onClick={() => revealCompanionMoment(companion)}
+              >
+                <span className="scene-companion-visual" aria-hidden="true" />
+                <em role="status">{companionMessages[companion]}</em>
+              </button>
+            ),
+          )}
+          <div className="scene-curiosities">
+            <span className="curiosity-constellation">
+              <i />
+              <i />
+              <i />
+              <i />
+              <i />
+            </span>
+            <span className="curiosity-loose-frame">
+              <i />
+              <i />
+              <i />
+            </span>
+            <span className="curiosity-orbit">
+              <i />
+              <i />
+              <i />
+            </span>
+          </div>
         </div>
         <Suspense
           fallback={
@@ -348,7 +568,7 @@ export function ProjectHub({
         </div>
       </section>
 
-      <section className="hub-projects">
+      <section className={`hub-projects ${projectsVisible ? "is-visible" : ""}`} ref={projectsRef}>
         <div className="hub-section-heading">
           <div>
             <span className="section-kicker">你的项目</span>
@@ -402,7 +622,7 @@ export function ProjectHub({
             <button className="no-projects" type="button" onClick={() => setCreating(true)}>
               <span>＋</span>
               <strong>创建第一个项目</strong>
-              <small>从场景和第一个镜头开始</small>
+              <small>从一张空白工作画板开始</small>
             </button>
           ) : null}
           {projects.length > 0 && visibleProjects.length === 0 ? (
@@ -415,6 +635,81 @@ export function ProjectHub({
             </div>
           ) : null}
         </div>
+        <section className="project-curiosities" aria-label="导演小工具">
+          <div className="project-curiosities-heading">
+            <strong>导演小工具</strong>
+            <span>点击预演剪辑节奏、成片画幅与镜头轴线</span>
+          </div>
+          <button
+            className="curiosity-module room-tone-module"
+            type="button"
+            aria-label={`剪辑节拍预演，当前 ${activeTempo.bpm} BPM，点击切换`}
+            style={
+              {
+                "--tempo-cycle": `${60 / activeTempo.bpm}s`,
+              } as CSSProperties
+            }
+            onClick={() => setTempoMode((current) => (current + 1) % tempoModes.length)}
+          >
+            <div className="curiosity-module-label">
+              <span>剪辑节拍预演</span>
+              <i />
+            </div>
+            <div className="room-tone-wave">
+              {roomToneBars.map((bar) => (
+                <i key={bar} />
+              ))}
+            </div>
+            <div className="curiosity-module-caption">
+              <strong>{activeTempo.bpm} BPM</strong>
+              <small>{activeTempo.label} · 点击切换</small>
+            </div>
+          </button>
+          <button
+            className="curiosity-module film-loop-module"
+            type="button"
+            aria-label={`画幅试镜，当前 ${activeFrame.ratio}，点击切换`}
+            style={{ "--preview-scale": activeFrame.scale } as CSSProperties}
+            onClick={() => setFrameMode((current) => (current + 1) % frameModes.length)}
+          >
+            <div className="film-loop-heading">
+              <span>画幅试镜</span>
+              <div className="film-loop-sprockets" aria-hidden="true">
+                {filmSprockets.map((sprocket) => (
+                  <i key={sprocket} />
+                ))}
+              </div>
+            </div>
+            <div className="film-loop-frames">
+              <span />
+              <span />
+              <span />
+            </div>
+            <div className="curiosity-module-caption">
+              <strong>{activeFrame.ratio}</strong>
+              <small>{activeFrame.label} · 点击试镜</small>
+            </div>
+          </button>
+          <button
+            className={`curiosity-module continuity-module ${axisCrossed ? "is-crossed" : ""}`}
+            type="button"
+            aria-label={`轴线检查，当前${axisCrossed ? "越轴" : "守轴"}，点击翻转机位`}
+            aria-pressed={axisCrossed}
+            onClick={() => setAxisCrossed((current) => !current)}
+          >
+            <div className="continuity-dial">
+              <span />
+              <i />
+              <i />
+              <i />
+            </div>
+            <div>
+              <span>180° 轴线检查</span>
+              <strong>{axisCrossed ? "越轴" : "守轴"}</strong>
+              <small>{axisCrossed ? "视线方向已反转" : "点击翻转机位"}</small>
+            </div>
+          </button>
+        </section>
       </section>
 
       {creating ? (
@@ -426,13 +721,14 @@ export function ProjectHub({
             aria-labelledby="new-project-title"
             onSubmit={(event) => {
               event.preventDefault();
-              void onCreate({ title, aspectRatio, sceneTitle, firstShotIntent });
+              void onCreate({ title });
             }}
           >
             <div className="modal-title">
               <div>
-                <span className="section-kicker">新项目</span>
-                <h2 id="new-project-title">开始一部新作品</h2>
+                <span className="section-kicker">NEW WORKSPACE</span>
+                <h2 id="new-project-title">建立一张工作画板</h2>
+                <p>先给作品命名。脚本、素材、镜头和成片会在画布中自然生长。</p>
               </div>
               <button type="button" aria-label="关闭新建项目" onClick={() => setCreating(false)}>
                 ×
@@ -446,41 +742,29 @@ export function ProjectHub({
                 maxLength={200}
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
-                placeholder="例如：雾港来信"
+                placeholder="未命名作品"
               />
             </label>
-            <div className="form-row">
-              <label>
-                默认画幅
-                <select
-                  value={aspectRatio}
-                  onChange={(event) => setAspectRatio(event.target.value)}
-                >
-                  <option>9:16</option>
-                  <option>16:9</option>
-                  <option>1:1</option>
-                  <option>4:5</option>
-                  <option>2.35:1</option>
-                </select>
-              </label>
-              <label>
-                第一场名称
-                <input value={sceneTitle} onChange={(event) => setSceneTitle(event.target.value)} />
-              </label>
+            <div className="project-start-card">
+              <span className="project-start-mark" aria-hidden="true">
+                ∞
+              </span>
+              <div>
+                <strong>空白画布</strong>
+                <p>不预设镜头，也不锁定全局画幅。</p>
+              </div>
+              <span className="project-start-badge">默认</span>
             </div>
-            <label>
-              第一个镜头意图
-              <textarea
-                value={firstShotIntent}
-                onChange={(event) => setFirstShotIntent(event.target.value)}
-                placeholder="人物做什么、镜头怎么动、观众应感受到什么（之后可修改）"
-              />
-            </label>
+            <div className="project-start-paths">
+              <span>脚本与 Brief</span>
+              <span>人物 / 场景资产</span>
+              <span>独立画幅的镜头</span>
+            </div>
             {error ? <p className="form-error">{error}</p> : null}
             <div className="modal-actions">
-              <span>项目数据保存在你配置的本地空间</span>
+              <span>创建 1 张空白工作画板 · 本地保存</span>
               <button type="submit" disabled={busy || !title.trim()}>
-                {busy ? "正在创建…" : "创建并打开 →"}
+                {busy ? "正在创建…" : "进入画布 →"}
               </button>
             </div>
           </form>

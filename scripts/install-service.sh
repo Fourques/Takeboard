@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 repo_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 unit_template="$repo_dir/deploy/systemd/takeboard.service.in"
@@ -16,8 +17,23 @@ elif [[ $# -gt 0 ]]; then
   exit 2
 fi
 
+if [[ $(uname -s) != Linux ]] || ! command -v systemctl >/dev/null 2>&1; then
+  echo "The stable service installer requires Linux with systemd." >&2
+  echo "On macOS or Windows, use the development command or install TakeBoard with your native service manager." >&2
+  exit 1
+fi
+if ! systemctl --user show-environment >/dev/null 2>&1; then
+  echo "A working systemd user session is required." >&2
+  echo "Log in normally, or enable user lingering before installing TakeBoard." >&2
+  exit 1
+fi
+
 if [[ -z $node_bin ]]; then
   echo "Node.js is required." >&2
+  exit 1
+fi
+if ! command -v curl >/dev/null 2>&1; then
+  echo "curl is required for the service health check." >&2
   exit 1
 fi
 if command -v pnpm >/dev/null 2>&1; then
@@ -76,10 +92,23 @@ if [[ ! -f $config_dir/env ]]; then
     write_env_value COMFY_EDITOR_URL "${COMFY_EDITOR_URL:-http://127.0.0.1:48188}"
     write_env_value COMFY_INPUT_ROOT "${COMFY_INPUT_ROOT:-}"
     write_env_value COMFY_OUTPUT_ROOT "${COMFY_OUTPUT_ROOT:-}"
+    write_env_value COMFY_LAUNCH_PROVIDER "${COMFY_LAUNCH_PROVIDER:-auto}"
+    write_env_value COMFY_START_SERVICE "${COMFY_START_SERVICE:-takeboard-comfy.service}"
+    write_env_value COMFY_LAUNCHD_LABEL "${COMFY_LAUNCHD_LABEL:-}"
+    write_env_value COMFY_WINDOWS_SERVICE "${COMFY_WINDOWS_SERVICE:-}"
+    write_env_value COMFY_START_EXECUTABLE "${COMFY_START_EXECUTABLE:-}"
+    write_env_value COMFY_START_ARGS_JSON "${COMFY_START_ARGS_JSON:-[]}"
+    write_env_value COMFY_START_CWD "${COMFY_START_CWD:-}"
+    write_env_value COMFY_START_PID_FILE "${COMFY_START_PID_FILE:-}"
+    write_env_value COMFY_ACCELERATOR "${COMFY_ACCELERATOR:-auto}"
+    write_env_value COMFY_GPU_INDEX "${COMFY_GPU_INDEX:-0}"
+    write_env_value COMFY_MIN_FREE_RAM_GB "${COMFY_MIN_FREE_RAM_GB:-6}"
+    write_env_value COMFY_MIN_FREE_VRAM_GB "${COMFY_MIN_FREE_VRAM_GB:-4}"
+    write_env_value COMFY_MAX_GPU_UTILIZATION "${COMFY_MAX_GPU_UTILIZATION:-85}"
   } > "$config_dir/env"
-  chmod 600 "$config_dir/env"
   echo "Created ${config_dir}/env"
 fi
+chmod 600 "$config_dir/env"
 
 repo_unit_value=$(sed_replacement "$repo_dir")
 node_unit_value=$(sed_replacement "$node_bin")

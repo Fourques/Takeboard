@@ -37,6 +37,14 @@ function resolution(aspectRatio: string) {
   return { width: 480, height: 848 };
 }
 
+function importedImageNodeSize(image: { width: number; height: number } | null) {
+  if (!image) return { width: 280, height: 180 };
+  const ratio = image.width / image.height;
+  const width = Math.round(Math.min(420, Math.max(240, 300 * Math.sqrt(ratio))));
+  const previewHeight = Math.min(440, width / ratio);
+  return { width, height: Math.round(previewHeight + 76) };
+}
+
 function parseByteRange(header: string, size: number) {
   const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
   if (!match) return null;
@@ -117,7 +125,7 @@ export function registerGenerationRoutes(
 
   app.post<{
     Params: { key: string };
-    Querystring: { kind?: string; name?: string };
+    Querystring: { kind?: string; name?: string; x?: string; y?: string };
   }>("/api/projects/:key/assets", async (request, reply) => {
     const key = projectKey(request.params.key);
     if (!key) return await reply.code(400).send({ error: "项目标识无效" });
@@ -162,6 +170,7 @@ export function registerGenerationRoutes(
         return await reply.code(422).send({ error: "图片无法完整解码或生成安全预览" });
       }
       const proxyPath = proxyStoragePath;
+      const canvasSize = importedImageNodeSize(imageInfo);
       current.snapshot.assets.push({
         id: assetId,
         projectId: current.snapshot.project.id,
@@ -174,6 +183,7 @@ export function registerGenerationRoutes(
         proxyPath,
         width: imageInfo?.width ?? null,
         height: imageInfo?.height ?? null,
+        customTags: [],
         createdAt: timestamp,
         updatedAt: timestamp,
       });
@@ -193,15 +203,19 @@ export function registerGenerationRoutes(
       }
       const scene = current.snapshot.scenes[0];
       if (scene) {
+        const requestedX = Number(request.query.x);
+        const requestedY = Number(request.query.y);
         current.snapshot.canvasItems.push({
           id: createTakeBoardId("canvas_item", milliseconds),
           sceneId: scene.id,
           refType: entityId ? "entity" : "asset",
           refId: entityId ?? assetId,
-          x: -170,
-          y: 180 + Math.max(0, current.snapshot.assets.length - 1) * 190,
-          width: 250,
-          height: 160,
+          x: Number.isFinite(requestedX) ? requestedX : -170,
+          y: Number.isFinite(requestedY)
+            ? requestedY
+            : 180 + Math.max(0, current.snapshot.assets.length - 1) * 190,
+          width: canvasSize.width,
+          height: canvasSize.height,
           zIndex: 1,
           parentGroupId: null,
           collapsed: false,
@@ -375,6 +389,15 @@ export function registerGenerationRoutes(
             : {};
         const recipePath =
           typeof body.recipePath === "string" ? body.recipePath : "Kino/Kino_Wan22_I2V.json";
+        const previousRecipePath = [...current.snapshot.runs]
+          .reverse()
+          .find((run) => run.shotId === shot.id)?.parameters.recipePath;
+        const lockedWorkflowPath =
+          shot.workflowPath ?? (typeof previousRecipePath === "string" ? previousRecipePath : null);
+        if (lockedWorkflowPath && lockedWorkflowPath !== recipePath) {
+          return await reply.code(409).send({ error: "这个镜头已有运行记录，工作流不能直接更换" });
+        }
+        shot.workflowPath = recipePath;
         const wanFirstLast = recipePath.endsWith("Kino_Wan22_FLF2V.json");
         const wanImage = recipePath.endsWith("Kino_Wan22_I2V.json");
         const miniMaxText = recipePath.endsWith("Kino_MinimaxH3_T2V.json");
@@ -822,6 +845,7 @@ export function registerGenerationRoutes(
             proxyPath,
             width: imageInfo?.width ?? null,
             height: imageInfo?.height ?? null,
+            customTags: [],
             createdAt: timestamp,
             updatedAt: timestamp,
           });

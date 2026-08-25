@@ -23,6 +23,35 @@ function canvasItemLabel(snapshot: ProjectSnapshot, item: { refType: string; ref
   return shot?.label || (item.refType === "take_stack" ? "生成结果" : "镜头");
 }
 
+function canvasSourceAssetId(
+  snapshot: ProjectSnapshot,
+  source: ProjectSnapshot["canvasItems"][number],
+  mediaType: "image" | "video",
+) {
+  if (source.refType === "asset") return source.refId;
+  if (source.refType === "entity") {
+    return snapshot.entities
+      .find((entity) => entity.id === source.refId)
+      ?.referenceAssetIds.find((assetId) =>
+        snapshot.assets.some((asset) => asset.id === assetId && asset.mediaType === mediaType),
+      );
+  }
+  if (source.refType === "shot") {
+    const shot = snapshot.shots.find((candidate) => candidate.id === source.refId);
+    const take =
+      snapshot.takes.find((candidate) => candidate.id === shot?.approvedTakeId) ??
+      [...snapshot.takes]
+        .reverse()
+        .find((candidate) => candidate.shotId === source.refId && candidate.status !== "rejected");
+    return snapshot.assets.some(
+      (asset) => asset.id === take?.assetId && asset.mediaType === mediaType,
+    )
+      ? take?.assetId
+      : undefined;
+  }
+  return undefined;
+}
+
 export function projectKey(value: unknown): string | null {
   if (typeof value !== "string" || !/^[a-z0-9][a-z0-9-]{0,80}\.takeboard$/.test(value)) {
     return null;
@@ -57,7 +86,12 @@ export function registerProjectRoutes(app: FastifyInstance, projectsRoot: string
                 key: entry.name,
                 id: opened.snapshot.project.id,
                 title: opened.snapshot.project.title,
-                aspectRatio: opened.snapshot.project.defaultAspectRatio,
+                aspectRatio: (() => {
+                  const ratios = new Set(opened.snapshot.shots.map((shot) => shot.aspectRatio));
+                  if (ratios.size === 0) return "自由画布";
+                  if (ratios.size > 1) return "多画幅";
+                  return [...ratios][0];
+                })(),
                 sceneCount: opened.snapshot.scenes.length,
                 shotCount: opened.snapshot.shots.length,
                 updatedAt: opened.snapshot.project.updatedAt,
@@ -112,8 +146,8 @@ export function registerProjectRoutes(app: FastifyInstance, projectsRoot: string
         : {};
     const title = typeof body.title === "string" ? body.title.trim().slice(0, 200) : "";
     const ratio = body.aspectRatio;
-    if (!title || typeof ratio !== "string" || !allowedRatios.has(ratio as AspectRatio)) {
-      return await reply.code(400).send({ error: "项目名称或画幅无效" });
+    if (!title || (ratio !== undefined && !allowedRatios.has(ratio as AspectRatio))) {
+      return await reply.code(400).send({ error: !title ? "请输入项目名称" : "画幅无效" });
     }
 
     await mkdir(root, { recursive: true });
@@ -122,13 +156,151 @@ export function registerProjectRoutes(app: FastifyInstance, projectsRoot: string
     const created = await service.create({
       projectDirectory: join(root, key),
       title,
-      defaultAspectRatio: ratio as AspectRatio,
+      defaultAspectRatio: (ratio as AspectRatio | undefined) ?? "16:9",
+      // Older clients sent shot fields as part of project creation. Keep that
+      // route compatible while the current UI starts with a genuinely blank board.
+      createStarterShot:
+        typeof ratio === "string" ||
+        typeof body.sceneTitle === "string" ||
+        typeof body.firstShotIntent === "string",
       ...(typeof body.sceneTitle === "string" ? { sceneTitle: body.sceneTitle } : {}),
       ...(typeof body.firstShotIntent === "string"
         ? { firstShotIntent: body.firstShotIntent }
         : {}),
     });
     return await reply.code(201).send({ key, ...created });
+  });
+
+  app.post<{ Params: { key: string } }>("/api/projects/:key/shots", async (request, reply) => {
+    const key = projectKey(request.params.key);
+    const body =
+      typeof request.body === "object" && request.body !== null
+        ? (request.body as Record<string, unknown>)
+        : {};
+    const ratio = typeof body.aspectRatio === "string" ? body.aspectRatio : "16:9";
+    if (!key || !allowedRatios.has(ratio as AspectRatio)) {
+      return await reply.code(400).send({ error: key ? "镜头画幅无效" : "项目标识无效" });
+    }
+    const store = ProjectStore.openExisting(join(root, key));
+    if (!store) return await reply.code(404).send({ error: "项目不存在" });
+    try {
+      const current = store.loadCurrent();
+      if (!current) return await reply.code(404).send({ error: "项目不存在" });
+      const scene =
+        (typeof body.sceneId === "string"
+          ? current.snapshot.scenes.find((item) => item.id === body.sceneId)
+          : undefined) ?? current.snapshot.scenes[0];
+      if (!scene) return await reply.code(409).send({ error: "项目还没有可用画板" });
+      const timestamp = toIsoTimestamp();
+      const shotId = createTakeBoardId("shot");
+      const itemId = createTakeBoardId("canvas_item");
+      const order = current.snapshot.shots.filter((shot) => shot.sceneId === scene.id).length;
+      current.snapshot.shots.push({
+        id: shotId,
+        projectId: current.snapshot.project.id,
+        sceneId: scene.id,
+        label:
+          typeof body.label === "string" && body.label.trim()
+            ? body.label.trim().slice(0, 80)
+            : `SH-${String(order + 1).padStart(2, "0")}`,
+        order,
+        intent: typeof body.intent === "string" ? body.intent.slice(0, 20_000) : "",
+        durationSeconds:
+          typeof body.durationSeconds === "number" &&
+          body.durationSeconds > 0 &&
+          body.durationSeconds <= 300
+            ? body.durationSeconds
+            : 5,
+        aspectRatio: ratio as AspectRatio,
+        workflowPath: null,
+        status: "draft",
+        approvedTakeId: null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      });
+      current.snapshot.canvasItems.push({
+        id: itemId,
+        sceneId: scene.id,
+        refType: "shot",
+        refId: shotId,
+        x: typeof body.x === "number" && Number.isFinite(body.x) ? body.x : 180 + order * 380,
+        y: typeof body.y === "number" && Number.isFinite(body.y) ? body.y : 180,
+        width: 330,
+        height: 190,
+        zIndex: Math.max(0, ...current.snapshot.canvasItems.map((item) => item.zIndex)) + 1,
+        parentGroupId: null,
+        collapsed: false,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      });
+      current.snapshot.project.updatedAt = timestamp;
+      current.snapshot.exportedAt = timestamp;
+      const saved = await store.save(current.snapshot, {
+        type: "shot.created",
+        payload: { shotId, itemId, sceneId: scene.id },
+      });
+      return await reply.code(201).send({ key, shotId, itemId, ...saved });
+    } finally {
+      store.close();
+    }
+  });
+
+  app.post<{ Params: { key: string } }>("/api/projects/:key/text-nodes", async (request, reply) => {
+    const key = projectKey(request.params.key);
+    const body =
+      typeof request.body === "object" && request.body !== null
+        ? (request.body as Record<string, unknown>)
+        : {};
+    if (!key) return await reply.code(400).send({ error: "项目标识无效" });
+    const store = ProjectStore.openExisting(join(root, key));
+    if (!store) return await reply.code(404).send({ error: "项目不存在" });
+    try {
+      const current = store.loadCurrent();
+      const scene =
+        current?.snapshot.scenes.find((item) => item.id === body.sceneId) ??
+        current?.snapshot.scenes[0];
+      if (!current || !scene) return await reply.code(409).send({ error: "项目还没有可用画板" });
+      const timestamp = toIsoTimestamp();
+      const textId = createTakeBoardId("text");
+      const itemId = createTakeBoardId("canvas_item");
+      current.snapshot.textItems.push({
+        id: textId,
+        projectId: current.snapshot.project.id,
+        sceneId: scene.id,
+        kind: "direction_note",
+        title:
+          typeof body.title === "string" && body.title.trim()
+            ? body.title.trim().slice(0, 200)
+            : "新笔记",
+        body: typeof body.body === "string" ? body.body.slice(0, 100_000) : "",
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      });
+      current.snapshot.canvasItems.push({
+        id: itemId,
+        sceneId: scene.id,
+        refType: "text",
+        refId: textId,
+        x: typeof body.x === "number" && Number.isFinite(body.x) ? body.x : 180,
+        y: typeof body.y === "number" && Number.isFinite(body.y) ? body.y : 180,
+        width: 300,
+        height: 180,
+        zIndex: Math.max(0, ...current.snapshot.canvasItems.map((item) => item.zIndex)) + 1,
+        parentGroupId: null,
+        collapsed: false,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      });
+      current.snapshot.project.updatedAt = timestamp;
+      current.snapshot.exportedAt = timestamp;
+      const saved = await store.save(current.snapshot, {
+        type: "canvas.text_created",
+        payload: { textId, itemId },
+      });
+      return await reply.code(201).send({ key, textId, itemId, ...saved });
+    } finally {
+      store.close();
+    }
   });
 
   app.get<{ Params: { key: string } }>("/api/projects/:key", async (request, reply) => {
@@ -196,7 +368,7 @@ export function registerProjectRoutes(app: FastifyInstance, projectsRoot: string
         !key ||
         typeof body.sourceItemId !== "string" ||
         typeof body.targetItemId !== "string" ||
-        !["first_frame", "last_frame", "reference"].includes(String(targetSlot))
+        !["first_frame", "last_frame", "reference", "reference_video"].includes(String(targetSlot))
       ) {
         return await reply.code(400).send({ error: "连线参数无效" });
       }
@@ -212,39 +384,60 @@ export function registerProjectRoutes(app: FastifyInstance, projectsRoot: string
           !source ||
           !target ||
           source.sceneId !== target.sceneId ||
-          !["asset", "entity"].includes(source.refType) ||
+          !["asset", "entity", "shot"].includes(source.refType) ||
+          source.id === target.id ||
           target.refType !== "shot"
         ) {
-          return await reply.code(400).send({ error: "只能将图片素材或实体连接到镜头输入" });
+          return await reply.code(400).send({
+            error: "图片、视频、实体或其他镜头的生成结果才能连接到镜头输入",
+          });
         }
 
-        const assetId =
-          source.refType === "asset"
-            ? source.refId
-            : current.snapshot.entities
-                .find((entity) => entity.id === source.refId)
-                ?.referenceAssetIds.find((candidate) =>
-                  current.snapshot.assets.some(
-                    (asset) => asset.id === candidate && asset.mediaType === "image",
-                  ),
-                );
+        const expectedMediaType = targetSlot === "reference_video" ? "video" : "image";
+        const assetId = canvasSourceAssetId(current.snapshot, source, expectedMediaType);
         const asset = current.snapshot.assets.find(
-          (candidate) => candidate.id === assetId && candidate.mediaType === "image",
+          (candidate) => candidate.id === assetId && candidate.mediaType === expectedMediaType,
         );
-        if (!asset) return await reply.code(400).send({ error: "该节点没有可用的图片素材" });
+        if (!asset) {
+          return await reply.code(400).send({
+            error: `该节点没有可用的${expectedMediaType === "video" ? "视频" : "图片"}素材`,
+          });
+        }
 
         const timestamp = toIsoTimestamp();
-        current.snapshot.canvasEdges = current.snapshot.canvasEdges.filter(
-          (edge) =>
-            edge.immutable || edge.targetItemId !== target.id || edge.targetSlot !== targetSlot,
+        const occupiedEdges = current.snapshot.canvasEdges.filter(
+          (edge) => edge.targetItemId === target.id && edge.targetSlot === targetSlot,
         );
+        const multipleSlot = targetSlot === "reference" || targetSlot === "reference_video";
+        if (multipleSlot && occupiedEdges.some((edge) => edge.sourceItemId === source.id)) {
+          return { key, revision: current.revision, snapshot: current.snapshot };
+        }
+        const capacity = targetSlot === "reference_video" ? 3 : 9;
+        if (multipleSlot && occupiedEdges.length >= capacity) {
+          return await reply.code(409).send({
+            error:
+              targetSlot === "reference_video"
+                ? "这个工作流最多连接 3 段参考视频"
+                : "这个工作流最多连接 9 张参考图",
+          });
+        }
+        if (!multipleSlot) {
+          current.snapshot.canvasEdges = current.snapshot.canvasEdges.filter(
+            (edge) =>
+              edge.immutable || edge.targetItemId !== target.id || edge.targetSlot !== targetSlot,
+          );
+        }
+        const targetSlotIndex = multipleSlot
+          ? Math.max(-1, ...occupiedEdges.map((edge) => edge.targetSlotIndex)) + 1
+          : 0;
         current.snapshot.canvasEdges.push({
           id: createTakeBoardId("canvas_edge"),
           sceneId: target.sceneId,
           sourceItemId: source.id,
           targetItemId: target.id,
           relation: "reference",
-          targetSlot: targetSlot as "first_frame" | "last_frame" | "reference",
+          targetSlot: targetSlot as "first_frame" | "last_frame" | "reference" | "reference_video",
+          targetSlotIndex,
           runId: null,
           immutable: false,
           createdAt: timestamp,
@@ -257,6 +450,96 @@ export function registerProjectRoutes(app: FastifyInstance, projectsRoot: string
           payload: { sourceItemId: source.id, targetItemId: target.id, targetSlot, assetId },
         });
         return { key, ...saved };
+      } finally {
+        store.close();
+      }
+    },
+  );
+
+  app.delete<{ Params: { key: string } }>(
+    "/api/projects/:key/canvas-connections",
+    async (request, reply) => {
+      const key = projectKey(request.params.key);
+      const body =
+        typeof request.body === "object" && request.body !== null
+          ? (request.body as Record<string, unknown>)
+          : {};
+      const targetSlot = body.targetSlot;
+      if (
+        !key ||
+        typeof body.sourceItemId !== "string" ||
+        typeof body.targetItemId !== "string" ||
+        (targetSlot !== null &&
+          !["first_frame", "last_frame", "reference", "reference_video"].includes(
+            String(targetSlot),
+          ))
+      ) {
+        return await reply.code(400).send({ error: "连线参数无效" });
+      }
+
+      const store = ProjectStore.openExisting(join(root, key));
+      if (!store) return await reply.code(404).send({ error: "项目不存在" });
+      try {
+        const current = store.loadCurrent();
+        const exactEdge = current?.snapshot.canvasEdges.find(
+          (candidate) =>
+            candidate.sourceItemId === body.sourceItemId &&
+            candidate.targetItemId === body.targetItemId &&
+            candidate.targetSlot === targetSlot,
+        );
+        const targetCandidates = current?.snapshot.canvasEdges.filter(
+          (candidate) => !candidate.immutable && candidate.targetItemId === body.targetItemId,
+        );
+        const edge =
+          exactEdge ?? (targetCandidates?.length === 1 ? targetCandidates[0] : undefined);
+        if (!current || !edge) return await reply.code(404).send({ error: "连线不存在" });
+        if (edge.immutable) {
+          return await reply.code(409).send({ error: "生成溯源连线不能删除" });
+        }
+        current.snapshot.canvasEdges = current.snapshot.canvasEdges.filter(
+          (candidate) => candidate.id !== edge.id,
+        );
+        const timestamp = toIsoTimestamp();
+        current.snapshot.project.updatedAt = timestamp;
+        current.snapshot.exportedAt = timestamp;
+        const saved = await store.save(current.snapshot, {
+          type: "canvas.connection_removed",
+          payload: { edgeId: edge.id, targetSlot: edge.targetSlot },
+        });
+        return { key, removedEdgeId: edge.id, ...saved };
+      } finally {
+        store.close();
+      }
+    },
+  );
+
+  app.delete<{ Params: { key: string; edgeId: string } }>(
+    "/api/projects/:key/canvas-connections/:edgeId",
+    async (request, reply) => {
+      const key = projectKey(request.params.key);
+      if (!key) return await reply.code(400).send({ error: "项目标识无效" });
+      const store = ProjectStore.openExisting(join(root, key));
+      if (!store) return await reply.code(404).send({ error: "项目不存在" });
+      try {
+        const current = store.loadCurrent();
+        const edge = current?.snapshot.canvasEdges.find(
+          (candidate) => candidate.id === request.params.edgeId,
+        );
+        if (!current || !edge) return await reply.code(404).send({ error: "连线不存在" });
+        if (edge.immutable) {
+          return await reply.code(409).send({ error: "生成溯源连线不能删除" });
+        }
+        current.snapshot.canvasEdges = current.snapshot.canvasEdges.filter(
+          (candidate) => candidate.id !== edge.id,
+        );
+        const timestamp = toIsoTimestamp();
+        current.snapshot.project.updatedAt = timestamp;
+        current.snapshot.exportedAt = timestamp;
+        const saved = await store.save(current.snapshot, {
+          type: "canvas.connection_removed",
+          payload: { edgeId: edge.id, targetSlot: edge.targetSlot },
+        });
+        return { key, removedEdgeId: edge.id, ...saved };
       } finally {
         store.close();
       }
@@ -459,6 +742,19 @@ export function registerProjectRoutes(app: FastifyInstance, projectsRoot: string
           if (typeof body.title === "string" && body.title.trim()) {
             asset.originalName = body.title.trim().slice(0, 512);
           }
+          if (Array.isArray(body.customTags)) {
+            const customTags = [
+              ...new Set(
+                body.customTags.map((tag) => (typeof tag === "string" ? tag.trim() : tag)),
+              ),
+            ].filter(
+              (tag): tag is string => typeof tag === "string" && tag.length > 0 && tag.length <= 40,
+            );
+            if (customTags.length !== body.customTags.length || customTags.length > 24) {
+              return await reply.code(400).send({ error: "自定义标签无效" });
+            }
+            asset.customTags = customTags;
+          }
           asset.updatedAt = timestamp;
         } else if (item.refType === "shot") {
           const shot = current.snapshot.shots.find((candidate) => candidate.id === item.refId);
@@ -473,6 +769,25 @@ export function registerProjectRoutes(app: FastifyInstance, projectsRoot: string
             body.durationSeconds <= 300
           ) {
             shot.durationSeconds = body.durationSeconds;
+          }
+          if (
+            typeof body.aspectRatio === "string" &&
+            allowedRatios.has(body.aspectRatio as AspectRatio)
+          ) {
+            shot.aspectRatio = body.aspectRatio as AspectRatio;
+          }
+          if (typeof body.workflowPath === "string" && body.workflowPath.trim()) {
+            const workflowPath = body.workflowPath.trim().slice(0, 1_000);
+            const runWorkflowPath = [...current.snapshot.runs]
+              .reverse()
+              .find((run) => run.shotId === shot.id)?.parameters.recipePath;
+            const lockedWorkflowPath =
+              shot.workflowPath ?? (typeof runWorkflowPath === "string" ? runWorkflowPath : null);
+            const hasHistory = current.snapshot.runs.some((run) => run.shotId === shot.id);
+            if (hasHistory && lockedWorkflowPath && lockedWorkflowPath !== workflowPath) {
+              return await reply.code(409).send({ error: "这个镜头已有运行记录，工作流已锁定" });
+            }
+            shot.workflowPath = workflowPath;
           }
           shot.updatedAt = timestamp;
         } else {

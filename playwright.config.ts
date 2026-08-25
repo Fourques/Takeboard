@@ -43,6 +43,7 @@ export default defineConfig({
             ...localEnvironment,
             TAKEBOARD_DATA_ROOT: e2eDataRoot,
             TAKEBOARD_PORT: e2eServerPort,
+            COMFY_START_SERVICE: "takeboard-e2e-disabled.service",
           },
           reuseExistingServer: false,
           timeout: 30_000,

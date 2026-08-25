@@ -41,6 +41,19 @@ export type WorkerStatus = {
   vramTotal?: number | null;
   vramFree?: number | null;
   error?: string;
+  startup?: {
+    state: "ready" | "available" | "blocked" | "starting";
+    canStart: boolean;
+    message: string;
+    platform: string;
+    launcher: "systemd" | "launchd" | "windows-service" | "process" | "unavailable";
+    checks: Array<{
+      id: "endpoint" | "launcher" | "memory" | "accelerator" | "vram" | "load";
+      label: string;
+      status: "pass" | "blocked";
+      detail: string;
+    }>;
+  };
 };
 
 export type WorkflowCapability =
@@ -58,11 +71,20 @@ export type WorkflowSummary = {
   capability: WorkflowCapability;
   capabilityLabel: string;
   inputs: string[];
+  mediaInputs?: {
+    first_frame: number;
+    last_frame: number;
+    reference: number;
+    reference_video?: number;
+  };
   models: string[];
+  modelStatus?: "ready" | "missing" | "unknown";
+  missingModels?: string[];
   nodeCount: number;
   source: "comfyui";
   editorUrl: string;
   execution: "native" | "comfy_only";
+  origin?: "built_in" | "imported" | "comfyui";
 };
 
 async function request(path: string, options?: RequestInit): Promise<DemoPayload> {
@@ -126,16 +148,31 @@ export const projectApi = {
   list: () => jsonRequest<{ projects: ProjectCatalogItem[] }>("/api/projects"),
   open: (key: string) =>
     jsonRequest<DemoPayload & { key: string }>(`/api/projects/${encodeURIComponent(key)}`),
-  create: (input: {
-    title: string;
-    aspectRatio: string;
-    sceneTitle: string;
-    firstShotIntent: string;
-  }) =>
+  create: (input: { title: string }) =>
     jsonRequest<DemoPayload & { key: string }>("/api/projects", {
       method: "POST",
       body: JSON.stringify(input),
     }),
+  createShot: (
+    key: string,
+    input: {
+      aspectRatio?: "9:16" | "16:9" | "1:1" | "4:5" | "2.35:1";
+      x?: number;
+      y?: number;
+    } = {},
+  ) =>
+    jsonRequest<DemoPayload & { key: string; shotId: string; itemId: string }>(
+      `/api/projects/${encodeURIComponent(key)}/shots`,
+      { method: "POST", body: JSON.stringify(input) },
+    ),
+  createTextNode: (
+    key: string,
+    input: { title?: string; body?: string; sceneId?: string; x?: number; y?: number },
+  ) =>
+    jsonRequest<DemoPayload & { key: string; textId: string; itemId: string }>(
+      `/api/projects/${encodeURIComponent(key)}/text-nodes`,
+      { method: "POST", body: JSON.stringify(input) },
+    ),
   rename: (key: string, title: string) =>
     jsonRequest<DemoPayload & { key: string }>(`/api/projects/${encodeURIComponent(key)}`, {
       method: "PATCH",
@@ -150,7 +187,7 @@ export const projectApi = {
     key: string,
     sourceItemId: string,
     targetItemId: string,
-    targetSlot: "first_frame" | "last_frame" | "reference",
+    targetSlot: "first_frame" | "last_frame" | "reference" | "reference_video",
   ) =>
     jsonRequest<DemoPayload & { key: string }>(
       `/api/projects/${encodeURIComponent(key)}/canvas-connections`,
@@ -158,6 +195,23 @@ export const projectApi = {
         method: "POST",
         body: JSON.stringify({ sourceItemId, targetItemId, targetSlot }),
       },
+    ),
+  disconnect: (key: string, edgeId: string) =>
+    jsonRequest<DemoPayload & { key: string; removedEdgeId: string }>(
+      `/api/projects/${encodeURIComponent(key)}/canvas-connections/${encodeURIComponent(edgeId)}`,
+      { method: "DELETE" },
+    ),
+  disconnectMatching: (
+    key: string,
+    connection: {
+      sourceItemId: string;
+      targetItemId: string;
+      targetSlot: "first_frame" | "last_frame" | "reference" | "reference_video" | null;
+    },
+  ) =>
+    jsonRequest<DemoPayload & { key: string; removedEdgeId: string }>(
+      `/api/projects/${encodeURIComponent(key)}/canvas-connections`,
+      { method: "DELETE", body: JSON.stringify(connection) },
     ),
   move: (key: string, itemId: string, x: number, y: number) =>
     jsonRequest<DemoPayload & { key: string }>(
@@ -170,13 +224,20 @@ export const projectApi = {
   uploadAsset: async (
     key: string,
     file: File,
-    metadata?: { kind?: "character" | "location" | "prop"; name?: string },
+    metadata?: {
+      kind?: "character" | "location" | "prop";
+      name?: string;
+      x?: number;
+      y?: number;
+    },
   ) => {
     const body = new FormData();
     body.set("file", file);
     const query = new URLSearchParams();
     if (metadata?.kind) query.set("kind", metadata.kind);
     if (metadata?.name) query.set("name", metadata.name);
+    if (metadata?.x !== undefined) query.set("x", String(metadata.x));
+    if (metadata?.y !== undefined) query.set("y", String(metadata.y));
     return await jsonRequest<DemoPayload & { key: string }>(
       `/api/projects/${encodeURIComponent(key)}/assets${query.size ? `?${query}` : ""}`,
       { method: "POST", body },
@@ -243,7 +304,14 @@ export const projectApi = {
   editCanvasItem: (
     key: string,
     itemId: string,
-    input: { title?: string; body?: string; durationSeconds?: number },
+    input: {
+      title?: string;
+      body?: string;
+      customTags?: string[];
+      workflowPath?: string;
+      durationSeconds?: number;
+      aspectRatio?: "9:16" | "16:9" | "1:1" | "4:5" | "2.35:1";
+    },
   ) =>
     jsonRequest<DemoPayload & { key: string }>(
       `/api/projects/${encodeURIComponent(key)}/canvas-items/${encodeURIComponent(itemId)}`,
@@ -267,6 +335,20 @@ export const projectApi = {
   assetUrl: (key: string, assetId: string, proxy = false) =>
     `/api/projects/${encodeURIComponent(key)}/assets/${encodeURIComponent(assetId)}/content${proxy ? "?proxy=1" : ""}`,
   worker: () => jsonRequest<WorkerStatus>("/api/workers/comfy"),
+  startWorker: async () => {
+    const response = await fetch("/api/workers/comfy/start", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "safe-start" }),
+    });
+    const payload = (await response.json().catch(() => ({}))) as Partial<WorkerStatus> & {
+      error?: string;
+    };
+    if (payload.status === "ready" || payload.status === "offline") {
+      return payload as WorkerStatus;
+    }
+    throw new Error(payload.error ?? `ComfyUI 启动请求失败（${response.status}）`);
+  },
 };
 
 export const workflowApi = {
