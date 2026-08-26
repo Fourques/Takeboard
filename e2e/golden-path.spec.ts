@@ -244,6 +244,21 @@ test("canvas nodes reveal their own contextual inspector", async ({ page }) => {
   await secondShot.click();
   await expect(page.getByLabel("镜头候选检查器").getByLabel("镜头名称")).toHaveValue("S002");
   await expect(secondShot).toHaveClass(/selected/);
+  const canvasWidthWithInspector = (await page.locator(".canvas-wrap").boundingBox())?.width ?? 0;
+  await page.locator(".react-flow__pane").click({ position: { x: 40, y: 620 } });
+  await expect(page.getByLabel("镜头候选检查器")).toBeHidden();
+  await expect(page.locator(".app-shell")).toHaveClass(/inspector-collapsed/);
+  await expect
+    .poll(async () => (await page.locator(".canvas-wrap").boundingBox())?.width ?? 0)
+    .toBeGreaterThan(canvasWidthWithInspector + 300);
+  await page.screenshot({
+    path: "test-results/takeboard-canvas-expanded.png",
+    animations: "disabled",
+  });
+  await secondShot.click();
+  await expect(page.getByLabel("镜头候选检查器")).toBeVisible();
+  await page.getByRole("button", { name: "收起检查器" }).click();
+  await expect(page.getByLabel("镜头候选检查器")).toBeHidden();
 });
 
 test("fake generation and approval survive reload", async ({ page }) => {
@@ -407,7 +422,7 @@ test("a generated shot becomes the full visual node on canvas", async ({ page, r
   await page.route(`**/api/projects/${payload.key}`, async (route) => {
     await route.fulfill({ json: { key: payload.key, revision: 2, snapshot } });
   });
-  await page.route(`**/api/projects/${payload.key}/assets/${assetId}/content`, async (route) => {
+  await page.route(`**/api/projects/${payload.key}/assets/${assetId}/content*`, async (route) => {
     await route.fulfill({
       contentType: "image/png",
       body: Buffer.from(
@@ -422,6 +437,10 @@ test("a generated shot becomes the full visual node on canvas", async ({ page, r
   const generatedNode = page.locator(".react-flow__node-shot .shot-generated-media");
   await expect(generatedNode).toBeVisible();
   await expect(generatedNode.locator("img")).toHaveAttribute("src", /\/content$/);
+  await expect(page.locator(".shot-list .shot-thumb img")).toHaveAttribute(
+    "src",
+    /\/content\?proxy=1$/,
+  );
   await expect(page.locator(".react-flow__node-shot .board-output-handle")).toBeVisible();
   await expect(generatedNode.locator(".approved-stamp")).toHaveCount(0);
   await expect(generatedNode.locator(".shot-generated-overlay")).toContainText(
@@ -565,6 +584,9 @@ test("a user can create and reopen a real project", async ({ page }) => {
   });
   await page.getByRole("button", { name: "添加第一个镜头" }).click();
   await expect(page.getByText("SH-01", { exact: true }).first()).toBeVisible();
+  await expect(page.locator(".react-flow__node-shot .shot-planning-surface")).toBeVisible();
+  await expect(page.locator(".react-flow__node-shot .shot-generated-media")).toHaveCount(0);
+  await expect(page.locator(".shot-list .shot-thumb img")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "导入参考素材" })).toBeVisible();
   const canvasToolbar = page.locator(".canvas-toolbar");
   await expect(canvasToolbar.locator(".canvas-primary-actions")).toHaveCount(0);
@@ -624,8 +646,13 @@ test("a user can create and reopen a real project", async ({ page }) => {
     fullPage: true,
     animations: "disabled",
   });
+  const canvasNodeCountBeforeLibraryImport = await page.locator(".react-flow__node").count();
   await page.getByRole("button", { name: "资产库", exact: false }).first().click();
   await expect(page.getByRole("heading", { name: "项目资产库" })).toBeVisible();
+  await expect(page.locator(".asset-library-nav")).toBeVisible();
+  await expect(page.getByLabel("素材详情")).toBeVisible();
+  await page.getByRole("button", { name: "导入素材" }).first().click();
+  await expect(page.getByText("导入不会自动添加到画布")).toBeVisible();
   const paddedPng = Buffer.alloc(2 * 1024 * 1024);
   Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
@@ -637,12 +664,38 @@ test("a user can create and reopen a real project", async ({ page }) => {
     buffer: paddedPng,
   });
   await expect(page.getByText("two-megabyte-reference.png 已加入项目资产库")).toBeVisible();
+  await page.locator(".asset-vault-card").filter({ hasText: "two-megabyte-reference" }).click();
+  await expect(page.locator("#asset-detail-name")).toHaveValue("two-megabyte-reference.png");
+  await page.getByLabel("新增资产标签").fill("氛围参考");
+  await page.getByLabel("新增资产标签").press("Enter");
+  await expect(page.getByRole("button", { name: "移除标签 氛围参考" })).toBeVisible();
+  await page.locator("#asset-detail-name").fill("雾港氛围参考.png");
+  await page.locator(".asset-rename").getByRole("button", { name: "保存" }).click();
+  await expect(page.locator("#asset-detail-name")).toHaveValue("雾港氛围参考.png");
+  const renamedAssetCard = page.locator(".asset-vault-card").filter({ hasText: "雾港氛围参考" });
+  await renamedAssetCard.click({ button: "right" });
+  await expect(page.locator(".asset-context-menu")).toBeVisible();
+  await expect(page.locator(".asset-context-menu")).toContainText("连接到");
+  await page.screenshot({
+    path: "test-results/takeboard-asset-context-menu.png",
+    animations: "disabled",
+  });
+  await page.locator(".asset-context-kinds").getByRole("button", { name: "场景" }).click();
+  await expect(page.getByLabel("整理分类")).toHaveValue("location");
+  await page.getByRole("button", { name: "整理方法" }).click();
+  await expect(page.getByText("一套够用的整理方式")).toBeVisible();
+  await page.getByRole("button", { name: "整理方法" }).click();
+  await page.getByRole("button", { name: "列表视图" }).click();
+  await expect(page.locator(".asset-results-list")).toBeVisible();
+  await page.getByLabel("搜索资产").fill("氛围参考");
+  await expect(page.locator(".asset-vault-card")).toHaveCount(1);
   await page.screenshot({
     path: "test-results/takeboard-asset-library.png",
     fullPage: true,
     animations: "disabled",
   });
   await page.getByRole("button", { name: "关闭资产库" }).click();
+  await expect(page.locator(".react-flow__node")).toHaveCount(canvasNodeCountBeforeLibraryImport);
   await page
     .locator(".asset-import input[type=file]")
     .setInputFiles("apps/web/public/scene/takeboard-crew-mascot.webp");
@@ -740,6 +793,7 @@ test("a user can create and reopen a real project", async ({ page }) => {
   await expect(page.getByText("已导入参考素材：camera-motion-reference.mp4")).toBeVisible();
   const videoNode = page.locator(".react-flow__node-asset").filter({ has: page.locator("video") });
   await expect(videoNode).toBeVisible();
+  await shotNodes.first().click();
   await page.locator(".recipe-selector").click();
   await page.getByRole("button", { name: /MiniMax H3 R2V/ }).click();
   const videoSourceHandle = videoNode.locator(".board-output-handle");

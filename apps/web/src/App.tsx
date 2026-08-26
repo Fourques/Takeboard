@@ -658,6 +658,7 @@ type ContextInspectorProps = {
   ) => void;
   onSetAssetCustomTags: (assetId: string, tags: string[]) => void;
   onUseText: (body: string) => void;
+  onClose: () => void;
 };
 
 function formatBytes(byteSize: number) {
@@ -675,6 +676,7 @@ function NodeContextInspector({
   onUseAsset,
   onSetAssetCustomTags,
   onUseText,
+  onClose,
 }: ContextInspectorProps) {
   const [customTagDraft, setCustomTagDraft] = useState("");
   const scene = snapshot.scenes.find((candidate) => candidate.id === item.sceneId);
@@ -694,7 +696,10 @@ function NodeContextInspector({
               {scene?.label ?? "场景"} · {text?.kind === "script" ? "剧本" : "创作笔记"}
             </p>
           </div>
-          <span className="context-type-pill">TEXT</span>
+          <div className="context-hero-actions">
+            <span className="context-type-pill">TEXT</span>
+            <InspectorDismiss onClose={onClose} />
+          </div>
         </div>
         <section className="context-section">
           <div className="context-section-heading">
@@ -748,7 +753,10 @@ function NodeContextInspector({
               {typeLabel} · {references.length} 张参考
             </p>
           </div>
-          <span className="context-type-pill">ENTITY</span>
+          <div className="context-hero-actions">
+            <span className="context-type-pill">ENTITY</span>
+            <InspectorDismiss onClose={onClose} />
+          </div>
         </div>
         {firstImage && sourceUrl(firstImage) ? (
           <div className="context-media context-media-portrait">
@@ -834,7 +842,10 @@ function NodeContextInspector({
             {asset ? formatBytes(asset.byteSize) : "未知大小"}
           </p>
         </div>
-        <span className="context-type-pill">ASSET</span>
+        <div className="context-hero-actions">
+          <span className="context-type-pill">ASSET</span>
+          <InspectorDismiss onClose={onClose} />
+        </div>
       </div>
       <div className="context-media context-media-asset">
         {assetUrl && asset?.mediaType === "image" ? (
@@ -956,9 +967,23 @@ function ContextSelectionHint() {
     <div className="context-selection-hint">
       <span>⌁</span>
       <p>
-        <strong>节点已选中</strong>继续点击画布中的其他卡片，右侧内容会随之切换。
+        <strong>节点已选中</strong>点击其他卡片切换内容；点击画布空白处即可收起。
       </p>
     </div>
+  );
+}
+
+function InspectorDismiss({ onClose }: { onClose: () => void }) {
+  return (
+    <button
+      type="button"
+      className="inspector-dismiss"
+      onClick={onClose}
+      aria-label="收起检查器"
+      title="收起检查器"
+    >
+      ×
+    </button>
   );
 }
 
@@ -995,6 +1020,7 @@ type InspectorProps = {
   onOpenRecipes: () => void;
   generateDisabledReason: string | null;
   progress: GenerationProgress | null;
+  onClose: () => void;
 };
 
 function Inspector({
@@ -1025,6 +1051,7 @@ function Inspector({
   onOpenRecipes,
   generateDisabledReason,
   progress,
+  onClose,
 }: InspectorProps) {
   const [selectedTakeId, setSelectedTakeId] = useState<string | null>(null);
   const [reason, setReason] = useState(rejectionReasons[0] ?? "角色漂移");
@@ -1080,15 +1107,18 @@ function Inspector({
             }
           />
         </div>
-        <span className={`large-status status-${shot.status}`}>
-          {shot.status === "approved"
-            ? "已批准"
-            : shot.status === "review"
-              ? "待选择"
-              : shot.status === "generating"
-                ? "生成中"
-                : "待生成"}
-        </span>
+        <div className="inspector-heading-actions">
+          <span className={`large-status status-${shot.status}`}>
+            {shot.status === "approved"
+              ? "已批准"
+              : shot.status === "review"
+                ? "待选择"
+                : shot.status === "generating"
+                  ? "生成中"
+                  : "待生成"}
+          </span>
+          <InspectorDismiss onClose={onClose} />
+        </div>
       </div>
       <div className="shot-quick-edit">
         <textarea
@@ -1775,6 +1805,8 @@ export function App() {
   );
   const selectedCanvasItem =
     snapshot?.canvasItems.find((item) => item.id === selectedCanvasItemId) ?? null;
+  const inspectorHasContent = Boolean(selectedCanvasItem || selectedShot);
+  const inspectorVisible = inspectorOpen && inspectorHasContent;
   const selectedShotItem = snapshot?.canvasItems.find(
     (item) => item.refType === "shot" && item.refId === selectedShotId,
   );
@@ -2051,6 +2083,7 @@ export function App() {
       if (!item) return;
       setSelectedCanvasItemId(item.id);
       setSelectedEdgeId(null);
+      setInspectorOpen(true);
       if (item.refType === "shot" || item.refType === "take_stack") {
         setSelectedShotId(item.refId);
       }
@@ -2335,12 +2368,26 @@ export function App() {
     const handleShortcut = (event: KeyboardEvent) => {
       const target = event.target;
       if (event.key === "Escape") {
+        const overlayOpen = Boolean(
+          canvasContextMenu ||
+            canvasGuideOpen ||
+            nodeEditDraft ||
+            recipeOpen ||
+            assetLibraryOpen ||
+            renameOpen,
+        );
         setCanvasContextMenu(null);
         setCanvasGuideOpen(false);
         setNodeEditDraft(null);
         setRecipeOpen(false);
         setAssetLibraryOpen(false);
         setRenameOpen(false);
+        if (!overlayOpen) {
+          setSelectedCanvasItemId(null);
+          setSelectedShotId(null);
+          setSelectedEdgeId(null);
+          setInspectorOpen(false);
+        }
         return;
       }
       if (
@@ -2354,13 +2401,13 @@ export function App() {
         return;
       }
       if (event.key === "]") {
-        setInspectorOpen((current) => !current);
+        if (inspectorHasContent) setInspectorOpen((current) => !current);
         return;
       }
       if (event.key === "\\") {
-        const enteringFocus = sidebarOpen || inspectorOpen;
+        const enteringFocus = sidebarOpen || inspectorVisible;
         setSidebarOpen(!enteringFocus);
-        setInspectorOpen(!enteringFocus);
+        setInspectorOpen(!enteringFocus && inspectorHasContent);
         return;
       }
       const command = event.metaKey || event.ctrlKey;
@@ -2388,6 +2435,8 @@ export function App() {
     return () => window.removeEventListener("keydown", handleShortcut);
   }, [
     canvasClipboard,
+    canvasContextMenu,
+    canvasGuideOpen,
     copyCanvasItem,
     deleteCanvasEdge,
     deleteCanvasItem,
@@ -2396,7 +2445,12 @@ export function App() {
     selectedCanvasItemId,
     selectedEdgeId,
     sidebarOpen,
-    inspectorOpen,
+    inspectorHasContent,
+    inspectorVisible,
+    nodeEditDraft,
+    recipeOpen,
+    assetLibraryOpen,
+    renameOpen,
   ]);
 
   const openNodeContextMenu = useCallback(
@@ -2429,6 +2483,7 @@ export function App() {
       setSelectedCanvasItemId(null);
       setSelectedShotId(null);
       setSelectedEdgeId(null);
+      setInspectorOpen(false);
       const point = flowInstance?.screenToFlowPosition({ x: event.clientX, y: event.clientY }) ?? {
         x: 180,
         y: 180,
@@ -2469,6 +2524,8 @@ export function App() {
       selectedEdgeIdentityRef.current = identity;
       setSelectedEdgeId(resolvedEdgeId);
       setSelectedCanvasItemId(null);
+      setSelectedShotId(null);
+      setInspectorOpen(false);
       const point = flowInstance?.screenToFlowPosition({ x: event.clientX, y: event.clientY }) ?? {
         x: 180,
         y: 180,
@@ -2517,15 +2574,18 @@ export function App() {
           if (targetItem?.refType === "shot") {
             setSelectedCanvasItemId(targetItem.id);
             setSelectedShotId(targetItem.refId);
+            setInspectorOpen(true);
             const assetId = connectedAssetId(payload.snapshot, targetItem.refId, slot);
-            setGenerationSettings((current) => ({
-              ...current,
-              [slot === "first_frame"
-                ? "firstFrameAssetId"
-                : slot === "last_frame"
-                  ? "lastFrameAssetId"
-                  : "referenceAssetId"]: assetId,
-            }));
+            if (slot !== "reference_video") {
+              setGenerationSettings((current) => ({
+                ...current,
+                [slot === "first_frame"
+                  ? "firstFrameAssetId"
+                  : slot === "last_frame"
+                    ? "lastFrameAssetId"
+                    : "referenceAssetId"]: assetId,
+              }));
+            }
           }
           setNotice(
             `已连接为${slot === "first_frame" ? "首帧" : slot === "last_frame" ? "尾帧" : slot === "reference_video" ? "参考视频" : "参考图"}`,
@@ -2579,15 +2639,16 @@ export function App() {
                 : "reference";
         const connected = await projectApi.connect(projectKey, source.id, target.id, targetSlot);
         acceptPayload(connected, selectedShot.id);
-        setGenerationSettings((current) => ({
-          ...current,
-          [slot === "first"
-            ? "firstFrameAssetId"
-            : slot === "last"
-              ? "lastFrameAssetId"
-              : "referenceAssetId"]: assetId,
-        }));
-        setAssetLibraryOpen(false);
+        if (slot !== "referenceVideo") {
+          setGenerationSettings((current) => ({
+            ...current,
+            [slot === "first"
+              ? "firstFrameAssetId"
+              : slot === "last"
+                ? "lastFrameAssetId"
+                : "referenceAssetId"]: assetId,
+          }));
+        }
         setNotice(
           `${slot === "first" ? "首帧" : slot === "last" ? "尾帧" : slot === "referenceVideo" ? "参考视频" : "参考图"}已连接到 ${selectedShot.label}`,
         );
@@ -2598,6 +2659,94 @@ export function App() {
       }
     },
     [acceptPayload, projectKey, projectMode, selectedShot, snapshot],
+  );
+
+  const addAssetToCanvasFromLibrary = useCallback(
+    async (assetId: string) => {
+      if (!projectKey || projectMode !== "project" || !snapshot) {
+        return { ok: false, error: "请先打开一个本地项目" };
+      }
+      const existing = snapshot.canvasItems.find(
+        (item) =>
+          (item.refType === "asset" && item.refId === assetId) ||
+          (item.refType === "entity" &&
+            snapshot.entities
+              .find((entity) => entity.id === item.refId)
+              ?.referenceAssetIds.includes(assetId)),
+      );
+      if (existing) {
+        setSelectedCanvasItemId(existing.id);
+        setAssetLibraryOpen(false);
+        setNotice("素材已经在画布中，已为你定位");
+        return { ok: true };
+      }
+      const target = selectedShot
+        ? snapshot.canvasItems.find(
+            (item) => item.refType === "shot" && item.refId === selectedShot.id,
+          )
+        : null;
+      const sceneId = selectedShot?.sceneId ?? activeScene?.id ?? snapshot.scenes[0]?.id;
+      if (!sceneId) return { ok: false, error: "当前项目还没有可用画布" };
+      setBusy(true);
+      setError(null);
+      try {
+        const payload = await projectApi.addCanvasItem(projectKey, {
+          refType: "asset",
+          refId: assetId,
+          sceneId,
+          x: target ? target.x - 320 : 120,
+          y: target ? target.y + target.height + 56 : 160,
+        });
+        acceptPayload(payload, selectedShot?.id);
+        setSelectedCanvasItemId(payload.itemId);
+        setAssetLibraryOpen(false);
+        setNotice("素材已加入当前画布");
+        return { ok: true };
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : "素材加入画布失败";
+        setError(message);
+        return { ok: false, error: message };
+      } finally {
+        setBusy(false);
+      }
+    },
+    [acceptPayload, activeScene?.id, projectKey, projectMode, selectedShot, snapshot],
+  );
+
+  const updateAssetMetadata = useCallback(
+    async (
+      assetId: string,
+      input: {
+        title?: string;
+        customTags?: string[];
+        libraryKind?: "character" | "location" | "prop" | null;
+      },
+    ) => {
+      if (!projectKey || projectMode !== "project") {
+        return { ok: false, error: "示例项目不会保存资产修改" };
+      }
+      setBusy(true);
+      setError(null);
+      try {
+        const payload = await projectApi.updateAsset(projectKey, assetId, input);
+        acceptPayload(payload);
+        setNotice(
+          input.title !== undefined
+            ? "素材名称已更新"
+            : input.libraryKind !== undefined
+              ? "素材分类已更新"
+              : "素材标签已更新",
+        );
+        return { ok: true };
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : "素材信息保存失败";
+        setError(message);
+        return { ok: false, error: message };
+      } finally {
+        setBusy(false);
+      }
+    },
+    [acceptPayload, projectKey, projectMode],
   );
 
   const setAssetCustomTags = useCallback(
@@ -2620,18 +2769,9 @@ export function App() {
         return;
       }
 
-      setError(null);
-      try {
-        const payload = await projectApi.editCanvasItem(projectKey, selectedCanvasItemId ?? "", {
-          customTags,
-        });
-        acceptPayload(payload);
-        setNotice("自定义标签已更新");
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "素材标签保存失败");
-      }
+      await updateAssetMetadata(assetId, { customTags });
     },
-    [acceptPayload, projectKey, projectMode, selectedCanvasItemId, snapshot?.assets],
+    [projectKey, projectMode, snapshot?.assets, updateAssetMetadata],
   );
 
   const openProject = useCallback(
@@ -2837,6 +2977,7 @@ export function App() {
         name?: string;
         x?: number;
         y?: number;
+        addToCanvas?: boolean;
       },
     ) => {
       if (!projectKey) return { ok: false, error: "请先打开一个项目" };
@@ -2850,7 +2991,8 @@ export function App() {
             ? `已存入${metadata.kind === "character" ? "人物" : metadata.kind === "location" ? "场景" : "道具"}资产：${metadata.name || file.name}`
             : `已导入参考素材：${file.name}`,
         );
-        return { ok: true };
+        const importedAssetId = payload.snapshot.assets.at(-1)?.id;
+        return { ok: true, ...(importedAssetId ? { assetId: importedAssetId } : {}) };
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : "素材导入失败";
         setError(message);
@@ -3247,7 +3389,7 @@ export function App() {
 
   return (
     <main
-      className={`app-shell ${sidebarOpen ? "sidebar-open" : "sidebar-collapsed"} ${inspectorOpen ? "inspector-open" : "inspector-collapsed"} ${comfortableDensity ? "density-comfortable" : "density-compact"}`}
+      className={`app-shell ${sidebarOpen ? "sidebar-open" : "sidebar-collapsed"} ${inspectorVisible ? "inspector-open" : "inspector-collapsed"} ${comfortableDensity ? "density-comfortable" : "density-compact"}`}
     >
       <header className="topbar">
         <div className="brand">
@@ -3386,6 +3528,18 @@ export function App() {
         <div className="shot-list">
           {visibleShots.map((shot) => {
             const shotTakes = snapshot.takes.filter((take) => take.shotId === shot.id);
+            const previewTake =
+              shotTakes.find((take) => take.id === shot.approvedTakeId) ??
+              [...shotTakes].reverse().find((take) => take.status !== "rejected");
+            const previewAsset = snapshot.assets.find((asset) => asset.id === previewTake?.assetId);
+            const previewUrl =
+              projectKey && previewAsset
+                ? projectApi.assetUrl(
+                    projectKey,
+                    previewAsset.id,
+                    previewAsset.mediaType === "image",
+                  )
+                : null;
             return (
               <button
                 type="button"
@@ -3393,6 +3547,7 @@ export function App() {
                 className={selectedShotId === shot.id ? "active" : ""}
                 onClick={() => {
                   setSelectedShotId(shot.id);
+                  setInspectorOpen(true);
                   const shotItem = snapshot.canvasItems.find(
                     (item) => item.refType === "shot" && item.refId === shot.id,
                   );
@@ -3421,8 +3576,19 @@ export function App() {
                   }
                 }}
               >
-                <span className={`shot-thumb thumb-${shot.order + 1}`}>
-                  {shot.status === "approved" ? "✓" : String(shot.order + 1).padStart(2, "0")}
+                <span
+                  className={`shot-thumb thumb-${shot.order + 1} ${previewUrl ? "has-media" : ""}`}
+                >
+                  {previewUrl && previewAsset?.mediaType === "video" ? (
+                    <video src={previewUrl} muted playsInline preload="metadata" />
+                  ) : previewUrl ? (
+                    <img src={previewUrl} alt="" />
+                  ) : (
+                    <b>{String(shot.order + 1).padStart(2, "0")}</b>
+                  )}
+                  {previewUrl && shot.status === "approved" ? (
+                    <i className="shot-thumb-approved">✓</i>
+                  ) : null}
                 </span>
                 <span className="shot-list-copy">
                   <strong>{shot.label}</strong>
@@ -3500,26 +3666,28 @@ export function App() {
             <strong>{activeScene?.title || "未命名场景"}</strong>
           </div>
           <div className="canvas-utility">
-            <button
-              className="panel-toggle"
-              type="button"
-              onClick={() => setInspectorOpen((current) => !current)}
-              title={`${inspectorOpen ? "隐藏" : "显示"}检查器（]）`}
-              aria-label={`${inspectorOpen ? "隐藏" : "显示"}检查器`}
-            >
-              {inspectorOpen ? "→" : "←"}
-            </button>
+            {inspectorHasContent ? (
+              <button
+                className="panel-toggle"
+                type="button"
+                onClick={() => setInspectorOpen((current) => !current)}
+                title={`${inspectorVisible ? "隐藏" : "显示"}检查器（]）`}
+                aria-label={`${inspectorVisible ? "隐藏" : "显示"}检查器`}
+              >
+                {inspectorVisible ? "→" : "←"}
+              </button>
+            ) : null}
             <button
               className="focus-toggle"
               type="button"
               onClick={() => {
-                const enteringFocus = sidebarOpen || inspectorOpen;
+                const enteringFocus = sidebarOpen || inspectorVisible;
                 setSidebarOpen(!enteringFocus);
-                setInspectorOpen(!enteringFocus);
+                setInspectorOpen(!enteringFocus && inspectorHasContent);
               }}
               title="切换专注画布（\\）"
             >
-              {sidebarOpen || inspectorOpen ? "专注" : "退出专注"}
+              {sidebarOpen || inspectorVisible ? "专注" : "退出专注"}
             </button>
             <button
               className={`canvas-guide-toggle ${canvasGuideOpen ? "active" : ""}`}
@@ -3609,6 +3777,8 @@ export function App() {
               } satisfies CanvasEdgeIdentity);
             setSelectedEdgeId(snapshotEdge?.id ?? edge.id);
             setSelectedCanvasItemId(null);
+            setSelectedShotId(null);
+            setInspectorOpen(false);
             setNotice("连线已选中 · 按 Delete 删除");
           }}
           onEdgeContextMenu={openEdgeContextMenu}
@@ -3634,6 +3804,7 @@ export function App() {
             setSelectedEdgeId(null);
             setSelectedCanvasItemId(null);
             setSelectedShotId(null);
+            setInspectorOpen(false);
             setNodeEditDraft(null);
           }}
           onNodeDragStop={(_event, node) => {
@@ -3705,6 +3876,7 @@ export function App() {
                 onClick={() => {
                   setSelectedCanvasItemId(contextEdge.sourceItemId);
                   setSelectedEdgeId(null);
+                  setInspectorOpen(true);
                   setCanvasContextMenu(null);
                 }}
               >
@@ -3721,6 +3893,7 @@ export function App() {
                   setSelectedCanvasItemId(contextEdge.targetItemId);
                   if (target?.refType === "shot") setSelectedShotId(target.refId);
                   setSelectedEdgeId(null);
+                  setInspectorOpen(true);
                   setCanvasContextMenu(null);
                 }}
               >
@@ -3888,6 +4061,7 @@ export function App() {
             );
           }}
           onSetAssetCustomTags={(assetId, tags) => void setAssetCustomTags(assetId, tags)}
+          onClose={() => setInspectorOpen(false)}
           onUseText={(body) => {
             setGenerationSettings((current) => ({
               ...current,
@@ -3919,6 +4093,7 @@ export function App() {
           onOpenRecipes={() => setRecipeOpen(true)}
           generateDisabledReason={generationDisabledReason}
           progress={generationProgress}
+          onClose={() => setInspectorOpen(false)}
           workerLabel={
             projectMode === "demo"
               ? "Fake Wan I2V"
@@ -3969,12 +4144,18 @@ export function App() {
         <AssetLibrary
           assets={snapshot.assets}
           busy={busy}
+          canvasItems={snapshot.canvasItems}
           entities={snapshot.entities}
+          onAddToCanvas={addAssetToCanvasFromLibrary}
           onClose={() => setAssetLibraryOpen(false)}
           onPickFrame={(assetId, slot) => void connectAssetFromLibrary(assetId, slot)}
-          onUpload={async (file, metadata) => await uploadAsset(file, metadata)}
+          onUpdateAsset={updateAssetMetadata}
+          onUpload={async (file, metadata) =>
+            await uploadAsset(file, { ...metadata, addToCanvas: false })
+          }
           open={assetLibraryOpen}
           projectKey={projectKey}
+          selectedShotLabel={selectedShot?.label ?? null}
           selectedFirstFrameId={generationSettings.firstFrameAssetId}
           selectedLastFrameId={generationSettings.lastFrameAssetId}
           selectedReferenceId={generationSettings.referenceAssetId}

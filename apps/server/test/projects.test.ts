@@ -46,6 +46,66 @@ afterEach(async () => {
 });
 
 describe("TakeBoard project API", () => {
+  it("imports library assets without polluting the canvas and edits metadata directly", async () => {
+    const root = await mkdtemp(join(tmpdir(), "takeboard-asset-library-api-"));
+    cleanup.push(() => rm(root, { recursive: true, force: true }));
+    const app = buildApp({ projectsRoot: root, webRoot: null });
+    cleanup.push(() => app.close());
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: { title: "资产测试" },
+    });
+    const key = created.json().key as string;
+    const uploaded = await app.inject({
+      method: "POST",
+      url: `/api/projects/${key}/assets?kind=location&name=%E9%9B%BE%E6%B8%AF&canvas=0`,
+      ...imageUpload(),
+    });
+
+    expect(uploaded.statusCode, uploaded.body).toBe(201);
+    expect(uploaded.json().snapshot.assets).toEqual([
+      expect.objectContaining({ originalName: "雾港", libraryKind: "location" }),
+    ]);
+    expect(uploaded.json().snapshot.entities).toEqual([
+      expect.objectContaining({ kind: "location", name: "雾港" }),
+    ]);
+    expect(uploaded.json().snapshot.canvasItems).toEqual([]);
+
+    const assetId = uploaded.json().snapshot.assets[0].id as string;
+    const updated = await app.inject({
+      method: "PATCH",
+      url: `/api/projects/${key}/assets/${assetId}`,
+      payload: {
+        title: "雾港晨光.png",
+        customTags: ["清晨", "冷雾"],
+        libraryKind: "prop",
+      },
+    });
+    expect(updated.statusCode, updated.body).toBe(200);
+    expect(updated.json().snapshot.assets[0]).toMatchObject({
+      originalName: "雾港晨光.png",
+      customTags: ["清晨", "冷雾"],
+      libraryKind: "prop",
+    });
+
+    const reopened = await app.inject({ method: "GET", url: `/api/projects/${key}` });
+    expect(reopened.json().snapshot.assets[0]).toMatchObject({
+      originalName: "雾港晨光.png",
+      customTags: ["清晨", "冷雾"],
+      libraryKind: "prop",
+    });
+    expect(reopened.json().snapshot.canvasItems).toEqual([]);
+
+    const invalidKind = await app.inject({
+      method: "PATCH",
+      url: `/api/projects/${key}/assets/${assetId}`,
+      payload: { libraryKind: "archive" },
+    });
+    expect(invalidKind.statusCode).toBe(400);
+  });
+
   it("creates a named blank workspace without forcing a shot or project format", async () => {
     const root = await mkdtemp(join(tmpdir(), "takeboard-blank-project-"));
     cleanup.push(() => rm(root, { recursive: true, force: true }));

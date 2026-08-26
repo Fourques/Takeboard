@@ -283,7 +283,7 @@ function ShotNode({ data }: NodeProps<BoardNode>) {
         ))}
       </div>
       <article
-        className={`board-card shot-node ${data.mediaUrl ? "has-generated-media" : ""} ${data.selected ? "selected" : ""}`}
+        className={`board-card shot-node ${data.mediaUrl ? "has-generated-media" : "is-planning"} ${data.selected ? "selected" : ""}`}
       >
         {data.mediaUrl ? (
           <div className="shot-generated-media" style={generatedStyle}>
@@ -308,10 +308,17 @@ function ShotNode({ data }: NodeProps<BoardNode>) {
               <span className="shot-label">{data.title}</span>
               <span className={`shot-status status-${data.status}`}>{statusLabel}</span>
             </div>
-            <div className={`shot-preview shot-preview-${data.title.slice(-1)}`}>
-              <span className="preview-frame">{data.details?.[0] ?? "自由画幅"}</span>
+            <div className="shot-planning-surface">
+              <span className="shot-planning-mark" aria-hidden="true">
+                <i />
+                <i />
+                <i />
+              </span>
+              <div>
+                <strong>{data.body.trim() ? "提示已就绪" : "等待创作"}</strong>
+                <p>{data.body.trim() || "写下镜头，或连接一张参考素材。"}</p>
+              </div>
             </div>
-            <p>{data.body}</p>
             <NodeFacts details={data.details} />
             <footer>
               <span>{data.duration} 秒</span>

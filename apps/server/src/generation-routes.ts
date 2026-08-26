@@ -125,7 +125,7 @@ export function registerGenerationRoutes(
 
   app.post<{
     Params: { key: string };
-    Querystring: { kind?: string; name?: string; x?: string; y?: string };
+    Querystring: { kind?: string; name?: string; x?: string; y?: string; canvas?: string };
   }>("/api/projects/:key/assets", async (request, reply) => {
     const key = projectKey(request.params.key);
     if (!key) return await reply.code(400).send({ error: "项目标识无效" });
@@ -150,6 +150,7 @@ export function registerGenerationRoutes(
     const entityKind = ["character", "location", "prop"].includes(request.query.kind ?? "")
       ? (request.query.kind as "character" | "location" | "prop")
       : null;
+    const addToCanvas = request.query.canvas !== "0";
     const entityId = entityKind ? createTakeBoardId("entity", milliseconds) : null;
     const safeExtension = extname(basename(upload.filename)).toLowerCase().slice(0, 12);
     const storagePath = `assets/originals/${assetId}${safeExtension}`;
@@ -175,7 +176,8 @@ export function registerGenerationRoutes(
         id: assetId,
         projectId: current.snapshot.project.id,
         mediaType: kind,
-        originalName: basename(upload.filename).slice(0, 512),
+        originalName:
+          request.query.name?.trim().slice(0, 512) || basename(upload.filename).slice(0, 512),
         mimeType: upload.mimetype,
         byteSize: bytes.byteLength,
         sha256: sha256(bytes),
@@ -183,6 +185,7 @@ export function registerGenerationRoutes(
         proxyPath,
         width: imageInfo?.width ?? null,
         height: imageInfo?.height ?? null,
+        libraryKind: entityKind,
         customTags: [],
         createdAt: timestamp,
         updatedAt: timestamp,
@@ -202,7 +205,7 @@ export function registerGenerationRoutes(
         });
       }
       const scene = current.snapshot.scenes[0];
-      if (scene) {
+      if (scene && addToCanvas) {
         const requestedX = Number(request.query.x);
         const requestedY = Number(request.query.y);
         current.snapshot.canvasItems.push({
@@ -227,7 +230,7 @@ export function registerGenerationRoutes(
       current.snapshot.exportedAt = timestamp;
       const saved = await store.save(current.snapshot, {
         type: "asset.imported",
-        payload: { assetId, mediaType: kind, entityId, entityKind },
+        payload: { assetId, mediaType: kind, entityId, entityKind, addToCanvas },
       });
       committed = true;
       return await reply.code(201).send({ key, ...saved });
@@ -241,6 +244,68 @@ export function registerGenerationRoutes(
       store.close();
     }
   });
+
+  app.patch<{ Params: { key: string; assetId: string } }>(
+    "/api/projects/:key/assets/:assetId",
+    async (request, reply) => {
+      const key = projectKey(request.params.key);
+      if (!key) return await reply.code(400).send({ error: "项目标识无效" });
+      const body =
+        typeof request.body === "object" && request.body !== null
+          ? (request.body as Record<string, unknown>)
+          : {};
+      const directory = join(root, key);
+      const store = ProjectStore.openExisting(directory);
+      if (!store) return await reply.code(404).send({ error: "项目不存在" });
+      try {
+        const current = store.loadCurrent();
+        const asset = current?.snapshot.assets.find((item) => item.id === request.params.assetId);
+        if (!current || !asset) return await reply.code(404).send({ error: "素材不存在" });
+
+        if (body.title !== undefined) {
+          if (typeof body.title !== "string" || !body.title.trim()) {
+            return await reply.code(400).send({ error: "素材名称不能为空" });
+          }
+          asset.originalName = body.title.trim().slice(0, 512);
+        }
+        if (body.customTags !== undefined) {
+          if (!Array.isArray(body.customTags)) {
+            return await reply.code(400).send({ error: "素材标签无效" });
+          }
+          const customTags = [
+            ...new Set(body.customTags.map((tag) => (typeof tag === "string" ? tag.trim() : tag))),
+          ].filter(
+            (tag): tag is string => typeof tag === "string" && tag.length > 0 && tag.length <= 40,
+          );
+          if (customTags.length !== body.customTags.length || customTags.length > 24) {
+            return await reply.code(400).send({ error: "素材标签无效" });
+          }
+          asset.customTags = customTags;
+        }
+        if (body.libraryKind !== undefined) {
+          if (
+            body.libraryKind !== null &&
+            !["character", "location", "prop"].includes(String(body.libraryKind))
+          ) {
+            return await reply.code(400).send({ error: "素材分类无效" });
+          }
+          asset.libraryKind = body.libraryKind as "character" | "location" | "prop" | null;
+        }
+
+        const timestamp = toIsoTimestamp();
+        asset.updatedAt = timestamp;
+        current.snapshot.project.updatedAt = timestamp;
+        current.snapshot.exportedAt = timestamp;
+        const saved = await store.save(current.snapshot, {
+          type: "asset.metadata_updated",
+          payload: { assetId: asset.id },
+        });
+        return { key, ...saved };
+      } finally {
+        store.close();
+      }
+    },
+  );
 
   app.get<{ Params: { key: string; assetId: string }; Querystring: { proxy?: string } }>(
     "/api/projects/:key/assets/:assetId/content",

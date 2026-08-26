@@ -1,6 +1,6 @@
 import { chromium } from "@playwright/test";
 
-const baseUrl = process.env.TAKEBOARD_URL ?? "http://127.0.0.1:48220";
+const baseUrl = process.env.TAKEBOARD_URL ?? "http://127.0.0.1:48230";
 const projectTitle = process.env.TAKEBOARD_PROJECT_TITLE ?? "TakeBoard 4090 首个真实项目";
 const output = process.env.TAKEBOARD_SCREENSHOT ?? "test-results/takeboard-4090-real-take.png";
 

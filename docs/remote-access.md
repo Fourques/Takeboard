@@ -17,7 +17,7 @@ SSH 服务器可以通过公网域名、局域网 IP、跳板机或 Tailscale �
 `your-server` 可以是 `user@example.com`、IP 地址或 `~/.ssh/config` 中的别名。脚本会：
 
 1. 检查本机 TakeBoard 端口是否可用；
-2. `48220` 被 VS Code 或其他程序占用时，自动选择后续空闲端口；
+2. `48230` 被 VS Code 或其他程序占用时，在 `48230–48249` 内自动选择后续空闲端口；
 3. 转发远端 TakeBoard `48120` 和 ComfyUI `8188`；
 4. 健康检查通过后自动打开浏览器；
 5. 保持隧道附着在当前终端；
@@ -27,7 +27,7 @@ SSH 服务器可以通过公网域名、局域网 IP、跳板机或 Tailscale �
 
 ```text
 TakeBoard tunnel is ready.
-URL: http://127.0.0.1:48221
+URL: http://127.0.0.1:48231
 ComfyUI: http://127.0.0.1:48188
 Keep this terminal open. Press Ctrl-C to disconnect.
 ```
@@ -47,12 +47,12 @@ ssh -N \
   -o ExitOnForwardFailure=yes \
   -o ServerAliveInterval=30 \
   -o ServerAliveCountMax=3 \
-  -L 48220:127.0.0.1:48120 \
+  -L 48230:127.0.0.1:48120 \
   -L 48188:127.0.0.1:8188 \
   your-server
 ```
 
-打开 <http://127.0.0.1:48220>。这条命令保持前台运行；按 `Ctrl-C` 或关闭终端后，SSH 进程结束，两个监听端口随之释放。
+打开 <http://127.0.0.1:48230>。这条命令保持前台运行；按 `Ctrl-C` 或关闭终端后，SSH 进程结束，两个监听端口随之释放。
 
 ## 使用 Tailscale 网络
 
@@ -93,10 +93,10 @@ Host takeboard-server
 “端口正在监听”不一定表示 TakeBoard 隧道可用。VS Code Remote、旧 SSH 或其他应用都可能占用端口。
 
 ```bash
-lsof -nP -iTCP:48220 -sTCP:LISTEN
+lsof -nP -iTCP:48230 -sTCP:LISTEN
 ```
 
-不要直接结束未知进程。项目脚本会自动换到 `48221`、`48222` 等空闲端口，并输出真正应该打开的 URL。
+不要直接结束未知进程。项目脚本会自动换到 `48231`、`48232` 等空闲端口，并输出真正应该打开的 URL。
 
 如果 `status` 显示旧的受管隧道仍在运行：
 

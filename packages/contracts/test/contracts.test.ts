@@ -62,6 +62,14 @@ describe("assetSchema", () => {
     expect(assetSchema.parse(validAsset).storagePath).toContain("assets/originals");
   });
 
+  it("supports an optional project-library classification", () => {
+    expect(assetSchema.parse({ ...validAsset, libraryKind: "location" }).libraryKind).toBe(
+      "location",
+    );
+    expect(assetSchema.parse({ ...validAsset, libraryKind: null }).libraryKind).toBeNull();
+    expect(() => assetSchema.parse({ ...validAsset, libraryKind: "archive" })).toThrow();
+  });
+
   it.each(["/Users/person/key.png", "C:\\Users\\person\\key.png", "../secret.png"])(
     "rejects unsafe storage path %s",
     (storagePath) => {

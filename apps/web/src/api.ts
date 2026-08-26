@@ -229,6 +229,7 @@ export const projectApi = {
       name?: string;
       x?: number;
       y?: number;
+      addToCanvas?: boolean;
     },
   ) => {
     const body = new FormData();
@@ -238,11 +239,25 @@ export const projectApi = {
     if (metadata?.name) query.set("name", metadata.name);
     if (metadata?.x !== undefined) query.set("x", String(metadata.x));
     if (metadata?.y !== undefined) query.set("y", String(metadata.y));
+    if (metadata?.addToCanvas === false) query.set("canvas", "0");
     return await jsonRequest<DemoPayload & { key: string }>(
       `/api/projects/${encodeURIComponent(key)}/assets${query.size ? `?${query}` : ""}`,
       { method: "POST", body },
     );
   },
+  updateAsset: (
+    key: string,
+    assetId: string,
+    input: {
+      title?: string;
+      customTags?: string[];
+      libraryKind?: "character" | "location" | "prop" | null;
+    },
+  ) =>
+    jsonRequest<DemoPayload & { key: string }>(
+      `/api/projects/${encodeURIComponent(key)}/assets/${encodeURIComponent(assetId)}`,
+      { method: "PATCH", body: JSON.stringify(input) },
+    ),
   generate: (
     key: string,
     shotId: string,

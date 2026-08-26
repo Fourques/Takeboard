@@ -6,7 +6,7 @@ state_root=${XDG_STATE_HOME:-$HOME/.local/state}
 state_dir="$state_root/takeboard"
 state_file="$state_dir/tunnel.state"
 control_socket="$state_dir/tunnel.sock"
-default_local_port=${TAKEBOARD_LOCAL_PORT:-48220}
+default_local_port=${TAKEBOARD_LOCAL_PORT:-48230}
 remote_port=${TAKEBOARD_REMOTE_PORT:-48120}
 comfy_local_port=${COMFY_LOCAL_PORT:-48188}
 comfy_remote_port=${COMFY_REMOTE_PORT:-8188}
@@ -37,7 +37,7 @@ Usage:
 connect/start keeps the tunnel attached to this terminal and opens TakeBoard.
 Press Ctrl-C or close the terminal to release every port automatically.
 
-The requested TakeBoard port defaults to 48220. If another application owns
+The requested TakeBoard port defaults to 48230. If another application owns
 it, the next free port is selected. ComfyUI is forwarded to 127.0.0.1:48188.
 The SSH host may be a normal hostname, IP address, SSH alias, or a Tailscale
 hostname; Tailscale Serve is not used.
