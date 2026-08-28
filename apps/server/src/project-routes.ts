@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readdir, rename } from "node:fs/promises";
-import { basename, join, resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { mkdir, readdir, rename, rm, stat, unlink } from "node:fs/promises";
+import { basename, join, resolve, sep } from "node:path";
 import type { AspectRatio, ProjectSnapshot } from "@takeboard/contracts";
 import { approveTake, createTakeBoardId, toIsoTimestamp } from "@takeboard/domain";
+import { ComfyClient } from "@takeboard/executor-comfy";
 import type { FastifyInstance } from "fastify";
 import { ProjectService } from "./project-service.js";
 import { ProjectStore } from "./storage/project-store.js";
@@ -26,7 +28,7 @@ function canvasItemLabel(snapshot: ProjectSnapshot, item: { refType: string; ref
 function canvasSourceAssetId(
   snapshot: ProjectSnapshot,
   source: ProjectSnapshot["canvasItems"][number],
-  mediaType: "image" | "video",
+  mediaType: "image" | "video" | "audio",
 ) {
   if (source.refType === "asset") return source.refId;
   if (source.refType === "entity") {
@@ -69,9 +71,123 @@ function slugify(value: string) {
   return slug || "project";
 }
 
-export function registerProjectRoutes(app: FastifyInstance, projectsRoot: string) {
+function trashEntryKey(value: unknown): string | null {
+  if (typeof value !== "string" || value.length > 180 || !/^[a-z0-9][a-z0-9.-]+$/.test(value)) {
+    return null;
+  }
+  return basename(value) === value ? value : null;
+}
+
+function originalKeyFromTrashEntry(value: string) {
+  const marker = value.lastIndexOf(".takeboard.");
+  if (marker < 0) return null;
+  return projectKey(value.slice(0, marker + ".takeboard".length));
+}
+
+type ProjectRouteOptions = {
+  comfyUrl: string;
+  comfyInputRoot: string | null;
+  comfyOutputRoot: string | null;
+};
+
+const terminalProjectRunStatuses = new Set(["completed", "failed", "cancelled"]);
+
+function safeChild(root: string, relativePath: string) {
+  const normalizedRoot = resolve(root);
+  const target = resolve(normalizedRoot, relativePath);
+  return target.startsWith(`${normalizedRoot}${sep}`) ? target : null;
+}
+
+async function cleanupDeletedProjectRun(
+  run: ProjectSnapshot["runs"][number],
+  options: ProjectRouteOptions,
+) {
+  const inputFiles = Array.isArray(run.parameters.comfyInputFiles)
+    ? run.parameters.comfyInputFiles.filter((value): value is string => typeof value === "string")
+    : [];
+  const outputDirectory = run.parameters.comfyOutputDirectory;
+  await Promise.allSettled([
+    ...inputFiles.flatMap((file) => {
+      const target = options.comfyInputRoot ? safeChild(options.comfyInputRoot, file) : null;
+      return target ? [unlink(target)] : [];
+    }),
+    ...(options.comfyOutputRoot && typeof outputDirectory === "string"
+      ? (() => {
+          const target = safeChild(options.comfyOutputRoot, outputDirectory);
+          return target ? [rm(target, { recursive: true, force: true })] : [];
+        })()
+      : []),
+  ]);
+}
+
+export function registerProjectRoutes(
+  app: FastifyInstance,
+  projectsRoot: string,
+  options: ProjectRouteOptions,
+) {
   const root = resolve(projectsRoot);
   const service = new ProjectService();
+  const comfy = new ComfyClient(options.comfyUrl, { liveProgress: false });
+
+  app.get("/api/projects/trash", async () => {
+    const trashRoot = join(root, ".trash");
+    await mkdir(trashRoot, { recursive: true });
+    const entries = await readdir(trashRoot, { withFileTypes: true });
+    const projects = await Promise.all(
+      entries
+        .filter((entry) => entry.isDirectory() && trashEntryKey(entry.name))
+        .map(async (entry) => {
+          const originalKey = originalKeyFromTrashEntry(entry.name);
+          if (!originalKey) return null;
+          const directory = join(trashRoot, entry.name);
+          const opened = await service.open(directory).catch(() => null);
+          if (!opened) return null;
+          const information = await stat(directory).catch(() => null);
+          return {
+            trashKey: entry.name,
+            originalKey,
+            title: opened.snapshot.project.title,
+            shotCount: opened.snapshot.shots.length,
+            deletedAt: information?.mtime.toISOString() ?? opened.snapshot.project.updatedAt,
+          };
+        }),
+    );
+    return {
+      projects: projects
+        .filter((project) => project !== null)
+        .sort((left, right) => right.deletedAt.localeCompare(left.deletedAt)),
+    };
+  });
+
+  app.post<{ Params: { trashKey: string } }>(
+    "/api/projects/trash/:trashKey/restore",
+    async (request, reply) => {
+      const archiveKey = trashEntryKey(request.params.trashKey);
+      if (!archiveKey) return await reply.code(400).send({ error: "回收区项目标识无效" });
+      const originalKey = originalKeyFromTrashEntry(archiveKey);
+      if (!originalKey) return await reply.code(400).send({ error: "无法识别项目原始位置" });
+      const source = join(root, ".trash", archiveKey);
+      const store = ProjectStore.openExisting(source);
+      if (!store) return await reply.code(404).send({ error: "回收区项目不存在" });
+      let title = "恢复的项目";
+      try {
+        const current = store.loadCurrent();
+        if (!current) return await reply.code(404).send({ error: "回收区项目无法读取" });
+        title = current.snapshot.project.title;
+        const timestamp = toIsoTimestamp();
+        current.snapshot.project.updatedAt = timestamp;
+        current.snapshot.exportedAt = timestamp;
+        await store.save(current.snapshot, { type: "project.restored", payload: { archiveKey } });
+      } finally {
+        store.close();
+      }
+      const restoredKey = existsSync(join(root, originalKey))
+        ? `${slugify(title)}-restored-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}.takeboard`
+        : originalKey;
+      await rename(source, join(root, restoredKey));
+      return { restored: true as const, key: restoredKey, title };
+    },
+  );
 
   app.get("/api/projects", async () => {
     await mkdir(root, { recursive: true });
@@ -94,6 +210,9 @@ export function registerProjectRoutes(app: FastifyInstance, projectsRoot: string
                 })(),
                 sceneCount: opened.snapshot.scenes.length,
                 shotCount: opened.snapshot.shots.length,
+                activeRunCount: opened.snapshot.runs.filter(
+                  (run) => !terminalProjectRunStatuses.has(run.status),
+                ).length,
                 updatedAt: opened.snapshot.project.updatedAt,
                 boards: opened.snapshot.scenes.slice(0, 8).map((scene) => {
                   const items = opened.snapshot.canvasItems
@@ -346,13 +465,85 @@ export function registerProjectRoutes(app: FastifyInstance, projectsRoot: string
     const source = join(root, key);
     const store = ProjectStore.openExisting(source);
     if (!store) return await reply.code(404).send({ error: "项目不存在" });
+    const current = store.loadCurrent();
+    if (!current) {
+      store.close();
+      return await reply.code(404).send({ error: "项目不存在" });
+    }
+    const activeRuns = current.snapshot.runs.filter(
+      (run) => !terminalProjectRunStatuses.has(run.status),
+    );
+    const cancellationResults = await Promise.all(
+      activeRuns.map(async (run) => {
+        if (!run.promptId) return { run, confirmed: true, error: null as string | null };
+        try {
+          let confirmed = await comfy.cancel(run.promptId);
+          if (!confirmed) {
+            const history = await comfy.history(run.promptId).catch(() => null);
+            confirmed = Boolean(
+              history?.status?.completed || history?.status?.status_str === "error",
+            );
+          }
+          return { run, confirmed, error: null as string | null };
+        } catch (error) {
+          return {
+            run,
+            confirmed: false,
+            error: error instanceof Error ? error.message : "执行端无法确认停止任务",
+          };
+        }
+      }),
+    );
+    const timestamp = toIsoTimestamp();
+    for (const result of cancellationResults) {
+      result.run.status = result.confirmed ? "cancelled" : "orphaned";
+      result.run.errorCode = result.confirmed ? null : "PROJECT_DELETE_CANCEL_UNCONFIRMED";
+      result.run.errorMessage = result.confirmed
+        ? null
+        : result.error || "执行端没有确认任务已停止，项目仍保留";
+      result.run.updatedAt = timestamp;
+    }
+    if (activeRuns.length > 0) {
+      current.snapshot.project.updatedAt = timestamp;
+      current.snapshot.exportedAt = timestamp;
+      await store.save(current.snapshot, {
+        type: "project.delete_runs_cancelled",
+        payload: {
+          activeRuns: activeRuns.length,
+          confirmed: cancellationResults.filter((result) => result.confirmed).length,
+        },
+      });
+    }
+    const unconfirmed = cancellationResults.filter((result) => !result.confirmed);
+    if (unconfirmed.length > 0) {
+      store.close();
+      return await reply.code(409).send({
+        error: `仍有 ${unconfirmed.length} 个生成任务未确认停止，项目没有删除。请恢复 ComfyUI 连接后重试。`,
+        activeRunCount: activeRuns.length,
+        stoppedRunCount: cancellationResults.length - unconfirmed.length,
+        unconfirmedRunIds: unconfirmed.map((result) => result.run.id),
+      });
+    }
     store.close();
+
+    await Promise.allSettled(
+      cancellationResults.flatMap(({ run }) => [
+        ...(run.promptId ? [comfy.deleteHistory(run.promptId)] : []),
+        cleanupDeletedProjectRun(run, options),
+      ]),
+    );
+    if (cancellationResults.length > 0) await comfy.freeResourcesIfIdle().catch(() => undefined);
 
     const trashRoot = join(root, ".trash");
     await mkdir(trashRoot, { recursive: true });
     const archivedName = `${key}.${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
     await rename(source, join(trashRoot, archivedName));
-    return { key, deleted: true as const, recoverable: true as const };
+    return {
+      key,
+      deleted: true as const,
+      recoverable: true as const,
+      stoppedRunCount: cancellationResults.length,
+    };
   });
 
   app.post<{ Params: { key: string } }>(
@@ -368,7 +559,9 @@ export function registerProjectRoutes(app: FastifyInstance, projectsRoot: string
         !key ||
         typeof body.sourceItemId !== "string" ||
         typeof body.targetItemId !== "string" ||
-        !["first_frame", "last_frame", "reference", "reference_video"].includes(String(targetSlot))
+        !["first_frame", "last_frame", "reference", "reference_video", "reference_audio"].includes(
+          String(targetSlot),
+        )
       ) {
         return await reply.code(400).send({ error: "连线参数无效" });
       }
@@ -393,7 +586,12 @@ export function registerProjectRoutes(app: FastifyInstance, projectsRoot: string
           });
         }
 
-        const expectedMediaType = targetSlot === "reference_video" ? "video" : "image";
+        const expectedMediaType =
+          targetSlot === "reference_video"
+            ? "video"
+            : targetSlot === "reference_audio"
+              ? "audio"
+              : "image";
         const assetId = canvasSourceAssetId(current.snapshot, source, expectedMediaType);
         const asset = current.snapshot.assets.find(
           (candidate) => candidate.id === assetId && candidate.mediaType === expectedMediaType,
@@ -408,17 +606,21 @@ export function registerProjectRoutes(app: FastifyInstance, projectsRoot: string
         const occupiedEdges = current.snapshot.canvasEdges.filter(
           (edge) => edge.targetItemId === target.id && edge.targetSlot === targetSlot,
         );
-        const multipleSlot = targetSlot === "reference" || targetSlot === "reference_video";
+        const multipleSlot = ["reference", "reference_video", "reference_audio"].includes(
+          String(targetSlot),
+        );
         if (multipleSlot && occupiedEdges.some((edge) => edge.sourceItemId === source.id)) {
           return { key, revision: current.revision, snapshot: current.snapshot };
         }
-        const capacity = targetSlot === "reference_video" ? 3 : 9;
+        const capacity = targetSlot === "reference" ? 9 : 3;
         if (multipleSlot && occupiedEdges.length >= capacity) {
           return await reply.code(409).send({
             error:
               targetSlot === "reference_video"
                 ? "这个工作流最多连接 3 段参考视频"
-                : "这个工作流最多连接 9 张参考图",
+                : targetSlot === "reference_audio"
+                  ? "这个工作流最多连接 3 段参考音频"
+                  : "这个工作流最多连接 9 张参考图",
           });
         }
         if (!multipleSlot) {
@@ -436,7 +638,12 @@ export function registerProjectRoutes(app: FastifyInstance, projectsRoot: string
           sourceItemId: source.id,
           targetItemId: target.id,
           relation: "reference",
-          targetSlot: targetSlot as "first_frame" | "last_frame" | "reference" | "reference_video",
+          targetSlot: targetSlot as
+            | "first_frame"
+            | "last_frame"
+            | "reference"
+            | "reference_video"
+            | "reference_audio",
           targetSlotIndex,
           runId: null,
           immutable: false,
@@ -470,9 +677,13 @@ export function registerProjectRoutes(app: FastifyInstance, projectsRoot: string
         typeof body.sourceItemId !== "string" ||
         typeof body.targetItemId !== "string" ||
         (targetSlot !== null &&
-          !["first_frame", "last_frame", "reference", "reference_video"].includes(
-            String(targetSlot),
-          ))
+          ![
+            "first_frame",
+            "last_frame",
+            "reference",
+            "reference_video",
+            "reference_audio",
+          ].includes(String(targetSlot)))
       ) {
         return await reply.code(400).send({ error: "连线参数无效" });
       }

@@ -1,3 +1,7 @@
+import { ComfyProgressTracker } from "./progress.js";
+
+export type { ComfyExecutionProgress } from "./progress.js";
+
 export type ComfyPromptNode = {
   inputs: Record<string, unknown>;
   class_type: string;
@@ -132,6 +136,8 @@ export type Wan22Input = {
   height: number;
   durationSeconds: number;
   fps?: number;
+  steps?: number;
+  qualityProfile?: "preview" | "quality";
   seed: number;
   filenamePrefix: string;
 };
@@ -146,7 +152,12 @@ export function wanFrameCount(durationSeconds: number, fps: number) {
 export function buildWan22I2VPrompt(input: Wan22Input): ComfyPrompt {
   const fps = input.fps ?? 16;
   const length = wanFrameCount(input.durationSeconds, fps);
-  return {
+  const qualityProfile = input.qualityProfile ?? "quality";
+  const quality = qualityProfile === "quality";
+  const steps = quality ? Math.min(40, Math.max(8, Math.round(input.steps ?? 20))) : 4;
+  const splitStep = Math.round(steps / 2);
+  const cfg = quality ? 3.5 : 1;
+  const prompt: ComfyPrompt = {
     image: { class_type: "LoadImage", inputs: { image: input.image } },
     vae: { class_type: "VAELoader", inputs: { vae_name: "wan_2.1_vae.safetensors" } },
     clip: {
@@ -197,11 +208,11 @@ export function buildWan22I2VPrompt(input: Wan22Input): ComfyPrompt {
     },
     high_model: {
       class_type: "ModelSamplingSD3",
-      inputs: { shift: 5, model: ["high_lora", 0] },
+      inputs: { shift: 5, model: [quality ? "high_unet" : "high_lora", 0] },
     },
     low_model: {
       class_type: "ModelSamplingSD3",
-      inputs: { shift: 5, model: ["low_lora", 0] },
+      inputs: { shift: 5, model: [quality ? "low_unet" : "low_lora", 0] },
     },
     latent: {
       class_type: "WanImageToVideo",
@@ -221,12 +232,12 @@ export function buildWan22I2VPrompt(input: Wan22Input): ComfyPrompt {
       inputs: {
         add_noise: "enable",
         noise_seed: input.seed,
-        steps: 4,
-        cfg: 1,
+        steps,
+        cfg,
         sampler_name: "euler",
         scheduler: "simple",
         start_at_step: 0,
-        end_at_step: 2,
+        end_at_step: splitStep,
         return_with_leftover_noise: "enable",
         model: ["high_model", 0],
         positive: ["latent", 0],
@@ -239,12 +250,12 @@ export function buildWan22I2VPrompt(input: Wan22Input): ComfyPrompt {
       inputs: {
         add_noise: "disable",
         noise_seed: 0,
-        steps: 4,
-        cfg: 1,
+        steps,
+        cfg,
         sampler_name: "euler",
         scheduler: "simple",
-        start_at_step: 2,
-        end_at_step: 4,
+        start_at_step: splitStep,
+        end_at_step: steps,
         return_with_leftover_noise: "disable",
         model: ["low_model", 0],
         positive: ["latent", 0],
@@ -270,6 +281,11 @@ export function buildWan22I2VPrompt(input: Wan22Input): ComfyPrompt {
       },
     },
   };
+  if (quality) {
+    delete prompt.high_lora;
+    delete prompt.low_lora;
+  }
+  return prompt;
 }
 
 export type Wan22FirstLastInput = Wan22Input & { lastImage: string };
@@ -309,8 +325,23 @@ export type MiniMaxH3Input = {
   filenamePrefix: string;
 };
 
-export function miniMaxH3FrameCount(durationSeconds: number, fps = 24) {
-  const desired = Math.max(5, durationSeconds * fps);
+export type MiniMaxH3ReferenceInput = {
+  positivePrompt: string;
+  referenceImages?: string[];
+  referenceVideos?: string[];
+  referenceAudios?: string[];
+  referenceImageSize?: "match" | "max";
+  width: number;
+  height: number;
+  durationSeconds: number;
+  fps?: number;
+  seed: number;
+  steps?: number;
+  filenamePrefix: string;
+};
+
+export function miniMaxH3FrameCount(durationSeconds: number, _fps = 24) {
+  const desired = Math.max(4, Math.min(15, durationSeconds)) * 24;
   return Math.max(5, Math.ceil((desired - 5) / 17) * 17 + 5);
 }
 
@@ -329,7 +360,9 @@ export function miniMaxH3Resolution(width: number, height: number) {
 }
 
 export function buildMiniMaxH3Prompt(input: MiniMaxH3Input): ComfyPrompt {
-  const fps = input.fps ?? 24;
+  // H3-Base is trained and published at 24 fps; changing mux fps changes
+  // playback speed rather than model quality, so keep the timeline invariant.
+  const fps = 24;
   const steps = input.steps ?? 20;
   const size = miniMaxH3Resolution(input.width, input.height);
   const prompt: ComfyPrompt = {
@@ -351,6 +384,10 @@ export function buildMiniMaxH3Prompt(input: MiniMaxH3Input): ComfyPrompt {
     vae: {
       class_type: "VAELoader",
       inputs: { vae_name: "minimax_h3_video_vae_fp16.safetensors" },
+    },
+    audio_vae: {
+      class_type: "VAELoader",
+      inputs: { vae_name: "minimax_h3_audio_vae_fp32.safetensors" },
     },
     conditioning: {
       class_type: "MiniMaxH3ImageToVideo",
@@ -387,9 +424,18 @@ export function buildMiniMaxH3Prompt(input: MiniMaxH3Input): ComfyPrompt {
       class_type: "VAEDecode",
       inputs: { samples: ["sampled", 0], vae: ["vae", 0] },
     },
+    decoded_audio: {
+      class_type: "VAEDecodeAudio",
+      inputs: { samples: ["sampled", 0], vae: ["audio_vae", 0] },
+    },
     video: {
       class_type: "CreateVideo",
-      inputs: { images: ["decoded", 0], fps, bit_depth: 10 },
+      inputs: {
+        images: ["decoded", 0],
+        audio: ["decoded_audio", 0],
+        fps,
+        bit_depth: 8,
+      },
     },
     save: {
       class_type: "SaveVideo",
@@ -414,6 +460,131 @@ export function buildMiniMaxH3Prompt(input: MiniMaxH3Input): ComfyPrompt {
   return prompt;
 }
 
+/**
+ * Builds MiniMax H3's native Ref2VA graph. Reference videos are decoded into
+ * both their frame stream and synchronized soundtrack so H3 can reason over
+ * the complete source instead of silently discarding its audio track.
+ */
+export function buildMiniMaxH3ReferencePrompt(input: MiniMaxH3ReferenceInput): ComfyPrompt {
+  const referenceImages = input.referenceImages?.slice(0, 9) ?? [];
+  const referenceVideos = input.referenceVideos?.slice(0, 3) ?? [];
+  const referenceAudios = input.referenceAudios?.slice(0, 3) ?? [];
+  if (referenceImages.length + referenceVideos.length + referenceAudios.length === 0) {
+    throw new Error("MiniMax H3 Ref2VA requires at least one reference asset");
+  }
+  if (referenceImages.length + referenceVideos.length + referenceAudios.length > 12) {
+    throw new Error("MiniMax H3 Ref2VA accepts at most 12 reference assets");
+  }
+
+  const fps = 24;
+  const steps = Math.min(100, Math.max(1, Math.round(input.steps ?? 20)));
+  const size = miniMaxH3Resolution(input.width, input.height);
+  const conditioningInputs: Record<string, unknown> = {
+    clip: ["clip", 0],
+    vae: ["vae", 0],
+    audio_vae: ["audio_vae", 0],
+    prompt: input.positivePrompt,
+    width: size.width,
+    height: size.height,
+    length: miniMaxH3FrameCount(input.durationSeconds, fps),
+    ref_image_size: input.referenceImageSize ?? "match",
+  };
+  const prompt: ComfyPrompt = {
+    model: {
+      class_type: "UNETLoader",
+      inputs: {
+        unet_name: "minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+        weight_dtype: "default",
+      },
+    },
+    clip: {
+      class_type: "CLIPLoader",
+      inputs: {
+        clip_name: "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+        type: "minimax",
+        device: "default",
+      },
+    },
+    vae: {
+      class_type: "VAELoader",
+      inputs: { vae_name: "minimax_h3_video_vae_fp16.safetensors" },
+    },
+    audio_vae: {
+      class_type: "VAELoader",
+      inputs: { vae_name: "minimax_h3_audio_vae_fp32.safetensors" },
+    },
+    conditioning: {
+      class_type: "MiniMaxH3ReferenceToVideo",
+      inputs: conditioningInputs,
+    },
+    noise: { class_type: "RandomNoise", inputs: { noise_seed: input.seed } },
+    guider: {
+      class_type: "BasicGuider",
+      inputs: { model: ["model", 0], conditioning: ["conditioning", 0] },
+    },
+    sampler: { class_type: "KSamplerSelect", inputs: { sampler_name: "res_multistep" } },
+    scheduler: {
+      class_type: "BasicScheduler",
+      // Comfy's own H3 template recommends beta/normal for reference-heavy prompts.
+      inputs: { model: ["model", 0], scheduler: "beta", steps, denoise: 1 },
+    },
+    sampled: {
+      class_type: "SamplerCustomAdvanced",
+      inputs: {
+        noise: ["noise", 0],
+        guider: ["guider", 0],
+        sampler: ["sampler", 0],
+        sigmas: ["scheduler", 0],
+        latent_image: ["conditioning", 1],
+      },
+    },
+    decoded: {
+      class_type: "VAEDecode",
+      inputs: { samples: ["sampled", 0], vae: ["vae", 0] },
+    },
+    decoded_audio: {
+      class_type: "VAEDecodeAudio",
+      inputs: { samples: ["sampled", 0], vae: ["audio_vae", 0] },
+    },
+    video: {
+      class_type: "CreateVideo",
+      inputs: { images: ["decoded", 0], audio: ["decoded_audio", 0], fps, bit_depth: 8 },
+    },
+    save: {
+      class_type: "SaveVideo",
+      inputs: {
+        video: ["video", 0],
+        filename_prefix: input.filenamePrefix,
+        format: "mp4",
+        codec: "auto",
+      },
+    },
+  };
+
+  referenceImages.forEach((image, index) => {
+    const nodeId = `reference_image_${index}`;
+    prompt[nodeId] = { class_type: "LoadImage", inputs: { image } };
+    conditioningInputs[`ref_images.ref_image_${index}`] = [nodeId, 0];
+  });
+  referenceVideos.forEach((file, index) => {
+    const loadNodeId = `reference_video_${index}`;
+    const componentsNodeId = `reference_video_components_${index}`;
+    prompt[loadNodeId] = { class_type: "LoadVideo", inputs: { file } };
+    prompt[componentsNodeId] = {
+      class_type: "GetVideoComponents",
+      inputs: { video: [loadNodeId, 0] },
+    };
+    conditioningInputs[`ref_videos.ref_video_${index}`] = [componentsNodeId, 0];
+    conditioningInputs[`ref_video_audios.ref_video_audio_${index}`] = [componentsNodeId, 1];
+  });
+  referenceAudios.forEach((audio, index) => {
+    const nodeId = `reference_audio_${index}`;
+    prompt[nodeId] = { class_type: "LoadAudio", inputs: { audio } };
+    conditioningInputs[`ref_audios.ref_audio_${index}`] = [nodeId, 0];
+  });
+  return prompt;
+}
+
 type UiWorkflowNode = {
   id: number | string;
   type: string;
@@ -422,6 +593,18 @@ type UiWorkflowNode = {
   inputs?: Array<{ name: string; link?: number | null; widget?: { name: string } }>;
   widgets_values?: unknown[] | Record<string, unknown> | null;
 };
+
+export type ComfyObjectInfo = Record<
+  string,
+  {
+    input?: {
+      required?: Record<string, unknown>;
+      optional?: Record<string, unknown>;
+      hidden?: Record<string, unknown>;
+    };
+    output?: string[];
+  }
+>;
 
 type UiWorkflowLink = {
   id: number;
@@ -466,7 +649,226 @@ function widgetValues(node: UiWorkflowNode) {
   return node.widgets_values ? Object.values(node.widgets_values) : [];
 }
 
-export function expandSingleSubgraphWorkflow(workflow: UiWorkflow): ComfyPrompt {
+function isApiPrompt(value: unknown): value is ComfyPrompt {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const entries = Object.values(value);
+  return (
+    entries.length > 0 &&
+    entries.every(
+      (node) =>
+        node &&
+        typeof node === "object" &&
+        typeof (node as ComfyPromptNode).class_type === "string" &&
+        (node as ComfyPromptNode).inputs &&
+        typeof (node as ComfyPromptNode).inputs === "object",
+    )
+  );
+}
+
+function schemaWidgetNames(definition: ComfyObjectInfo[string] | undefined) {
+  const fields = {
+    ...(definition?.input?.required ?? {}),
+    ...(definition?.input?.optional ?? {}),
+  };
+  return Object.entries(fields).flatMap(([name, raw]) => {
+    if (!Array.isArray(raw)) return [];
+    const type = raw[0];
+    const options = raw[1];
+    const widget =
+      Array.isArray(type) ||
+      ["INT", "FLOAT", "STRING", "BOOLEAN", "COMBO"].includes(String(type)) ||
+      (options &&
+        typeof options === "object" &&
+        ("default" in options || "defaultInput" in options));
+    return widget ? [name] : [];
+  });
+}
+
+function expandSubgraphWorkflow(workflow: UiWorkflow, objectInfo: ComfyObjectInfo): ComfyPrompt {
+  const definitions = new Map(
+    (workflow.definitions?.subgraphs ?? []).map((definition) => [definition.id, definition]),
+  );
+  const prompt: ComfyPrompt = {};
+  const active = new Set<string>();
+
+  const walk = (
+    graphNodes: UiWorkflowNode[],
+    graphLinks: UiWorkflowLink[],
+    prefix: string,
+    externalInput: (slot: number) => [string, number] | null,
+  ) => {
+    const nodes = new Map(graphNodes.map((node) => [String(node.id), node]));
+    const expandedOutputs = new Map<string, Array<[string, number] | null>>();
+
+    const serialize = (node: UiWorkflowNode) => {
+      if (
+        node.mode === 2 ||
+        node.mode === 4 ||
+        ["Reroute", "Note", "MarkdownNote"].includes(node.type) ||
+        definitions.has(node.type)
+      ) {
+        return;
+      }
+      const inputs: Record<string, unknown> = {};
+      const values = widgetValues(node);
+      const explicitWidgetNames = (node.inputs ?? []).flatMap((input) =>
+        input.widget ? [input.widget.name || input.name] : [],
+      );
+      const widgetNames = explicitWidgetNames.length
+        ? explicitWidgetNames
+        : schemaWidgetNames(objectInfo[node.type]);
+      let widgetIndex = 0;
+      for (const input of node.inputs ?? []) {
+        const widgetValue = input.widget ? values[widgetIndex++] : undefined;
+        const link =
+          input.link == null ? null : graphLinks.find((candidate) => candidate.id === input.link);
+        const origin = link ? resolveOrigin(link) : null;
+        if (origin) inputs[input.name] = origin;
+        else if (input.widget && widgetValue !== undefined) {
+          inputs[input.widget.name || input.name] = widgetValue;
+        }
+      }
+      for (const name of widgetNames) {
+        if (name in inputs || values[widgetIndex] === undefined) continue;
+        inputs[name] = values[widgetIndex++];
+      }
+      prompt[`${prefix}${node.id}`] = {
+        class_type: node.type,
+        inputs,
+        ...(node.title ? { _meta: { title: node.title } } : {}),
+      };
+    };
+
+    const expandInstance = (instance: UiWorkflowNode) => {
+      const key = `${prefix}${instance.id}`;
+      const existing = expandedOutputs.get(key);
+      if (existing) return existing;
+      const definition = definitions.get(instance.type);
+      if (!definition) return [];
+      if (active.has(key)) throw new Error(`Workflow contains a recursive subgraph at ${key}`);
+      active.add(key);
+      const childPrefix = `${prefix}sg_${instance.id}_`;
+      const child = walk(
+        definition.nodes,
+        normalizedLinks(definition.links),
+        childPrefix,
+        (slot) => {
+          const linkId = instance.inputs?.[slot]?.link;
+          const link = graphLinks.find((candidate) => candidate.id === linkId);
+          return link ? resolveOrigin(link) : null;
+        },
+      );
+      const outputs = definition.outputs.map((output) => {
+        const link = normalizedLinks(definition.links).find(
+          (candidate) =>
+            (output.linkIds ?? []).includes(candidate.id) && candidate.target_id === -20,
+        );
+        return link ? child.resolveOrigin(link) : null;
+      });
+      expandedOutputs.set(key, outputs);
+      active.delete(key);
+      return outputs;
+    };
+
+    function resolveOrigin(link: UiWorkflowLink): [string, number] | null {
+      if (link.origin_id === -10) return externalInput(link.origin_slot);
+      const origin = nodes.get(String(link.origin_id));
+      if (!origin || origin.mode === 2 || origin.mode === 4) return null;
+      if (origin.type === "Reroute") {
+        const upstreamId = origin.inputs?.[0]?.link;
+        const upstream = graphLinks.find((candidate) => candidate.id === upstreamId);
+        return upstream ? resolveOrigin(upstream) : null;
+      }
+      if (definitions.has(origin.type)) return expandInstance(origin)[link.origin_slot] ?? null;
+      serialize(origin);
+      return [`${prefix}${origin.id}`, link.origin_slot];
+    }
+
+    for (const node of graphNodes) {
+      if (definitions.has(node.type)) expandInstance(node);
+      else serialize(node);
+    }
+    return { resolveOrigin };
+  };
+
+  walk(workflow.nodes, normalizedLinks(workflow.links ?? []), "node_", () => null);
+  return prompt;
+}
+
+/**
+ * Converts a regular, non-subgraph ComfyUI canvas workflow into API Prompt
+ * format. The conversion uses each node's explicit widget metadata first and
+ * falls back to the active ComfyUI object schema for older workflow files.
+ */
+export function convertUiWorkflowToPrompt(
+  workflow: UiWorkflow | ComfyPrompt,
+  objectInfo: ComfyObjectInfo = {},
+): ComfyPrompt {
+  if (isApiPrompt(workflow)) return structuredClone(workflow);
+  if (!Array.isArray(workflow.nodes)) throw new Error("Workflow has no canvas nodes");
+  if ((workflow.definitions?.subgraphs?.length ?? 0) > 0) {
+    return expandSubgraphWorkflow(workflow, objectInfo);
+  }
+
+  const links = normalizedLinks(workflow.links ?? []);
+  const nodes = new Map(workflow.nodes.map((node) => [String(node.id), node]));
+  const prompt: ComfyPrompt = {};
+  const resolveOrigin = (link: UiWorkflowLink): [string, number] | null => {
+    const origin = nodes.get(String(link.origin_id));
+    if (origin?.type === "Reroute") {
+      const upstreamId = origin.inputs?.[0]?.link;
+      const upstream = links.find((candidate) => candidate.id === upstreamId);
+      return upstream ? resolveOrigin(upstream) : null;
+    }
+    if (!origin || origin.mode === 2 || origin.mode === 4) return null;
+    return [String(origin.id), link.origin_slot];
+  };
+
+  for (const node of workflow.nodes) {
+    if (
+      node.mode === 2 ||
+      node.mode === 4 ||
+      ["Reroute", "Note", "MarkdownNote"].includes(node.type)
+    ) {
+      continue;
+    }
+    const inputs: Record<string, unknown> = {};
+    const values = widgetValues(node);
+    const explicitWidgetNames = (node.inputs ?? []).flatMap((input) =>
+      input.widget ? [input.widget.name || input.name] : [],
+    );
+    const widgetNames = explicitWidgetNames.length
+      ? explicitWidgetNames
+      : schemaWidgetNames(objectInfo[node.type]);
+    let widgetIndex = 0;
+
+    for (const input of node.inputs ?? []) {
+      const widgetValue = input.widget ? values[widgetIndex++] : undefined;
+      const link =
+        input.link == null ? null : links.find((candidate) => candidate.id === input.link);
+      const origin = link ? resolveOrigin(link) : null;
+      if (origin) inputs[input.name] = origin;
+      else if (input.widget && widgetValue !== undefined) {
+        inputs[input.widget.name || input.name] = widgetValue;
+      }
+    }
+    for (const name of widgetNames) {
+      if (name in inputs || values[widgetIndex] === undefined) continue;
+      inputs[name] = values[widgetIndex++];
+    }
+    prompt[String(node.id)] = {
+      class_type: node.type,
+      inputs,
+      ...(node.title ? { _meta: { title: node.title } } : {}),
+    };
+  }
+  return prompt;
+}
+
+export function expandSingleSubgraphWorkflow(
+  workflow: UiWorkflow,
+  objectInfo: ComfyObjectInfo = {},
+): ComfyPrompt {
   const subgraph = workflow.definitions?.subgraphs?.[0];
   if (!subgraph) throw new Error("Workflow does not contain a subgraph definition");
   const outerSubgraphNode = workflow.nodes.find((node) => node.type === subgraph.id);
@@ -516,6 +918,12 @@ export function expandSingleSubgraphWorkflow(workflow: UiWorkflow): ComfyPrompt 
     }
     const inputs: Record<string, unknown> = {};
     const values = widgetValues(node);
+    const explicitWidgetNames = (node.inputs ?? []).flatMap((input) =>
+      input.widget ? [input.widget.name || input.name] : [],
+    );
+    const widgetNames = explicitWidgetNames.length
+      ? explicitWidgetNames
+      : schemaWidgetNames(objectInfo[node.type]);
     let widgetIndex = 0;
     for (const input of node.inputs ?? []) {
       const widgetValue = input.widget ? values[widgetIndex++] : undefined;
@@ -524,6 +932,10 @@ export function expandSingleSubgraphWorkflow(workflow: UiWorkflow): ComfyPrompt 
       const origin = link ? resolve(link) : null;
       if (origin) inputs[input.name] = origin;
       else if (input.widget && widgetValue !== undefined) inputs[input.name] = widgetValue;
+    }
+    for (const name of widgetNames) {
+      if (name in inputs || values[widgetIndex] === undefined) continue;
+      inputs[name] = values[widgetIndex++];
     }
     prompt[id] = {
       class_type: node.type,
@@ -585,12 +997,22 @@ export function buildLtx23I2VPrompt(workflow: UiWorkflow, input: Ltx23I2VInput) 
 export type ComfyOutputFile = { filename: string; subfolder: string; type: string };
 
 export class ComfyClient {
-  constructor(readonly baseUrl: string) {}
+  private readonly progressTracker: ComfyProgressTracker;
 
-  async uploadImage(bytes: Uint8Array, filename: string, mimeType: string) {
+  constructor(
+    private readonly baseUrl: string,
+    options: { liveProgress?: boolean } = {},
+  ) {
+    this.progressTracker = new ComfyProgressTracker(baseUrl, options.liveProgress ?? true);
+  }
+
+  async uploadInput(bytes: Uint8Array, filename: string, mimeType: string) {
     const body = new FormData();
     const copy = new Uint8Array(bytes.byteLength);
     copy.set(bytes);
+    // ComfyUI's /upload/image route is its generic input-file ingress despite
+    // the historical field name. LoadImage, LoadVideo and LoadAudio all read
+    // from the same protected input directory.
     body.set("image", new Blob([copy.buffer], { type: mimeType }), filename);
     body.set("overwrite", "true");
     const response = await fetch(`${this.baseUrl}/upload/image`, {
@@ -598,27 +1020,69 @@ export class ComfyClient {
       body,
       signal: AbortSignal.timeout(30_000),
     });
-    if (!response.ok) throw new Error(`ComfyUI image upload failed: ${response.status}`);
+    if (!response.ok) throw new Error(`ComfyUI input upload failed: ${response.status}`);
     const result = (await response.json()) as { name: string; subfolder: string; type: string };
     return result.subfolder ? `${result.subfolder}/${result.name}` : result.name;
   }
 
-  async submit(prompt: ComfyPrompt) {
+  async uploadImage(bytes: Uint8Array, filename: string, mimeType: string) {
+    return await this.uploadInput(bytes, filename, mimeType);
+  }
+
+  createClientId() {
+    return `takeboard-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+
+  watchProgress(promptId: string, clientId: string) {
+    this.progressTracker.watch(promptId, clientId);
+  }
+
+  progress(promptId: string) {
+    return this.progressTracker.get(promptId);
+  }
+
+  forgetProgress(promptId: string) {
+    this.progressTracker.forget(promptId);
+  }
+
+  async submit(prompt: ComfyPrompt, clientId = this.createClientId()) {
+    this.progressTracker.connect(clientId, prompt);
     const response = await fetch(`${this.baseUrl}/prompt`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ prompt, client_id: `takeboard-${Date.now()}` }),
+      body: JSON.stringify({ prompt, client_id: clientId }),
       signal: AbortSignal.timeout(30_000),
     });
     const result = (await response.json()) as {
       prompt_id?: string;
+      number?: number;
       error?: string;
       node_errors?: Record<string, unknown>;
     };
     if (!response.ok || !result.prompt_id) {
       throw new Error(`ComfyUI rejected prompt: ${JSON.stringify(result)}`);
     }
+    this.progressTracker.register(result.prompt_id, clientId, result.number);
     return result.prompt_id;
+  }
+
+  private async queueState(promptId: string) {
+    const queueResponse = await fetch(`${this.baseUrl}/queue`, {
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!queueResponse.ok) throw new Error("ComfyUI queue inspection failed before cancellation");
+    const queue = (await queueResponse.json()) as {
+      queue_running?: unknown[];
+      queue_pending?: unknown[];
+    };
+    const containsPrompt = (entries: unknown[] | undefined) =>
+      (entries ?? []).some(
+        (entry) => Array.isArray(entry) && entry.some((value) => value === promptId),
+      );
+    return {
+      running: containsPrompt(queue.queue_running),
+      pending: containsPrompt(queue.queue_pending),
+    };
   }
 
   async cancel(promptId: string) {
@@ -630,28 +1094,45 @@ export class ComfyClient {
       },
     );
     if (response.status === 404) {
-      const [interrupt, dequeue] = await Promise.all([
-        fetch(`${this.baseUrl}/interrupt`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ prompt_id: promptId }),
-          signal: AbortSignal.timeout(30_000),
-        }),
-        fetch(`${this.baseUrl}/queue`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ delete: [promptId] }),
-          signal: AbortSignal.timeout(30_000),
-        }),
-      ]);
-      if (!interrupt.ok || !dequeue.ok) {
+      const { running, pending } = await this.queueState(promptId);
+      if (!running && !pending) {
+        // The queue is authoritative for whether work can still consume compute.
+        // History may already have been pruned, so its absence must not make a
+        // completed task impossible to clean up or its project impossible to delete.
+        return true;
+      }
+      const actions: Promise<Response>[] = [];
+      if (running) {
+        actions.push(
+          fetch(`${this.baseUrl}/interrupt`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ prompt_id: promptId }),
+            signal: AbortSignal.timeout(30_000),
+          }),
+        );
+      }
+      if (pending) {
+        actions.push(
+          fetch(`${this.baseUrl}/queue`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ delete: [promptId] }),
+            signal: AbortSignal.timeout(30_000),
+          }),
+        );
+      }
+      const results = await Promise.all(actions);
+      if (results.some((result) => !result.ok)) {
         throw new Error("ComfyUI targeted cancellation failed");
       }
       return true;
     }
     if (!response.ok) throw new Error(`ComfyUI job cancellation failed: ${response.status}`);
     const result = (await response.json()) as { cancelled?: boolean };
-    return result.cancelled ?? false;
+    if (result.cancelled) return true;
+    const state = await this.queueState(promptId);
+    return !state.running && !state.pending;
   }
 
   async deleteHistory(promptId: string) {
@@ -744,7 +1225,14 @@ export class ComfyClient {
     const history = (await response.json()) as Record<
       string,
       {
-        outputs?: Record<string, { videos?: ComfyOutputFile[]; images?: ComfyOutputFile[] }>;
+        outputs?: Record<
+          string,
+          {
+            videos?: ComfyOutputFile[];
+            images?: ComfyOutputFile[];
+            gifs?: ComfyOutputFile[];
+          }
+        >;
         status?: { status_str?: string; completed?: boolean; messages?: unknown[] };
       }
     >;

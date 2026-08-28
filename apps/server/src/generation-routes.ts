@@ -7,6 +7,7 @@ import { createTakeBoardId, toIsoTimestamp } from "@takeboard/domain";
 import {
   buildLtx23I2VPrompt,
   buildMiniMaxH3Prompt,
+  buildMiniMaxH3ReferencePrompt,
   buildQwenImage2512Prompt,
   buildWan22FirstLastPrompt,
   buildWan22I2VPrompt,
@@ -19,6 +20,7 @@ import type { FastifyInstance } from "fastify";
 import { createImageProxy, inspectImage } from "./asset-inspection.js";
 import { projectKey } from "./project-routes.js";
 import { ProjectStore } from "./storage/project-store.js";
+import { applyWorkflowBinding, loadExecutableWorkflow } from "./workflow-bindings.js";
 
 const sha256 = (value: Uint8Array | string) => createHash("sha256").update(value).digest("hex");
 
@@ -121,7 +123,30 @@ export function registerGenerationRoutes(
   storage: GenerationStorageOptions = { inputRoot: null, outputRoot: null },
 ) {
   const root = resolve(projectsRoot);
-  const comfy = new ComfyClient(comfyUrl);
+  const comfy = new ComfyClient(comfyUrl, { liveProgress: process.env.NODE_ENV !== "test" });
+  const liveProgress = (run: ProjectSnapshot["runs"][number]) => {
+    if (!run.promptId) return null;
+    const clientId = run.parameters.comfyClientId;
+    if (typeof clientId === "string" && !terminalRunStatuses.has(run.status)) {
+      comfy.watchProgress(run.promptId, clientId);
+    }
+    return (
+      comfy.progress(run.promptId) ??
+      (!terminalRunStatuses.has(run.status)
+        ? {
+            phase: run.status === "collecting_outputs" ? "collecting" : "running",
+            label:
+              run.status === "collecting_outputs" ? "正在回收生成文件" : "ComfyUI 正在执行工作流",
+            detail: "当前节点未提供实时步进；任务状态来自执行端 History",
+            percent: null,
+            nodeId: null,
+            queueRemaining: null,
+            source: "comfy_history" as const,
+            updatedAt: run.updatedAt,
+          }
+        : null)
+    );
+  };
 
   app.post<{
     Params: { key: string };
@@ -403,6 +428,7 @@ export function registerGenerationRoutes(
           ...(run.promptId ? [comfy.deleteHistory(run.promptId)] : []),
           cleanupComfyRunFiles(storage, current.snapshot.project.id, run.shotId, run.id),
         ]);
+        if (run.promptId) comfy.forgetProgress(run.promptId);
         let resourcesReleased = false;
         for (let attempt = 0; attempt < 8 && !resourcesReleased; attempt += 1) {
           resourcesReleased = await comfy.freeResourcesIfIdle().catch(() => false);
@@ -463,20 +489,28 @@ export function registerGenerationRoutes(
           return await reply.code(409).send({ error: "这个镜头已有运行记录，工作流不能直接更换" });
         }
         shot.workflowPath = recipePath;
-        const wanFirstLast = recipePath.endsWith("Kino_Wan22_FLF2V.json");
-        const wanImage = recipePath.endsWith("Kino_Wan22_I2V.json");
+        const wanFirstLast = /Kino_Wan22_FLF2V(?:_Preview)?\.json$/.test(recipePath);
+        const wanImage = /Kino_Wan22_I2V(?:_Preview)?\.json$/.test(recipePath);
+        const wanPreview = (wanFirstLast || wanImage) && recipePath.endsWith("_Preview.json");
         const miniMaxText = recipePath.endsWith("Kino_MinimaxH3_T2V.json");
         const miniMaxImage = recipePath.endsWith("Kino_MinimaxH3_I2V.json");
-        const miniMax = miniMaxText || miniMaxImage;
+        const miniMaxReference = recipePath.endsWith("Kino_MinimaxH3_R2V.json");
+        const miniMax = miniMaxText || miniMaxImage || miniMaxReference;
         const ltxImage = recipePath.endsWith("Kino_LTX23_I2V_Draft.json");
         const qwenText = recipePath.endsWith("Kino_QwenImage2512_T2I.json");
         const qwenImage = recipePath.endsWith("Kino_QwenImage2512_I2I.json");
         const qwen = qwenText || qwenImage;
-        if (!wanImage && !wanFirstLast && !miniMax && !ltxImage && !qwen) {
-          return await reply.code(422).send({
-            error:
-              "该 Workflow 已检测，但尚未映射为 TakeBoard 原生 Recipe；请进入 ComfyUI 编辑或运行",
-          });
+        const nativeWorkflow = wanImage || wanFirstLast || miniMax || ltxImage || qwen;
+        let boundWorkflow: Awaited<ReturnType<typeof loadExecutableWorkflow>> | null = null;
+        if (!nativeWorkflow) {
+          try {
+            boundWorkflow = await loadExecutableWorkflow(comfyUrl, recipePath);
+          } catch (error) {
+            return await reply.code(422).send({
+              error:
+                error instanceof Error ? error.message : "该工作流需要先在工作流库中完成参数绑定",
+            });
+          }
         }
         const timestamp = toIsoTimestamp();
         const milliseconds = Date.now();
@@ -486,8 +520,14 @@ export function registerGenerationRoutes(
         preparedShotId = shot.id;
         const requestedAssetId =
           typeof body.firstFrameAssetId === "string" ? body.firstFrameAssetId : null;
+        const boundCapability = boundWorkflow?.binding.capability;
         const requiresInputImage =
-          wanImage || wanFirstLast || miniMaxImage || ltxImage || qwenImage;
+          wanImage ||
+          wanFirstLast ||
+          miniMaxImage ||
+          ltxImage ||
+          qwenImage ||
+          ["image_to_image", "image_to_video", "first_last_video"].includes(boundCapability ?? "");
         const inputAsset = requiresInputImage
           ? requestedAssetId
             ? current.snapshot.assets.find((asset) => asset.id === requestedAssetId)
@@ -501,15 +541,66 @@ export function registerGenerationRoutes(
 
         const requestedLastAssetId =
           typeof body.lastFrameAssetId === "string" ? body.lastFrameAssetId : null;
+        const boundNeedsLast = Boolean(boundWorkflow?.binding.media.last_frame?.length);
         const lastAsset =
-          (wanFirstLast || miniMaxImage) && requestedLastAssetId
+          (wanFirstLast || miniMaxImage || boundNeedsLast) && requestedLastAssetId
             ? current.snapshot.assets.find((asset) => asset.id === requestedLastAssetId)
             : null;
-        if (wanFirstLast && lastAsset?.mediaType !== "image") {
+        if (
+          (wanFirstLast || boundCapability === "first_last_video") &&
+          lastAsset?.mediaType !== "image"
+        ) {
           return await reply.code(409).send({ error: "首尾帧模式需要选择一张可用的结束帧图片" });
         }
         if (lastAsset && lastAsset.mediaType !== "image") {
           return await reply.code(409).send({ error: "选择的结束帧不是可用图片" });
+        }
+
+        const assetIds = (value: unknown, limit: number) =>
+          Array.isArray(value)
+            ? [...new Set(value.filter((id): id is string => typeof id === "string"))].slice(
+                0,
+                limit,
+              )
+            : [];
+        const referenceImageIds = assetIds(body.referenceImageAssetIds, 9);
+        const referenceVideoIds = assetIds(body.referenceVideoAssetIds, 3);
+        const referenceAudioIds = assetIds(body.referenceAudioAssetIds, 3);
+        const resolveAssets = (ids: string[], expectedType: "image" | "video" | "audio") =>
+          ids
+            .map((id) => current.snapshot.assets.find((asset) => asset.id === id))
+            .filter(
+              (asset): asset is NonNullable<typeof asset> => asset?.mediaType === expectedType,
+            );
+        const referenceImages = resolveAssets(referenceImageIds, "image");
+        const referenceVideos = resolveAssets(referenceVideoIds, "video");
+        const referenceAudios = resolveAssets(referenceAudioIds, "audio");
+        if (
+          referenceImages.length !== referenceImageIds.length ||
+          referenceVideos.length !== referenceVideoIds.length ||
+          referenceAudios.length !== referenceAudioIds.length
+        ) {
+          return await reply.code(409).send({ error: "参考素材不存在或类型与输入端口不匹配" });
+        }
+        if (
+          (miniMaxReference || boundCapability === "reference_video") &&
+          referenceImages.length + referenceVideos.length + referenceAudios.length === 0
+        ) {
+          return await reply.code(409).send({ error: "参考生成工作流至少需要一个参考素材" });
+        }
+        if (
+          miniMaxReference &&
+          referenceImages.length + referenceVideos.length + referenceAudios.length > 12
+        ) {
+          return await reply.code(409).send({ error: "MiniMax H3 Ref2VA 最多接收 12 个参考文件" });
+        }
+        if (
+          boundWorkflow &&
+          (referenceImages.length > (boundWorkflow.binding.media.reference_image?.length ?? 0) ||
+            referenceVideos.length > (boundWorkflow.binding.media.reference_video?.length ?? 0) ||
+            referenceAudios.length > (boundWorkflow.binding.media.reference_audio?.length ?? 0))
+        ) {
+          return await reply.code(409).send({ error: "参考素材数量超过该工作流已绑定的输入位置" });
         }
 
         let comfyImage: string | null = null;
@@ -541,25 +632,29 @@ export function registerGenerationRoutes(
           body.durationSeconds <= 15
             ? body.durationSeconds
             : shot.durationSeconds;
-        const fps =
-          typeof body.fps === "number" && body.fps >= 8 && body.fps <= 60
+        if (miniMax && (durationSeconds < 4 || durationSeconds > 15)) {
+          return await reply.code(422).send({ error: "MiniMax H3 支持 4–15 秒生成时长" });
+        }
+        const fps = miniMax
+          ? 24
+          : typeof body.fps === "number" && body.fps >= 8 && body.fps <= 60
             ? Math.round(body.fps)
-            : miniMax
-              ? 24
-              : ltxImage
-                ? 25
-                : 16;
-        const steps =
+            : ltxImage
+              ? 25
+              : 16;
+        const requestedSteps =
           typeof body.steps === "number" &&
           Number.isSafeInteger(body.steps) &&
           body.steps >= 1 &&
           body.steps <= 100
             ? body.steps
-            : miniMax
-              ? 20
-              : qwen
-                ? 50
-                : 4;
+            : null;
+        const steps =
+          wanImage || wanFirstLast
+            ? wanPreview
+              ? 4
+              : Math.min(40, Math.max(8, requestedSteps ?? 20))
+            : (requestedSteps ?? (miniMax ? 20 : qwen ? 50 : 20));
         const denoise =
           typeof body.denoise === "number" && body.denoise >= 0.05 && body.denoise <= 1
             ? body.denoise
@@ -581,7 +676,33 @@ export function registerGenerationRoutes(
             lastAsset.mimeType,
           );
         }
+        const uploadReference = async (asset: (typeof current.snapshot.assets)[number]) => {
+          const bytes = await readFile(join(directory, asset.storagePath));
+          const extension =
+            extname(asset.originalName) ||
+            (asset.mediaType === "video" ? ".mp4" : asset.mediaType === "audio" ? ".wav" : ".png");
+          return await comfy.uploadImage(
+            new Uint8Array(bytes),
+            `takeboard_${current.snapshot.project.id}_${runId}_${asset.id}${extension}`,
+            asset.mimeType,
+          );
+        };
+        const usesBoundReferences = Boolean(
+          boundWorkflow &&
+            ((boundWorkflow.binding.media.reference_image?.length ?? 0) > 0 ||
+              (boundWorkflow.binding.media.reference_video?.length ?? 0) > 0 ||
+              (boundWorkflow.binding.media.reference_audio?.length ?? 0) > 0),
+        );
+        const [comfyReferenceImages, comfyReferenceVideos, comfyReferenceAudios] =
+          miniMaxReference || usesBoundReferences
+            ? await Promise.all([
+                Promise.all(referenceImages.map(uploadReference)),
+                Promise.all(referenceVideos.map(uploadReference)),
+                Promise.all(referenceAudios.map(uploadReference)),
+              ])
+            : [[], [], []];
         const filenamePrefix = `takeboard/${current.snapshot.project.id}/${shot.id}/${runId}/result`;
+        const comfyClientId = comfy.createClientId();
         const recipeInput = {
           positivePrompt,
           ...(negativePrompt ? { negativePrompt } : {}),
@@ -594,7 +715,24 @@ export function registerGenerationRoutes(
         };
         let prompt: ComfyPrompt;
         let effectiveSize = { width, height };
-        if (qwen) {
+        if (boundWorkflow) {
+          prompt = applyWorkflowBinding(boundWorkflow.prompt, boundWorkflow.binding, {
+            prompt: positivePrompt,
+            ...(negativePrompt ? { negative_prompt: negativePrompt } : {}),
+            seed,
+            steps,
+            width,
+            height,
+            duration: durationSeconds,
+            fps,
+            ...(comfyImage ? { firstFrame: comfyImage } : {}),
+            ...(lastComfyImage ? { lastFrame: lastComfyImage } : {}),
+            referenceImages: comfyReferenceImages,
+            referenceVideos: comfyReferenceVideos,
+            referenceAudios: comfyReferenceAudios,
+            filenamePrefix,
+          });
+        } else if (qwen) {
           effectiveSize = qwenImage2512Resolution(width, height);
           prompt = buildQwenImage2512Prompt({
             ...(qwenImage && comfyImage ? { image: comfyImage } : {}),
@@ -606,6 +744,16 @@ export function registerGenerationRoutes(
             steps,
             denoise,
             filenamePrefix,
+          });
+        } else if (miniMaxReference) {
+          effectiveSize = miniMaxH3Resolution(width, height);
+          prompt = buildMiniMaxH3ReferencePrompt({
+            ...recipeInput,
+            referenceImages: comfyReferenceImages,
+            referenceVideos: comfyReferenceVideos,
+            referenceAudios: comfyReferenceAudios,
+            referenceImageSize: body.referenceImageSize === "max" ? "max" : "match",
+            steps,
           });
         } else if (miniMax) {
           effectiveSize = miniMaxH3Resolution(width, height);
@@ -632,9 +780,16 @@ export function registerGenerationRoutes(
             ...recipeInput,
             image: comfyImage,
             lastImage: lastComfyImage,
+            steps,
+            qualityProfile: wanPreview ? "preview" : "quality",
           });
         } else if (comfyImage) {
-          prompt = buildWan22I2VPrompt({ ...recipeInput, image: comfyImage });
+          prompt = buildWan22I2VPrompt({
+            ...recipeInput,
+            image: comfyImage,
+            steps,
+            qualityProfile: wanPreview ? "preview" : "quality",
+          });
         } else {
           await cleanupComfyRunFiles(storage, current.snapshot.project.id, shot.id, runId);
           return await reply.code(409).send({ error: "当前 Recipe 需要一张起始帧" });
@@ -646,17 +801,25 @@ export function registerGenerationRoutes(
             error: `Recipe 预检失败：${preflightErrors.slice(0, 5).join("；")}`,
           });
         }
-        const recipeVersion = miniMax
-          ? "minimax-h3@1"
-          : qwenImage
-            ? "qwen-image-2512-i2i@1"
-            : qwenText
-              ? "qwen-image-2512-t2i@1"
-              : ltxImage
-                ? "ltx23-i2v-draft@1"
-                : wanFirstLast
-                  ? "wan22-flf2v@1"
-                  : "wan22-i2v-turbo@1";
+        const recipeVersion = boundWorkflow
+          ? `workflow-binding-v${boundWorkflow.binding.version}`
+          : miniMaxReference
+            ? "minimax-h3-ref2va@2"
+            : miniMax
+              ? "minimax-h3-fl2va@2"
+              : qwenImage
+                ? "qwen-image-2512-i2i@1"
+                : qwenText
+                  ? "qwen-image-2512-t2i@1"
+                  : ltxImage
+                    ? "ltx23-i2v-draft@1"
+                    : wanFirstLast
+                      ? wanPreview
+                        ? "wan22-flf2v-preview@2"
+                        : "wan22-flf2v-quality@2"
+                      : wanPreview
+                        ? "wan22-i2v-preview@2"
+                        : "wan22-i2v-quality@2";
         const outputAssetId = createTakeBoardId("asset", milliseconds);
         const outputTakeId = createTakeBoardId("take", milliseconds);
         current.snapshot.runs.push({
@@ -689,6 +852,24 @@ export function registerGenerationRoutes(
                   },
                 ]
               : []),
+            ...referenceImages.map((asset, index) => ({
+              slot: `reference_image_${index}`,
+              refType: "asset" as const,
+              refId: asset.id,
+              assetSha256: asset.sha256,
+            })),
+            ...referenceVideos.map((asset, index) => ({
+              slot: `reference_video_${index}`,
+              refType: "asset" as const,
+              refId: asset.id,
+              assetSha256: asset.sha256,
+            })),
+            ...referenceAudios.map((asset, index) => ({
+              slot: `reference_audio_${index}`,
+              refType: "asset" as const,
+              refId: asset.id,
+              assetSha256: asset.sha256,
+            })),
           ],
           parameters: {
             seed,
@@ -699,13 +880,26 @@ export function registerGenerationRoutes(
             ...(qwenImage ? { denoise } : {}),
             recipePath,
             prompt: positivePrompt,
+            promptSource:
+              typeof body.promptSource === "string"
+                ? body.promptSource.trim().slice(0, 20_000)
+                : positivePrompt,
             negativePrompt: negativePrompt ?? null,
-            comfyInputFiles: [comfyImage, lastComfyImage].filter((value): value is string =>
-              Boolean(value),
-            ),
+            ...(miniMaxReference
+              ? { referenceImageSize: body.referenceImageSize === "max" ? "max" : "match" }
+              : {}),
+            comfyInputFiles: [
+              comfyImage,
+              lastComfyImage,
+              ...comfyReferenceImages,
+              ...comfyReferenceVideos,
+              ...comfyReferenceAudios,
+            ].filter((value): value is string => Boolean(value)),
             comfyOutputDirectory: `takeboard/${current.snapshot.project.id}/${shot.id}/${runId}`,
             outputAssetId,
             outputTakeId,
+            outputMediaType: boundWorkflow?.binding.outputMediaType ?? (qwen ? "image" : "video"),
+            comfyClientId,
           },
           errorCode: null,
           errorMessage: null,
@@ -722,7 +916,7 @@ export function registerGenerationRoutes(
         });
 
         submissionStarted = true;
-        const promptId = await comfy.submit(prompt);
+        const promptId = await comfy.submit(prompt, comfyClientId);
         submittedPromptId = promptId;
         const preparedRun = current.snapshot.runs.find((run) => run.id === runId);
         if (!preparedRun) throw new Error("准备好的运行记录意外丢失");
@@ -739,12 +933,15 @@ export function registerGenerationRoutes(
             recipe: recipeVersion,
           },
         });
-        return await reply.code(202).send({ key, runId, promptId, ...saved });
+        return await reply
+          .code(202)
+          .send({ key, runId, promptId, progress: liveProgress(preparedRun), ...saved });
       } catch (error) {
         let remoteCancellationConfirmed = submittedPromptId === null && !submissionStarted;
         if (submittedPromptId) {
           remoteCancellationConfirmed = await comfy.cancel(submittedPromptId).catch(() => false);
           await comfy.deleteHistory(submittedPromptId).catch(() => undefined);
+          comfy.forgetProgress(submittedPromptId);
         }
         if (remoteCancellationConfirmed && preparedProjectId && preparedShotId && preparedRunId) {
           await cleanupComfyRunFiles(storage, preparedProjectId, preparedShotId, preparedRunId);
@@ -801,7 +998,7 @@ export function registerGenerationRoutes(
           ["completed", "failed", "cancelled"].includes(run.status) ||
           (run.status === "orphaned" && !run.promptId)
         ) {
-          return { key, runId: run.id, status: run.status, ...current };
+          return { key, runId: run.id, status: run.status, progress: null, ...current };
         }
         if (!run.promptId) {
           const timestamp = toIsoTimestamp();
@@ -820,7 +1017,15 @@ export function registerGenerationRoutes(
         }
 
         const history = await comfy.history(run.promptId);
-        if (!history) return { key, runId: run.id, status: run.status, ...current };
+        if (!history) {
+          return {
+            key,
+            runId: run.id,
+            status: run.status,
+            progress: liveProgress(run),
+            ...current,
+          };
+        }
         const timestamp = toIsoTimestamp();
         if (history.status?.status_str === "error") {
           run.status = "failed";
@@ -836,13 +1041,17 @@ export function registerGenerationRoutes(
             comfy.deleteHistory(run.promptId),
             cleanupComfyRunFiles(storage, current.snapshot.project.id, run.shotId, run.id),
           ]);
-          return { key, runId: run.id, status: run.status, ...saved };
+          comfy.forgetProgress(run.promptId);
+          return { key, runId: run.id, status: run.status, progress: null, ...saved };
         }
 
         const outputs = Object.values(history.outputs ?? {});
-        const expectsImage = run.recipeVersion.startsWith("qwen-image-2512-");
+        const expectsImage =
+          run.parameters.outputMediaType === "image" ||
+          run.recipeVersion.startsWith("qwen-image-2512-");
         const videoOutput = outputs.flatMap((item) => [
           ...(item.videos ?? []),
+          ...(item.gifs ?? []).filter((file) => /\.(?:mp4|webm)$/i.test(file.filename)),
           ...(item.images ?? []).filter((file) => /\.(?:mp4|webm)$/i.test(file.filename)),
         ])[0];
         const imageOutput = outputs
@@ -851,7 +1060,13 @@ export function registerGenerationRoutes(
         const output = expectsImage ? imageOutput : videoOutput;
         if (!output) {
           if (!history.status?.completed) {
-            return { key, runId: run.id, status: run.status, ...current };
+            return {
+              key,
+              runId: run.id,
+              status: run.status,
+              progress: liveProgress(run),
+              ...current,
+            };
           }
           run.status = "failed";
           run.errorCode = expectsImage ? "NO_IMAGE_OUTPUT" : "NO_VIDEO_OUTPUT";
@@ -868,7 +1083,8 @@ export function registerGenerationRoutes(
             comfy.deleteHistory(run.promptId),
             cleanupComfyRunFiles(storage, current.snapshot.project.id, run.shotId, run.id),
           ]);
-          return { key, runId: run.id, status: run.status, ...saved };
+          comfy.forgetProgress(run.promptId);
+          return { key, runId: run.id, status: run.status, progress: null, ...saved };
         }
         const bytes = await comfy.download(output);
         const plannedAssetId = run.parameters.outputAssetId;
@@ -969,7 +1185,8 @@ export function registerGenerationRoutes(
           comfy.deleteHistory(run.promptId),
           cleanupComfyRunFiles(storage, current.snapshot.project.id, run.shotId, run.id),
         ]);
-        return { key, runId: run.id, status: run.status, ...saved };
+        comfy.forgetProgress(run.promptId);
+        return { key, runId: run.id, status: run.status, progress: null, ...saved };
       } finally {
         store.close();
       }

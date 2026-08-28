@@ -6,7 +6,7 @@ type AssetKind = "character" | "location" | "prop";
 type AssetScope = "all" | "image" | "video" | "character" | "location" | "prop" | "loose";
 type AssetLayout = "grid" | "list";
 type AssetSort = "recent" | "name" | "size";
-type AssetSlot = "first" | "last" | "reference" | "referenceVideo";
+type AssetSlot = "first" | "last" | "reference" | "referenceVideo" | "referenceAudio";
 
 const kindLabels: Record<AssetKind, string> = {
   character: "人物",
@@ -158,7 +158,9 @@ export function AssetLibrary({
   selectedFirstFrameId,
   selectedLastFrameId,
   selectedReferenceId,
+  selectedReferenceImageIds,
   selectedReferenceVideoIds,
+  selectedReferenceAudioIds,
   selectedShotLabel,
   allowedSlots,
 }: {
@@ -186,9 +188,17 @@ export function AssetLibrary({
   selectedFirstFrameId: string | null;
   selectedLastFrameId: string | null;
   selectedReferenceId: string | null;
+  selectedReferenceImageIds: string[];
   selectedReferenceVideoIds: string[];
   selectedShotLabel: string | null;
-  allowedSlots: { first: boolean; last: boolean; reference: boolean; referenceVideo: boolean };
+  allowedSlots: {
+    first: boolean;
+    last: boolean;
+    reference: boolean;
+    referenceVideo: boolean;
+    referenceAudio: boolean;
+  };
+  selectedReferenceAudioIds: string[];
 }) {
   const [scope, setScope] = useState<AssetScope>("all");
   const [query, setQuery] = useState("");
@@ -994,7 +1004,12 @@ export function AssetLibrary({
                           {selectedAsset.mediaType === "image" && allowedSlots.reference ? (
                             <button
                               type="button"
-                              className={selectedAsset.id === selectedReferenceId ? "active" : ""}
+                              className={
+                                selectedReferenceImageIds.includes(selectedAsset.id) ||
+                                selectedAsset.id === selectedReferenceId
+                                  ? "active"
+                                  : ""
+                              }
                               onClick={() => onPickFrame(selectedAsset.id, "reference")}
                             >
                               参考图
@@ -1009,6 +1024,17 @@ export function AssetLibrary({
                               onClick={() => onPickFrame(selectedAsset.id, "referenceVideo")}
                             >
                               参考视频
+                            </button>
+                          ) : null}
+                          {selectedAsset.mediaType === "audio" && allowedSlots.referenceAudio ? (
+                            <button
+                              type="button"
+                              className={
+                                selectedReferenceAudioIds.includes(selectedAsset.id) ? "active" : ""
+                              }
+                              onClick={() => onPickFrame(selectedAsset.id, "referenceAudio")}
+                            >
+                              参考音频
                             </button>
                           ) : null}
                         </div>
@@ -1126,6 +1152,17 @@ export function AssetLibrary({
                       }}
                     >
                       参考视频
+                    </button>
+                  ) : null}
+                  {contextAsset.mediaType === "audio" && allowedSlots.referenceAudio ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onPickFrame(contextAsset.id, "referenceAudio");
+                        setContextMenu(null);
+                      }}
+                    >
+                      参考音频
                     </button>
                   ) : null}
                 </div>

@@ -348,6 +348,7 @@ test("reopening a project resumes and reconciles an active generation", async ({
   });
   await page.route(`**/api/projects/${key}/runs/${runId}`, async (route) => {
     pollCount += 1;
+    await new Promise((resolve) => setTimeout(resolve, 1_200));
     await route.fulfill({
       json: { key, runId, status: "completed", revision: 3, snapshot: completedSnapshot },
     });
@@ -356,6 +357,12 @@ test("reopening a project resumes and reconciles an active generation", async ({
   await page.goto("/");
   await page.getByRole("button", { name: `打开 ${title} 的SC-01` }).click();
   await expect(page.getByText("SH-01", { exact: true }).first()).toBeVisible();
+  await expect(page.locator(".shot-inline-progress-track")).toBeVisible();
+  await expect(page.locator(".shot-inline-generate")).toContainText("已恢复后台生成任务");
+  await page.screenshot({
+    path: "test-results/takeboard-canvas-generation-progress.png",
+    animations: "disabled",
+  });
   await expect.poll(() => pollCount).toBeGreaterThan(0);
   await expect(page.getByText("已保存 · r3")).toBeVisible();
 });
@@ -455,6 +462,92 @@ test("a generated shot becomes the full visual node on canvas", async ({ page, r
   await page.screenshot({
     path: "test-results/takeboard-generated-shot-node.png",
     fullPage: true,
+    animations: "disabled",
+  });
+});
+
+test("a generated video loads and remains controllable on canvas", async ({ page, request }) => {
+  const title = `TakeBoard 视频节点 ${Date.now()}`;
+  const created = await request.post("/api/projects", {
+    data: { title, aspectRatio: "16:9", firstShotIntent: "人物在夜色中回头" },
+  });
+  expect(created.ok()).toBeTruthy();
+  const payload = await created.json();
+  const snapshot = structuredClone(payload.snapshot);
+  const shot = snapshot.shots[0];
+  const timestamp = new Date().toISOString();
+  const assetId = "asset_018f4f52-9d8b-8abc-8def-0123456789e1";
+  const takeId = "take_018f4f52-9d8b-8abc-8def-0123456789e2";
+  const runId = "run_018f4f52-9d8b-8abc-8def-0123456789e3";
+  snapshot.assets.push({
+    id: assetId,
+    projectId: snapshot.project.id,
+    mediaType: "video",
+    originalName: "generated-shot.mp4",
+    mimeType: "video/mp4",
+    byteSize: 1844,
+    sha256: "f".repeat(64),
+    storagePath: "renders/generated-shot.mp4",
+    proxyPath: null,
+    width: 64,
+    height: 36,
+    customTags: [],
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  });
+  snapshot.takes.push({
+    id: takeId,
+    runId,
+    shotId: shot.id,
+    assetId,
+    status: "approved",
+    rejectionReasons: [],
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  });
+  shot.approvedTakeId = takeId;
+  shot.status = "approved";
+  shot.workflowPath = "Kino/Kino_Wan22_I2V.json";
+  snapshot.runs.push({
+    id: runId,
+    shotId: shot.id,
+    recipeId: "recipe_018f4f52-9d8b-8abc-8def-0123456789e4",
+    recipeVersion: "wan22-i2v-turbo@1",
+    workflowSha256: "a".repeat(64),
+    workerId: "worker_018f4f52-9d8b-8abc-8def-0123456789e5",
+    promptId: "prompt-generated-video",
+    status: "completed",
+    inputs: [],
+    parameters: { recipePath: "Kino/Kino_Wan22_I2V.json" },
+    errorCode: null,
+    errorMessage: null,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  });
+  const mp4 = Buffer.from(
+    "AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAOzbW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAAZAAAQAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAt10cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAAZAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAEAAAAAkAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAAGQAAAEAAABAAAAAAJVbWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAAAyAAAAFABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAACAG1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAAcBzdGJsAAAAwHN0c2QAAAAAAAAAAQAAALBhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAEAAJABIAAAASAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGP//AAAANmF2Y0MBZAAK/+EAGWdkAAqs2UR/nwEQAAADABAAAAMDIPEiWWABAAZo6+PLIsD9+PgAAAAAEHBhc3AAAAABAAAAAQAAABRidHJ0AAAAAAAAQlQAAEJUAAAAGHN0dHMAAAAAAAAAAQAAAAoAAAIAAAAAFHN0c3MAAAAAAAAAAQAAAAEAAABgY3R0cwAAAAAAAAAKAAAAAQAABAAAAAABAAAKAAAAAAEAAAQAAAAAAQAAAAAAAAABAAACAAAAAAEAAAoAAAAAAQAABAAAAAABAAAAAAAAAAEAAAIAAAAAAQAABAAAAAAcc3RzYwAAAAAAAAABAAAAAQAAAAoAAAABAAAAPHN0c3oAAAAAAAAAAAAAAAoAAALTAAAADgAAAAwAAAAMAAAADAAAABMAAAAOAAAADAAAAAwAAAATAAAAFHN0Y28AAAAAAAAAAQAAA+MAAABidWR0YQAAAFptZXRhAAAAAAAAACFoZGxyAAAAAAAAAABtZGlyYXBwbAAAAAAAAAAAAAAAAC1pbHN0AAAAJal0b28AAAAdZGF0YQAAAAEAAAAATGF2ZjU4Ljc2LjEwMAAAAAhmcmVlAAADWW1kYXQAAAKuBgX//6rcRem95tlIt5Ys2CDZI+7veDI2NCAtIGNvcmUgMTYzIHIzMDYwIDVkYjZhYTYgLSBILjI2NC9NUEVHLTQgQVZDIGNvZGVjIC0gQ29weWxlZnQgMjAwMy0yMDIxIC0gaHR0cDovL3d3dy52aWRlb2xhbi5vcmcveDI2NC5odG1sIC0gb3B0aW9uczogY2FiYWM9MSByZWY9MyBkZWJsb2NrPTE6MDowIGFuYWx5c2U9MHgzOjB4MTEzIG1lPWhleCBzdWJtZT03IHBzeT0xIHBzeV9yZD0xLjAwOjAuMDAgbWl4ZWRfcmVmPTEgbWVfcmFuZ2U9MTYgY2hyb21hX21lPTEgdHJlbGxpcz0xIDh4OGRjdD0xIGNxbT0wIGRlYWR6b25lPTIxLDExIGZhc3RfcHNraXA9MSBjaHJvbWFfcXBfb2Zmc2V0PS0yIHRocmVhZHM9MSBsb29rYWhlYWRfdGhyZWFkcz0xIHNsaWNlZF90aHJlYWRzPTAgbnI9MCBkZWNpbWF0ZT0xIGludGVybGFjZWQ9MCBibHVyYXlfY29tcGF0PTAgY29uc3RyYWluZWRfaW50cmE9MCBiZnJhbWVzPTMgYl9weXJhbWlkPTIgYl9hZGFwdD0xIGJfYmlhcz0wIGRpcmVjdD0xIHdlaWdodGI9MSBvcGVuX2dvcD0wIHdlaWdodHA9MiBrZXlpbnQ9MjUwIGtleWludF9taW49MjUgc2NlbmVjdXQ9NDAgaW50cmFfcmVmcmVzaD0wIHJjX2xvb2thaGVhZD00MCByYz1jcmYgbWJ0cmVlPTEgY3JmPTIzLjAgcWNvbXA9MC42MCBxcG1pbj0wIHFwbWF4PTY5IHFwc3RlcD00IGlwX3JhdGlvPTEuNDAgYXE9MToxLjAwAIAAAAAdZYiEADf//vbw/gU2VgRQlxHN6Hz9AAVXa9rh5JkAAAAKQZokbEN//qfuQAAAAAhBnkJ4hf8RMQAAAAgBnmF0Qr8UsAAAAAgBnmNqQr8UsQAAAA9BmmhJqEFomUwIX//+jcMAAAAKQZ6GRREsL/8RMQAAAAgBnqV0Qr8UsQAAAAgBnqdqQr8UsAAAAA9BmqlJqEFsmUwIV//+OlI=",
+    "base64",
+  );
+
+  await page.route(`**/api/projects/${payload.key}`, async (route) => {
+    await route.fulfill({ json: { key: payload.key, revision: 2, snapshot } });
+  });
+  await page.route(`**/api/projects/${payload.key}/assets/${assetId}/content*`, async (route) => {
+    await route.fulfill({ contentType: "video/mp4", body: mp4 });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: `打开 ${title} 的SC-01` }).click();
+  const video = page.getByLabel("SH-01 生成视频");
+  await expect(video).toBeVisible();
+  await expect(video).toHaveAttribute("controls", "");
+  await expect
+    .poll(() => video.evaluate((element: HTMLVideoElement) => element.readyState))
+    .toBeGreaterThanOrEqual(2);
+  await expect(page.locator(".shot-video-fallback")).toHaveCount(0);
+  await expect(page.locator(".shot-generated-overlay")).toContainText("视频");
+  await page.screenshot({
+    path: "test-results/takeboard-generated-video-node.png",
     animations: "disabled",
   });
 });
@@ -627,8 +720,25 @@ test("a user can create and reopen a real project", async ({ page }) => {
   await expect(page.locator(".react-flow__node-shot")).toContainText("首帧 0/1");
   await expect(page.locator(".react-flow__node-shot")).toContainText("尾帧 0/1");
   await expect(page.locator(".react-flow__node-shot")).toContainText("Wan22 FLF2V");
+  const canvasWidth = page.getByLabel("画布宽度");
+  await canvasWidth.fill("");
+  await expect(canvasWidth).toHaveValue("");
+  await canvasWidth.fill("832");
+  await canvasWidth.press("Enter");
+  await expect(canvasWidth).toHaveValue("832");
+  const canvasDuration = page.getByLabel("画布时长");
+  await canvasDuration.fill("");
+  await expect(canvasDuration).toHaveValue("");
+  await canvasDuration.fill("3.5");
+  await canvasDuration.press("Enter");
+  await expect(canvasDuration).toHaveValue("3.5");
   await page.locator(".advanced-generation-settings summary").click();
-  await page.getByLabel("宽度", { exact: true }).fill("1024");
+  const inspectorWidth = page.getByLabel("宽度", { exact: true });
+  await inspectorWidth.fill("");
+  await expect(inspectorWidth).toHaveValue("");
+  await inspectorWidth.fill("1024");
+  await inspectorWidth.press("Tab");
+  await expect(inspectorWidth).toHaveValue("1024");
   await page
     .getByRole("button", { name: /Wan22 FLF2V/ })
     .first()

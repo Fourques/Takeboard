@@ -35,9 +35,10 @@ function validPng() {
 }
 
 function objectInfo(classTypes: string[]) {
-  return Object.fromEntries(
-    classTypes.map((classType) => [classType, { input: { required: {} } }]),
-  );
+  const expanded = classTypes.includes("MiniMaxH3ImageToVideo")
+    ? [...classTypes, "VAEDecodeAudio"]
+    : classTypes;
+  return Object.fromEntries(expanded.map((classType) => [classType, { input: { required: {} } }]));
 }
 
 async function projectFixture(storage?: { inputRoot: string; outputRoot: string }) {
@@ -64,7 +65,7 @@ async function projectFixture(storage?: { inputRoot: string; outputRoot: string 
 }
 
 describe("real generation routes", () => {
-  it("rejects unsupported recipes before touching ComfyUI", async () => {
+  it("rejects workflows that have no trusted binding", async () => {
     const { app, key, shotId } = await projectFixture();
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
@@ -76,7 +77,8 @@ describe("real generation routes", () => {
     });
 
     expect(response.statusCode).toBe(422);
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("takeboard%2Fbindings");
   });
 
   it("cancels the remote prompt when persisting the submitted run fails", async () => {
@@ -180,6 +182,88 @@ describe("real generation routes", () => {
     expect(response.statusCode).toBe(409);
     expect(response.json().error).toContain("首帧不是可用图片");
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      recipePath: "Kino/Kino_Wan22_I2V.json",
+      requestedSteps: 100,
+      expectedSteps: 40,
+      expectedCfg: 3.5,
+      expectedLora: false,
+      expectedVersion: "wan22-i2v-quality@2",
+    },
+    {
+      recipePath: "Kino/Kino_Wan22_I2V_Preview.json",
+      requestedSteps: 20,
+      expectedSteps: 4,
+      expectedCfg: 1,
+      expectedLora: true,
+      expectedVersion: "wan22-i2v-preview@2",
+    },
+  ])("keeps Wan quality profiles explicit for $recipePath", async (profile) => {
+    const { app, key, shotId } = await projectFixture();
+    const uploaded = await app.inject({
+      method: "POST",
+      url: `/api/projects/${key}/assets`,
+      ...multipartFile("frame.png", "image/png", validPng()),
+    });
+    const assetId = uploaded.json().snapshot.assets[0].id as string;
+    let submittedPrompt: Record<string, { class_type?: string; inputs?: Record<string, unknown> }> =
+      {};
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith("/upload/image")) {
+          return Response.json({ name: "frame.png", subfolder: "", type: "input" });
+        }
+        if (url.endsWith("/object_info")) {
+          return Response.json(
+            objectInfo([
+              "LoadImage",
+              "VAELoader",
+              "CLIPLoader",
+              "CLIPTextEncode",
+              "UNETLoader",
+              "LoraLoaderModelOnly",
+              "ModelSamplingSD3",
+              "WanImageToVideo",
+              "KSamplerAdvanced",
+              "VAEDecode",
+              "CreateVideo",
+              "SaveVideo",
+            ]),
+          );
+        }
+        if (url.endsWith("/prompt")) {
+          submittedPrompt = (JSON.parse(String(init?.body)) as { prompt: typeof submittedPrompt })
+            .prompt;
+          return Response.json({ prompt_id: `prompt-${profile.expectedSteps}` });
+        }
+        throw new Error(`Unexpected ComfyUI request: ${url}`);
+      }),
+    );
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/projects/${key}/shots/${shotId}/generate`,
+      payload: {
+        recipePath: profile.recipePath,
+        firstFrameAssetId: assetId,
+        prompt: "人物自然回头，镜头稳定",
+        steps: profile.requestedSteps,
+      },
+    });
+
+    expect(response.statusCode, response.body).toBe(202);
+    expect(submittedPrompt.high_sample?.inputs).toMatchObject({
+      steps: profile.expectedSteps,
+      cfg: profile.expectedCfg,
+    });
+    expect(Boolean(submittedPrompt.high_lora)).toBe(profile.expectedLora);
+    expect(response.json().snapshot.runs[0].recipeVersion).toBe(profile.expectedVersion);
+    expect(response.json().snapshot.runs[0].parameters.steps).toBe(profile.expectedSteps);
   });
 
   it("marks a completed run without video output as failed", async () => {
@@ -427,90 +511,93 @@ describe("real generation routes", () => {
     await expect(access(runOutputDirectory)).rejects.toThrow();
   });
 
-  it("recovers SaveVideo MP4 metadata returned in ComfyUI's images field", async () => {
-    const { app, key, shotId } = await projectFixture();
-    const uploaded = await app.inject({
-      method: "POST",
-      url: `/api/projects/${key}/assets`,
-      ...multipartFile("frame.png", "image/png", validPng()),
-    });
-    const assetId = uploaded.json().snapshot.assets[0].id as string;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: string | URL | Request) => {
-        const url = String(input);
-        if (url.endsWith("/upload/image")) {
-          return Response.json({ name: "frame.png", subfolder: "", type: "input" });
-        }
-        if (url.endsWith("/object_info")) {
-          return Response.json(
-            objectInfo([
-              "LoadImage",
-              "VAELoader",
-              "CLIPLoader",
-              "CLIPTextEncode",
-              "UNETLoader",
-              "LoraLoaderModelOnly",
-              "ModelSamplingSD3",
-              "WanImageToVideo",
-              "KSamplerAdvanced",
-              "VAEDecode",
-              "CreateVideo",
-              "SaveVideo",
-            ]),
-          );
-        }
-        if (url.endsWith("/prompt")) return Response.json({ prompt_id: "prompt-video" });
-        if (url.endsWith("/history/prompt-video")) {
-          return Response.json({
-            "prompt-video": {
-              status: { status_str: "success", completed: true },
-              outputs: {
-                save: {
-                  images: [
-                    { filename: "shot_00001_.mp4", subfolder: "takeboard/test", type: "output" },
-                  ],
-                  animated: [true],
+  it.each(["images", "gifs"] as const)(
+    "recovers SaveVideo MP4 metadata returned in ComfyUI's %s field",
+    async (outputField) => {
+      const { app, key, shotId } = await projectFixture();
+      const uploaded = await app.inject({
+        method: "POST",
+        url: `/api/projects/${key}/assets`,
+        ...multipartFile("frame.png", "image/png", validPng()),
+      });
+      const assetId = uploaded.json().snapshot.assets[0].id as string;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: string | URL | Request) => {
+          const url = String(input);
+          if (url.endsWith("/upload/image")) {
+            return Response.json({ name: "frame.png", subfolder: "", type: "input" });
+          }
+          if (url.endsWith("/object_info")) {
+            return Response.json(
+              objectInfo([
+                "LoadImage",
+                "VAELoader",
+                "CLIPLoader",
+                "CLIPTextEncode",
+                "UNETLoader",
+                "LoraLoaderModelOnly",
+                "ModelSamplingSD3",
+                "WanImageToVideo",
+                "KSamplerAdvanced",
+                "VAEDecode",
+                "CreateVideo",
+                "SaveVideo",
+              ]),
+            );
+          }
+          if (url.endsWith("/prompt")) return Response.json({ prompt_id: "prompt-video" });
+          if (url.endsWith("/history/prompt-video")) {
+            return Response.json({
+              "prompt-video": {
+                status: { status_str: "success", completed: true },
+                outputs: {
+                  save: {
+                    [outputField]: [
+                      { filename: "shot_00001_.mp4", subfolder: "takeboard/test", type: "output" },
+                    ],
+                    animated: [true],
+                  },
                 },
               },
-            },
-          });
-        }
-        if (url.includes("/view?")) {
-          return new Response(new Uint8Array([0, 0, 0, 24, 102, 116, 121, 112]));
-        }
-        throw new Error(`Unexpected ComfyUI request: ${url}`);
-      }),
-    );
+            });
+          }
+          if (url.includes("/view?")) {
+            return new Response(new Uint8Array([0, 0, 0, 24, 102, 116, 121, 112]));
+          }
+          throw new Error(`Unexpected ComfyUI request: ${url}`);
+        }),
+      );
 
-    const submitted = await app.inject({
-      method: "POST",
-      url: `/api/projects/${key}/shots/${shotId}/generate`,
-      payload: {
-        recipePath: "Kino/Kino_Wan22_I2V.json",
-        firstFrameAssetId: assetId,
-        prompt: "人物缓慢回头",
-      },
-    });
-    expect(submitted.statusCode, submitted.body).toBe(202);
+      const submitted = await app.inject({
+        method: "POST",
+        url: `/api/projects/${key}/shots/${shotId}/generate`,
+        payload: {
+          recipePath: "Kino/Kino_Wan22_I2V.json",
+          firstFrameAssetId: assetId,
+          prompt: "人物缓慢回头",
+        },
+      });
+      expect(submitted.statusCode, submitted.body).toBe(202);
 
-    const polled = await app.inject({
-      method: "GET",
-      url: `/api/projects/${key}/runs/${submitted.json().runId}`,
-    });
-    expect(polled.statusCode).toBe(200);
-    expect(polled.json()).toMatchObject({
-      status: "completed",
-      snapshot: {
-        runs: [expect.objectContaining({ status: "completed" })],
-        takes: [expect.objectContaining({ status: "candidate" })],
-        assets: [
-          expect.objectContaining({ mediaType: "image" }),
-          expect.objectContaining({ mediaType: "video" }),
-        ],
-      },
-    });
-  });
+      const polled = await app.inject({
+        method: "GET",
+        url: `/api/projects/${key}/runs/${submitted.json().runId}`,
+      });
+      expect(polled.statusCode).toBe(200);
+      expect(polled.json()).toMatchObject({
+        status: "completed",
+        snapshot: {
+          runs: [expect.objectContaining({ status: "completed" })],
+          takes: [expect.objectContaining({ status: "candidate" })],
+          assets: [
+            expect.objectContaining({ mediaType: "image" }),
+            expect.objectContaining({ mediaType: "video" }),
+          ],
+        },
+      });
+    },
+  );
 
   it("rejects spoofed image MIME before storing the asset", async () => {
     const { app, key } = await projectFixture();
@@ -595,9 +682,128 @@ describe("real generation routes", () => {
       },
     });
     expect(response.json().snapshot.runs[0]).toMatchObject({
-      recipeVersion: "minimax-h3@1",
+      recipeVersion: "minimax-h3-fl2va@2",
       inputs: [],
       parameters: { width: 480, height: 864, steps: 20 },
+    });
+  });
+
+  it("submits native MiniMax Ref2VA with image, video soundtrack and audio references", async () => {
+    const { app, key, shotId } = await projectFixture();
+    const uploads = [];
+    uploads.push(
+      await app.inject({
+        method: "POST",
+        url: `/api/projects/${key}/assets`,
+        ...multipartFile("subject.png", "image/png", validPng()),
+      }),
+    );
+    uploads.push(
+      await app.inject({
+        method: "POST",
+        url: `/api/projects/${key}/assets`,
+        ...multipartFile(
+          "motion.mp4",
+          "video/mp4",
+          new Uint8Array([0, 0, 0, 24, 102, 116, 121, 112]),
+        ),
+      }),
+    );
+    uploads.push(
+      await app.inject({
+        method: "POST",
+        url: `/api/projects/${key}/assets`,
+        ...multipartFile("voice.wav", "audio/wav", new Uint8Array([82, 73, 70, 70])),
+      }),
+    );
+    const assets = uploads.map((response) => response.json().snapshot.assets.at(-1));
+    let submittedPrompt: Record<string, unknown> | null = null;
+    let uploadIndex = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith("/upload/image")) {
+          uploadIndex += 1;
+          return Response.json({ name: `reference-${uploadIndex}`, subfolder: "", type: "input" });
+        }
+        if (url.endsWith("/object_info")) {
+          return Response.json(
+            objectInfo([
+              "UNETLoader",
+              "CLIPLoader",
+              "VAELoader",
+              "MiniMaxH3ReferenceToVideo",
+              "LoadImage",
+              "LoadVideo",
+              "GetVideoComponents",
+              "LoadAudio",
+              "RandomNoise",
+              "BasicGuider",
+              "KSamplerSelect",
+              "BasicScheduler",
+              "SamplerCustomAdvanced",
+              "VAEDecode",
+              "VAEDecodeAudio",
+              "CreateVideo",
+              "SaveVideo",
+            ]),
+          );
+        }
+        if (url.endsWith("/prompt")) {
+          submittedPrompt = JSON.parse(String(init?.body)) as Record<string, unknown>;
+          return Response.json({ prompt_id: "minimax-r2v-prompt" });
+        }
+        throw new Error(`Unexpected ComfyUI request: ${url}`);
+      }),
+    );
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/projects/${key}/shots/${shotId}/generate`,
+      payload: {
+        recipePath: "Kino/Kino_MinimaxH3_R2V.json",
+        prompt: "Use <Picture 1>, <Video 1>, and <Audio 2>.",
+        promptSource: "使用 @subject、@motion 和 @voice。",
+        referenceImageAssetIds: [assets[0].id],
+        referenceVideoAssetIds: [assets[1].id],
+        referenceAudioAssetIds: [assets[2].id],
+        referenceImageSize: "max",
+        durationSeconds: 5,
+      },
+    });
+
+    expect(response.statusCode, response.body).toBe(202);
+    expect(uploadIndex).toBe(3);
+    expect(submittedPrompt).toMatchObject({
+      prompt: {
+        model: {
+          inputs: { unet_name: "minimax_h3_ref2va_pruned_int8_convrot.safetensors" },
+        },
+        conditioning: {
+          class_type: "MiniMaxH3ReferenceToVideo",
+          inputs: {
+            ref_image_size: "max",
+            "ref_images.ref_image_0": ["reference_image_0", 0],
+            "ref_videos.ref_video_0": ["reference_video_components_0", 0],
+            "ref_video_audios.ref_video_audio_0": ["reference_video_components_0", 1],
+            "ref_audios.ref_audio_0": ["reference_audio_0", 0],
+          },
+        },
+      },
+    });
+    expect(response.json().snapshot.runs[0]).toMatchObject({
+      recipeVersion: "minimax-h3-ref2va@2",
+      inputs: [
+        expect.objectContaining({ slot: "reference_image_0", refId: assets[0].id }),
+        expect.objectContaining({ slot: "reference_video_0", refId: assets[1].id }),
+        expect.objectContaining({ slot: "reference_audio_0", refId: assets[2].id }),
+      ],
+      parameters: {
+        fps: 24,
+        referenceImageSize: "max",
+        promptSource: "使用 @subject、@motion 和 @voice。",
+      },
     });
   });
 

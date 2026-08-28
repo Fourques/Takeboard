@@ -1,5 +1,11 @@
 import { type CSSProperties, lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
-import type { ProjectBoardPreview, ProjectCatalogItem, WorkerStatus } from "./api";
+import type {
+  ProjectBoardPreview,
+  ProjectCatalogItem,
+  TrashedProjectItem,
+  WorkerStatus,
+} from "./api";
+import { DisplaySettings } from "./display-settings";
 import { ThemeSwitcher } from "./theme-switcher";
 
 const StudioUniverse = lazy(() =>
@@ -247,8 +253,10 @@ export function ProjectHub({
   onOpen,
   onRefreshWorker,
   onRename,
+  onRestore,
   onStartWorker,
   projects,
+  trashedProjects,
   worker,
   workerBusy,
 }: {
@@ -259,8 +267,10 @@ export function ProjectHub({
   onOpen: (key: string) => Promise<void>;
   onRefreshWorker: () => Promise<void>;
   onRename: (key: string, title: string) => Promise<void>;
+  onRestore: (trashKey: string) => Promise<void>;
   onStartWorker: () => Promise<void>;
   projects: ProjectCatalogItem[];
+  trashedProjects: TrashedProjectItem[];
   worker: WorkerStatus | null;
   workerBusy: boolean;
 }) {
@@ -274,6 +284,8 @@ export function ProjectHub({
   const [projectsVisible, setProjectsVisible] = useState(false);
   const [projectStageActive, setProjectStageActive] = useState(false);
   const [workerPanelOpen, setWorkerPanelOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [recycleOpen, setRecycleOpen] = useState(false);
   const [tempoMode, setTempoMode] = useState(1);
   const [frameMode, setFrameMode] = useState(0);
   const [axisCrossed, setAxisCrossed] = useState(false);
@@ -306,17 +318,20 @@ export function ProjectHub({
   const activeFrame = frameModes[frameMode] ?? frameModes[0];
 
   useEffect(() => {
-    if (!creating && !renaming && !deleting && !workerPanelOpen) return;
+    if (!creating && !renaming && !deleting && !workerPanelOpen && !helpOpen && !recycleOpen)
+      return;
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       setCreating(false);
       setRenaming(null);
       setDeleting(null);
       setWorkerPanelOpen(false);
+      setHelpOpen(false);
+      setRecycleOpen(false);
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [creating, deleting, renaming, workerPanelOpen]);
+  }, [creating, deleting, helpOpen, recycleOpen, renaming, workerPanelOpen]);
 
   useEffect(() => {
     if (creating) titleInput.current?.focus();
@@ -402,6 +417,19 @@ export function ProjectHub({
           </div>
           <div className="hub-header-actions">
             <ThemeSwitcher />
+            <DisplaySettings />
+            {trashedProjects.length > 0 ? (
+              <button
+                className="hub-recycle-button"
+                type="button"
+                onClick={() => setRecycleOpen(true)}
+              >
+                <span aria-hidden="true">↶</span> 回收区 {trashedProjects.length}
+              </button>
+            ) : null}
+            <button className="hub-help-button" type="button" onClick={() => setHelpOpen(true)}>
+              <span aria-hidden="true">?</span> 开始使用
+            </button>
             <div className="worker-control">
               <button
                 className={`worker-pill worker-${worker?.status ?? "loading"}`}
@@ -771,6 +799,119 @@ export function ProjectHub({
         </div>
       ) : null}
 
+      {helpOpen ? (
+        <div className="modal-backdrop">
+          <section
+            className="start-guide-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="start-guide-title"
+          >
+            <div className="modal-title">
+              <div>
+                <span className="section-kicker">QUICK START</span>
+                <h2 id="start-guide-title">不用研究配置，也能直接开始</h2>
+                <p>本机使用、远程连接和故障检查都有独立入口。</p>
+              </div>
+              <button type="button" aria-label="关闭开始使用" onClick={() => setHelpOpen(false)}>
+                ×
+              </button>
+            </div>
+            <div className="start-guide-grid">
+              <article>
+                <span>01</span>
+                <strong>本机打开</strong>
+                <p>
+                  双击项目根目录里的 <code>START-TAKEBOARD</code>
+                  。首次会自动安装，之后自动启动并打开浏览器。
+                </p>
+              </article>
+              <article>
+                <span>02</span>
+                <strong>连接远程服务器</strong>
+                <p>
+                  双击 <code>CONNECT-REMOTE</code>，输入 SSH
+                  主机。端口冲突会自动换号，关闭窗口即释放隧道。
+                </p>
+              </article>
+              <article>
+                <span>03</span>
+                <strong>遇到打不开</strong>
+                <p>
+                  运行 <code>npm run easy:doctor</code>，会用中文逐项检查环境、服务与
+                  ComfyUI，并给出下一步。
+                </p>
+              </article>
+            </div>
+            <div className={`start-guide-status worker-${worker?.status ?? "loading"}`}>
+              <i />
+              <div>
+                <strong>
+                  {worker?.status === "ready" ? "现在可以生成" : "画布可用，生成端尚未连接"}
+                </strong>
+                <span>
+                  {worker?.status === "ready"
+                    ? (worker.device ?? "ComfyUI 已连接")
+                    : "需要生成时，在右上角进行检测或安全启动。"}
+                </span>
+              </div>
+            </div>
+            <small className="start-guide-note">
+              项目默认保存在本机 TakeBoardData，关闭服务不会删除项目。
+            </small>
+          </section>
+        </div>
+      ) : null}
+
+      {recycleOpen ? (
+        <div className="modal-backdrop">
+          <section
+            className="recycle-project-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="recycle-project-title"
+          >
+            <div className="modal-title">
+              <div>
+                <span className="section-kicker">PROJECT RECOVERY</span>
+                <h2 id="recycle-project-title">项目回收区</h2>
+                <p>项目仍保存在本机，恢复不会重新生成或复制素材。</p>
+              </div>
+              <button
+                type="button"
+                aria-label="关闭项目回收区"
+                onClick={() => setRecycleOpen(false)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="recycle-project-list">
+              {trashedProjects.map((project) => (
+                <article key={project.trashKey}>
+                  <div>
+                    <strong>{project.title}</strong>
+                    <span>
+                      {project.shotCount} 个镜头 · {formatUpdatedAt(project.deletedAt)}移入
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void onRestore(project.trashKey).catch(() => undefined)}
+                  >
+                    {busy ? "正在恢复…" : "恢复项目"}
+                  </button>
+                </article>
+              ))}
+            </div>
+            {error ? <p className="form-error">{error}</p> : null}
+            <small className="recycle-project-note">
+              回收区不会自动清空，项目可在确认备份后由文件系统管理员清理。
+            </small>
+          </section>
+        </div>
+      ) : null}
+
       {renaming ? (
         <div className="modal-backdrop">
           <form
@@ -828,7 +969,11 @@ export function ProjectHub({
             </div>
             <span className="section-kicker">项目管理</span>
             <h2 id="delete-project-title">移除“{deleting.title}”？</h2>
-            <p>项目将移入本机项目回收区，不会立即清除素材文件。</p>
+            <p>
+              {deleting.activeRunCount > 0
+                ? `TakeBoard 会先安全停止 ${deleting.activeRunCount} 个生成任务；只有执行端确认停止后，项目才会移入回收区。`
+                : "项目将移入本机项目回收区，不会立即清除素材文件。"}
+            </p>
             {error ? <p className="form-error">{error}</p> : null}
             <div className="delete-project-actions">
               <button type="button" onClick={() => setDeleting(null)} disabled={busy}>
@@ -844,7 +989,13 @@ export function ProjectHub({
                     .catch(() => undefined)
                 }
               >
-                {busy ? "正在移动…" : "移到回收区"}
+                {busy
+                  ? deleting.activeRunCount > 0
+                    ? "正在停止任务…"
+                    : "正在移动…"
+                  : deleting.activeRunCount > 0
+                    ? `停止 ${deleting.activeRunCount} 个任务并移除`
+                    : "移到回收区"}
               </button>
             </div>
           </section>

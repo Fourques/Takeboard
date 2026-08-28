@@ -31,8 +31,9 @@ TakeBoard 的第一条真实图片生成链路选用 **Qwen-Image-2512 FP8**。�
 传输入口，不改变仓库、文件或校验依据。
 
 ```bash
+export COMFY_DIR="${COMFY_DIR:-$HOME/ComfyUI}"
 HF_ENDPOINT=https://hf-mirror.com \
-  /home/duanqw/Opc/Stortvideo/apps/ComfyUI-H3/env/bin/python \
+  "$COMFY_DIR/venv/bin/python" \
   scripts/download-qwen-image-2512.py
 
 python3 scripts/install-qwen-image-workflows.py

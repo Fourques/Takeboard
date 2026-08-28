@@ -19,6 +19,7 @@ describe("GET /api/health", () => {
       service: "takeboard-server",
       status: "ok",
       version: "0.0.0",
+      instanceId: null,
     });
   });
 });

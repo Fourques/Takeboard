@@ -2,7 +2,7 @@ import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createTakeBoardId, toIsoTimestamp } from "@takeboard/domain";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
 import { ProjectStore } from "../src/storage/project-store.js";
 
@@ -42,10 +42,130 @@ function videoUpload() {
 }
 
 afterEach(async () => {
+  vi.unstubAllGlobals();
   await Promise.all(cleanup.splice(0).map((close) => close()));
 });
 
 describe("TakeBoard project API", () => {
+  it("stops active generation before moving a project to trash", async () => {
+    const root = await mkdtemp(join(tmpdir(), "takeboard-delete-active-run-"));
+    cleanup.push(() => rm(root, { recursive: true, force: true }));
+    const app = buildApp({ projectsRoot: root, webRoot: null, comfyUrl: "http://comfy.test" });
+    cleanup.push(() => app.close());
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: { title: "正在生成的项目" },
+    });
+    const key = created.json().key as string;
+    const shotResponse = await app.inject({
+      method: "POST",
+      url: `/api/projects/${key}/shots`,
+      payload: { label: "删除安全测试" },
+    });
+    const store = ProjectStore.openExisting(join(root, key));
+    expect(store).not.toBeNull();
+    const current = store?.loadCurrent();
+    expect(current).not.toBeNull();
+    if (!store || !current) throw new Error("Project fixture could not be opened");
+    const timestamp = toIsoTimestamp();
+    const shotId = shotResponse.json().shotId as string;
+    current.snapshot.runs.push({
+      id: createTakeBoardId("run"),
+      shotId,
+      recipeId: createTakeBoardId("recipe"),
+      recipeVersion: "test@1",
+      workflowSha256: "1".repeat(64),
+      workerId: createTakeBoardId("worker"),
+      promptId: "prompt-delete-project",
+      status: "running",
+      inputs: [],
+      parameters: {},
+      errorCode: null,
+      errorMessage: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+    await store.save(current.snapshot, { type: "test.active_run", payload: {} });
+    store.close();
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/api/jobs/prompt-delete-project/cancel")) {
+        return Response.json({ cancelled: true });
+      }
+      if (url.endsWith("/history")) return Response.json({});
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const catalog = await app.inject({ method: "GET", url: "/api/projects" });
+    expect(catalog.json().projects[0].activeRunCount).toBe(1);
+    const deleted = await app.inject({ method: "DELETE", url: `/api/projects/${key}` });
+
+    expect(deleted.statusCode, deleted.body).toBe(200);
+    expect(deleted.json()).toMatchObject({ deleted: true, stoppedRunCount: 1 });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://comfy.test/api/jobs/prompt-delete-project/cancel",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(await readdir(join(root, ".trash"))).toHaveLength(1);
+  });
+
+  it("keeps a project when ComfyUI cannot confirm cancellation", async () => {
+    const root = await mkdtemp(join(tmpdir(), "takeboard-delete-unconfirmed-"));
+    cleanup.push(() => rm(root, { recursive: true, force: true }));
+    const app = buildApp({ projectsRoot: root, webRoot: null, comfyUrl: "http://comfy.test" });
+    cleanup.push(() => app.close());
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: { title: "不能误删" },
+    });
+    const key = created.json().key as string;
+    const shotResponse = await app.inject({
+      method: "POST",
+      url: `/api/projects/${key}/shots`,
+      payload: { label: "保留安全测试" },
+    });
+    const store = ProjectStore.openExisting(join(root, key));
+    const current = store?.loadCurrent();
+    if (!store || !current) throw new Error("Project fixture could not be opened");
+    const timestamp = toIsoTimestamp();
+    current.snapshot.runs.push({
+      id: createTakeBoardId("run"),
+      shotId: shotResponse.json().shotId as string,
+      recipeId: createTakeBoardId("recipe"),
+      recipeVersion: "test@1",
+      workflowSha256: "2".repeat(64),
+      workerId: createTakeBoardId("worker"),
+      promptId: "prompt-still-running",
+      status: "running",
+      inputs: [],
+      parameters: {},
+      errorCode: null,
+      errorMessage: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+    await store.save(current.snapshot, { type: "test.active_run", payload: {} });
+    store.close();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const url = String(input);
+        if (url.endsWith("/queue")) {
+          return Response.json({ queue_running: [[1, "prompt-still-running"]] });
+        }
+        return Response.json({ cancelled: false });
+      }),
+    );
+
+    const deleted = await app.inject({ method: "DELETE", url: `/api/projects/${key}` });
+    expect(deleted.statusCode).toBe(409);
+    expect(deleted.json()).toMatchObject({ activeRunCount: 1, stoppedRunCount: 0 });
+    expect((await app.inject({ method: "GET", url: `/api/projects/${key}` })).statusCode).toBe(200);
+  });
+
   it("imports library assets without polluting the canvas and edits metadata directly", async () => {
     const root = await mkdtemp(join(tmpdir(), "takeboard-asset-library-api-"));
     cleanup.push(() => rm(root, { recursive: true, force: true }));
@@ -313,6 +433,22 @@ describe("TakeBoard project API", () => {
     expect(deleted.json()).toMatchObject({ key, deleted: true, recoverable: true });
     expect((await app.inject({ method: "GET", url: "/api/projects" })).json().projects).toEqual([]);
     expect(await readdir(join(root, ".trash"))).toHaveLength(1);
+    const trash = await app.inject({ method: "GET", url: "/api/projects/trash" });
+    expect(trash.statusCode, trash.body).toBe(200);
+    expect(trash.json().projects).toEqual([
+      expect.objectContaining({ originalKey: key, title: "新片名", shotCount: 1 }),
+    ]);
+    const trashKey = trash.json().projects[0].trashKey as string;
+    const restored = await app.inject({
+      method: "POST",
+      url: `/api/projects/trash/${encodeURIComponent(trashKey)}/restore`,
+    });
+    expect(restored.statusCode, restored.body).toBe(200);
+    expect(restored.json()).toMatchObject({ restored: true, key, title: "新片名" });
+    expect((await app.inject({ method: "GET", url: `/api/projects/${key}` })).statusCode).toBe(200);
+    expect(
+      (await app.inject({ method: "GET", url: "/api/projects/trash" })).json().projects,
+    ).toEqual([]);
   });
 
   it("reuses a generated shot image as another shot input", async () => {

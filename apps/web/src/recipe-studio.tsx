@@ -1,5 +1,13 @@
 import { useMemo, useRef, useState } from "react";
-import type { WorkflowCapability, WorkflowSummary } from "./api";
+import {
+  type WorkflowBindingDraft,
+  type WorkflowBindingInspection,
+  type WorkflowCapability,
+  type WorkflowMediaKey,
+  type WorkflowParameterKey,
+  type WorkflowSummary,
+  workflowApi,
+} from "./api";
 
 const groups: Array<{ id: "all" | WorkflowCapability; label: string }> = [
   { id: "all", label: "全部" },
@@ -18,6 +26,24 @@ const capabilityIcon: Record<WorkflowCapability, string> = {
   image_to_video: "动",
   first_last_video: "首",
   reference_video: "参",
+};
+
+const parameterLabels: Record<WorkflowParameterKey, string> = {
+  prompt: "提示词",
+  negative_prompt: "负面提示词",
+  seed: "Seed",
+  steps: "采样步数",
+  width: "宽度",
+  height: "高度",
+  duration: "时长（秒）",
+  fps: "帧率",
+};
+const mediaLabels: Record<WorkflowMediaKey, string> = {
+  first_frame: "起始图片",
+  last_frame: "结束图片",
+  reference_image: "参考图片",
+  reference_video: "参考视频",
+  reference_audio: "参考音频",
 };
 
 export function RecipeStudio({
@@ -48,6 +74,10 @@ export function RecipeStudio({
   const [group, setGroup] = useState<"all" | WorkflowCapability>("all");
   const [origin, setOrigin] = useState<"all" | "built_in" | "imported" | "comfyui">("all");
   const [query, setQuery] = useState("");
+  const [inspection, setInspection] = useState<WorkflowBindingInspection | null>(null);
+  const [bindingDraft, setBindingDraft] = useState<WorkflowBindingDraft | null>(null);
+  const [bindingBusy, setBindingBusy] = useState(false);
+  const [bindingError, setBindingError] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
   const filtered = useMemo(
     () =>
@@ -64,6 +94,68 @@ export function RecipeStudio({
   const selectedEditorUrl = selectedPath
     ? `${editorUrl}/?takeboard_workflow=${encodeURIComponent(selectedPath)}`
     : editorUrl;
+
+  const configureBinding = async (workflow: WorkflowSummary) => {
+    setBindingBusy(true);
+    setBindingError("");
+    setInspection({ path: workflow.path, status: workflow.bindingStatus ?? "needs_binding" });
+    setBindingDraft(null);
+    try {
+      const result = await workflowApi.inspectBinding(workflow.path);
+      setInspection(result);
+      setBindingDraft(result.binding ?? result.suggested ?? null);
+    } catch (error) {
+      setBindingError(error instanceof Error ? error.message : "无法分析该工作流");
+      setInspection({ path: workflow.path, status: "needs_binding" });
+      setBindingDraft(null);
+    } finally {
+      setBindingBusy(false);
+    }
+  };
+
+  const toggleTarget = (
+    groupName: "parameters" | "media",
+    key: WorkflowParameterKey | WorkflowMediaKey,
+    nodeId: string,
+    input: string,
+  ) => {
+    setBindingDraft((current) => {
+      if (!current) return current;
+      const group = current[groupName] as Record<
+        string,
+        Array<{ nodeId: string; input: string }> | undefined
+      >;
+      const previous = group[key] ?? [];
+      const selected = previous.some(
+        (target) => target.nodeId === nodeId && target.input === input,
+      );
+      return {
+        ...current,
+        [groupName]: {
+          ...current[groupName],
+          [key]: selected
+            ? previous.filter((target) => target.nodeId !== nodeId || target.input !== input)
+            : [...previous, { nodeId, input }],
+        },
+      };
+    });
+  };
+
+  const saveBinding = async () => {
+    if (!bindingDraft || !inspection) return;
+    setBindingBusy(true);
+    setBindingError("");
+    try {
+      await workflowApi.saveBinding(inspection.path, bindingDraft);
+      await onRefresh();
+      setInspection(null);
+      setBindingDraft(null);
+    } catch (error) {
+      setBindingError(error instanceof Error ? error.message : "参数绑定保存失败");
+    } finally {
+      setBindingBusy(false);
+    }
+  };
 
   if (!open) return null;
   return (
@@ -130,52 +222,67 @@ export function RecipeStudio({
         <div className="recipe-body">
           <div className="recipe-list">
             {filtered.map((workflow) => (
-              <button
-                type="button"
-                key={workflow.path}
-                className={`recipe-card ${selectedPath === workflow.path ? "selected" : ""}`}
-                disabled={selectionLocked}
-                onClick={() => onSelect(workflow)}
-              >
-                <span className={`recipe-icon capability-${workflow.capability}`}>
-                  {capabilityIcon[workflow.capability]}
-                </span>
-                <span className="recipe-copy">
-                  <strong>{workflow.name}</strong>
-                  <small>
-                    {workflow.capabilityLabel} ·{" "}
-                    {(workflow.mediaInputs?.first_frame ?? 0) +
-                      (workflow.mediaInputs?.last_frame ?? 0) +
-                      (workflow.mediaInputs?.reference ?? 0) +
-                      (workflow.mediaInputs?.reference_video ?? 0)}{" "}
-                    个画面位置 · {workflow.inputs.length} 项参数
-                  </small>
-                  <span>
-                    {workflow.models
-                      .slice(0, 2)
-                      .map((model) => model.replace(/\.safetensors$/i, ""))
-                      .join(" · ") || "未检测到固定模型"}
-                  </span>
-                </span>
-                <i
-                  className={`${workflow.execution === "native" ? "native" : "comfy"} model-${workflow.modelStatus ?? "unknown"}`}
+              <div className="recipe-card-wrap" key={workflow.path}>
+                <button
+                  type="button"
+                  className={`recipe-card ${selectedPath === workflow.path ? "selected" : ""}`}
+                  disabled={selectionLocked}
+                  onClick={() => {
+                    if (workflow.execution === "comfy_only") void configureBinding(workflow);
+                    else onSelect(workflow);
+                  }}
                 >
-                  {workflow.modelStatus === "missing"
-                    ? "缺模型"
-                    : workflow.modelStatus === "ready"
-                      ? "可用"
-                      : workflow.execution === "native"
-                        ? "原生"
-                        : "Comfy"}
-                </i>
-                <b className={`workflow-origin origin-${workflow.origin ?? "comfyui"}`}>
-                  {workflow.origin === "built_in"
-                    ? "内置"
-                    : workflow.origin === "imported"
-                      ? "我的"
-                      : "ComfyUI"}
-                </b>
-              </button>
+                  <span className={`recipe-icon capability-${workflow.capability}`}>
+                    {capabilityIcon[workflow.capability]}
+                  </span>
+                  <span className="recipe-copy">
+                    <strong>{workflow.name}</strong>
+                    <small>
+                      {workflow.capabilityLabel} ·{" "}
+                      {(workflow.mediaInputs?.first_frame ?? 0) +
+                        (workflow.mediaInputs?.last_frame ?? 0) +
+                        (workflow.mediaInputs?.reference ?? 0) +
+                        (workflow.mediaInputs?.reference_video ?? 0)}{" "}
+                      个画面位置 · {workflow.inputs.length} 项参数
+                    </small>
+                    <span>
+                      {workflow.models
+                        .slice(0, 2)
+                        .map((model) => model.replace(/\.safetensors$/i, ""))
+                        .join(" · ") || "未检测到固定模型"}
+                    </span>
+                  </span>
+                  <i
+                    className={`${workflow.execution === "native" || workflow.execution === "bound" ? "native" : "comfy"} model-${workflow.modelStatus ?? "unknown"}`}
+                  >
+                    {workflow.modelStatus === "missing"
+                      ? "缺模型"
+                      : workflow.bindingStatus === "stale"
+                        ? "映射失效"
+                        : workflow.execution === "bound"
+                          ? "已验证"
+                          : workflow.execution === "native"
+                            ? "内置适配"
+                            : "配置运行"}
+                  </i>
+                  <b className={`workflow-origin origin-${workflow.origin ?? "comfyui"}`}>
+                    {workflow.origin === "built_in"
+                      ? "内置"
+                      : workflow.origin === "imported"
+                        ? "我的"
+                        : "ComfyUI"}
+                  </b>
+                </button>
+                {workflow.execution !== "native" ? (
+                  <button
+                    type="button"
+                    className="recipe-binding-action"
+                    onClick={() => void configureBinding(workflow)}
+                  >
+                    {workflow.execution === "bound" ? "检查映射" : "建立映射"}
+                  </button>
+                ) : null}
+              </div>
             ))}
             {filtered.length === 0 ? (
               <div className="recipe-empty">这个分类还没有 Workflow。拖入 JSON 后会自动检测。</div>
@@ -205,7 +312,7 @@ export function RecipeStudio({
             >
               <span>↧</span>
               <strong>拖入 ComfyUI Workflow JSON</strong>
-              <p>TakeBoard 会识别能力、输入槽位与所需模型，并保存到 ComfyUI/TakeBoard。</p>
+              <p>导入后先检查节点映射与依赖；只有你明确信任并通过预检后才能直接运行。</p>
               <i>选择 JSON</i>
             </button>
           </div>
@@ -218,6 +325,165 @@ export function RecipeStudio({
             进入 ComfyUI 深度编辑 ↗
           </a>
         </footer>
+        {inspection ? (
+          <div className="binding-editor-backdrop">
+            <section className="binding-editor">
+              <header>
+                <div>
+                  <span className="section-kicker">WORKFLOW BINDING · V1</span>
+                  <h3>建立 TakeBoard 参数映射</h3>
+                  <p>{inspection.path}</p>
+                </div>
+                <button type="button" onClick={() => setInspection(null)} aria-label="关闭映射面板">
+                  ×
+                </button>
+              </header>
+              {bindingBusy && !bindingDraft ? (
+                <div className="binding-loading">正在读取真实工作流与节点定义…</div>
+              ) : null}
+              {bindingDraft && inspection.candidates ? (
+                <div className="binding-editor-body">
+                  <div className="binding-overview">
+                    <label>
+                      生成能力
+                      <select
+                        value={bindingDraft.capability}
+                        onChange={(event) =>
+                          setBindingDraft({
+                            ...bindingDraft,
+                            capability: event.target.value as WorkflowCapability,
+                          })
+                        }
+                      >
+                        {groups.slice(1).map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      输出文件
+                      <select
+                        value={bindingDraft.outputMediaType}
+                        onChange={(event) =>
+                          setBindingDraft({
+                            ...bindingDraft,
+                            outputMediaType: event.target.value as "image" | "video",
+                          })
+                        }
+                      >
+                        <option value="image">图片</option>
+                        <option value="video">视频</option>
+                      </select>
+                    </label>
+                    <span>{inspection.nodeCount ?? 0} 个可执行节点</span>
+                  </div>
+                  {(inspection.conversionIssues?.length ?? 0) > 0 ? (
+                    <div className="binding-issues">
+                      <strong>转换预检尚未通过</strong>
+                      {inspection.conversionIssues?.slice(0, 8).map((issue) => (
+                        <p key={issue}>{issue}</p>
+                      ))}
+                    </div>
+                  ) : null}
+                  <div className="binding-map-groups">
+                    <div>
+                      <h4>生成参数</h4>
+                      {(Object.keys(parameterLabels) as WorkflowParameterKey[]).map((key) => {
+                        const candidates = inspection.candidates?.parameters[key] ?? [];
+                        const selected = bindingDraft.parameters[key] ?? [];
+                        return (
+                          <details key={key} open={key === "prompt"}>
+                            <summary>
+                              <span>{parameterLabels[key]}</span>
+                              <i>{selected.length ? `${selected.length} 处` : "使用工作流默认"}</i>
+                            </summary>
+                            {candidates.length ? (
+                              candidates.map((candidate) => (
+                                <label key={`${candidate.nodeId}.${candidate.input}`}>
+                                  <input
+                                    type="checkbox"
+                                    checked={selected.some(
+                                      (target) =>
+                                        target.nodeId === candidate.nodeId &&
+                                        target.input === candidate.input,
+                                    )}
+                                    onChange={() =>
+                                      toggleTarget(
+                                        "parameters",
+                                        key,
+                                        candidate.nodeId,
+                                        candidate.input,
+                                      )
+                                    }
+                                  />
+                                  <span>{candidate.label}</span>
+                                  <code>{candidate.nodeId}</code>
+                                </label>
+                              ))
+                            ) : (
+                              <p>未自动识别到候选输入</p>
+                            )}
+                          </details>
+                        );
+                      })}
+                    </div>
+                    <div>
+                      <h4>素材入口</h4>
+                      {(Object.keys(mediaLabels) as WorkflowMediaKey[]).map((key) => {
+                        const candidates = inspection.candidates?.media[key] ?? [];
+                        const selected = bindingDraft.media[key] ?? [];
+                        return (
+                          <details key={key}>
+                            <summary>
+                              <span>{mediaLabels[key]}</span>
+                              <i>{selected.length ? `${selected.length} 个入口` : "不接入"}</i>
+                            </summary>
+                            {candidates.length ? (
+                              candidates.map((candidate) => (
+                                <label key={`${candidate.nodeId}.${candidate.input}`}>
+                                  <input
+                                    type="checkbox"
+                                    checked={selected.some(
+                                      (target) =>
+                                        target.nodeId === candidate.nodeId &&
+                                        target.input === candidate.input,
+                                    )}
+                                    onChange={() =>
+                                      toggleTarget("media", key, candidate.nodeId, candidate.input)
+                                    }
+                                  />
+                                  <span>{candidate.label}</span>
+                                  <code>{candidate.nodeId}</code>
+                                </label>
+                              ))
+                            ) : (
+                              <p>未检测到这种素材加载节点</p>
+                            )}
+                          </details>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+              <footer>
+                <p>{inspection.warning ?? bindingError}</p>
+                {bindingError ? <strong>{bindingError}</strong> : null}
+                <button
+                  type="button"
+                  onClick={() => void saveBinding()}
+                  disabled={
+                    !bindingDraft || bindingBusy || Boolean(inspection.conversionIssues?.length)
+                  }
+                >
+                  {bindingBusy ? "正在验证…" : "信任此工作流并启用"}
+                </button>
+              </footer>
+            </section>
+          </div>
+        ) : null}
       </aside>
     </div>
   );

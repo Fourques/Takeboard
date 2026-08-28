@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 
-COMFY_DIR = Path(os.environ.get("COMFY_DIR", "/home/duanqw/Opc/Stortvideo/apps/ComfyUI-H3"))
+COMFY_DIR = Path(os.environ.get("COMFY_DIR", Path.home() / "ComfyUI"))
 WORKFLOW_DIR = COMFY_DIR / "user" / "default" / "workflows" / "Kino"
 BLUEPRINT = COMFY_DIR / "blueprints" / "Text to Image (Qwen-Image 2512).json"
 

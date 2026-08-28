@@ -1,12 +1,27 @@
 # TakeBoard 远程访问
 
-更新时间：2026-08-24
+更新时间：2026-08-28
 
-TakeBoard 只监听服务器的 `127.0.0.1:48120`。远程用户通过标准 SSH 本地端口转发访问，不需要 Tailscale Serve、专用客户端或公开 Web 端口。
+TakeBoard 只监听服务器回环地址。稳定服务默认使用 `127.0.0.1:48120`；简易启动器在冲突时会使用 `48120–48139` 中的空闲端口。远程用户通过标准 SSH 本地端口转发访问，不需要 Tailscale Serve、专用客户端或公开 Web 端口。
 
 SSH 服务器可以通过公网域名、局域网 IP、跳板机或 Tailscale 主机名抵达。Tailscale 在这里仅是可选网络通道，隧道机制始终是 OpenSSH `-L`。
 
 ## 推荐方式
+
+不熟悉命令行时，在项目根目录双击：
+
+- macOS：`CONNECT-REMOTE.command`；
+- Windows：`CONNECT-REMOTE.cmd`。
+
+输入 SSH 主机后，窗口会保持连接并自动打开页面。关闭窗口或按 `Ctrl-C` 会同时关闭 SSH 并释放本地端口。也可以在任意平台运行：
+
+```bash
+npm run easy:remote -- your-server
+```
+
+这个入口会为远端 `48120–48139` 建立临时探测映射，自动选择真正通过 TakeBoard 健康检查的端口；本地从 `48230` 起选择空闲端口，ComfyUI 则使用 `48188–48208` 中的空闲端口。连接窗口关闭后，这些映射会一起释放。明确设置 `TAKEBOARD_REMOTE_PORT` 时只连接指定端口。
+
+### 管理脚本方式
 
 在 Mac 或 Linux 客户端的项目目录执行：
 

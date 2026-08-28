@@ -1,5 +1,6 @@
 import { Handle, type Node, type NodeProps, Position } from "@xyflow/react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { NumericInput } from "./numeric-input";
 
 export type BoardNodeData = {
   kind: "text" | "entity" | "asset" | "shot" | "take_stack";
@@ -19,12 +20,12 @@ export type BoardNodeData = {
   aspectRatio?: string | undefined;
   details?: string[];
   inputSlots?: Array<{
-    id: "first_frame" | "last_frame" | "reference" | "reference_video";
+    id: "first_frame" | "last_frame" | "reference" | "reference_video" | "reference_audio";
     label: string;
     connectedCount: number;
     maxCount: number;
     required: boolean;
-    mediaType: "image" | "video";
+    mediaType: "image" | "video" | "audio";
   }>;
   inlineControls?: {
     workflowPath: string;
@@ -43,6 +44,13 @@ export type BoardNodeData = {
     outputLabel: "图片" | "视频";
     mentionAliases: string[];
     busy: boolean;
+    progress: {
+      phase: "preparing" | "queued" | "running" | "collecting";
+      label: string;
+      detail: string;
+      percent: number | null;
+      elapsedSeconds: number;
+    } | null;
     disabledReason: string | null;
     onWorkflowChange: (path: string) => void;
     onSettingsChange: (input: {
@@ -174,6 +182,12 @@ function AssetNode({ data }: NodeProps<BoardNode>) {
         >
           {data.mediaUrl && data.mediaType === "video" ? (
             <video src={data.mediaUrl} muted loop playsInline controls preload="metadata" />
+          ) : data.mediaUrl && data.mediaType === "audio" ? (
+            <div className="asset-audio-preview">
+              <span aria-hidden="true">♪</span>
+              {/* biome-ignore lint/a11y/useMediaCaption: raw reference audio has no authored caption track */}
+              <audio src={data.mediaUrl} controls preload="metadata" />
+            </div>
           ) : data.mediaUrl ? (
             <img src={data.mediaUrl} alt={data.title} />
           ) : (
@@ -193,7 +207,10 @@ function AssetNode({ data }: NodeProps<BoardNode>) {
 
 function ShotNode({ data }: NodeProps<BoardNode>) {
   const [titleDraft, setTitleDraft] = useState(data.title);
+  const [failedMediaUrl, setFailedMediaUrl] = useState<string | null>(null);
+  const quickSettingsId = useId();
   useEffect(() => setTitleDraft(data.title), [data.title]);
+  const mediaFailed = Boolean(data.mediaUrl && failedMediaUrl === data.mediaUrl);
   const [settingsDraft, setSettingsDraft] = useState(() => ({
     prompt: data.inlineControls?.prompt ?? "",
     width: data.inlineControls?.width ?? 1024,
@@ -201,16 +218,38 @@ function ShotNode({ data }: NodeProps<BoardNode>) {
     durationSeconds: data.inlineControls?.durationSeconds ?? 5,
     seed: data.inlineControls?.seed ?? 0,
   }));
+  const settingsDraftRef = useRef(settingsDraft);
+  settingsDraftRef.current = settingsDraft;
+  const updateSettingsDraft = (input: Partial<typeof settingsDraft>) => {
+    const next = { ...settingsDraftRef.current, ...input };
+    settingsDraftRef.current = next;
+    setSettingsDraft(next);
+  };
+  const inlinePrompt = data.inlineControls?.prompt;
+  const inlineWidth = data.inlineControls?.width;
+  const inlineHeight = data.inlineControls?.height;
+  const inlineDurationSeconds = data.inlineControls?.durationSeconds;
+  const inlineSeed = data.inlineControls?.seed;
   useEffect(() => {
-    if (!data.inlineControls) return;
-    setSettingsDraft({
-      prompt: data.inlineControls.prompt,
-      width: data.inlineControls.width,
-      height: data.inlineControls.height,
-      durationSeconds: data.inlineControls.durationSeconds,
-      seed: data.inlineControls.seed,
-    });
-  }, [data.inlineControls]);
+    if (
+      inlinePrompt === undefined ||
+      inlineWidth === undefined ||
+      inlineHeight === undefined ||
+      inlineDurationSeconds === undefined ||
+      inlineSeed === undefined
+    ) {
+      return;
+    }
+    const next = {
+      prompt: inlinePrompt,
+      width: inlineWidth,
+      height: inlineHeight,
+      durationSeconds: inlineDurationSeconds,
+      seed: inlineSeed,
+    };
+    settingsDraftRef.current = next;
+    setSettingsDraft(next);
+  }, [inlineDurationSeconds, inlineHeight, inlinePrompt, inlineSeed, inlineWidth]);
   const statusLabel = {
     draft: "待生成",
     generating: "生成中",
@@ -250,7 +289,8 @@ function ShotNode({ data }: NodeProps<BoardNode>) {
     settingsDraft.seed < 0 ||
     (data.inlineControls?.outputLabel === "视频" &&
       (!Number.isFinite(settingsDraft.durationSeconds) ||
-        settingsDraft.durationSeconds < 1 ||
+        settingsDraft.durationSeconds <
+          (currentWorkflow?.name.toLowerCase().includes("minimax") ? 4 : 1) ||
         settingsDraft.durationSeconds > 15));
   const draftDisabledReason = !settingsDraft.prompt.trim()
     ? "请先输入镜头提示词"
@@ -286,12 +326,37 @@ function ShotNode({ data }: NodeProps<BoardNode>) {
         className={`board-card shot-node ${data.mediaUrl ? "has-generated-media" : "is-planning"} ${data.selected ? "selected" : ""}`}
       >
         {data.mediaUrl ? (
-          <div className="shot-generated-media" style={generatedStyle}>
+          <div
+            className={`shot-generated-media ${data.mediaType === "video" ? "is-video" : ""}`}
+            style={generatedStyle}
+          >
             {data.mediaType === "video" ? (
-              <video src={data.mediaUrl} autoPlay muted loop playsInline preload="metadata" />
+              <video
+                className="nodrag nopan nowheel"
+                src={data.mediaUrl}
+                autoPlay
+                controls
+                muted
+                loop
+                playsInline
+                preload="metadata"
+                aria-label={`${data.title} 生成视频`}
+                onError={() => setFailedMediaUrl(data.mediaUrl ?? null)}
+                onLoadedData={() => setFailedMediaUrl(null)}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => event.stopPropagation()}
+              />
             ) : (
               <img src={data.mediaUrl} alt={`${data.title} 生成画面`} />
             )}
+            {mediaFailed ? (
+              <div className="shot-video-fallback">
+                <strong>浏览器无法直接播放这个视频</strong>
+                <a href={data.mediaUrl} target="_blank" rel="noreferrer">
+                  打开原视频
+                </a>
+              </div>
+            ) : null}
             <div className="shot-generated-overlay">
               <span className="shot-label">{data.title}</span>
               <span className="shot-generated-facts">
@@ -339,7 +404,9 @@ function ShotNode({ data }: NodeProps<BoardNode>) {
           onKeyDown={(event) => event.stopPropagation()}
           onBlur={(event) => {
             if (event.currentTarget.contains(event.relatedTarget)) return;
-            data.inlineControls?.onSettingsChange(settingsDraft);
+            window.requestAnimationFrame(() =>
+              data.inlineControls?.onSettingsChange(settingsDraftRef.current),
+            );
           }}
         >
           <div className="shot-inline-title-row">
@@ -356,7 +423,7 @@ function ShotNode({ data }: NodeProps<BoardNode>) {
             <button
               type="button"
               onClick={() => {
-                data.inlineControls?.onSettingsChange(settingsDraft);
+                data.inlineControls?.onSettingsChange(settingsDraftRef.current);
                 data.inlineControls?.onOpenDetails();
               }}
             >
@@ -369,7 +436,7 @@ function ShotNode({ data }: NodeProps<BoardNode>) {
               value={currentWorkflow?.capability ?? ""}
               disabled={data.inlineControls.workflowLocked}
               onChange={(event) => {
-                data.inlineControls?.onSettingsChange(settingsDraft);
+                data.inlineControls?.onSettingsChange(settingsDraftRef.current);
                 const workflow = data.inlineControls?.workflows.find(
                   (candidate) => candidate.capability === event.target.value,
                 );
@@ -387,7 +454,7 @@ function ShotNode({ data }: NodeProps<BoardNode>) {
               value={data.inlineControls.workflowPath}
               disabled={data.inlineControls.workflowLocked}
               onChange={(event) => {
-                data.inlineControls?.onSettingsChange(settingsDraft);
+                data.inlineControls?.onSettingsChange(settingsDraftRef.current);
                 data.inlineControls?.onWorkflowChange(event.target.value);
               }}
             >
@@ -401,10 +468,12 @@ function ShotNode({ data }: NodeProps<BoardNode>) {
           <textarea
             aria-label="画布提示词"
             value={settingsDraft.prompt}
-            placeholder="描述画面；输入或点击 @素材名 引用已连接素材"
-            onChange={(event) =>
-              setSettingsDraft((current) => ({ ...current, prompt: event.target.value }))
+            placeholder={
+              currentWorkflow?.name.toLowerCase().includes("minimax")
+                ? "按时间线描述画面、对白、环境声和配乐"
+                : "描述一个主要动作、运镜与光线；@ 引用素材"
             }
+            onChange={(event) => updateSettingsDraft({ prompt: event.target.value })}
           />
           {data.inlineControls.mentionAliases.length ? (
             <div className="shot-inline-mentions">
@@ -412,12 +481,12 @@ function ShotNode({ data }: NodeProps<BoardNode>) {
                 <button
                   type="button"
                   key={alias}
-                  onClick={() =>
-                    setSettingsDraft((current) => ({
-                      ...current,
-                      prompt: `${current.prompt}${current.prompt && !/\s$/.test(current.prompt) ? " " : ""}@${alias}`,
-                    }))
-                  }
+                  onClick={() => {
+                    const prompt = settingsDraftRef.current.prompt;
+                    updateSettingsDraft({
+                      prompt: `${prompt}${prompt && !/\s$/.test(prompt) ? " " : ""}@${alias}`,
+                    });
+                  }}
                 >
                   @{alias}
                 </button>
@@ -425,72 +494,54 @@ function ShotNode({ data }: NodeProps<BoardNode>) {
             </div>
           ) : null}
           <div className="shot-inline-parameters">
-            <label>
+            <label htmlFor={`${quickSettingsId}-width`}>
               <span>尺寸</span>
               <div>
-                <input
+                <NumericInput
+                  id={`${quickSettingsId}-width`}
                   aria-label="画布宽度"
-                  type="number"
                   min={256}
                   max={2048}
                   step={32}
                   value={settingsDraft.width}
-                  onChange={(event) =>
-                    setSettingsDraft((current) => ({
-                      ...current,
-                      width: Number(event.target.value),
-                    }))
-                  }
+                  onValueChange={(width) => updateSettingsDraft({ width })}
                 />
                 <i>×</i>
-                <input
+                <NumericInput
+                  id={`${quickSettingsId}-height`}
                   aria-label="画布高度"
-                  type="number"
                   min={256}
                   max={2048}
                   step={32}
                   value={settingsDraft.height}
-                  onChange={(event) =>
-                    setSettingsDraft((current) => ({
-                      ...current,
-                      height: Number(event.target.value),
-                    }))
-                  }
+                  onValueChange={(height) => updateSettingsDraft({ height })}
                 />
               </div>
             </label>
             {data.inlineControls.outputLabel === "视频" ? (
-              <label>
+              <label htmlFor={`${quickSettingsId}-duration`}>
                 <span>时长</span>
-                <input
+                <NumericInput
+                  id={`${quickSettingsId}-duration`}
                   aria-label="画布时长"
-                  type="number"
-                  min={1}
+                  min={currentWorkflow?.name.toLowerCase().includes("minimax") ? 4 : 1}
                   max={15}
                   step={0.5}
                   value={settingsDraft.durationSeconds}
-                  onChange={(event) =>
-                    setSettingsDraft((current) => ({
-                      ...current,
-                      durationSeconds: Number(event.target.value),
-                    }))
-                  }
+                  onValueChange={(durationSeconds) => updateSettingsDraft({ durationSeconds })}
                 />
               </label>
             ) : null}
-            <label>
+            <label htmlFor={`${quickSettingsId}-seed`}>
               <span>Seed</span>
-              <input
+              <NumericInput
+                id={`${quickSettingsId}-seed`}
                 aria-label="画布 Seed"
-                type="number"
                 min={0}
+                max={2_147_483_647}
+                step={1}
                 value={settingsDraft.seed}
-                onChange={(event) =>
-                  setSettingsDraft((current) => ({
-                    ...current,
-                    seed: Number(event.target.value),
-                  }))
-                }
+                onValueChange={(seed) => updateSettingsDraft({ seed })}
               />
             </label>
           </div>
@@ -500,15 +551,44 @@ function ShotNode({ data }: NodeProps<BoardNode>) {
             disabled={data.inlineControls.busy || Boolean(draftDisabledReason)}
             title={draftDisabledReason ?? ""}
             onClick={() => {
-              data.inlineControls?.onSettingsChange(settingsDraft);
-              data.inlineControls?.onGenerate(settingsDraft);
+              data.inlineControls?.onSettingsChange(settingsDraftRef.current);
+              data.inlineControls?.onGenerate(settingsDraftRef.current);
             }}
           >
-            {data.inlineControls.busy
-              ? "生成中…"
-              : `生成${data.inlineControls.outputLabel === "图片" ? "图片" : "镜头"}`}
+            <span>
+              {data.inlineControls.busy
+                ? (data.inlineControls.progress?.label ?? "生成中…")
+                : `生成${data.inlineControls.outputLabel === "图片" ? "图片" : "镜头"}`}
+            </span>
+            {data.inlineControls.progress ? (
+              <>
+                <b>
+                  {data.inlineControls.progress.percent === null
+                    ? "实时"
+                    : `${data.inlineControls.progress.percent}%`}
+                </b>
+                <i
+                  className={`shot-inline-progress-track ${data.inlineControls.progress.percent === null ? "indeterminate" : ""}`}
+                  aria-hidden="true"
+                >
+                  <i
+                    style={
+                      data.inlineControls.progress.percent === null
+                        ? undefined
+                        : { width: `${data.inlineControls.progress.percent}%` }
+                    }
+                  />
+                </i>
+              </>
+            ) : null}
           </button>
-          {draftDisabledReason ? <small>{draftDisabledReason}</small> : null}
+          {data.inlineControls.progress ? (
+            <small className="shot-inline-progress-detail" aria-live="polite">
+              {data.inlineControls.progress.detail} · {data.inlineControls.progress.elapsedSeconds}s
+            </small>
+          ) : draftDisabledReason ? (
+            <small>{draftDisabledReason}</small>
+          ) : null}
         </fieldset>
       ) : null}
     </NodeShell>

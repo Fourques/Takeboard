@@ -1,6 +1,6 @@
 # TakeBoard 数据与项目目录规范
 
-更新时间：2026-08-14
+更新时间：2026-08-28
 
 ## 当前模型
 
@@ -8,19 +8,21 @@ TakeBoard 当前采用“单工作区、项目隔离”的本地优先模式。�
 
 ```text
 TAKEBOARD_DATA_ROOT/
-└── my-film.takeboard/
-    ├── project.takeboard.json   # 项目标识、版本和基础元数据
-    ├── takeboard.db             # 镜头、节点、边、运行和素材索引
-    ├── assets/
-    │   ├── originals/           # 用户上传的原始素材
-    │   └── proxies/             # 缩略图、代理文件（按需生成）
-    ├── renders/
-    │   └── <shot-id>/<run-id>/  # 已登记进项目的最终生成结果
-    ├── runs/                    # 可移植的运行记录扩展目录
-    ├── recipes/                 # 项目级工作流配置
-    ├── logs/                    # 项目级诊断记录
-    ├── exports/                 # 用户主动导出的成片或项目包
-    └── trash/                   # 后续可恢复删除使用的回收区
+├── my-film.takeboard/
+│   ├── project.takeboard.json   # 项目标识、版本和基础元数据
+│   ├── takeboard.db             # 镜头、节点、边、运行和素材索引
+│   ├── assets/
+│   │   ├── originals/           # 用户上传的原始素材
+│   │   └── proxies/             # 缩略图、代理文件（按需生成）
+│   ├── renders/
+│   │   └── <shot-id>/<run-id>/  # 已登记进项目的最终生成结果
+│   ├── runs/                    # 可移植的运行记录扩展目录
+│   ├── recipes/                 # 项目级工作流配置
+│   ├── logs/                    # 项目级诊断记录
+│   ├── exports/                 # 用户主动导出的成片或项目包
+│   └── trash/                   # 项目内部的可恢复编辑预留区
+└── .trash/
+    └── my-film.takeboard.<id>/  # 首页删除的完整项目，可从回收区恢复
 ```
 
 ## 数据原则
@@ -31,6 +33,7 @@ TAKEBOARD_DATA_ROOT/
 - 运行可追溯：正式结果按 `镜头 / 运行` 分层保存，数据库保留工作流、参数、输入和状态。
 - 临时文件可清理：ComfyUI 的任务输入和原始输出属于运行临时数据；完成、失败或取消后，在结果已经导入项目的前提下清理。
 - 快照不含密钥：导出的 JSON 快照不应保存 API Key、访问令牌或主机凭据。
+- 项目删除可恢复：首页删除会先停止对应生成任务，再把整个 `.takeboard` 目录原子移动到根目录 `.trash`；恢复不会复制大文件。
 
 ## 用户资产如何管理
 

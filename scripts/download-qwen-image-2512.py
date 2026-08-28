@@ -11,7 +11,7 @@ from pathlib import Path
 
 from huggingface_hub import hf_hub_download
 
-COMFY_DIR = Path(os.environ.get("COMFY_DIR", "/home/duanqw/Opc/Stortvideo/apps/ComfyUI-H3"))
+COMFY_DIR = Path(os.environ.get("COMFY_DIR", Path.home() / "ComfyUI"))
 MODEL_ROOT = COMFY_DIR / "models"
 DOWNLOAD_ROOT = COMFY_DIR / "download_cache" / "qwen-image-2512"
 

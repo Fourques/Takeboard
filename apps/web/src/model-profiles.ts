@@ -2,12 +2,12 @@ import type { AspectRatio } from "@takeboard/contracts";
 import type { WorkflowSummary } from "./api";
 
 export type WorkflowInputSlot = {
-  id: "first_frame" | "last_frame" | "reference" | "reference_video";
+  id: "first_frame" | "last_frame" | "reference" | "reference_video" | "reference_audio";
   label: string;
   required: boolean;
   hint: string;
   maxCount: number;
-  mediaType: "image" | "video";
+  mediaType: "image" | "video" | "audio";
 };
 
 export type ModelDefaults = {
@@ -81,6 +81,16 @@ export function workflowInputSlots(workflow: WorkflowSummary | null): WorkflowIn
       mediaType: "video",
     });
   }
+  if (workflow.inputs.includes("reference_audio")) {
+    slots.push({
+      id: "reference_audio",
+      label: "参考音频",
+      required: false,
+      hint: "对白声线、音乐或声音质感",
+      maxCount: workflow.mediaInputs?.reference_audio ?? 3,
+      mediaType: "audio",
+    });
+  }
   return slots;
 }
 
@@ -105,8 +115,8 @@ export function modelProfile(
     const size = orientedSize(1344, 768, aspectRatio);
     return {
       family: "minimax_h3",
-      title: "MiniMax H3 工作参数",
-      description: "画面输入与容量来自当前 JSON；参数随镜头运行记录保存。",
+      title: "MiniMax H3 原生音画",
+      description: "24 fps 画面与 32 kHz 立体声联合生成；提示词可同时描述对白、环境声和配乐。",
       outputLabel: "视频",
       defaults: { ...size, durationSeconds: 5, fps: 24, steps: 20, denoise: 0.65 },
       slots,
@@ -125,12 +135,15 @@ export function modelProfile(
   }
   if (haystack.includes("wan")) {
     const size = orientedSize(848, 480, aspectRatio);
+    const preview = haystack.includes("preview") || haystack.includes("快速预演");
     return {
       family: "wan22",
-      title: "Wan 2.2 工作参数",
-      description: "首帧或首尾帧端口由当前 Workflow 的 JSON 决定。",
+      title: preview ? "Wan 2.2 快速预演" : "Wan 2.2 高质量生成",
+      description: preview
+        ? "4 步 LightX2V，仅用于构图与动作预演；锁定镜头前请切换高质量工作流。"
+        : "原生双阶段 20 步采样，不使用加速 LoRA，保留更完整的动作、纹理与光影。",
       outputLabel: "视频",
-      defaults: { ...size, durationSeconds: 5, fps: 16, steps: 4, denoise: 0.65 },
+      defaults: { ...size, durationSeconds: 5, fps: 16, steps: preview ? 4 : 20, denoise: 0.65 },
       slots,
     };
   }

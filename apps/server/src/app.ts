@@ -34,6 +34,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     service: "takeboard-server",
     status: "ok",
     version: "0.0.0",
+    instanceId: process.env.TAKEBOARD_INSTANCE_ID ?? null,
   }));
 
   registerProjectRequestLock(app);
@@ -46,11 +47,17 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   const projectsRoot =
     options.projectsRoot ?? resolve(process.env.TAKEBOARD_DATA_ROOT ?? ".takeboard-data/projects");
   const comfyUrl = options.comfyUrl ?? process.env.COMFY_URL ?? "http://127.0.0.1:8188";
-  registerProjectRoutes(app, projectsRoot);
+  const comfyInputRoot = options.comfyInputRoot ?? process.env.COMFY_INPUT_ROOT ?? null;
+  const comfyOutputRoot = options.comfyOutputRoot ?? process.env.COMFY_OUTPUT_ROOT ?? null;
+  registerProjectRoutes(app, projectsRoot, {
+    comfyUrl,
+    comfyInputRoot,
+    comfyOutputRoot,
+  });
   registerWorkerRoutes(app, comfyUrl, options.workerOptions);
   registerGenerationRoutes(app, projectsRoot, comfyUrl, {
-    inputRoot: options.comfyInputRoot ?? process.env.COMFY_INPUT_ROOT ?? null,
-    outputRoot: options.comfyOutputRoot ?? process.env.COMFY_OUTPUT_ROOT ?? null,
+    inputRoot: comfyInputRoot,
+    outputRoot: comfyOutputRoot,
   });
   registerWorkflowRoutes(
     app,

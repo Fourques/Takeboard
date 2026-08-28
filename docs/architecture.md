@@ -171,16 +171,16 @@ requirements:
   models: []
 ```
 
-M0 预检：
+执行预检：
 
-1. Workflow 是 API format；
+1. Workflow 是 API Format，或可确定性转换的 UI Workflow；普通节点和多层子图展开为 API Prompt，注释与 Reroute 不进入执行图；
 2. node/field 绑定存在；
 3. `/object_info` 包含所需 `class_type`；
 4. 每个 required input 都能从选中节点或表单解析；
 5. 输出节点声明存在；
 6. Workflow hash 与 Recipe version 保存到每个 Run。
 
-不要在 M0 自动分析任意 Workflow 并猜全部业务输入。导入向导只生成建议，最终由用户确认绑定。
+不要把自动识别结果直接当作执行权限。导入向导只生成候选绑定，最终由用户确认能力、输出类型、每个 node/field 映射以及对第三方节点的信任。绑定记录 Workflow 内容哈希；任何节点图修改都会使旧绑定失效。
 
 ## 8. ComfyUI 执行状态机
 

@@ -25,12 +25,14 @@ import {
   demoApi,
   type ProjectCatalogItem,
   projectApi,
+  type TrashedProjectItem,
   type WorkerStatus,
   type WorkflowSummary,
   workflowApi,
 } from "./api";
 import { AssetLibrary } from "./asset-library";
 import { type BoardNode, boardNodeTypes } from "./board-nodes";
+import { DisplaySettings } from "./display-settings";
 import {
   loadModelPreferences,
   type ModelProfile,
@@ -38,6 +40,7 @@ import {
   saveModelPreferences,
   workflowInputSlots,
 } from "./model-profiles";
+import { NumericInput } from "./numeric-input";
 import { ProjectHub } from "./project-hub";
 import { RecipeStudio } from "./recipe-studio";
 import { ThemeSwitcher } from "./theme-switcher";
@@ -53,6 +56,7 @@ type GenerationSettings = {
   firstFrameAssetId: string | null;
   lastFrameAssetId: string | null;
   referenceAssetId: string | null;
+  referenceImageSize: "match" | "max";
   width: number;
   height: number;
   durationSeconds: number;
@@ -66,6 +70,7 @@ type PromptMention = {
   assetId: string;
   alias: string;
   role: string;
+  canonicalToken: string;
   thumbnailUrl: string | undefined;
 };
 
@@ -75,6 +80,7 @@ type ShotCanvasControls = {
   workflowLocked: boolean;
   mentionAliases: string[];
   busy: boolean;
+  progress: GenerationProgress | null;
   disabledReason: string | null;
   onWorkflowChange: (path: string) => void;
   onSettingsChange: (input: Partial<GenerationSettings>) => void;
@@ -90,6 +96,7 @@ const defaultGenerationSettings: GenerationSettings = {
   firstFrameAssetId: null,
   lastFrameAssetId: null,
   referenceAssetId: null,
+  referenceImageSize: "match",
   width: 480,
   height: 848,
   durationSeconds: 5,
@@ -103,7 +110,52 @@ const nativeWorkflowFallbacks: WorkflowSummary[] = [
   {
     id: "native-wan22-i2v",
     path: "Kino/Kino_Wan22_I2V.json",
-    name: "Wan22 I2V",
+    name: "Wan 2.2 I2V · 高质量",
+    capability: "image_to_video",
+    capabilityLabel: "图生视频",
+    inputs: [
+      "prompt",
+      "negative_prompt",
+      "first_frame",
+      "resolution",
+      "duration",
+      "fps",
+      "seed",
+      "steps",
+    ],
+    models: [],
+    nodeCount: 0,
+    source: "comfyui",
+    editorUrl: "http://127.0.0.1:48188",
+    execution: "native",
+  },
+  {
+    id: "native-wan22-flf2v",
+    path: "Kino/Kino_Wan22_FLF2V.json",
+    name: "Wan 2.2 首尾帧 · 高质量",
+    capability: "first_last_video",
+    capabilityLabel: "首尾帧视频",
+    inputs: [
+      "prompt",
+      "negative_prompt",
+      "first_frame",
+      "last_frame",
+      "resolution",
+      "duration",
+      "fps",
+      "seed",
+      "steps",
+    ],
+    models: [],
+    nodeCount: 0,
+    source: "comfyui",
+    editorUrl: "http://127.0.0.1:48188",
+    execution: "native",
+  },
+  {
+    id: "native-wan22-i2v-preview",
+    path: "Kino/Kino_Wan22_I2V_Preview.json",
+    name: "Wan 2.2 I2V · 快速预演",
     capability: "image_to_video",
     capabilityLabel: "图生视频",
     inputs: ["prompt", "negative_prompt", "first_frame", "resolution", "duration", "fps", "seed"],
@@ -114,9 +166,9 @@ const nativeWorkflowFallbacks: WorkflowSummary[] = [
     execution: "native",
   },
   {
-    id: "native-wan22-flf2v",
-    path: "Kino/Kino_Wan22_FLF2V.json",
-    name: "Wan22 FLF2V",
+    id: "native-wan22-flf2v-preview",
+    path: "Kino/Kino_Wan22_FLF2V_Preview.json",
+    name: "Wan 2.2 首尾帧 · 快速预演",
     capability: "first_last_video",
     capabilityLabel: "首尾帧视频",
     inputs: [
@@ -138,7 +190,7 @@ const nativeWorkflowFallbacks: WorkflowSummary[] = [
   {
     id: "native-minimax-h3-i2v",
     path: "Kino/Kino_MinimaxH3_I2V.json",
-    name: "MinimaxH3 I2V",
+    name: "MiniMax H3 I2V · 原生音画",
     capability: "image_to_video",
     capabilityLabel: "图生视频",
     inputs: [
@@ -160,10 +212,40 @@ const nativeWorkflowFallbacks: WorkflowSummary[] = [
   {
     id: "native-minimax-h3-t2v",
     path: "Kino/Kino_MinimaxH3_T2V.json",
-    name: "MinimaxH3 T2V",
+    name: "MiniMax H3 T2V · 原生音画",
     capability: "text_to_video",
     capabilityLabel: "文生视频",
     inputs: ["prompt", "resolution", "duration", "fps", "seed", "steps"],
+    models: [],
+    nodeCount: 0,
+    source: "comfyui",
+    editorUrl: "http://127.0.0.1:48188",
+    execution: "native",
+  },
+  {
+    id: "native-minimax-h3-r2v",
+    path: "Kino/Kino_MinimaxH3_R2V.json",
+    name: "MiniMax H3 Ref2VA · 多模态参考",
+    capability: "reference_video",
+    capabilityLabel: "参考生成视频",
+    inputs: [
+      "prompt",
+      "reference_images",
+      "reference_videos",
+      "reference_audio",
+      "resolution",
+      "duration",
+      "fps",
+      "seed",
+      "steps",
+    ],
+    mediaInputs: {
+      first_frame: 0,
+      last_frame: 0,
+      reference: 9,
+      reference_video: 3,
+      reference_audio: 3,
+    },
     models: [],
     nodeCount: 0,
     source: "comfyui",
@@ -401,6 +483,7 @@ function boardNodes(
                 outputLabel: profile.outputLabel,
                 mentionAliases: controls.mentionAliases,
                 busy: controls.busy,
+                progress: controls.progress,
                 disabledReason: controls.disabledReason,
                 onWorkflowChange: controls.onWorkflowChange,
                 onSettingsChange: controls.onSettingsChange,
@@ -427,6 +510,7 @@ function boardEdges(
     last_frame: { label: "尾帧", color: "#d6a95f" },
     reference: { label: "参考", color: "#9e8cff" },
     reference_video: { label: "参考视频", color: "#63a9d8" },
+    reference_audio: { label: "参考音频", color: "#dd8bb5" },
   } as const;
   return snapshot.canvasEdges
     .filter((edge) => {
@@ -498,15 +582,17 @@ function edgeIdentityFromPointer(event: ReactMouseEvent): CanvasEdgeIdentity | n
   const match = /^Edge from (\S+) to (\S+)$/.exec(label);
   if (!match) return null;
   const visibleLabel = edgeElement?.textContent ?? "";
-  const targetSlot = visibleLabel.includes("参考视频")
-    ? "reference_video"
-    : visibleLabel.includes("首帧")
-      ? "first_frame"
-      : visibleLabel.includes("尾帧")
-        ? "last_frame"
-        : visibleLabel.includes("参考")
-          ? "reference"
-          : null;
+  const targetSlot = visibleLabel.includes("参考音频")
+    ? "reference_audio"
+    : visibleLabel.includes("参考视频")
+      ? "reference_video"
+      : visibleLabel.includes("首帧")
+        ? "first_frame"
+        : visibleLabel.includes("尾帧")
+          ? "last_frame"
+          : visibleLabel.includes("参考")
+            ? "reference"
+            : null;
   return { sourceItemId: match[1] as string, targetItemId: match[2] as string, targetSlot };
 }
 
@@ -555,7 +641,7 @@ function gentlyAlignedPosition(node: BoardNode, nodes: BoardNode[]) {
 function sourceAssetId(
   snapshot: ProjectSnapshot,
   source: ProjectSnapshot["canvasItems"][number] | undefined,
-  mediaType: "image" | "video",
+  mediaType: "image" | "video" | "audio",
 ) {
   if (source?.refType === "asset") return source.refId;
   if (source?.refType === "entity") {
@@ -585,7 +671,7 @@ function sourceAssetId(
 function connectedAssetId(
   snapshot: ProjectSnapshot,
   targetShotId: string,
-  slot: "first_frame" | "last_frame" | "reference" | "reference_video",
+  slot: "first_frame" | "last_frame" | "reference" | "reference_video" | "reference_audio",
 ) {
   const targetItem = snapshot.canvasItems.find(
     (item) => item.refType === "shot" && item.refId === targetShotId,
@@ -594,7 +680,20 @@ function connectedAssetId(
     (candidate) => candidate.targetItemId === targetItem?.id && candidate.targetSlot === slot,
   );
   const source = snapshot.canvasItems.find((item) => item.id === edge?.sourceItemId);
-  return sourceAssetId(snapshot, source, slot === "reference_video" ? "video" : "image");
+  return sourceAssetId(
+    snapshot,
+    source,
+    slot === "reference_video" ? "video" : slot === "reference_audio" ? "audio" : "image",
+  );
+}
+
+function compileMiniMaxH3Mentions(prompt: string, mentions: PromptMention[]) {
+  return [...mentions]
+    .sort((a, b) => b.alias.length - a.alias.length)
+    .reduce(
+      (compiled, mention) => compiled.replaceAll(`@${mention.alias}`, mention.canonicalToken),
+      prompt,
+    );
 }
 
 function CandidateArt({
@@ -642,9 +741,27 @@ type GenerationProgress = {
   phase: "preparing" | "queued" | "running" | "collecting";
   label: string;
   detail: string;
-  percent: number;
+  percent: number | null;
   elapsedSeconds: number;
 };
+
+function realGenerationProgress(
+  progress: {
+    phase: "queued" | "running" | "collecting";
+    label: string;
+    detail: string;
+    percent: number | null;
+  } | null,
+  startedAt: number,
+): GenerationProgress {
+  return {
+    phase: progress?.phase ?? "running",
+    label: progress?.label ?? "ComfyUI 正在执行工作流",
+    detail: progress?.detail ?? "当前节点没有提供步进百分比",
+    percent: progress?.percent ?? null,
+    elapsedSeconds: Math.max(0, Math.round((Date.now() - startedAt) / 1000)),
+  };
+}
 
 type ContextInspectorProps = {
   item: CanvasItem;
@@ -852,6 +969,12 @@ function NodeContextInspector({
           <img src={assetUrl} alt={asset.originalName} />
         ) : assetUrl && asset?.mediaType === "video" ? (
           <video src={assetUrl} controls muted playsInline />
+        ) : assetUrl && asset?.mediaType === "audio" ? (
+          <div className="context-audio-preview">
+            <span aria-hidden="true">♪</span>
+            {/* biome-ignore lint/a11y/useMediaCaption: raw reference audio has no authored caption track */}
+            <audio src={assetUrl} controls preload="metadata" />
+          </div>
         ) : (
           <div className="context-media-empty">
             <span>{asset?.mediaType === "audio" ? "音频素材" : "素材预览"}</span>
@@ -1007,7 +1130,10 @@ type InspectorProps = {
   profile: ModelProfile;
   workflowDetected: boolean;
   workflowLocked: boolean;
-  inputCounts: Record<"first_frame" | "last_frame" | "reference" | "reference_video", number>;
+  inputCounts: Record<
+    "first_frame" | "last_frame" | "reference" | "reference_video" | "reference_audio",
+    number
+  >;
   mentions: PromptMention[];
   onSettingsChange: (settings: GenerationSettings) => void;
   onUpdateShot: (input: {
@@ -1147,19 +1273,19 @@ function Inspector({
               ))}
             </select>
           </label>
-          <label>
+          <label htmlFor="inspector-shot-duration">
             <span>时长</span>
-            <input
+            <NumericInput
+              id="inspector-shot-duration"
               aria-label="镜头时长"
-              type="number"
               min={0.5}
               max={300}
               step={0.5}
               value={shotDraft.durationSeconds}
-              onChange={(event) =>
+              onValueChange={(durationSeconds) =>
                 setShotDraft((current) => ({
                   ...current,
-                  durationSeconds: Number(event.target.value),
+                  durationSeconds,
                 }))
               }
             />
@@ -1212,7 +1338,11 @@ function Inspector({
                 if (event.key === "Escape") setMentionOpen(false);
               }}
               placeholder={
-                mentions.length ? "输入 @ 引用已连接画面…" : "描述画面、动作、镜头和光线…"
+                profile.family === "minimax_h3"
+                  ? "按时间线描述画面与声音，例如 [0s-2s] 动作、运镜、对白与环境声…"
+                  : mentions.length
+                    ? "输入 @ 引用已连接画面…"
+                    : "描述一个主要动作、运镜、速度和光线连续性…"
               }
             />
             {mentions.length ? (
@@ -1244,7 +1374,9 @@ function Inspector({
                       <span>图</span>
                     )}
                     <strong>@{mention.alias}</strong>
-                    <small>{mention.role}</small>
+                    <small>
+                      {mention.role} · {mention.canonicalToken}
+                    </small>
                   </button>
                 ))}
               </div>
@@ -1254,12 +1386,32 @@ function Inspector({
                 {mentions.map((mention) => (
                   <button type="button" key={mention.alias} onClick={() => setMentionOpen(true)}>
                     @{mention.alias}
-                    <small>{mention.role}</small>
+                    <small>{mention.canonicalToken}</small>
                   </button>
                 ))}
               </div>
             ) : null}
           </label>
+          {profile.family === "minimax_h3" ? (
+            <details className="h3-prompt-guide">
+              <summary>H3 音画提示词结构</summary>
+              {workflow?.capability === "reference_video" ? (
+                <p>
+                  先定义参考素材提供的人物、场景、动作或声线，再按播放顺序写镜头。使用上方的
+                  @素材名；提交时会自动转换为 H3 所需的 Picture / Video / Audio 标签。
+                </p>
+              ) : (
+                <p>
+                  按镜头时间线描述画面、动作、运镜、对白和同步声音；最后分别说明整体环境声与非画内配乐。
+                </p>
+              )}
+              <code>
+                {workflow?.capability === "reference_video"
+                  ? "subject_definitions → summary → retention_analysis → detailed_description → overall_soundscape → non_diegetic_music"
+                  : "integrated_multimodal_description → overall_soundscape → non_diegetic_music"}
+              </code>
+            </details>
+          ) : null}
           {workflow?.inputs.includes("negative_prompt") ? (
             <label className="negative-field">
               <span>负面提示词</span>
@@ -1291,7 +1443,7 @@ function Inspector({
                       <strong>{slot.label}</strong>
                       <em>
                         {slot.maxCount > 1
-                          ? `最多 ${slot.maxCount} ${slot.mediaType === "video" ? "段" : "张"}`
+                          ? `最多 ${slot.maxCount} ${slot.mediaType === "image" ? "张" : "段"}`
                           : slot.hint}
                       </em>
                     </div>
@@ -1314,44 +1466,39 @@ function Inspector({
             </summary>
             {workflow?.inputs.includes("resolution") ? (
               <div className="parameter-grid">
-                <label>
+                <label htmlFor="generation-width">
                   <span>宽度</span>
-                  <input
-                    type="number"
+                  <NumericInput
+                    id="generation-width"
                     min={256}
                     max={2048}
                     step={32}
                     value={settings.width}
-                    onChange={(event) =>
-                      onSettingsChange({ ...settings, width: Number(event.target.value) })
-                    }
+                    onValueChange={(width) => onSettingsChange({ ...settings, width })}
                   />
                 </label>
-                <label>
+                <label htmlFor="generation-height">
                   <span>高度</span>
-                  <input
-                    type="number"
+                  <NumericInput
+                    id="generation-height"
                     min={256}
                     max={2048}
                     step={32}
                     value={settings.height}
-                    onChange={(event) =>
-                      onSettingsChange({ ...settings, height: Number(event.target.value) })
-                    }
+                    onValueChange={(height) => onSettingsChange({ ...settings, height })}
                   />
                 </label>
-                {workflow.inputs.includes("fps") ? (
-                  <label>
+                {workflow.inputs.includes("fps") && profile.family !== "minimax_h3" ? (
+                  <label htmlFor="generation-fps">
                     <span>帧率</span>
                     <div>
-                      <input
-                        type="number"
+                      <NumericInput
+                        id="generation-fps"
                         min={8}
                         max={60}
+                        step={1}
                         value={settings.fps}
-                        onChange={(event) =>
-                          onSettingsChange({ ...settings, fps: Number(event.target.value) })
-                        }
+                        onValueChange={(fps) => onSettingsChange({ ...settings, fps })}
                       />
                       <i>fps</i>
                     </div>
@@ -1360,15 +1507,15 @@ function Inspector({
               </div>
             ) : null}
             {workflow?.inputs.includes("seed") ? (
-              <label className="seed-field">
+              <label className="seed-field" htmlFor="generation-seed">
                 <span>Seed</span>
-                <input
-                  type="number"
+                <NumericInput
+                  id="generation-seed"
                   min={0}
+                  max={2_147_483_647}
+                  step={1}
                   value={settings.seed}
-                  onChange={(event) =>
-                    onSettingsChange({ ...settings, seed: Number(event.target.value) })
-                  }
+                  onValueChange={(seed) => onSettingsChange({ ...settings, seed })}
                 />
                 <button
                   type="button"
@@ -1384,16 +1531,15 @@ function Inspector({
               </label>
             ) : null}
             {workflow?.inputs.includes("steps") ? (
-              <label className="seed-field">
+              <label className="seed-field" htmlFor="generation-steps">
                 <span>Steps</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={100}
+                <NumericInput
+                  id="generation-steps"
+                  min={workflow.name.toLowerCase().includes("wan") ? 8 : 1}
+                  max={workflow.name.toLowerCase().includes("wan") ? 40 : 100}
+                  step={1}
                   value={settings.steps}
-                  onChange={(event) =>
-                    onSettingsChange({ ...settings, steps: Number(event.target.value) })
-                  }
+                  onValueChange={(steps) => onSettingsChange({ ...settings, steps })}
                 />
                 <small>
                   {workflow.name.toLowerCase().includes("qwen")
@@ -1402,22 +1548,41 @@ function Inspector({
                       : "标准采样配置"
                     : workflow.name.toLowerCase().includes("minimax")
                       ? "由当前 JSON 暴露"
-                      : "当前工作流参数"}
+                      : workflow.name.toLowerCase().includes("wan")
+                        ? "20 步为官方高质量基线；8–40 步可调"
+                        : "当前工作流参数"}
                 </small>
               </label>
             ) : null}
+            {profile.family === "minimax_h3" && workflow?.capability === "reference_video" ? (
+              <label className="seed-field" htmlFor="generation-reference-fidelity">
+                <span>参考图精度</span>
+                <select
+                  id="generation-reference-fidelity"
+                  value={settings.referenceImageSize}
+                  onChange={(event) =>
+                    onSettingsChange({
+                      ...settings,
+                      referenceImageSize: event.target.value === "max" ? "max" : "match",
+                    })
+                  }
+                >
+                  <option value="match">平衡 · 匹配输出尺寸</option>
+                  <option value="max">身份优先 · 保留更多参考细节</option>
+                </select>
+                <small>“身份优先”会显著增加显存与采样时间，24 GB 显存建议少量参考图使用。</small>
+              </label>
+            ) : null}
             {workflow?.inputs.includes("denoise") ? (
-              <label className="seed-field">
+              <label className="seed-field" htmlFor="generation-denoise">
                 <span>重绘强度</span>
-                <input
-                  type="number"
+                <NumericInput
+                  id="generation-denoise"
                   min={0.05}
                   max={1}
                   step={0.05}
                   value={settings.denoise}
-                  onChange={(event) =>
-                    onSettingsChange({ ...settings, denoise: Number(event.target.value) })
-                  }
+                  onValueChange={(denoise) => onSettingsChange({ ...settings, denoise })}
                 />
                 <small>0.35 保守 · 0.65 平衡 · 1.0 重构</small>
               </label>
@@ -1436,10 +1601,14 @@ function Inspector({
               <i />
               <span>{progress.label}</span>
             </div>
-            <strong>{progress.percent}%</strong>
+            <strong>{progress.percent === null ? "实时" : `${progress.percent}%`}</strong>
           </div>
-          <div className="generation-progress-track">
-            <span style={{ width: `${progress.percent}%` }} />
+          <div
+            className={`generation-progress-track ${progress.percent === null ? "indeterminate" : ""}`}
+          >
+            <span
+              style={progress.percent === null ? undefined : { width: `${progress.percent}%` }}
+            />
           </div>
           <div className="generation-progress-detail">
             <span>{progress.detail}</span>
@@ -1450,7 +1619,7 @@ function Inspector({
               <i className={phase === progress.phase ? "active" : ""} key={phase} />
             ))}
           </div>
-          <small>阶段进度为估算值；任务在后台执行，画布仍可查看和操作。</small>
+          <small>百分比来自 ComfyUI 当前节点；节点不提供步进时只显示实时状态。</small>
           {canCancel ? (
             <button
               className="cancel-generation-button"
@@ -1490,7 +1659,7 @@ function Inspector({
           {busy ? <span className="spinner" /> : <span>✦</span>}
           {busy
             ? progress
-              ? `${progress.label} · ${progress.percent}%`
+              ? `${progress.label}${progress.percent === null ? "" : ` · ${progress.percent}%`}`
               : "处理中…"
             : isDemo
               ? takes.length > 0
@@ -1655,6 +1824,7 @@ export function App() {
   const [projectKey, setProjectKey] = useState<string | null>(null);
   const [projectMode, setProjectMode] = useState<"demo" | "project">("project");
   const [projects, setProjects] = useState<ProjectCatalogItem[]>([]);
+  const [trashedProjects, setTrashedProjects] = useState<TrashedProjectItem[]>([]);
   const [showHub, setShowHub] = useState(true);
   const [worker, setWorker] = useState<WorkerStatus | null>(null);
   const [workerBusy, setWorkerBusy] = useState(false);
@@ -1727,20 +1897,23 @@ export function App() {
   );
 
   useEffect(() => {
-    void Promise.allSettled([projectApi.list(), projectApi.worker(), workflowApi.list()]).then(
-      ([catalog, status, detected]) => {
-        if (catalog.status === "fulfilled") setProjects(catalog.value.projects);
-        else
-          setError(catalog.reason instanceof Error ? catalog.reason.message : "无法载入项目列表");
-        if (status.status === "fulfilled") setWorker(status.value);
-        else setWorker({ status: "offline", engine: "ComfyUI" });
-        if (detected.status === "fulfilled") {
-          setWorkflows(detected.value.workflows);
-          setWorkflowWarnings(detected.value.warnings ?? []);
-          setComfyEditorUrl(detected.value.editorUrl);
-        }
-      },
-    );
+    void Promise.allSettled([
+      projectApi.list(),
+      projectApi.trash(),
+      projectApi.worker(),
+      workflowApi.list(),
+    ]).then(([catalog, trash, status, detected]) => {
+      if (catalog.status === "fulfilled") setProjects(catalog.value.projects);
+      else setError(catalog.reason instanceof Error ? catalog.reason.message : "无法载入项目列表");
+      if (trash.status === "fulfilled") setTrashedProjects(trash.value.projects);
+      if (status.status === "fulfilled") setWorker(status.value);
+      else setWorker({ status: "offline", engine: "ComfyUI" });
+      if (detected.status === "fulfilled") {
+        setWorkflows(detected.value.workflows);
+        setWorkflowWarnings(detected.value.warnings ?? []);
+        setComfyEditorUrl(detected.value.editorUrl);
+      }
+    });
   }, []);
 
   useEffect(() => {
@@ -1780,16 +1953,24 @@ export function App() {
   }, [comfortableDensity]);
 
   useEffect(() => {
-    let narrow = window.innerWidth <= 1120;
+    const effectiveWidth = () => {
+      const scale = Number(window.localStorage.getItem("takeboard.display-scale")) || 1;
+      return window.innerWidth / scale;
+    };
+    let narrow = effectiveWidth() <= 1120;
     const adaptWorkspacePanels = () => {
-      const nextNarrow = window.innerWidth <= 1120;
+      const nextNarrow = effectiveWidth() <= 1120;
       if (nextNarrow === narrow) return;
       narrow = nextNarrow;
       setSidebarOpen(!nextNarrow);
       setInspectorOpen(!nextNarrow);
     };
     window.addEventListener("resize", adaptWorkspacePanels);
-    return () => window.removeEventListener("resize", adaptWorkspacePanels);
+    window.addEventListener("takeboard:display-scale", adaptWorkspacePanels);
+    return () => {
+      window.removeEventListener("resize", adaptWorkspacePanels);
+      window.removeEventListener("takeboard:display-scale", adaptWorkspacePanels);
+    };
   }, []);
 
   const edges = useMemo(
@@ -1825,7 +2006,8 @@ export function App() {
                 first_frame: 0,
                 reference: 1,
                 reference_video: 2,
-                last_frame: 3,
+                reference_audio: 3,
+                last_frame: 4,
               } as const;
               return (
                 order[a.targetSlot as keyof typeof order] -
@@ -1839,9 +2021,19 @@ export function App() {
     if (!snapshot) return [];
     const aliases = new Map<string, number>();
     const mentions: PromptMention[] = [];
+    let pictureIndex = 0;
+    let videoIndex = 0;
+    let audioIndex = selectedShotInputEdges.filter(
+      (edge) => edge.targetSlot === "reference_video",
+    ).length;
     for (const edge of selectedShotInputEdges) {
       const source = snapshot.canvasItems.find((item) => item.id === edge.sourceItemId);
-      const expectedMedia = edge.targetSlot === "reference_video" ? "video" : "image";
+      const expectedMedia =
+        edge.targetSlot === "reference_video"
+          ? "video"
+          : edge.targetSlot === "reference_audio"
+            ? "audio"
+            : "image";
       const assetId = sourceAssetId(snapshot, source, expectedMedia);
       const asset = snapshot.assets.find(
         (candidate) => candidate.id === assetId && candidate.mediaType === expectedMedia,
@@ -1852,12 +2044,24 @@ export function App() {
           .replace(/\.[^.]+$/, "")
           .trim()
           .replace(/[\s@，。；：,.!?]+/g, "_")
-          .slice(0, 32) || (asset.mediaType === "video" ? "参考视频" : "参考图");
+          .slice(0, 32) ||
+        (asset.mediaType === "video"
+          ? "参考视频"
+          : asset.mediaType === "audio"
+            ? "参考音频"
+            : "参考图");
       const count = (aliases.get(baseAlias) ?? 0) + 1;
       aliases.set(baseAlias, count);
+      const canonicalToken =
+        asset.mediaType === "image"
+          ? `<Picture ${++pictureIndex}>`
+          : asset.mediaType === "video"
+            ? `<Video ${++videoIndex}>`
+            : `<Audio ${++audioIndex}>`;
       mentions.push({
         assetId: asset.id,
         alias: `${baseAlias}${count > 1 ? `_${count}` : ""}`,
+        canonicalToken,
         role:
           edge.targetSlot === "first_frame"
             ? "首帧"
@@ -1865,7 +2069,9 @@ export function App() {
               ? "尾帧"
               : edge.targetSlot === "reference_video"
                 ? `参考视频 ${edge.targetSlotIndex + 1}`
-                : `参考图 ${edge.targetSlotIndex + 1}`,
+                : edge.targetSlot === "reference_audio"
+                  ? `参考音频 ${edge.targetSlotIndex + 1}`
+                  : `参考图 ${edge.targetSlotIndex + 1}`,
         thumbnailUrl:
           asset.mediaType === "image" && projectMode === "project" && projectKey
             ? projectApi.assetUrl(projectKey, asset.id, true)
@@ -1882,6 +2088,9 @@ export function App() {
       reference: selectedShotInputEdges.filter((edge) => edge.targetSlot === "reference").length,
       reference_video: selectedShotInputEdges.filter(
         (edge) => edge.targetSlot === "reference_video",
+      ).length,
+      reference_audio: selectedShotInputEdges.filter(
+        (edge) => edge.targetSlot === "reference_audio",
       ).length,
     }),
     [selectedShotInputEdges],
@@ -1901,6 +2110,26 @@ export function App() {
           return assetId ? [assetId] : [];
         }
         return [];
+      }),
+    [selectedShotInputEdges, snapshot],
+  );
+  const selectedReferenceImageIds = useMemo(
+    () =>
+      selectedShotInputEdges.flatMap((edge) => {
+        if (edge.targetSlot !== "reference") return [];
+        const source = snapshot?.canvasItems.find((item) => item.id === edge.sourceItemId);
+        const assetId = snapshot ? sourceAssetId(snapshot, source, "image") : null;
+        return assetId ? [assetId] : [];
+      }),
+    [selectedShotInputEdges, snapshot],
+  );
+  const selectedReferenceAudioIds = useMemo(
+    () =>
+      selectedShotInputEdges.flatMap((edge) => {
+        if (edge.targetSlot !== "reference_audio") return [];
+        const source = snapshot?.canvasItems.find((item) => item.id === edge.sourceItemId);
+        const assetId = snapshot ? sourceAssetId(snapshot, source, "audio") : null;
+        return assetId ? [assetId] : [];
       }),
     [selectedShotInputEdges, snapshot],
   );
@@ -1967,8 +2196,8 @@ export function App() {
       setGenerationProgress({
         phase: selectedRun.status === "collecting_outputs" ? "collecting" : "running",
         label: selectedRun.status === "orphaned" ? "正在核对执行端任务" : "已恢复后台生成任务",
-        detail: "页面可以安全刷新；TakeBoard 会继续同步状态与生成结果",
-        percent: selectedRun.status === "collecting_outputs" ? 92 : 48,
+        detail: "正在连接 ComfyUI 实时事件；页面可以安全刷新",
+        percent: null,
         elapsedSeconds: Math.max(
           0,
           Math.round((Date.now() - Date.parse(selectedRun.createdAt)) / 1000),
@@ -1987,6 +2216,11 @@ export function App() {
           const result = await projectApi.run(projectKey, run.id);
           if (stopped) return;
           acceptPayload(result, run.shotId);
+          if (run.shotId === selectedShotId) {
+            setGenerationProgress(
+              realGenerationProgress(result.progress, Date.parse(run.createdAt)),
+            );
+          }
         }
         if (!stopped) retryTimer = window.setTimeout(() => void poll(), 3_000);
       } catch (cause) {
@@ -2026,11 +2260,21 @@ export function App() {
     if (selectedWorkflow.inputs.includes("last_frame") && !lastFrameAvailable) {
       return "首尾帧模式还需要一张结束帧";
     }
+    if (
+      selectedWorkflow.capability === "reference_video" &&
+      selectedInputCounts.reference +
+        selectedInputCounts.reference_video +
+        selectedInputCounts.reference_audio ===
+        0
+    ) {
+      return "Ref2VA 至少需要一张参考图、一段参考视频或参考音频";
+    }
     const imageWorkflow = ["text_to_image", "image_to_image"].includes(selectedWorkflow.capability);
     const invalidVideoParameters =
       !imageWorkflow &&
       (!Number.isFinite(generationSettings.durationSeconds) ||
-        generationSettings.durationSeconds < 1 ||
+        generationSettings.durationSeconds <
+          (selectedModelProfile.family === "minimax_h3" ? 4 : 1) ||
         generationSettings.durationSeconds > 15 ||
         !Number.isFinite(generationSettings.fps) ||
         generationSettings.fps < 8 ||
@@ -2060,7 +2304,15 @@ export function App() {
         : "请检查分辨率、时长、帧率和 Seed";
     }
     return null;
-  }, [firstFrameAvailable, generationSettings, lastFrameAvailable, projectMode, selectedWorkflow]);
+  }, [
+    firstFrameAvailable,
+    generationSettings,
+    lastFrameAvailable,
+    projectMode,
+    selectedInputCounts,
+    selectedModelProfile.family,
+    selectedWorkflow,
+  ]);
   const approvedCount = snapshot?.shots.filter((shot) => shot.status === "approved").length ?? 0;
   const totalDuration = snapshot?.shots.reduce((sum, shot) => sum + shot.durationSeconds, 0) ?? 0;
   const activeScene =
@@ -2511,7 +2763,8 @@ export function App() {
         (edge.targetHandle === "first_frame" ||
         edge.targetHandle === "last_frame" ||
         edge.targetHandle === "reference" ||
-        edge.targetHandle === "reference_video"
+        edge.targetHandle === "reference_video" ||
+        edge.targetHandle === "reference_audio"
           ? edge.targetHandle
           : null);
       const identity =
@@ -2557,9 +2810,10 @@ export function App() {
         slot !== "first_frame" &&
         slot !== "last_frame" &&
         slot !== "reference" &&
-        slot !== "reference_video"
+        slot !== "reference_video" &&
+        slot !== "reference_audio"
       ) {
-        setError("请连接到镜头的图片或视频输入端口");
+        setError("请连接到镜头的图片、视频或音频输入端口");
         return;
       }
       setBusy(true);
@@ -2576,7 +2830,7 @@ export function App() {
             setSelectedShotId(targetItem.refId);
             setInspectorOpen(true);
             const assetId = connectedAssetId(payload.snapshot, targetItem.refId, slot);
-            if (slot !== "reference_video") {
+            if (slot !== "reference_video" && slot !== "reference_audio") {
               setGenerationSettings((current) => ({
                 ...current,
                 [slot === "first_frame"
@@ -2588,7 +2842,7 @@ export function App() {
             }
           }
           setNotice(
-            `已连接为${slot === "first_frame" ? "首帧" : slot === "last_frame" ? "尾帧" : slot === "reference_video" ? "参考视频" : "参考图"}`,
+            `已连接为${slot === "first_frame" ? "首帧" : slot === "last_frame" ? "尾帧" : slot === "reference_video" ? "参考视频" : slot === "reference_audio" ? "参考音频" : "参考图"}`,
           );
         })
         .catch((cause: unknown) =>
@@ -2600,7 +2854,10 @@ export function App() {
   );
 
   const connectAssetFromLibrary = useCallback(
-    async (assetId: string, slot: "first" | "last" | "reference" | "referenceVideo") => {
+    async (
+      assetId: string,
+      slot: "first" | "last" | "reference" | "referenceVideo" | "referenceAudio",
+    ) => {
       if (!projectKey || projectMode !== "project" || !snapshot || !selectedShot) return;
       const target = snapshot.canvasItems.find(
         (item) => item.refType === "shot" && item.refId === selectedShot.id,
@@ -2636,10 +2893,12 @@ export function App() {
               ? "last_frame"
               : slot === "referenceVideo"
                 ? "reference_video"
-                : "reference";
+                : slot === "referenceAudio"
+                  ? "reference_audio"
+                  : "reference";
         const connected = await projectApi.connect(projectKey, source.id, target.id, targetSlot);
         acceptPayload(connected, selectedShot.id);
-        if (slot !== "referenceVideo") {
+        if (slot !== "referenceVideo" && slot !== "referenceAudio") {
           setGenerationSettings((current) => ({
             ...current,
             [slot === "first"
@@ -2650,7 +2909,7 @@ export function App() {
           }));
         }
         setNotice(
-          `${slot === "first" ? "首帧" : slot === "last" ? "尾帧" : slot === "referenceVideo" ? "参考视频" : "参考图"}已连接到 ${selectedShot.label}`,
+          `${slot === "first" ? "首帧" : slot === "last" ? "尾帧" : slot === "referenceVideo" ? "参考视频" : slot === "referenceAudio" ? "参考音频" : "参考图"}已连接到 ${selectedShot.label}`,
         );
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "素材连接失败");
@@ -2851,6 +3110,8 @@ export function App() {
         if (projectKey === key) setProjectKey(null);
         const catalog = await projectApi.list();
         setProjects(catalog.projects);
+        const trash = await projectApi.trash();
+        setTrashedProjects(trash.projects);
         setNotice("项目已移到回收区");
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "项目删除失败");
@@ -2861,6 +3122,23 @@ export function App() {
     },
     [projectKey],
   );
+
+  const restoreProject = useCallback(async (trashKey: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const restored = await projectApi.restore(trashKey);
+      const [catalog, trash] = await Promise.all([projectApi.list(), projectApi.trash()]);
+      setProjects(catalog.projects);
+      setTrashedProjects(trash.projects);
+      setNotice(`“${restored.title}”已恢复`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "项目恢复失败");
+      throw cause;
+    } finally {
+      setBusy(false);
+    }
+  }, []);
 
   const openDemo = useCallback(async () => {
     generationTokenRef.current += 1;
@@ -2899,9 +3177,11 @@ export function App() {
       ...current,
       recipePath: workflowPath,
       prompt:
-        typeof lastRun?.parameters.prompt === "string"
-          ? lastRun.parameters.prompt
-          : selectedShot.intent,
+        typeof lastRun?.parameters.promptSource === "string"
+          ? lastRun.parameters.promptSource
+          : typeof lastRun?.parameters.prompt === "string"
+            ? lastRun.parameters.prompt
+            : selectedShot.intent,
       negativePrompt:
         typeof lastRun?.parameters.negativePrompt === "string"
           ? lastRun.parameters.negativePrompt
@@ -2916,6 +3196,7 @@ export function App() {
       firstFrameAssetId: connectedAssetId(snapshot, selectedShot.id, "first_frame"),
       lastFrameAssetId: connectedAssetId(snapshot, selectedShot.id, "last_frame"),
       referenceAssetId: connectedAssetId(snapshot, selectedShot.id, "reference"),
+      referenceImageSize: lastRun?.parameters.referenceImageSize === "max" ? "max" : "match",
     }));
   }, [projectKey, projectMode, selectedShot, selectedShotWorkflowPath, snapshot, workflows]);
 
@@ -3093,7 +3374,7 @@ export function App() {
         phase: "preparing",
         label: "正在准备输入",
         detail: "校验素材、参数与工作流",
-        percent: 6,
+        percent: null,
         elapsedSeconds: 0,
       });
       setError(null);
@@ -3113,30 +3394,53 @@ export function App() {
           phase: "queued",
           label: "正在提交任务",
           detail: "构建可复现的运行快照",
-          percent: 16,
+          percent: null,
           elapsedSeconds: 0,
         });
-        const submitted = await projectApi.generate(projectKey, shot.id, submittedSettings);
+        const miniMaxH3 = selectedModelProfile.family === "minimax_h3";
+        const submitted = await projectApi.generate(projectKey, shot.id, {
+          ...submittedSettings,
+          ...(miniMaxH3
+            ? {
+                promptSource: submittedSettings.prompt,
+                prompt: compileMiniMaxH3Mentions(submittedSettings.prompt, promptMentions),
+              }
+            : {}),
+          referenceImageAssetIds: selectedReferenceImageIds,
+          referenceVideoAssetIds: selectedReferenceVideoIds,
+          referenceAudioAssetIds: selectedReferenceAudioIds,
+        });
         if (generationTokenRef.current !== token) {
           await projectApi.cancelRun(projectKey, submitted.runId).catch(() => undefined);
           return;
         }
         acceptPayload(submitted, shot.id);
         setNotice(`${selectedWorkflow?.name ?? "Recipe"} 已开始生成，运行记录已保存`);
-        for (let attempt = 0; attempt < 240; attempt += 1) {
-          const elapsedSeconds = Math.round((Date.now() - startedAt) / 1000);
-          setGenerationProgress({
-            phase: "running",
-            label: "模型正在生成",
-            detail: `${selectedWorkflow?.name ?? "当前工作流"} · 后台任务持续运行`,
-            percent: Math.min(88, 24 + Math.round(attempt * 1.15)),
-            elapsedSeconds,
-          });
+        let consecutiveSyncFailures = 0;
+        while (generationTokenRef.current === token) {
           await new Promise((resolve) => window.setTimeout(resolve, 3_000));
           if (generationTokenRef.current !== token) return;
-          const result = await projectApi.run(projectKey, submitted.runId);
+          let result: Awaited<ReturnType<typeof projectApi.run>>;
+          try {
+            result = await projectApi.run(projectKey, submitted.runId);
+            consecutiveSyncFailures = 0;
+          } catch {
+            consecutiveSyncFailures += 1;
+            setGenerationProgress({
+              phase: "running",
+              label: "生成仍在后台执行",
+              detail: `状态同步暂时中断，正在第 ${consecutiveSyncFailures} 次重连`,
+              percent: null,
+              elapsedSeconds: Math.round((Date.now() - startedAt) / 1000),
+            });
+            await new Promise((resolve) =>
+              window.setTimeout(resolve, Math.min(12_000, consecutiveSyncFailures * 2_000)),
+            );
+            continue;
+          }
           if (generationTokenRef.current !== token) return;
           acceptPayload(result);
+          setGenerationProgress(realGenerationProgress(result.progress, startedAt));
           if (result.status === "completed") {
             setGenerationProgress({
               phase: "collecting",
@@ -3158,7 +3462,6 @@ export function App() {
             return;
           }
         }
-        throw new Error("生成仍在运行，可稍后重新打开项目查看");
       } catch (cause) {
         if (generationTokenRef.current === token) {
           setError(cause instanceof Error ? cause.message : "生成失败");
@@ -3177,7 +3480,12 @@ export function App() {
       comfyEditorUrl,
       generationDisabledReason,
       generationSettings,
+      promptMentions,
       projectKey,
+      selectedModelProfile.family,
+      selectedReferenceAudioIds,
+      selectedReferenceImageIds,
+      selectedReferenceVideoIds,
       selectedWorkflow,
     ],
   );
@@ -3189,7 +3497,7 @@ export function App() {
       phase: "collecting",
       label: "正在停止任务",
       detail: "取消执行、清理历史、临时输入与未采用生成物",
-      percent: 96,
+      percent: null,
       elapsedSeconds: generationProgress?.elapsedSeconds ?? 0,
     });
     try {
@@ -3283,6 +3591,7 @@ export function App() {
               workflowLocked,
               mentionAliases: promptMentions.map((mention) => mention.alias),
               busy: busy || generationBusy || Boolean(activeRun),
+              progress: generationProgress,
               disabledReason:
                 projectMode === "project" && selectedWorkflow?.execution === "comfy_only"
                   ? "这个工作流需要在 ComfyUI 中运行"
@@ -3313,6 +3622,7 @@ export function App() {
     bindWorkflowToSelectedShot,
     busy,
     generationBusy,
+    generationProgress,
     generationDisabledReason,
     generationSettings,
     projectKey,
@@ -3369,8 +3679,10 @@ export function App() {
         onOpen={openProject}
         onRefreshWorker={refreshWorker}
         onRename={renameProject}
+        onRestore={restoreProject}
         onStartWorker={startWorker}
         projects={projects}
+        trashedProjects={trashedProjects}
         worker={worker}
         workerBusy={workerBusy}
       />
@@ -3422,6 +3734,7 @@ export function App() {
         <div className="top-actions">
           <span className="save-status">✓ 已保存 · r{revision}</span>
           <ThemeSwitcher compact />
+          <DisplaySettings compact />
           <button
             className="density-button"
             type="button"
@@ -3771,7 +4084,8 @@ export function App() {
                   (edge.targetHandle === "first_frame" ||
                   edge.targetHandle === "last_frame" ||
                   edge.targetHandle === "reference" ||
-                  edge.targetHandle === "reference_video"
+                  edge.targetHandle === "reference_video" ||
+                  edge.targetHandle === "reference_audio"
                     ? edge.targetHandle
                     : null),
               } satisfies CanvasEdgeIdentity);
@@ -4159,13 +4473,18 @@ export function App() {
           selectedFirstFrameId={generationSettings.firstFrameAssetId}
           selectedLastFrameId={generationSettings.lastFrameAssetId}
           selectedReferenceId={generationSettings.referenceAssetId}
+          selectedReferenceImageIds={selectedReferenceImageIds}
           selectedReferenceVideoIds={selectedReferenceVideoIds}
+          selectedReferenceAudioIds={selectedReferenceAudioIds}
           allowedSlots={{
             first: selectedModelProfile.slots.some((slot) => slot.id === "first_frame"),
             last: selectedModelProfile.slots.some((slot) => slot.id === "last_frame"),
             reference: selectedModelProfile.slots.some((slot) => slot.id === "reference"),
             referenceVideo: selectedModelProfile.slots.some(
               (slot) => slot.id === "reference_video",
+            ),
+            referenceAudio: selectedModelProfile.slots.some(
+              (slot) => slot.id === "reference_audio",
             ),
           }}
         />
@@ -4253,19 +4572,17 @@ export function App() {
                     <option value="2.35:1">2.35:1 · 宽银幕</option>
                   </select>
                 </label>
-                <label>
+                <label htmlFor="node-editor-duration">
                   <span>镜头时长（秒）</span>
-                  <input
-                    type="number"
+                  <NumericInput
+                    id="node-editor-duration"
                     min={0.5}
                     max={300}
                     step={0.5}
                     value={nodeEditDraft.durationSeconds ?? 5}
-                    onChange={(event) =>
+                    onValueChange={(durationSeconds) =>
                       setNodeEditDraft((current) =>
-                        current
-                          ? { ...current, durationSeconds: Number(event.target.value) }
-                          : current,
+                        current ? { ...current, durationSeconds } : current,
                       )
                     }
                   />

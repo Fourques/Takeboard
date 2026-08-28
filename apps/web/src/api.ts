@@ -12,8 +12,17 @@ export type ProjectCatalogItem = {
   aspectRatio: string;
   sceneCount: number;
   shotCount: number;
+  activeRunCount: number;
   updatedAt: string;
   boards: ProjectBoardPreview[];
+};
+
+export type TrashedProjectItem = {
+  trashKey: string;
+  originalKey: string;
+  title: string;
+  shotCount: number;
+  deletedAt: string;
 };
 
 export type ProjectBoardPreview = {
@@ -76,6 +85,7 @@ export type WorkflowSummary = {
     last_frame: number;
     reference: number;
     reference_video?: number;
+    reference_audio?: number;
   };
   models: string[];
   modelStatus?: "ready" | "missing" | "unknown";
@@ -83,8 +93,58 @@ export type WorkflowSummary = {
   nodeCount: number;
   source: "comfyui";
   editorUrl: string;
-  execution: "native" | "comfy_only";
+  execution: "native" | "bound" | "comfy_only";
+  bindingStatus?: "built_in" | "ready" | "stale" | "needs_binding";
+  workflowHash?: string;
   origin?: "built_in" | "imported" | "comfyui";
+};
+
+export type WorkflowBindingTarget = { nodeId: string; input: string };
+export type WorkflowBindingCandidate = WorkflowBindingTarget & {
+  label: string;
+  classType: string;
+  valueType: "string" | "number" | "boolean" | "unknown";
+};
+export type WorkflowParameterKey =
+  | "prompt"
+  | "negative_prompt"
+  | "seed"
+  | "steps"
+  | "width"
+  | "height"
+  | "duration"
+  | "fps";
+export type WorkflowMediaKey =
+  | "first_frame"
+  | "last_frame"
+  | "reference_image"
+  | "reference_video"
+  | "reference_audio";
+export type WorkflowBindingDraft = {
+  version: 1;
+  workflowPath: string;
+  workflowHash: string;
+  capability: WorkflowCapability;
+  outputMediaType: "image" | "video";
+  parameters: Partial<Record<WorkflowParameterKey, WorkflowBindingTarget[]>>;
+  media: Partial<Record<WorkflowMediaKey, WorkflowBindingTarget[]>>;
+  trusted?: boolean;
+  verifiedAt?: string;
+};
+export type WorkflowBindingInspection = {
+  path: string;
+  status: "built_in" | "ready" | "stale" | "needs_binding";
+  workflowHash?: string;
+  nodeCount?: number;
+  candidates?: {
+    parameters: Record<WorkflowParameterKey, WorkflowBindingCandidate[]>;
+    media: Record<WorkflowMediaKey, WorkflowBindingCandidate[]>;
+  };
+  binding?: WorkflowBindingDraft;
+  suggested?: WorkflowBindingDraft;
+  conversionIssues?: string[];
+  warning?: string;
+  message?: string;
 };
 
 async function request(path: string, options?: RequestInit): Promise<DemoPayload> {
@@ -179,15 +239,21 @@ export const projectApi = {
       body: JSON.stringify({ title }),
     }),
   delete: (key: string) =>
-    jsonRequest<{ key: string; deleted: true; recoverable: true }>(
+    jsonRequest<{ key: string; deleted: true; recoverable: true; stoppedRunCount: number }>(
       `/api/projects/${encodeURIComponent(key)}`,
       { method: "DELETE" },
+    ),
+  trash: () => jsonRequest<{ projects: TrashedProjectItem[] }>("/api/projects/trash"),
+  restore: (trashKey: string) =>
+    jsonRequest<{ restored: true; key: string; title: string }>(
+      `/api/projects/trash/${encodeURIComponent(trashKey)}/restore`,
+      { method: "POST" },
     ),
   connect: (
     key: string,
     sourceItemId: string,
     targetItemId: string,
-    targetSlot: "first_frame" | "last_frame" | "reference" | "reference_video",
+    targetSlot: "first_frame" | "last_frame" | "reference" | "reference_video" | "reference_audio",
   ) =>
     jsonRequest<DemoPayload & { key: string }>(
       `/api/projects/${encodeURIComponent(key)}/canvas-connections`,
@@ -206,7 +272,13 @@ export const projectApi = {
     connection: {
       sourceItemId: string;
       targetItemId: string;
-      targetSlot: "first_frame" | "last_frame" | "reference" | "reference_video" | null;
+      targetSlot:
+        | "first_frame"
+        | "last_frame"
+        | "reference"
+        | "reference_video"
+        | "reference_audio"
+        | null;
     },
   ) =>
     jsonRequest<DemoPayload & { key: string; removedEdgeId: string }>(
@@ -264,9 +336,14 @@ export const projectApi = {
     settings: {
       recipePath: string;
       prompt: string;
+      promptSource?: string;
       negativePrompt: string;
       firstFrameAssetId: string | null;
       lastFrameAssetId: string | null;
+      referenceImageAssetIds?: string[];
+      referenceVideoAssetIds?: string[];
+      referenceAudioAssetIds?: string[];
+      referenceImageSize?: "match" | "max";
       width: number;
       height: number;
       durationSeconds: number;
@@ -281,9 +358,23 @@ export const projectApi = {
       { method: "POST", body: JSON.stringify(settings) },
     ),
   run: (key: string, runId: string) =>
-    jsonRequest<DemoPayload & { key: string; runId: string; status: string }>(
-      `/api/projects/${encodeURIComponent(key)}/runs/${encodeURIComponent(runId)}`,
-    ),
+    jsonRequest<
+      DemoPayload & {
+        key: string;
+        runId: string;
+        status: string;
+        progress: {
+          phase: "queued" | "running" | "collecting";
+          label: string;
+          detail: string;
+          percent: number | null;
+          nodeId: string | null;
+          queueRemaining: number | null;
+          source: "comfy_websocket" | "comfy_history";
+          updatedAt: string;
+        } | null;
+      }
+    >(`/api/projects/${encodeURIComponent(key)}/runs/${encodeURIComponent(runId)}`),
   cancelRun: (key: string, runId: string) =>
     jsonRequest<
       DemoPayload & {
@@ -383,4 +474,16 @@ export const workflowApi = {
       body,
     });
   },
+  inspectBinding: (path: string) =>
+    jsonRequest<WorkflowBindingInspection>(
+      `/api/workflows/binding?path=${encodeURIComponent(path)}`,
+    ),
+  saveBinding: (path: string, binding: WorkflowBindingDraft) =>
+    jsonRequest<{ status: "ready"; binding: WorkflowBindingDraft }>(
+      `/api/workflows/binding?path=${encodeURIComponent(path)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ ...binding, trusted: true }),
+      },
+    ),
 };

@@ -1,8 +1,10 @@
 import {
   buildLtx23I2VPrompt,
   buildMiniMaxH3Prompt,
+  buildMiniMaxH3ReferencePrompt,
   buildQwenImage2512Prompt,
   buildWan22FirstLastPrompt,
+  buildWan22I2VPrompt,
   ComfyClient,
 } from "../packages/executor-comfy/dist/index.js";
 
@@ -43,7 +45,26 @@ const recipes = {
     image: "preflight-start.png",
     lastImage: "preflight-end.png",
   }),
+  "wan22-i2v-quality": buildWan22I2VPrompt({
+    ...shared,
+    image: "preflight-start.png",
+    steps: 20,
+    qualityProfile: "quality",
+  }),
+  "wan22-i2v-preview": buildWan22I2VPrompt({
+    ...shared,
+    image: "preflight-start.png",
+    qualityProfile: "preview",
+  }),
   "minimax-h3-t2v": buildMiniMaxH3Prompt({ ...shared, fps: 24, steps: 20 }),
+  "minimax-h3-ref2va": buildMiniMaxH3ReferencePrompt({
+    ...shared,
+    fps: 24,
+    steps: 20,
+    referenceImages: ["preflight-reference.png"],
+    referenceVideos: ["preflight-reference.mp4"],
+    referenceAudios: ["preflight-reference.wav"],
+  }),
   "ltx23-i2v-draft": buildLtx23I2VPrompt(ltxWorkflow, {
     ...shared,
     image: "preflight-start.png",

@@ -30,7 +30,7 @@ export const canvasEdgeSchema = timestampsSchema
     targetItemId: canvasItemIdSchema,
     relation: z.enum(["reference", "generated_from", "approved_for"]),
     targetSlot: z
-      .enum(["first_frame", "last_frame", "reference", "reference_video"])
+      .enum(["first_frame", "last_frame", "reference", "reference_video", "reference_audio"])
       .nullable()
       .default(null),
     targetSlotIndex: z.number().int().nonnegative().max(99).default(0),

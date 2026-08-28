@@ -1,9 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_dir=${TAKEBOARD_REPO_DIR:-/home/duanqw/Opc/TakeBoard}
-comfy_dir=${COMFY_DIR:-/home/duanqw/Opc/Stortvideo/apps/ComfyUI-H3}
-python_bin="$comfy_dir/env/bin/python"
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+repo_dir=${TAKEBOARD_REPO_DIR:-$(CDPATH= cd -- "$script_dir/.." && pwd)}
+comfy_dir=${COMFY_DIR:-$HOME/ComfyUI}
+python_bin=${COMFY_PYTHON:-$comfy_dir/venv/bin/python}
+if [[ ! -x $python_bin ]]; then
+  for candidate in "$comfy_dir/env/bin/python" "$comfy_dir/.venv/bin/python"; do
+    if [[ -x $candidate ]]; then
+      python_bin=$candidate
+      break
+    fi
+  done
+fi
+if [[ ! -x $python_bin ]]; then
+  echo "ComfyUI Python not found. Set COMFY_DIR or COMFY_PYTHON." >&2
+  exit 1
+fi
 source_file="$repo_dir/deploy/comfyui-takeboard-bridge/js/takeboard-workflow-bridge.js"
 
 frontend_root=$(

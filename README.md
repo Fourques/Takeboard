@@ -23,14 +23,14 @@ TakeBoard 不重做 ComfyUI 的节点系统。它在现有 Workflow 和算力之
 
 ## 能力概览
 
-- 以可旋转的导演板作为项目入口，在同一界面创建、预览、重命名和删除项目；
+- 以可旋转的导演板作为项目入口，在同一界面创建、预览、重命名、删除和恢复项目；
 - 新项目只需命名即可进入空白工作画板，不预设第一场、首镜意图或项目级画幅；
 - 为每个项目维护独立画板、素材库、镜头、Workflow、Run 与 Take；
 - 画幅属于具体镜头，可在同一项目中并存横屏、竖屏与宽银幕内容；
 - 用首帧、尾帧和参考输入等影视语义连接素材与镜头；
-- 检测和导入 ComfyUI Workflow，仅展示创作阶段真正需要的参数；
+- 检测和导入 ComfyUI Workflow，以显式、带哈希的参数绑定运行可信自定义工作流；
 - 执行文生图、图生图、图生视频和首尾帧视频任务；
-- 跟踪进度、取消任务、回收结果，并保存可复现的参数快照；
+- 跟踪 ComfyUI 真实节点进度、取消任务、回收结果，并保存可复现的参数快照；
 - 以独立 `.takeboard` 目录保存项目，方便备份、迁移和版本归档。
 
 ```text
@@ -45,7 +45,23 @@ Project → Scene → Shot → Run → Take → Approved Take
 
 ## 快速开始
 
-环境要求：Node.js `>= 22.12 < 27`、Corepack，以及可选的 ComfyUI。
+环境要求：Node.js `>= 22.12 < 27`，以及可选的 ComfyUI。普通使用不需要先理解 pnpm、端口或环境变量。
+
+下载项目后，可以直接使用根目录里的启动入口：
+
+| 系统 | 首次与日常打开 |
+| --- | --- |
+| macOS | 右键打开 `START-TAKEBOARD.command` |
+| Windows | 双击 `START-TAKEBOARD.cmd` |
+| Linux | 运行 `npm run easy:setup`；之后运行 `npm run easy` |
+
+简易启动器会自动安装依赖、检查并重建更新后的代码、避开已占用端口、后台启动服务并打开浏览器。它会预检项目目录是否可写、避免重复启动，并轮换超过 10 MB 的旧日志。项目默认保存在 `~/TakeBoardData`；关闭服务不会删除数据。打不开时运行：
+
+```bash
+npm run easy:doctor
+```
+
+开发者仍可以使用完整开发模式：
 
 ```bash
 git clone https://github.com/Fourques/Takeboard.git
@@ -81,7 +97,15 @@ Linux 主机推荐安装用户级 systemd 服务：
 
 ### SSH 远程访问
 
-在 Mac 或 Linux 客户端的项目目录执行：
+Mac 和 Windows 用户可以分别双击 `CONNECT-REMOTE.command` 或 `CONNECT-REMOTE.cmd`，然后输入普通 SSH 地址、IP 或 `~/.ssh/config` 别名。启动器会寻找空闲本地端口，并自动探测远端 `48120–48139` 中实际运行 TakeBoard 的端口；健康检查通过后打开正确页面，关闭窗口就会释放全部隧道。
+
+所有平台也可以执行：
+
+```bash
+npm run easy:remote -- your-server
+```
+
+原有 Mac / Linux 管理脚本仍然可用：
 
 ```bash
 ./scripts/takeboard-tunnel connect your-server
@@ -126,6 +150,8 @@ export COMFY_OUTPUT_ROOT=/path/to/ComfyUI/output
 TakeBoard 只启动指向 `127.0.0.1`、`localhost` 或 `::1` 的 ComfyUI。启动目标无法验证、资源不足、已有异常进程或启动超时时都会中止；超时后会停止本次启动的服务。
 
 模型与 Custom Node 的可用性取决于自己的 ComfyUI 环境。TakeBoard 不会自动下载来源不明的模型或节点。
+
+自定义 Workflow 导入后默认处于“待映射”，不会因文件名相似而获得执行权限。在工作流库中检查提示词、尺寸、Seed、时长和素材入口，确认信任并通过当前 ComfyUI 节点预检后，状态才会变成“已验证”。底层 JSON 一旦变化，内容哈希会使旧映射自动失效。详细流程见[创作工作站指南](docs/creator-workstation.md#workflow-与模型)。
 
 ## 项目数据
 
@@ -186,10 +212,12 @@ pnpm format       # 格式化代码
 | 文档 | 内容 |
 | --- | --- |
 | [创作工作站](docs/creator-workstation.md) | 画布、素材、Workflow 与生成流程 |
+| [视频质量工作流](docs/video-quality-workflows.md) | Wan 质量/预演分层、MiniMax H3 原生音画与提示词结构 |
 | [远程访问](docs/remote-access.md) | 标准 SSH 隧道、自动清理与端口诊断 |
 | [自托管部署](docs/self-hosting.md) | systemd、配置、升级与运行维护 |
 | [数据目录](docs/data-layout.md) | 项目隔离、备份与迁移 |
 | [技术架构](docs/architecture.md) | 模块边界、数据流与安全约束 |
+| [易用性与可靠性审计](docs/usability-audit.md) | 完整用户旅程、已修断点与后续里程碑 |
 | [开发路线图](docs/roadmap.md) | Gate、验收标准与后续方向 |
 
 ## 路线图
@@ -198,7 +226,8 @@ pnpm format       # 格式化代码
 - [x] 内容画布、素材节点与语义连线
 - [x] Workflow 检测、导入和常用参数映射
 - [x] ComfyUI 任务、取消、结果回收与 Take 管理
-- [ ] 稳定的 Recipe Contract 与社区 Recipe 示例
+- [x] 带内容哈希、显式信任和执行前校验的 Workflow Binding v1
+- [ ] 社区 Recipe 示例与可移植 Binding 包
 - [ ] 分镜墙、整片覆盖率和只读粗剪
 - [ ] 多 Worker、远程算力与可解释的执行策略
 - [ ] 完整项目导入导出、成本统计与跨镜头审批

@@ -8,6 +8,11 @@
     "node": ">=22.12 <27"
   },
   "scripts": {
+    "easy": "node scripts/takeboard-easy.mjs start",
+    "easy:setup": "node scripts/takeboard-easy.mjs setup",
+    "easy:stop": "node scripts/takeboard-easy.mjs stop",
+    "easy:doctor": "node scripts/takeboard-easy.mjs doctor",
+    "easy:remote": "node scripts/takeboard-easy.mjs remote",
     "dev": "pnpm --parallel --filter @takeboard/server --filter @takeboard/web dev",
     "dev:web": "pnpm --filter @takeboard/web dev",
     "dev:server": "pnpm --filter @takeboard/server dev",
