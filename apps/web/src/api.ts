@@ -225,6 +225,13 @@ export const projectApi = {
       `/api/projects/${encodeURIComponent(key)}/shots`,
       { method: "POST", body: JSON.stringify(input) },
     ),
+  deleteShot: (key: string, shotId: string) =>
+    jsonRequest<DemoPayload & { key: string; removedShotId: string; removedItemIds: string[] }>(
+      `/api/projects/${encodeURIComponent(key)}/shots/${encodeURIComponent(shotId)}`,
+      {
+        method: "DELETE",
+      },
+    ),
   createTextNode: (
     key: string,
     input: { title?: string; body?: string; sceneId?: string; x?: number; y?: number },

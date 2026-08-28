@@ -11253,6 +11253,11 @@ html[data-theme="light"] .project-card-art {
   background: var(--hub-surface-raised);
 }
 
+.project-card-actions button:disabled {
+  cursor: wait;
+  opacity: 0.52;
+}
+
 .project-card-actions button svg,
 .delete-project-icon svg {
   width: 16px;
@@ -11474,6 +11479,24 @@ html[data-theme="light"] .project-card-art {
   backdrop-filter: blur(20px);
 }
 
+.blank-canvas-start > .blank-canvas-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border-color: transparent;
+  color: var(--text-2);
+  background: transparent;
+  font-size: 17px;
+}
+
+.blank-canvas-start > .blank-canvas-close:hover {
+  color: var(--text-1);
+  background: var(--surface-2);
+}
+
 .blank-canvas-index {
   color: var(--accent-strong);
   font-size: 9px;
@@ -11513,7 +11536,7 @@ html[data-theme="light"] .project-card-art {
   cursor: pointer;
 }
 
-.blank-canvas-start button:first-child {
+.blank-canvas-start > div button:first-child {
   border-color: var(--accent);
   color: var(--surface-root);
   background: var(--accent-strong);
@@ -11523,6 +11546,68 @@ html[data-theme="light"] .project-card-art {
 .blank-canvas-start button:disabled {
   cursor: wait;
   opacity: 0.5;
+}
+
+.shot-delete-modal {
+  width: min(430px, calc(100vw - 32px));
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--text-1);
+  background: color-mix(in srgb, var(--surface-root) 94%, var(--surface-glass));
+  box-shadow: 0 36px 110px color-mix(in srgb, var(--shadow) 82%, transparent);
+}
+
+.shot-delete-modal .section-kicker {
+  color: var(--accent-strong);
+  font-size: 9px;
+  letter-spacing: 0.13em;
+}
+
+.shot-delete-modal h2 {
+  margin: 9px 0 11px;
+  font-family: "Songti SC", STSong, ui-serif, serif;
+  font-size: 25px;
+  font-weight: 500;
+}
+
+.shot-delete-modal > p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.75;
+}
+
+.shot-delete-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin-top: 25px;
+  gap: 8px;
+}
+
+.shot-delete-actions:has(button:only-child) {
+  grid-template-columns: 1fr;
+}
+
+.shot-delete-actions button {
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--text-1);
+  background: var(--surface-2);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.shot-delete-actions .confirm-shot-delete {
+  border-color: color-mix(in srgb, var(--red) 55%, var(--line));
+  color: white;
+  background: color-mix(in srgb, var(--red) 72%, #321b1b);
+}
+
+.shot-delete-actions button:disabled {
+  cursor: wait;
+  opacity: 0.56;
 }
 
 .node-editor-field-row {

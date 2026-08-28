@@ -364,6 +364,65 @@ export function registerProjectRoutes(
     }
   });
 
+  app.delete<{ Params: { key: string; shotId: string } }>(
+    "/api/projects/:key/shots/:shotId",
+    async (request, reply) => {
+      const key = projectKey(request.params.key);
+      if (!key) return await reply.code(400).send({ error: "项目标识无效" });
+      const store = ProjectStore.openExisting(join(root, key));
+      if (!store) return await reply.code(404).send({ error: "项目不存在" });
+      try {
+        const current = store.loadCurrent();
+        const shot = current?.snapshot.shots.find(
+          (candidate) => candidate.id === request.params.shotId,
+        );
+        if (!current || !shot) return await reply.code(404).send({ error: "镜头不存在" });
+        if (current.snapshot.runs.some((run) => run.shotId === shot.id)) {
+          return await reply.code(409).send({
+            error: "这个镜头已有生成记录。为保留成片与参数溯源，请先保留镜头或仅移除画布节点。",
+          });
+        }
+
+        const removedItemIds = new Set(
+          current.snapshot.canvasItems
+            .filter(
+              (item) =>
+                item.refId === shot.id &&
+                (item.refType === "shot" || item.refType === "take_stack"),
+            )
+            .map((item) => item.id),
+        );
+        const timestamp = toIsoTimestamp();
+        current.snapshot.shots = current.snapshot.shots.filter(
+          (candidate) => candidate.id !== shot.id,
+        );
+        current.snapshot.shots
+          .filter((candidate) => candidate.sceneId === shot.sceneId)
+          .sort((left, right) => left.order - right.order)
+          .forEach((candidate, order) => {
+            candidate.order = order;
+            candidate.updatedAt = timestamp;
+          });
+        current.snapshot.canvasItems = current.snapshot.canvasItems.filter(
+          (item) => !removedItemIds.has(item.id),
+        );
+        current.snapshot.canvasEdges = current.snapshot.canvasEdges.filter(
+          (edge) =>
+            !removedItemIds.has(edge.sourceItemId) && !removedItemIds.has(edge.targetItemId),
+        );
+        current.snapshot.project.updatedAt = timestamp;
+        current.snapshot.exportedAt = timestamp;
+        const saved = await store.save(current.snapshot, {
+          type: "shot.deleted",
+          payload: { shotId: shot.id, removedItemIds: [...removedItemIds] },
+        });
+        return { key, removedShotId: shot.id, removedItemIds: [...removedItemIds], ...saved };
+      } finally {
+        store.close();
+      }
+    },
+  );
+
   app.post<{ Params: { key: string } }>("/api/projects/:key/text-nodes", async (request, reply) => {
     const key = projectKey(request.params.key);
     const body =

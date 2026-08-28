@@ -1814,7 +1814,9 @@ export function App() {
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [canvasContextMenu, setCanvasContextMenu] = useState<CanvasContextMenuState | null>(null);
   const [canvasGuideOpen, setCanvasGuideOpen] = useState(false);
+  const [blankCanvasGuideOpen, setBlankCanvasGuideOpen] = useState(false);
   const [canvasClipboard, setCanvasClipboard] = useState<CanvasClipboardState | null>(null);
+  const [deletingShotItemId, setDeletingShotItemId] = useState<string | null>(null);
   const [nodeEditDraft, setNodeEditDraft] = useState<NodeEditDraft | null>(null);
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<BoardNode> | null>(null);
   const [busy, setBusy] = useState(false);
@@ -2318,6 +2320,12 @@ export function App() {
   const activeScene =
     snapshot?.scenes.find((scene) => scene.id === selectedShot?.sceneId) ?? snapshot?.scenes[0];
   const contextEdge = canvasContextMenu?.edge ?? null;
+  const deletingShotItem = snapshot?.canvasItems.find(
+    (item) => item.id === deletingShotItemId && item.refType === "shot",
+  );
+  const deletingShot = snapshot?.shots.find((shot) => shot.id === deletingShotItem?.refId);
+  const deletingShotRunCount =
+    snapshot?.runs.filter((run) => run.shotId === deletingShot?.id).length ?? 0;
 
   const onNodesChange = useCallback((changes: NodeChange<BoardNode>[]) => {
     setNodes((currentNodes) =>
@@ -2469,7 +2477,7 @@ export function App() {
     [acceptPayload, projectKey, projectMode, selectedShotId, snapshot],
   );
 
-  const deleteCanvasItem = useCallback(
+  const removeCanvasItem = useCallback(
     async (itemId: string) => {
       if (!projectKey || projectMode !== "project") {
         setNotice("功能示例不会删除节点");
@@ -2477,10 +2485,6 @@ export function App() {
       }
       const item = snapshot?.canvasItems.find((candidate) => candidate.id === itemId);
       if (!item) return;
-      const confirmed = window.confirm(
-        "从画布移除这个节点？\n\n底层镜头、人物或素材仍会保留在项目中，不会删除原始文件。",
-      );
-      if (!confirmed) return;
       setBusy(true);
       setError(null);
       try {
@@ -2489,7 +2493,7 @@ export function App() {
         setSelectedCanvasItemId((current) => (current === itemId ? null : current));
         setCanvasClipboard((current) => (current?.itemId === itemId ? null : current));
         setCanvasContextMenu(null);
-        setNotice("节点已从画布移除，底层项目数据仍保留");
+        setNotice("已从画布移除；底层项目数据与原始文件仍然保留");
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "节点删除失败");
       } finally {
@@ -2498,6 +2502,44 @@ export function App() {
     },
     [acceptPayload, projectKey, projectMode, snapshot?.canvasItems],
   );
+
+  const deleteCanvasItem = useCallback(
+    (itemId: string) => {
+      const item = snapshot?.canvasItems.find((candidate) => candidate.id === itemId);
+      if (!item) return;
+      setCanvasContextMenu(null);
+      if (item.refType === "shot") {
+        setError(null);
+        setDeletingShotItemId(item.id);
+        return;
+      }
+      void removeCanvasItem(item.id);
+    },
+    [removeCanvasItem, snapshot?.canvasItems],
+  );
+
+  const confirmDeleteShot = useCallback(async () => {
+    if (!projectKey || projectMode !== "project" || !deletingShotItem || !deletingShot) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const payload = await projectApi.deleteShot(projectKey, deletingShot.id);
+      acceptPayload(payload);
+      setSelectedCanvasItemId((current) =>
+        payload.removedItemIds.includes(current ?? "") ? null : current,
+      );
+      setCanvasClipboard((current) =>
+        current && payload.removedItemIds.includes(current.itemId) ? null : current,
+      );
+      setDeletingShotItemId(null);
+      setInspectorOpen(false);
+      setNotice(`镜头“${deletingShot.label}”已删除，镜头列表与画布已同步`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "镜头删除失败");
+    } finally {
+      setBusy(false);
+    }
+  }, [acceptPayload, deletingShot, deletingShotItem, projectKey, projectMode]);
 
   const deleteCanvasEdge = useCallback(
     async (edgeId: string, requestedIdentity?: CanvasEdgeIdentity) => {
@@ -2623,6 +2665,7 @@ export function App() {
         const overlayOpen = Boolean(
           canvasContextMenu ||
             canvasGuideOpen ||
+            deletingShotItemId ||
             nodeEditDraft ||
             recipeOpen ||
             assetLibraryOpen ||
@@ -2630,6 +2673,7 @@ export function App() {
         );
         setCanvasContextMenu(null);
         setCanvasGuideOpen(false);
+        setDeletingShotItemId(null);
         setNodeEditDraft(null);
         setRecipeOpen(false);
         setAssetLibraryOpen(false);
@@ -2689,6 +2733,7 @@ export function App() {
     canvasClipboard,
     canvasContextMenu,
     canvasGuideOpen,
+    deletingShotItemId,
     copyCanvasItem,
     deleteCanvasEdge,
     deleteCanvasItem,
@@ -3043,6 +3088,7 @@ export function App() {
       try {
         const payload = await projectApi.open(key);
         window.sessionStorage.removeItem("takeboard.resumeDemo");
+        setBlankCanvasGuideOpen(false);
         setProjectKey(key);
         setProjectMode("project");
         acceptPayload(payload);
@@ -3066,6 +3112,14 @@ export function App() {
       try {
         const payload = await projectApi.create(input);
         window.sessionStorage.removeItem("takeboard.resumeDemo");
+        let showFirstGuide = false;
+        try {
+          showFirstGuide = window.localStorage.getItem("takeboard.blankCanvasGuideSeen") !== "1";
+          window.localStorage.setItem("takeboard.blankCanvasGuideSeen", "1");
+        } catch {
+          // Storage may be unavailable in privacy-restricted browser sessions.
+        }
+        setBlankCanvasGuideOpen(showFirstGuide);
         setProjectKey(payload.key);
         setProjectMode("project");
         acceptPayload(payload);
@@ -3213,6 +3267,7 @@ export function App() {
       setError(null);
       try {
         const payload = await projectApi.createShot(projectKey, position);
+        setBlankCanvasGuideOpen(false);
         acceptPayload(payload, payload.shotId);
         setSelectedCanvasItemId(payload.itemId);
         setNotice("已添加一个空白镜头；在右侧设置镜头内容与工作流");
@@ -4049,8 +4104,16 @@ export function App() {
             ) : null}
           </div>
         </div>
-        {projectMode === "project" && nodes.length === 0 ? (
+        {projectMode === "project" && nodes.length === 0 && blankCanvasGuideOpen ? (
           <section className="blank-canvas-start" aria-label="空白工作画板">
+            <button
+              className="blank-canvas-close"
+              type="button"
+              aria-label="关闭首次使用提示"
+              onClick={() => setBlankCanvasGuideOpen(false)}
+            >
+              ×
+            </button>
             <span className="blank-canvas-index">01 / START</span>
             <h2>从你手里已有的东西开始。</h2>
             <p>可以先放一张参考图，也可以先建立镜头。画幅只属于镜头，不属于整张画布。</p>
@@ -4058,7 +4121,14 @@ export function App() {
               <button type="button" disabled={busy} onClick={() => void createShot()}>
                 添加第一个镜头
               </button>
-              <button type="button" disabled={busy} onClick={() => assetInput.current?.click()}>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setBlankCanvasGuideOpen(false);
+                  assetInput.current?.click();
+                }}
+              >
                 导入参考素材
               </button>
             </div>
@@ -4281,10 +4351,15 @@ export function App() {
                 type="button"
                 role="menuitem"
                 className="danger"
-                onClick={() => void deleteCanvasItem(canvasContextMenu.itemId as string)}
+                onClick={() => deleteCanvasItem(canvasContextMenu.itemId as string)}
               >
                 <span>⌫</span>
-                <strong>从画布移除</strong>
+                <strong>
+                  {snapshot.canvasItems.find((item) => item.id === canvasContextMenu.itemId)
+                    ?.refType === "shot"
+                    ? "删除镜头"
+                    : "从画布移除"}
+                </strong>
                 <kbd>Delete</kbd>
               </button>
             </>
@@ -4488,6 +4563,44 @@ export function App() {
             ),
           }}
         />
+      ) : null}
+
+      {deletingShotItem && deletingShot ? (
+        <div className="modal-backdrop shot-delete-backdrop">
+          <section
+            className="shot-delete-modal"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="shot-delete-title"
+          >
+            <span className="section-kicker">SHOT MANAGEMENT</span>
+            <h2 id="shot-delete-title">删除“{deletingShot.label}”？</h2>
+            {deletingShotRunCount > 0 ? (
+              <p>
+                这个镜头已有 {deletingShotRunCount}
+                条生成记录。为了保留成片、参数和工作流溯源，目前不能直接删除。
+              </p>
+            ) : (
+              <p>镜头会同时从画布和左侧镜头列表删除；项目里的原始素材不会受到影响。</p>
+            )}
+            {error ? <p className="form-error">{error}</p> : null}
+            <div className="shot-delete-actions">
+              <button type="button" disabled={busy} onClick={() => setDeletingShotItemId(null)}>
+                {deletingShotRunCount > 0 ? "知道了" : "取消"}
+              </button>
+              {deletingShotRunCount === 0 ? (
+                <button
+                  className="confirm-shot-delete"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void confirmDeleteShot()}
+                >
+                  {busy ? "正在删除…" : "删除镜头"}
+                </button>
+              ) : null}
+            </div>
+          </section>
+        </div>
       ) : null}
 
       {nodeEditDraft && projectKey ? (

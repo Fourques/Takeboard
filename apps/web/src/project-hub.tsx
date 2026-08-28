@@ -235,6 +235,7 @@ function ProjectCard({
             className="project-card-delete-button"
             type="button"
             onClick={onDelete}
+            disabled={busy}
             aria-label={`删除 ${project.title}`}
           >
             <ActionIcon name="delete" />
@@ -643,7 +644,13 @@ export function ProjectHub({
                 setRenaming(project);
                 setRenameTitle(project.title);
               }}
-              onDelete={() => setDeleting(project)}
+              onDelete={() => {
+                if (project.activeRunCount > 0) {
+                  setDeleting(project);
+                  return;
+                }
+                void onDelete(project.key).catch(() => undefined);
+              }}
             />
           ))}
           {projects.length === 0 ? (
@@ -968,11 +975,10 @@ export function ProjectHub({
               <ActionIcon name="delete" />
             </div>
             <span className="section-kicker">项目管理</span>
-            <h2 id="delete-project-title">移除“{deleting.title}”？</h2>
+            <h2 id="delete-project-title">停止生成并移除“{deleting.title}”？</h2>
             <p>
-              {deleting.activeRunCount > 0
-                ? `TakeBoard 会先安全停止 ${deleting.activeRunCount} 个生成任务；只有执行端确认停止后，项目才会移入回收区。`
-                : "项目将移入本机项目回收区，不会立即清除素材文件。"}
+              TakeBoard 会先安全停止 {deleting.activeRunCount}
+              个生成任务；只有执行端确认停止后，项目才会移入回收区。
             </p>
             {error ? <p className="form-error">{error}</p> : null}
             <div className="delete-project-actions">
@@ -989,13 +995,7 @@ export function ProjectHub({
                     .catch(() => undefined)
                 }
               >
-                {busy
-                  ? deleting.activeRunCount > 0
-                    ? "正在停止任务…"
-                    : "正在移动…"
-                  : deleting.activeRunCount > 0
-                    ? `停止 ${deleting.activeRunCount} 个任务并移除`
-                    : "移到回收区"}
+                {busy ? "正在停止任务…" : `停止 ${deleting.activeRunCount} 个任务并移除`}
               </button>
             </div>
           </section>

@@ -606,6 +606,73 @@ describe("TakeBoard project API", () => {
     );
   });
 
+  it("deletes a new shot from both the canvas and shot list but preserves run history", async () => {
+    const root = await mkdtemp(join(tmpdir(), "takeboard-shot-delete-"));
+    cleanup.push(() => rm(root, { recursive: true, force: true }));
+    const app = buildApp({ projectsRoot: root, webRoot: null });
+    cleanup.push(() => app.close());
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: { title: "镜头删除一致性" },
+    });
+    const key = created.json().key as string;
+    const first = await app.inject({ method: "POST", url: `/api/projects/${key}/shots` });
+    const second = await app.inject({ method: "POST", url: `/api/projects/${key}/shots` });
+    const firstShotId = first.json().shotId as string;
+    const firstItemId = first.json().itemId as string;
+    const secondShotId = second.json().shotId as string;
+
+    const deleted = await app.inject({
+      method: "DELETE",
+      url: `/api/projects/${key}/shots/${firstShotId}`,
+    });
+
+    expect(deleted.statusCode, deleted.body).toBe(200);
+    expect(deleted.json()).toMatchObject({
+      removedShotId: firstShotId,
+      removedItemIds: [firstItemId],
+    });
+    expect(deleted.json().snapshot.shots).toEqual([
+      expect.objectContaining({ id: secondShotId, order: 0 }),
+    ]);
+    expect(deleted.json().snapshot.canvasItems).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ refId: firstShotId })]),
+    );
+
+    const store = ProjectStore.openExisting(join(root, key));
+    const current = store?.loadCurrent();
+    if (!store || !current) throw new Error("Project fixture could not be opened");
+    const timestamp = toIsoTimestamp();
+    current.snapshot.runs.push({
+      id: createTakeBoardId("run"),
+      shotId: secondShotId,
+      recipeId: createTakeBoardId("recipe"),
+      recipeVersion: "test@1",
+      workflowSha256: "3".repeat(64),
+      workerId: createTakeBoardId("worker"),
+      promptId: "completed-shot-history",
+      status: "completed",
+      inputs: [],
+      parameters: {},
+      errorCode: null,
+      errorMessage: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+    await store.save(current.snapshot, { type: "test.completed_run", payload: {} });
+    store.close();
+
+    const historyProtected = await app.inject({
+      method: "DELETE",
+      url: `/api/projects/${key}/shots/${secondShotId}`,
+    });
+    expect(historyProtected.statusCode).toBe(409);
+    expect(historyProtected.json().error).toContain("生成记录");
+    const reopened = await app.inject({ method: "GET", url: `/api/projects/${key}` });
+    expect(reopened.json().snapshot.shots).toEqual([expect.objectContaining({ id: secondShotId })]);
+  });
+
   it("does not create a project directory while returning 404", async () => {
     const root = await mkdtemp(join(tmpdir(), "takeboard-project-missing-"));
     cleanup.push(() => rm(root, { recursive: true, force: true }));
