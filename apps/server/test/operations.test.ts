@@ -9,7 +9,7 @@ import { ProjectStore } from "../src/storage/project-store.js";
 const cleanup: Array<() => Promise<void>> = [];
 
 afterEach(async () => {
-  await Promise.all(cleanup.splice(0).map((close) => close()));
+  for (const close of cleanup.splice(0).reverse()) await close();
 });
 
 describe("production operations center", () => {

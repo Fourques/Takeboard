@@ -7,7 +7,7 @@ import { buildApp } from "../src/app.js";
 const cleanup: Array<() => Promise<void>> = [];
 
 afterEach(async () => {
-  await Promise.all(cleanup.splice(0).map((task) => task()));
+  for (const task of cleanup.splice(0).reverse()) await task();
 });
 
 async function fixture() {

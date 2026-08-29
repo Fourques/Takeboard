@@ -56,7 +56,7 @@ function projectPackageUpload(bytes: Buffer) {
 
 afterEach(async () => {
   vi.unstubAllGlobals();
-  await Promise.all(cleanup.splice(0).map((close) => close()));
+  for (const close of cleanup.splice(0).reverse()) await close();
 });
 
 describe("TakeBoard project API", () => {

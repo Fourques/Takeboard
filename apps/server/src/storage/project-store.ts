@@ -121,33 +121,43 @@ export class ProjectStore {
     const databasePath = join(this.projectDirectory, databaseFileName);
     const existingDatabase = existsSync(databasePath) && statSync(databasePath).size > 0;
     const client = new BetterSqlite3(databasePath);
-    const pendingMigrations = existingDatabase ? pendingDatabaseMigrations(client) : [];
-    const backup = pendingMigrations.length
-      ? migrationBackup(client, this.projectDirectory, pendingMigrations)
-      : null;
-    try {
-      migrateDatabase(client);
-    } catch (error) {
+    let clientClosed = false;
+    const closeClient = () => {
+      if (clientClosed) return;
       client.close();
-      if (backup) {
-        try {
-          restoreMigrationBackup(backup, databasePath);
-        } catch (restoreError) {
-          throw new AggregateError(
-            [error, restoreError],
-            `数据库升级失败，且无法从 ${backup.directory} 自动恢复`,
-          );
-        }
-        throw new Error(`数据库升级失败，已从 ${backup.directory} 自动恢复`, { cause: error });
-      }
-      throw error;
-    }
+      clientClosed = true;
+    };
     this.client = client;
-    this.database = drizzle(this.client);
+    this.database = drizzle(client);
     try {
+      const pendingMigrations = existingDatabase ? pendingDatabaseMigrations(client) : [];
+      const backup = pendingMigrations.length
+        ? migrationBackup(client, this.projectDirectory, pendingMigrations)
+        : null;
+      try {
+        migrateDatabase(client);
+      } catch (error) {
+        closeClient();
+        if (backup) {
+          try {
+            restoreMigrationBackup(backup, databasePath);
+          } catch (restoreError) {
+            throw new AggregateError(
+              [error, restoreError],
+              `数据库升级失败，且无法从 ${backup.directory} 自动恢复`,
+            );
+          }
+          throw new Error(`数据库升级失败，已从 ${backup.directory} 自动恢复`, { cause: error });
+        }
+        throw error;
+      }
       this.reconcilePortableSnapshot();
     } catch (error) {
-      this.client.close();
+      try {
+        closeClient();
+      } catch (closeError) {
+        throw new AggregateError([error, closeError], "项目数据库打开失败，且文件句柄无法释放");
+      }
       throw error;
     }
   }

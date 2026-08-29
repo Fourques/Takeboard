@@ -234,6 +234,18 @@ describe("ProjectStore", () => {
     restored.close();
     expect(await readdir(join(projectDirectory, "backups", "migrations"))).toHaveLength(1);
   });
+
+  it("releases the file handle when an existing database is malformed", async () => {
+    const root = await mkdtemp(join(tmpdir(), "takeboard-project-corrupt-"));
+    temporaryDirectories.push(root);
+    const projectDirectory = join(root, "corrupt.takeboard");
+    const databasePath = join(projectDirectory, "takeboard.db");
+    await mkdir(projectDirectory, { recursive: true });
+    await writeFile(databasePath, "not a sqlite database", "utf8");
+
+    expect(() => ProjectStore.openExisting(projectDirectory)).toThrow();
+    await expect(rm(databasePath)).resolves.toBeUndefined();
+  });
 });
 
 describe("ProjectService", () => {

@@ -11,7 +11,7 @@ afterEach(async () => {
   delete process.env.TAKEBOARD_MIN_FREE_DISK_GB;
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
-  await Promise.all(cleanup.splice(0).map((close) => close()));
+  for (const close of cleanup.splice(0).reverse()) await close();
 });
 
 function multipartFile(filename: string, mimeType: string, bytes: Uint8Array) {
