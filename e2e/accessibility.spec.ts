@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 test("homepage has no serious WCAG A/AA violations", async ({ page }) => {
   await page.goto("/");

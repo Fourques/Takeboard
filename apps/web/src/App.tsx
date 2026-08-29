@@ -42,6 +42,7 @@ import {
   type WorkflowSummary,
   workflowApi,
 } from "./api";
+import { AccountButton, useAuth } from "./auth-ui";
 import { type BoardNode, boardNodeTypes } from "./board-nodes";
 import { DisplaySettings } from "./display-settings";
 import {
@@ -1167,6 +1168,7 @@ type InspectorProps = {
   generateDisabledReason: string | null;
   progress: GenerationProgress | null;
   onClose: () => void;
+  readOnly: boolean;
 };
 
 function Inspector({
@@ -1198,6 +1200,7 @@ function Inspector({
   generateDisabledReason,
   progress,
   onClose,
+  readOnly,
 }: InspectorProps) {
   const [selectedTakeId, setSelectedTakeId] = useState<string | null>(null);
   const [reason, setReason] = useState(rejectionReasons[0] ?? "角色漂移");
@@ -1281,365 +1284,370 @@ function Inspector({
           <InspectorDismiss onClose={onClose} />
         </div>
       </div>
-      <div className="shot-quick-edit">
-        <textarea
-          aria-label="镜头备注"
-          value={shotDraft.body}
-          placeholder="一句话记录镜头意图（可留空）"
-          onChange={(event) =>
-            setShotDraft((current) => ({ ...current, body: event.target.value }))
-          }
-        />
-        <div>
-          <label>
-            <span>画幅</span>
-            <select
-              aria-label="镜头画幅"
-              value={shotDraft.aspectRatio}
-              onChange={(event) =>
-                setShotDraft((current) => ({
-                  ...current,
-                  aspectRatio: event.target.value as Shot["aspectRatio"],
-                }))
-              }
-            >
-              {(["16:9", "9:16", "1:1", "4:5", "2.35:1"] as const).map((ratio) => (
-                <option key={ratio}>{ratio}</option>
-              ))}
-            </select>
-          </label>
-          <label htmlFor="inspector-shot-duration">
-            <span>时长</span>
-            <NumericInput
-              id="inspector-shot-duration"
-              aria-label="镜头时长"
-              min={0.5}
-              max={300}
-              step={0.5}
-              value={shotDraft.durationSeconds}
-              onValueChange={(durationSeconds) =>
-                setShotDraft((current) => ({
-                  ...current,
-                  durationSeconds,
-                }))
-              }
-            />
-          </label>
-          <button type="button" onClick={() => onUpdateShot(shotDraft)}>
-            保存镜头
-          </button>
-        </div>
-        <small>{workerLabel}</small>
-      </div>
-
-      {!isDemo ? (
-        <section className="generation-console">
-          <button
-            className={`recipe-selector ${workflowLocked ? "locked" : ""}`}
-            type="button"
-            disabled={workflowLocked}
-            onClick={onOpenRecipes}
-          >
-            <span className="recipe-selector-icon">⌘</span>
-            <span>
-              <small>RECIPE</small>
-              <strong>{workflow?.name ?? "选择工作流"}</strong>
-            </span>
-            <i>{workflowLocked ? "已随镜头锁定" : `${workflow?.capabilityLabel ?? "选择"}⌄`}</i>
-          </button>
-          <div
-            className={`model-profile-summary ${workflow?.modelStatus === "missing" ? "is-missing" : workflowDetected ? "is-detected" : "is-fallback"}`}
-          >
-            <div>
-              <span>{profile.outputLabel.toUpperCase()} PROFILE</span>
-              <strong>{profile.title}</strong>
-              <p>{profile.description}</p>
-            </div>
-            <small>{modelCheckLabel}</small>
-          </div>
-          <label className="prompt-field prompt-with-mentions">
-            <span>
-              镜头提示词 <small>{settings.prompt.length}/20000</small>
-            </span>
-            <textarea
-              ref={promptRef}
-              value={settings.prompt}
-              onChange={(event) => {
-                onSettingsChange({ ...settings, prompt: event.target.value });
-                setMentionOpen(/@[^\s，。；：,.!?]*$/.test(event.target.value));
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "@" && mentions.length > 0) setMentionOpen(true);
-                if (event.key === "Escape") setMentionOpen(false);
-              }}
-              placeholder={
-                profile.family === "minimax_h3"
-                  ? "按时间线描述画面与声音，例如 [0s-2s] 动作、运镜、对白与环境声…"
-                  : mentions.length
-                    ? "输入 @ 引用已连接画面…"
-                    : "描述一个主要动作、运镜、速度和光线连续性…"
-              }
-            />
-            {mentions.length ? (
-              <div className={`prompt-mention-menu ${mentionOpen ? "open" : ""}`}>
-                {mentions.map((mention) => (
-                  <button
-                    type="button"
-                    key={`${mention.assetId}-${mention.alias}`}
-                    onClick={() => {
-                      const textarea = promptRef.current;
-                      const cursor = textarea?.selectionStart ?? settings.prompt.length;
-                      const before = settings.prompt
-                        .slice(0, cursor)
-                        .replace(/@[^\s，。；：,.!?]*$/, "");
-                      const after = settings.prompt.slice(cursor);
-                      const token = `@${mention.alias}`;
-                      onSettingsChange({ ...settings, prompt: `${before}${token}${after}` });
-                      setMentionOpen(false);
-                      window.requestAnimationFrame(() => {
-                        textarea?.focus();
-                        const nextCursor = before.length + token.length;
-                        textarea?.setSelectionRange(nextCursor, nextCursor);
-                      });
-                    }}
-                  >
-                    {mention.thumbnailUrl ? (
-                      <img src={mention.thumbnailUrl} alt="" />
-                    ) : (
-                      <span>图</span>
-                    )}
-                    <strong>@{mention.alias}</strong>
-                    <small>
-                      {mention.role} · {mention.canonicalToken}
-                    </small>
-                  </button>
-                ))}
-              </div>
-            ) : null}
-            {mentions.length ? (
-              <div className="prompt-mention-chips">
-                {mentions.map((mention) => (
-                  <button type="button" key={mention.alias} onClick={() => setMentionOpen(true)}>
-                    @{mention.alias}
-                    <small>{mention.canonicalToken}</small>
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </label>
-          {profile.family === "minimax_h3" ? (
-            <details className="h3-prompt-guide">
-              <summary>H3 音画提示词结构</summary>
-              {workflow?.capability === "reference_video" ? (
-                <p>
-                  先定义参考素材提供的人物、场景、动作或声线，再按播放顺序写镜头。使用上方的
-                  @素材名；提交时会自动转换为 H3 所需的 Picture / Video / Audio 标签。
-                </p>
-              ) : (
-                <p>
-                  按镜头时间线描述画面、动作、运镜、对白和同步声音；最后分别说明整体环境声与非画内配乐。
-                </p>
-              )}
-              <code>
-                {workflow?.capability === "reference_video"
-                  ? "subject_definitions → summary → retention_analysis → detailed_description → overall_soundscape → non_diegetic_music"
-                  : "integrated_multimodal_description → overall_soundscape → non_diegetic_music"}
-              </code>
-            </details>
-          ) : null}
-          {workflow?.inputs.includes("negative_prompt") ? (
-            <label className="negative-field">
-              <span>负面提示词</span>
-              <input
-                value={settings.negativePrompt}
+      {readOnly ? (
+        <div className="viewer-mode-note">Viewer 模式 · 可以查看素材与候选，但不能修改或生成</div>
+      ) : null}
+      <fieldset className="inspector-editable-zone" disabled={readOnly}>
+        <div className="shot-quick-edit">
+          <textarea
+            aria-label="镜头备注"
+            value={shotDraft.body}
+            placeholder="一句话记录镜头意图（可留空）"
+            onChange={(event) =>
+              setShotDraft((current) => ({ ...current, body: event.target.value }))
+            }
+          />
+          <div>
+            <label>
+              <span>画幅</span>
+              <select
+                aria-label="镜头画幅"
+                value={shotDraft.aspectRatio}
                 onChange={(event) =>
-                  onSettingsChange({ ...settings, negativePrompt: event.target.value })
+                  setShotDraft((current) => ({
+                    ...current,
+                    aspectRatio: event.target.value as Shot["aspectRatio"],
+                  }))
                 }
-                placeholder="不希望出现的内容"
+              >
+                {(["16:9", "9:16", "1:1", "4:5", "2.35:1"] as const).map((ratio) => (
+                  <option key={ratio}>{ratio}</option>
+                ))}
+              </select>
+            </label>
+            <label htmlFor="inspector-shot-duration">
+              <span>时长</span>
+              <NumericInput
+                id="inspector-shot-duration"
+                aria-label="镜头时长"
+                min={0.5}
+                max={300}
+                step={0.5}
+                value={shotDraft.durationSeconds}
+                onValueChange={(durationSeconds) =>
+                  setShotDraft((current) => ({
+                    ...current,
+                    durationSeconds,
+                  }))
+                }
               />
             </label>
-          ) : null}
-          {profile.slots.length > 0 ? (
-            <div className="frame-slots model-driven-slots">
-              {profile.slots.map((slot) => {
-                const connectedCount = inputCounts[slot.id];
-                return (
+            <button type="button" onClick={() => onUpdateShot(shotDraft)}>
+              保存镜头
+            </button>
+          </div>
+          <small>{workerLabel}</small>
+        </div>
+
+        {!isDemo ? (
+          <section className="generation-console">
+            <button
+              className={`recipe-selector ${workflowLocked ? "locked" : ""}`}
+              type="button"
+              disabled={workflowLocked}
+              onClick={onOpenRecipes}
+            >
+              <span className="recipe-selector-icon">⌘</span>
+              <span>
+                <small>RECIPE</small>
+                <strong>{workflow?.name ?? "选择工作流"}</strong>
+              </span>
+              <i>{workflowLocked ? "已随镜头锁定" : `${workflow?.capabilityLabel ?? "选择"}⌄`}</i>
+            </button>
+            <div
+              className={`model-profile-summary ${workflow?.modelStatus === "missing" ? "is-missing" : workflowDetected ? "is-detected" : "is-fallback"}`}
+            >
+              <div>
+                <span>{profile.outputLabel.toUpperCase()} PROFILE</span>
+                <strong>{profile.title}</strong>
+                <p>{profile.description}</p>
+              </div>
+              <small>{modelCheckLabel}</small>
+            </div>
+            <label className="prompt-field prompt-with-mentions">
+              <span>
+                镜头提示词 <small>{settings.prompt.length}/20000</small>
+              </span>
+              <textarea
+                ref={promptRef}
+                value={settings.prompt}
+                onChange={(event) => {
+                  onSettingsChange({ ...settings, prompt: event.target.value });
+                  setMentionOpen(/@[^\s，。；：,.!?]*$/.test(event.target.value));
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "@" && mentions.length > 0) setMentionOpen(true);
+                  if (event.key === "Escape") setMentionOpen(false);
+                }}
+                placeholder={
+                  profile.family === "minimax_h3"
+                    ? "按时间线描述画面与声音，例如 [0s-2s] 动作、运镜、对白与环境声…"
+                    : mentions.length
+                      ? "输入 @ 引用已连接画面…"
+                      : "描述一个主要动作、运镜、速度和光线连续性…"
+                }
+              />
+              {mentions.length ? (
+                <div className={`prompt-mention-menu ${mentionOpen ? "open" : ""}`}>
+                  {mentions.map((mention) => (
+                    <button
+                      type="button"
+                      key={`${mention.assetId}-${mention.alias}`}
+                      onClick={() => {
+                        const textarea = promptRef.current;
+                        const cursor = textarea?.selectionStart ?? settings.prompt.length;
+                        const before = settings.prompt
+                          .slice(0, cursor)
+                          .replace(/@[^\s，。；：,.!?]*$/, "");
+                        const after = settings.prompt.slice(cursor);
+                        const token = `@${mention.alias}`;
+                        onSettingsChange({ ...settings, prompt: `${before}${token}${after}` });
+                        setMentionOpen(false);
+                        window.requestAnimationFrame(() => {
+                          textarea?.focus();
+                          const nextCursor = before.length + token.length;
+                          textarea?.setSelectionRange(nextCursor, nextCursor);
+                        });
+                      }}
+                    >
+                      {mention.thumbnailUrl ? (
+                        <img src={mention.thumbnailUrl} alt="" />
+                      ) : (
+                        <span>图</span>
+                      )}
+                      <strong>@{mention.alias}</strong>
+                      <small>
+                        {mention.role} · {mention.canonicalToken}
+                      </small>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              {mentions.length ? (
+                <div className="prompt-mention-chips">
+                  {mentions.map((mention) => (
+                    <button type="button" key={mention.alias} onClick={() => setMentionOpen(true)}>
+                      @{mention.alias}
+                      <small>{mention.canonicalToken}</small>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </label>
+            {profile.family === "minimax_h3" ? (
+              <details className="h3-prompt-guide">
+                <summary>H3 音画提示词结构</summary>
+                {workflow?.capability === "reference_video" ? (
+                  <p>
+                    先定义参考素材提供的人物、场景、动作或声线，再按播放顺序写镜头。使用上方的
+                    @素材名；提交时会自动转换为 H3 所需的 Picture / Video / Audio 标签。
+                  </p>
+                ) : (
+                  <p>
+                    按镜头时间线描述画面、动作、运镜、对白和同步声音；最后分别说明整体环境声与非画内配乐。
+                  </p>
+                )}
+                <code>
+                  {workflow?.capability === "reference_video"
+                    ? "subject_definitions → summary → retention_analysis → detailed_description → overall_soundscape → non_diegetic_music"
+                    : "integrated_multimodal_description → overall_soundscape → non_diegetic_music"}
+                </code>
+              </details>
+            ) : null}
+            {workflow?.inputs.includes("negative_prompt") ? (
+              <label className="negative-field">
+                <span>负面提示词</span>
+                <input
+                  value={settings.negativePrompt}
+                  onChange={(event) =>
+                    onSettingsChange({ ...settings, negativePrompt: event.target.value })
+                  }
+                  placeholder="不希望出现的内容"
+                />
+              </label>
+            ) : null}
+            {profile.slots.length > 0 ? (
+              <div className="frame-slots model-driven-slots">
+                {profile.slots.map((slot) => {
+                  const connectedCount = inputCounts[slot.id];
+                  return (
+                    <button
+                      type="button"
+                      className={connectedCount > 0 ? "filled" : ""}
+                      onClick={onOpenAssets}
+                      key={slot.id}
+                    >
+                      <span>{connectedCount > 0 ? connectedCount : "+"}</span>
+                      <div>
+                        <small>
+                          {slot.required ? "必需" : "可选"} · {connectedCount}/{slot.maxCount}
+                        </small>
+                        <strong>{slot.label}</strong>
+                        <em>
+                          {slot.maxCount > 1
+                            ? `最多 ${slot.maxCount} ${slot.mediaType === "image" ? "张" : "段"}`
+                            : slot.hint}
+                        </em>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-only-workflow-note">
+                <span>文</span>
+                <div>
+                  <strong>无需图片输入</strong>
+                  <p>这个模型从文字开始，画布节点不会显示多余的图片端口。</p>
+                </div>
+              </div>
+            )}
+            <details className="advanced-generation-settings">
+              <summary>
+                生成参数 <span>分辨率、Seed 与采样</span>
+              </summary>
+              {workflow?.inputs.includes("resolution") ? (
+                <div className="parameter-grid">
+                  <label htmlFor="generation-width">
+                    <span>宽度</span>
+                    <NumericInput
+                      id="generation-width"
+                      min={256}
+                      max={2048}
+                      step={32}
+                      value={settings.width}
+                      onValueChange={(width) => onSettingsChange({ ...settings, width })}
+                    />
+                  </label>
+                  <label htmlFor="generation-height">
+                    <span>高度</span>
+                    <NumericInput
+                      id="generation-height"
+                      min={256}
+                      max={2048}
+                      step={32}
+                      value={settings.height}
+                      onValueChange={(height) => onSettingsChange({ ...settings, height })}
+                    />
+                  </label>
+                  {workflow.inputs.includes("fps") && profile.family !== "minimax_h3" ? (
+                    <label htmlFor="generation-fps">
+                      <span>帧率</span>
+                      <div>
+                        <NumericInput
+                          id="generation-fps"
+                          min={8}
+                          max={60}
+                          step={1}
+                          value={settings.fps}
+                          onValueChange={(fps) => onSettingsChange({ ...settings, fps })}
+                        />
+                        <i>fps</i>
+                      </div>
+                    </label>
+                  ) : null}
+                </div>
+              ) : null}
+              {workflow?.inputs.includes("resolution") && resolvedResolution.changed ? (
+                <div className="effective-resolution" role="status">
+                  <span>实际输出</span>
+                  <strong>
+                    {resolvedResolution.effective.width} × {resolvedResolution.effective.height}
+                  </strong>
+                  <small>
+                    输入 {resolvedResolution.requested.width} ×{" "}
+                    {resolvedResolution.requested.height}；{resolvedResolution.reason}
+                  </small>
+                </div>
+              ) : null}
+              {workflow?.inputs.includes("seed") ? (
+                <label className="seed-field" htmlFor="generation-seed">
+                  <span>Seed</span>
+                  <NumericInput
+                    id="generation-seed"
+                    min={0}
+                    max={2_147_483_647}
+                    step={1}
+                    value={settings.seed}
+                    onValueChange={(seed) => onSettingsChange({ ...settings, seed })}
+                  />
                   <button
                     type="button"
-                    className={connectedCount > 0 ? "filled" : ""}
-                    onClick={onOpenAssets}
-                    key={slot.id}
+                    onClick={() =>
+                      onSettingsChange({
+                        ...settings,
+                        seed: Math.floor(Math.random() * 2_147_483_647),
+                      })
+                    }
                   >
-                    <span>{connectedCount > 0 ? connectedCount : "+"}</span>
-                    <div>
-                      <small>
-                        {slot.required ? "必需" : "可选"} · {connectedCount}/{slot.maxCount}
-                      </small>
-                      <strong>{slot.label}</strong>
-                      <em>
-                        {slot.maxCount > 1
-                          ? `最多 ${slot.maxCount} ${slot.mediaType === "image" ? "张" : "段"}`
-                          : slot.hint}
-                      </em>
-                    </div>
+                    随机
                   </button>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="text-only-workflow-note">
-              <span>文</span>
-              <div>
-                <strong>无需图片输入</strong>
-                <p>这个模型从文字开始，画布节点不会显示多余的图片端口。</p>
-              </div>
-            </div>
-          )}
-          <details className="advanced-generation-settings">
-            <summary>
-              生成参数 <span>分辨率、Seed 与采样</span>
-            </summary>
-            {workflow?.inputs.includes("resolution") ? (
-              <div className="parameter-grid">
-                <label htmlFor="generation-width">
-                  <span>宽度</span>
-                  <NumericInput
-                    id="generation-width"
-                    min={256}
-                    max={2048}
-                    step={32}
-                    value={settings.width}
-                    onValueChange={(width) => onSettingsChange({ ...settings, width })}
-                  />
                 </label>
-                <label htmlFor="generation-height">
-                  <span>高度</span>
+              ) : null}
+              {workflow?.inputs.includes("steps") ? (
+                <label className="seed-field" htmlFor="generation-steps">
+                  <span>Steps</span>
                   <NumericInput
-                    id="generation-height"
-                    min={256}
-                    max={2048}
-                    step={32}
-                    value={settings.height}
-                    onValueChange={(height) => onSettingsChange({ ...settings, height })}
+                    id="generation-steps"
+                    min={workflow.name.toLowerCase().includes("wan") ? 8 : 1}
+                    max={workflow.name.toLowerCase().includes("wan") ? 40 : 100}
+                    step={1}
+                    value={settings.steps}
+                    onValueChange={(steps) => onSettingsChange({ ...settings, steps })}
                   />
+                  <small>
+                    {workflow.name.toLowerCase().includes("qwen")
+                      ? settings.steps <= 4
+                        ? "Lightning 快速预览"
+                        : "标准采样配置"
+                      : workflow.name.toLowerCase().includes("minimax")
+                        ? "由当前 JSON 暴露"
+                        : workflow.name.toLowerCase().includes("wan")
+                          ? "20 步为官方高质量基线；8–40 步可调"
+                          : "当前工作流参数"}
+                  </small>
                 </label>
-                {workflow.inputs.includes("fps") && profile.family !== "minimax_h3" ? (
-                  <label htmlFor="generation-fps">
-                    <span>帧率</span>
-                    <div>
-                      <NumericInput
-                        id="generation-fps"
-                        min={8}
-                        max={60}
-                        step={1}
-                        value={settings.fps}
-                        onValueChange={(fps) => onSettingsChange({ ...settings, fps })}
-                      />
-                      <i>fps</i>
-                    </div>
-                  </label>
-                ) : null}
-              </div>
+              ) : null}
+              {profile.family === "minimax_h3" && workflow?.capability === "reference_video" ? (
+                <label className="seed-field" htmlFor="generation-reference-fidelity">
+                  <span>参考图精度</span>
+                  <select
+                    id="generation-reference-fidelity"
+                    value={settings.referenceImageSize}
+                    onChange={(event) =>
+                      onSettingsChange({
+                        ...settings,
+                        referenceImageSize: event.target.value === "max" ? "max" : "match",
+                      })
+                    }
+                  >
+                    <option value="match">平衡 · 匹配输出尺寸</option>
+                    <option value="max">身份优先 · 保留更多参考细节</option>
+                  </select>
+                  <small>“身份优先”会显著增加显存与采样时间，24 GB 显存建议少量参考图使用。</small>
+                </label>
+              ) : null}
+              {workflow?.inputs.includes("denoise") ? (
+                <label className="seed-field" htmlFor="generation-denoise">
+                  <span>重绘强度</span>
+                  <NumericInput
+                    id="generation-denoise"
+                    min={0.05}
+                    max={1}
+                    step={0.05}
+                    value={settings.denoise}
+                    onValueChange={(denoise) => onSettingsChange({ ...settings, denoise })}
+                  />
+                  <small>0.35 保守 · 0.65 平衡 · 1.0 重构</small>
+                </label>
+              ) : null}
+            </details>
+            {workflow?.execution === "comfy_only" ? (
+              <div className="comfy-only-note">这个 JSON 目前从 ComfyUI 打开运行。</div>
             ) : null}
-            {workflow?.inputs.includes("resolution") && resolvedResolution.changed ? (
-              <div className="effective-resolution" role="status">
-                <span>实际输出</span>
-                <strong>
-                  {resolvedResolution.effective.width} × {resolvedResolution.effective.height}
-                </strong>
-                <small>
-                  输入 {resolvedResolution.requested.width} × {resolvedResolution.requested.height}
-                  ；{resolvedResolution.reason}
-                </small>
-              </div>
-            ) : null}
-            {workflow?.inputs.includes("seed") ? (
-              <label className="seed-field" htmlFor="generation-seed">
-                <span>Seed</span>
-                <NumericInput
-                  id="generation-seed"
-                  min={0}
-                  max={2_147_483_647}
-                  step={1}
-                  value={settings.seed}
-                  onValueChange={(seed) => onSettingsChange({ ...settings, seed })}
-                />
-                <button
-                  type="button"
-                  onClick={() =>
-                    onSettingsChange({
-                      ...settings,
-                      seed: Math.floor(Math.random() * 2_147_483_647),
-                    })
-                  }
-                >
-                  随机
-                </button>
-              </label>
-            ) : null}
-            {workflow?.inputs.includes("steps") ? (
-              <label className="seed-field" htmlFor="generation-steps">
-                <span>Steps</span>
-                <NumericInput
-                  id="generation-steps"
-                  min={workflow.name.toLowerCase().includes("wan") ? 8 : 1}
-                  max={workflow.name.toLowerCase().includes("wan") ? 40 : 100}
-                  step={1}
-                  value={settings.steps}
-                  onValueChange={(steps) => onSettingsChange({ ...settings, steps })}
-                />
-                <small>
-                  {workflow.name.toLowerCase().includes("qwen")
-                    ? settings.steps <= 4
-                      ? "Lightning 快速预览"
-                      : "标准采样配置"
-                    : workflow.name.toLowerCase().includes("minimax")
-                      ? "由当前 JSON 暴露"
-                      : workflow.name.toLowerCase().includes("wan")
-                        ? "20 步为官方高质量基线；8–40 步可调"
-                        : "当前工作流参数"}
-                </small>
-              </label>
-            ) : null}
-            {profile.family === "minimax_h3" && workflow?.capability === "reference_video" ? (
-              <label className="seed-field" htmlFor="generation-reference-fidelity">
-                <span>参考图精度</span>
-                <select
-                  id="generation-reference-fidelity"
-                  value={settings.referenceImageSize}
-                  onChange={(event) =>
-                    onSettingsChange({
-                      ...settings,
-                      referenceImageSize: event.target.value === "max" ? "max" : "match",
-                    })
-                  }
-                >
-                  <option value="match">平衡 · 匹配输出尺寸</option>
-                  <option value="max">身份优先 · 保留更多参考细节</option>
-                </select>
-                <small>“身份优先”会显著增加显存与采样时间，24 GB 显存建议少量参考图使用。</small>
-              </label>
-            ) : null}
-            {workflow?.inputs.includes("denoise") ? (
-              <label className="seed-field" htmlFor="generation-denoise">
-                <span>重绘强度</span>
-                <NumericInput
-                  id="generation-denoise"
-                  min={0.05}
-                  max={1}
-                  step={0.05}
-                  value={settings.denoise}
-                  onValueChange={(denoise) => onSettingsChange({ ...settings, denoise })}
-                />
-                <small>0.35 保守 · 0.65 平衡 · 1.0 重构</small>
-              </label>
-            ) : null}
-          </details>
-          {workflow?.execution === "comfy_only" ? (
-            <div className="comfy-only-note">这个 JSON 目前从 ComfyUI 打开运行。</div>
-          ) : null}
-        </section>
-      ) : null}
+          </section>
+        ) : null}
+      </fieldset>
 
       {progress ? (
         <section className="generation-progress" aria-live="polite">
@@ -1671,7 +1679,7 @@ function Inspector({
             <button
               className="cancel-generation-button"
               type="button"
-              disabled={cancelling}
+              disabled={readOnly || cancelling}
               onClick={onCancel}
             >
               {cancelling ? "正在停止并清理…" : "■ 停止生成并清理任务"}
@@ -1685,7 +1693,7 @@ function Inspector({
           <span>
             <i /> 检测到这个镜头有运行中的任务
           </span>
-          <button type="button" disabled={cancelling} onClick={onCancel}>
+          <button type="button" disabled={readOnly || cancelling} onClick={onCancel}>
             {cancelling ? "停止中…" : "停止并清理"}
           </button>
         </section>
@@ -1700,7 +1708,7 @@ function Inspector({
           className="generate-button"
           type="button"
           onClick={onGenerate}
-          disabled={busy || !!generateDisabledReason}
+          disabled={readOnly || busy || !!generateDisabledReason}
           title={generateDisabledReason ?? undefined}
         >
           {busy ? <span className="spinner" /> : <span>✦</span>}
@@ -1741,7 +1749,11 @@ function Inspector({
                 ? "TakeBoard 已识别输入槽位；点击后进入 ComfyUI 调整和运行完整节点图。"
                 : `将使用已选择的素材运行 ${workflow?.name ?? "当前 Recipe"}，并保存 seed、来源和参数快照。`}
           </p>
-          <button type="button" onClick={onGenerate} disabled={busy || !!generateDisabledReason}>
+          <button
+            type="button"
+            onClick={onGenerate}
+            disabled={readOnly || busy || !!generateDisabledReason}
+          >
             {workflow?.execution === "comfy_only" ? "进入 ComfyUI" : "开始生成"}
           </button>
         </div>
@@ -1797,7 +1809,7 @@ function Inspector({
               <button
                 className="reject-button"
                 type="button"
-                disabled={busy || selectedTake.status === "approved"}
+                disabled={readOnly || busy || selectedTake.status === "approved"}
                 onClick={() => onReject(selectedTake.id, reason)}
               >
                 淘汰
@@ -1805,7 +1817,7 @@ function Inspector({
               <button
                 className="approve-button"
                 type="button"
-                disabled={busy || selectedTake.status === "approved"}
+                disabled={readOnly || busy || selectedTake.status === "approved"}
                 onClick={() => onApprove(selectedTake.id)}
               >
                 ✓ 批准此 Take
@@ -1858,6 +1870,7 @@ type PendingCanvasRemoval = {
 };
 
 export function App() {
+  const { user: authUser } = useAuth();
   const [snapshot, setSnapshot] = useState<ProjectSnapshot | null>(null);
   const [revision, setRevision] = useState(0);
   const [nodes, setNodes] = useState<BoardNode[]>([]);
@@ -1927,6 +1940,11 @@ export function App() {
   const latestSnapshotRef = useRef(snapshot);
   const selectionProjectRef = useRef<string | null>(null);
   latestSnapshotRef.current = snapshot;
+  const activeProjectRole =
+    projectMode === "project" && projectKey
+      ? (projects.find((project) => project.key === projectKey)?.role ?? "owner")
+      : "owner";
+  const canEditProject = projectMode === "demo" || activeProjectRole !== "viewer";
   const selectedShot = snapshot?.shots.find((shot) => shot.id === selectedShotId) ?? null;
   const selectedShotWorkflowPath =
     selectedShot && snapshot
@@ -3909,7 +3927,7 @@ export function App() {
         workflows,
         selectedWorkflow,
         selectedShotId,
-        selectedShot
+        selectedShot && canEditProject
           ? {
               settings: generationSettings,
               workflows: availableWorkflows,
@@ -3946,6 +3964,7 @@ export function App() {
     activeRun,
     bindWorkflowToSelectedShot,
     busy,
+    canEditProject,
     generationBusy,
     generationProgress,
     generationDisabledReason,
@@ -4039,11 +4058,11 @@ export function App() {
           </div>
         </div>
         <button
-          className="project-heading"
+          className={`project-heading ${canEditProject ? "" : "read-only"}`}
           type="button"
-          title="修改项目名称"
+          title={canEditProject ? "修改项目名称" : "Viewer 权限为只读"}
           onClick={() => {
-            if (projectMode !== "project") return;
+            if (projectMode !== "project" || !canEditProject) return;
             setRenameTitle(snapshot.project.title);
             setRenameOpen(true);
           }}
@@ -4056,9 +4075,12 @@ export function App() {
               {projectMode === "demo" ? "功能示例" : "本地优先项目"}
             </span>
           </div>
-          {projectMode === "project" ? <span className="project-heading-edit">✎</span> : null}
+          {projectMode === "project" && canEditProject ? (
+            <span className="project-heading-edit">✎</span>
+          ) : null}
         </button>
         <div className="top-actions">
+          {!canEditProject ? <span className="read-only-badge">VIEW ONLY</span> : null}
           <span className="save-status">✓ 已保存 · r{revision}</span>
           <ThemeSwitcher compact />
           <DisplaySettings compact />
@@ -4072,8 +4094,14 @@ export function App() {
             <span aria-hidden="true">{comfortableDensity ? "舒" : "紧"}</span>
             {comfortableDensity ? "舒适" : "紧凑"}
           </button>
+          <AccountButton
+            compact
+            projectKey={projectMode === "project" ? (projectKey ?? undefined) : undefined}
+            projectTitle={projectMode === "project" ? snapshot.project.title : undefined}
+            projectRole={projectMode === "project" ? activeProjectRole : undefined}
+          />
           <span className="local-badge">
-            <i /> LOCAL
+            <i /> {authUser ? "PRIVATE" : "LOCAL"}
           </span>
           <button
             className="reset-button"
@@ -4419,7 +4447,10 @@ export function App() {
             ) : null}
           </div>
         </div>
-        {projectMode === "project" && nodes.length === 0 && blankCanvasGuideOpen ? (
+        {projectMode === "project" &&
+        canEditProject &&
+        nodes.length === 0 &&
+        blankCanvasGuideOpen ? (
           <section className="blank-canvas-start" aria-label="空白工作画板">
             <button
               className="blank-canvas-close"
@@ -4456,6 +4487,8 @@ export function App() {
           onInit={setFlowInstance}
           onNodesChange={onNodesChange}
           onConnect={onConnect}
+          nodesDraggable={canEditProject}
+          nodesConnectable={canEditProject}
           onNodeClick={onNodeClick}
           onEdgeClick={(event, edge) => {
             const snapshotEdge = resolveSnapshotEdge(latestSnapshotRef.current ?? snapshot, edge);
@@ -4797,6 +4830,7 @@ export function App() {
           onOpenRecipes={() => setRecipeOpen(true)}
           generateDisabledReason={generationDisabledReason}
           progress={generationProgress}
+          readOnly={!canEditProject}
           onClose={() => setInspectorOpen(false)}
           workerLabel={
             projectMode === "demo"

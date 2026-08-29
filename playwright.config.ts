@@ -12,6 +12,7 @@ const e2eDataRoot = process.env.TAKEBOARD_E2E_DATA_ROOT ?? resolve("test-results
 const e2eDemoDirectory =
   process.env.TAKEBOARD_E2E_DEMO_DIRECTORY ?? resolve(e2eDataRoot, "demo.takeboard");
 const chromiumExecutable = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
+const e2eAuthState = resolve("test-results/e2e-auth-state.json");
 
 export default defineConfig({
   testDir: "./e2e",
@@ -22,10 +23,12 @@ export default defineConfig({
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? "github" : "list",
+  globalSetup: "./e2e/global-setup.ts",
   use: {
     baseURL: process.env.TAKEBOARD_E2E_BASE_URL ?? e2eServerUrl,
     viewport: { width: 1600, height: 900 },
     trace: "retain-on-failure",
+    storageState: e2eAuthState,
   },
   projects: [
     {
@@ -44,6 +47,8 @@ export default defineConfig({
         env: {
           ...localEnvironment,
           TAKEBOARD_DATA_ROOT: e2eDataRoot,
+          TAKEBOARD_AUTH_DATABASE: resolve(e2eDataRoot, "system", "auth.db"),
+          TAKEBOARD_AUTH_MODE: "required",
           TAKEBOARD_DEMO_DIRECTORY: e2eDemoDirectory,
           TAKEBOARD_WEB_ROOT: resolve("apps/web/dist"),
           TAKEBOARD_PORT: e2eServerPort,

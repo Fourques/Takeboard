@@ -7,6 +7,8 @@ import type { AspectRatio, ProjectSnapshot } from "@takeboard/contracts";
 import { approveTake, createTakeBoardId, toIsoTimestamp } from "@takeboard/domain";
 import { ComfyClient } from "@takeboard/executor-comfy";
 import type { FastifyInstance } from "fastify";
+import { authContext } from "./auth-routes.js";
+import type { AuthService } from "./auth-service.js";
 import {
   createProjectArchive,
   findActiveProjectById,
@@ -95,6 +97,7 @@ type ProjectRouteOptions = {
   comfyUrl: string;
   comfyInputRoot: string | null;
   comfyOutputRoot: string | null;
+  auth: AuthService;
 };
 
 const terminalProjectRunStatuses = new Set(["completed", "failed", "cancelled"]);
@@ -161,7 +164,8 @@ export function registerProjectRoutes(
   const service = new ProjectService();
   const comfy = new ComfyClient(options.comfyUrl, { liveProgress: false });
 
-  app.get("/api/projects/trash", async () => {
+  app.get("/api/projects/trash", async (request) => {
+    const context = authContext(request);
     const trashRoot = join(root, ".trash");
     await mkdir(trashRoot, { recursive: true });
     const entries = await readdir(trashRoot, { withFileTypes: true });
@@ -174,6 +178,17 @@ export function registerProjectRoutes(
           const directory = join(trashRoot, entry.name);
           const opened = await service.open(directory).catch(() => null);
           if (!opened) return null;
+          if (
+            context &&
+            !options.auth.hasProjectRole(
+              opened.snapshot.project.id,
+              context.user.id,
+              "owner",
+              context.user.instanceRole,
+            )
+          ) {
+            return null;
+          }
           const information = await stat(directory).catch(() => null);
           return {
             trashKey: entry.name,
@@ -208,6 +223,18 @@ export function registerProjectRoutes(
         if (!current) return await reply.code(404).send({ error: "回收区项目无法读取" });
         title = current.snapshot.project.title;
         projectId = current.snapshot.project.id;
+        const context = authContext(request);
+        if (
+          context &&
+          !options.auth.hasProjectRole(
+            projectId,
+            context.user.id,
+            "owner",
+            context.user.instanceRole,
+          )
+        ) {
+          return await reply.code(403).send({ error: "只有项目 Owner 可以恢复此项目" });
+        }
         const duplicateKey = await findActiveProjectById(root, projectId);
         if (duplicateKey) {
           return await reply.code(409).send({
@@ -231,7 +258,11 @@ export function registerProjectRoutes(
     },
   );
 
-  app.get("/api/projects", async () => {
+  app.get("/api/projects", async (request) => {
+    const context = authContext(request);
+    const accessible = context
+      ? options.auth.accessibleProjectIds(context.user.id, context.user.instanceRole)
+      : null;
     await mkdir(root, { recursive: true });
     const entries = await readdir(root, { withFileTypes: true });
     const projects = await Promise.all(
@@ -239,6 +270,7 @@ export function registerProjectRoutes(
         .filter((entry) => entry.isDirectory() && projectKey(entry.name))
         .map(async (entry) => {
           const opened = await service.open(join(root, entry.name));
+          if (opened && accessible && !accessible.has(opened.snapshot.project.id)) return null;
           return opened
             ? {
                 key: entry.name,
@@ -256,6 +288,11 @@ export function registerProjectRoutes(
                   (run) => !terminalProjectRunStatuses.has(run.status),
                 ).length,
                 updatedAt: opened.snapshot.project.updatedAt,
+                role: context
+                  ? context.user.instanceRole === "admin"
+                    ? "owner"
+                    : options.auth.projectRole(opened.snapshot.project.id, context.user.id)
+                  : "owner",
                 boards: opened.snapshot.scenes.slice(0, 8).map((scene) => {
                   const items = opened.snapshot.canvasItems
                     .filter((item) => item.sceneId === scene.id)
@@ -313,6 +350,8 @@ export function registerProjectRoutes(
         return await reply.code(413).send({ error: "项目包超过当前服务允许的容量上限" });
       }
       const imported = await importProjectArchive(root, uploadPath);
+      const context = authContext(request);
+      if (context) options.auth.grantProjectOwner(imported.projectId, context.user.id);
       return await reply.code(201).send({
         imported: true as const,
         key: imported.key,
@@ -362,6 +401,8 @@ export function registerProjectRoutes(
         ? { firstShotIntent: body.firstShotIntent }
         : {}),
     });
+    const context = authContext(request);
+    if (context) options.auth.grantProjectOwner(created.snapshot.project.id, context.user.id);
     return await reply.code(201).send({ key, ...created });
   });
 

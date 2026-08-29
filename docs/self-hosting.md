@@ -2,7 +2,7 @@
 
 更新时间：2026-08-28
 
-TakeBoard 默认只监听服务器回环地址。推荐使用用户级 systemd 保持服务稳定运行，再通过标准 SSH 隧道访问；当前版本没有账号系统，不应直接暴露到公网。
+TakeBoard 默认只监听服务器回环地址，并在首次打开时引导创建管理员。推荐使用用户级 systemd 保持服务稳定运行，再通过标准 SSH 隧道访问。可信团队也可以部署 HTTPS 反向代理，但不能绕过下文的认证、Host、Origin 与 Cookie 设置。
 
 ## 不需要维护服务的简易方式
 
@@ -57,6 +57,8 @@ TAKEBOARD_DATA_ROOT=/srv/takeboard-data ./scripts/takeboard install
 | 变量 | 默认值 | 用途 |
 | --- | --- | --- |
 | `TAKEBOARD_DATA_ROOT` | `~/TakeBoardData` | 所有 `.takeboard` 项目的父目录 |
+| `TAKEBOARD_AUTH_MODE` | `required` | `required` 启用账号；`off` / `trusted_local` 仅允许隔离的回环环境 |
+| `TAKEBOARD_AUTH_DATABASE` | 数据目录内的 `.system/auth.db` | 账号、会话、项目成员关系和安全审计数据库 |
 | `COMFY_URL` | `http://127.0.0.1:8188` | TakeBoard 服务端调用的 ComfyUI API |
 | `COMFY_EDITOR_URL` | `http://127.0.0.1:48188` | 浏览器打开 ComfyUI 编辑器的地址 |
 | `COMFY_INPUT_ROOT` | 空 | 允许清理本次 Run 创建的输入临时文件 |
@@ -118,12 +120,22 @@ rsync -a ~/TakeBoardData/ /path/to/backup/TakeBoardData/
 
 项目内部结构与迁移要求见[数据目录规范](./data-layout.md)。
 
+## 账号与团队权限
+
+首次打开页面时创建的账号是实例管理员，升级前已有的项目会自动归属于该账号。管理员可以在右上角账号中心创建团队账号；新成员第一次登录必须更换初始密码。项目 Owner 可以在项目内账号中心设置成员角色：
+
+- `Owner`：完整编辑、成员管理、导出、删除与恢复；
+- `Editor`：创作、素材管理和生成，但不能管理成员或删除项目；
+- `Viewer`：只读查看项目与素材。
+
+权限在服务端逐个 API 校验，隐藏按钮只用于改善体验，不是安全边界。密码修改会撤销其他设备会话；账号停用会立即撤销该成员的全部会话。数据库位置、备份和恢复方式见[账号与权限说明](./access-control.md)。
+
 ## 安全边界
 
-- 不要把 `48120` 或 `8188` 直接映射到公网；
-- 只给可信 tailnet 成员或 SSH 用户访问权限；
+- 不要把 `8188` 直接映射到公网；
+- `48120` 的公网入口必须由 HTTPS 反向代理保护，个人使用优先选择 SSH 隧道；
 - `~/.config/takeboard/env` 可能包含私有路径或令牌，应保持 `0600`；
 - `COMFY_INPUT_ROOT` 与 `COMFY_OUTPUT_ROOT` 必须精确指向对应目录，避免扩大清理范围；
 - 上线更新前先检查推理队列，避免中断正在运行的生成任务。
 
-服务会拒绝非回环监听。只有在已配置身份认证的反向代理后，才可显式设置 `TAKEBOARD_ALLOW_NON_LOOPBACK=1`，并用 `TAKEBOARD_ALLOWED_HOSTS`、`TAKEBOARD_ALLOWED_ORIGINS` 限定入口。这个开关本身不提供账号、会话或权限控制；个人远程使用仍推荐 SSH 隧道。
+服务会拒绝未启用账号系统的非回环监听。团队入口必须同时设置 `TAKEBOARD_AUTH_MODE=required`、`TAKEBOARD_ALLOW_NON_LOOPBACK=1`，用 `TAKEBOARD_ALLOWED_HOSTS`、`TAKEBOARD_ALLOWED_ORIGINS` 限定入口，并在 HTTPS 反向代理后设置 `TAKEBOARD_SECURE_COOKIES=1`。账号系统不替代 TLS、防火墙、系统更新或备份。

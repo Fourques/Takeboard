@@ -5,6 +5,7 @@ import type {
   TrashedProjectItem,
   WorkerStatus,
 } from "./api";
+import { AccountButton, useAuth } from "./auth-ui";
 import { DisplaySettings, type SceneQuality } from "./display-settings";
 import { ThemeSwitcher } from "./theme-switcher";
 
@@ -237,6 +238,7 @@ function ProjectCard({
             {project.sceneCount} 场 · {project.shotCount} 镜头 · {project.aspectRatio}
           </span>
           <small>{formatUpdatedAt(project.updatedAt)}</small>
+          <em className={`project-role role-${project.role}`}>{project.role.toUpperCase()}</em>
         </div>
         <div className="project-card-actions">
           <button
@@ -247,9 +249,11 @@ function ProjectCard({
           >
             打开画板 <ActionIcon name="open" />
           </button>
-          <button type="button" onClick={onRename} aria-label={`重命名 ${project.title}`}>
-            <ActionIcon name="rename" />
-          </button>
+          {project.role !== "viewer" ? (
+            <button type="button" onClick={onRename} aria-label={`重命名 ${project.title}`}>
+              <ActionIcon name="rename" />
+            </button>
+          ) : null}
           {project.activeRunCount === 0 ? (
             <a
               href={`/api/projects/${encodeURIComponent(project.key)}/export`}
@@ -269,15 +273,17 @@ function ProjectCard({
               <ActionIcon name="export" />
             </button>
           )}
-          <button
-            className="project-card-delete-button"
-            type="button"
-            onClick={onDelete}
-            disabled={busy}
-            aria-label={`删除 ${project.title}`}
-          >
-            <ActionIcon name="delete" />
-          </button>
+          {project.role === "owner" ? (
+            <button
+              className="project-card-delete-button"
+              type="button"
+              onClick={onDelete}
+              disabled={busy}
+              aria-label={`删除 ${project.title}`}
+            >
+              <ActionIcon name="delete" />
+            </button>
+          ) : null}
         </div>
       </div>
     </article>
@@ -317,6 +323,7 @@ export function ProjectHub({
   worker: WorkerStatus | null;
   workerBusy: boolean;
 }) {
+  const { user } = useAuth();
   const [creating, setCreating] = useState(false);
   const [renaming, setRenaming] = useState<ProjectCatalogItem | null>(null);
   const [deleting, setDeleting] = useState<ProjectCatalogItem | null>(null);
@@ -522,6 +529,7 @@ export function ProjectHub({
           <div className="hub-header-actions">
             <ThemeSwitcher />
             <DisplaySettings />
+            <AccountButton />
             {trashedProjects.length > 0 ? (
               <button
                 className="hub-recycle-button"
@@ -607,7 +615,7 @@ export function ProjectHub({
                     >
                       {workerBusy ? "检查中…" : "重新检测"}
                     </button>
-                    {worker?.status !== "ready" ? (
+                    {user?.instanceRole === "admin" && worker?.status !== "ready" ? (
                       <button
                         className="worker-safe-start"
                         type="button"
@@ -619,6 +627,9 @@ export function ProjectHub({
                     ) : null}
                   </div>
                   <small className="worker-safety-note">
+                    {user && user.instanceRole !== "admin"
+                      ? "ComfyUI 的启动由工作室管理员负责。"
+                      : null}
                     预检不通过时，TakeBoard 不会启动服务。
                   </small>
                 </aside>

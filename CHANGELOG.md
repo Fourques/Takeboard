@@ -17,11 +17,14 @@ First self-hosted public preview.
 - Automatic pre-migration SQLite backups with rollback when a migration fails.
 - Cross-platform easy launchers, SSH remote access and guarded local ComfyUI start.
 - Recoverable project deletion, workflow archiving and command history with undoable operations.
+- Server-enforced accounts, device sessions, administrator controls, project roles and security
+  activity history, including automatic ownership adoption for existing projects.
 
 ### Security and release boundary
 
 - The API listens on loopback by default and rejects unapproved Host and Origin values.
-- There is no account or multi-tenant permission system. Public internet exposure is unsupported;
-  remote access requires SSH or an authenticated reverse proxy.
-- This version is intended for individual creators and trusted teams as a Public Preview, not as a
-  hosted multi-user production service.
+- Authentication is required by default; password hashes use scrypt, browser sessions are opaque and
+  state-changing requests require a per-session CSRF token.
+- This version is intended for individual creators and trusted self-hosted teams. Public HTTPS
+  deployment still requires a hardened reverse proxy; MFA, SSO, recovery email and SaaS tenant
+  operations are outside the 0.1.x boundary.

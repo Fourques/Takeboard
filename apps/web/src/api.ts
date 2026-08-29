@@ -1,7 +1,14 @@
 import type {
+  Account,
+  AccountSession,
+  AuthAuditEntry,
+  AuthStatus,
   CommandAuditEntry,
+  InstanceRole,
   ProjectCommand,
   ProjectCommandPreview,
+  ProjectMember,
+  ProjectRole,
   ProjectSnapshot,
   WorkflowDiagnostic,
 } from "@takeboard/contracts";
@@ -20,8 +27,26 @@ export type ProjectCatalogItem = {
   shotCount: number;
   activeRunCount: number;
   updatedAt: string;
+  role: ProjectRole;
   boards: ProjectBoardPreview[];
 };
+
+let csrfToken: string | null = null;
+
+export function setApiCsrfToken(value: string | null) {
+  csrfToken = value;
+}
+
+async function apiFetch(path: string, options?: RequestInit) {
+  const headers = new Headers(options?.headers);
+  const method = (options?.method ?? "GET").toUpperCase();
+  if (csrfToken && !["GET", "HEAD", "OPTIONS"].includes(method)) {
+    headers.set("x-takeboard-csrf", csrfToken);
+  }
+  const response = await fetch(path, { credentials: "same-origin", ...options, headers });
+  if (response.status === 401) window.dispatchEvent(new Event("takeboard:auth-required"));
+  return response;
+}
 
 export type TrashedProjectItem = {
   trashKey: string;
@@ -193,7 +218,7 @@ async function request(path: string, options?: RequestInit): Promise<DemoPayload
   if (options?.body !== undefined) {
     headers.set("content-type", "application/json");
   }
-  const response = await fetch(path, {
+  const response = await apiFetch(path, {
     ...options,
     headers,
   });
@@ -236,7 +261,7 @@ async function jsonRequest<T>(path: string, options?: RequestInit): Promise<T> {
   if (options?.body !== undefined && !(options.body instanceof FormData)) {
     headers.set("content-type", "application/json");
   }
-  const response = await fetch(path, { ...options, headers });
+  const response = await apiFetch(path, { ...options, headers });
   const payload = (await response.json().catch(() => ({}))) as T & { error?: string };
   if (!response.ok) {
     if (response.status === 413) throw new Error(payload.error ?? "文件超过当前服务上传上限");
@@ -529,7 +554,7 @@ export const projectApi = {
     `/api/projects/${encodeURIComponent(key)}/assets/${encodeURIComponent(assetId)}/content${proxy ? "?proxy=1" : ""}`,
   worker: () => jsonRequest<WorkerStatus>("/api/workers/comfy"),
   startWorker: async () => {
-    const response = await fetch("/api/workers/comfy/start", {
+    const response = await apiFetch("/api/workers/comfy/start", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ action: "safe-start" }),
@@ -542,6 +567,72 @@ export const projectApi = {
     }
     throw new Error(payload.error ?? `ComfyUI 启动请求失败（${response.status}）`);
   },
+};
+
+export const authApi = {
+  status: () => jsonRequest<AuthStatus>("/api/auth/status"),
+  bootstrap: (input: { name: string; email: string; password: string }) =>
+    jsonRequest<{ user: Account; csrfToken: string }>("/api/auth/bootstrap", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  login: (email: string, password: string) =>
+    jsonRequest<{ user: Account; csrfToken: string }>("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    }),
+  logout: () => jsonRequest<{ loggedOut: true }>("/api/auth/logout", { method: "POST" }),
+  sessions: () => jsonRequest<{ sessions: AccountSession[] }>("/api/auth/sessions"),
+  revokeSession: (sessionId: string) =>
+    jsonRequest<{ revoked: true; current: boolean }>(
+      `/api/auth/sessions/${encodeURIComponent(sessionId)}`,
+      { method: "DELETE" },
+    ),
+  updateProfile: (name: string) =>
+    jsonRequest<{ user: Account }>("/api/auth/me", {
+      method: "PATCH",
+      body: JSON.stringify({ name }),
+    }),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    jsonRequest<{ changed: true; revokedOtherSessions: true }>("/api/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify({ currentPassword, newPassword }),
+    }),
+  users: () => jsonRequest<{ users: Account[] }>("/api/admin/users"),
+  audit: (limit = 100) =>
+    jsonRequest<{ entries: AuthAuditEntry[] }>(`/api/admin/audit?limit=${limit}`),
+  createUser: (input: {
+    name: string;
+    email: string;
+    password: string;
+    instanceRole: InstanceRole;
+  }) =>
+    jsonRequest<{ user: Account }>("/api/admin/users", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  updateUser: (
+    userId: string,
+    input: { status?: "active" | "disabled"; instanceRole?: InstanceRole },
+  ) =>
+    jsonRequest<{ user: Account }>(`/api/admin/users/${encodeURIComponent(userId)}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }),
+  projectMembers: (key: string) =>
+    jsonRequest<{ members: ProjectMember[]; directory: Account[] }>(
+      `/api/projects/${encodeURIComponent(key)}/members`,
+    ),
+  setProjectMember: (key: string, userId: string, role: ProjectRole) =>
+    jsonRequest<{ members: ProjectMember[] }>(
+      `/api/projects/${encodeURIComponent(key)}/members/${encodeURIComponent(userId)}`,
+      { method: "PUT", body: JSON.stringify({ role }) },
+    ),
+  removeProjectMember: (key: string, userId: string) =>
+    jsonRequest<{ removed: true; members: ProjectMember[] }>(
+      `/api/projects/${encodeURIComponent(key)}/members/${encodeURIComponent(userId)}`,
+      { method: "DELETE" },
+    ),
 };
 
 export const workflowApi = {

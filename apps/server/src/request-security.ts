@@ -39,10 +39,15 @@ function originAllowed(origin: string, configuredOrigins: Set<string>) {
   }
 }
 
-export function assertSafeBindHost(host: string, allowNonLoopback = false) {
-  if (isLoopbackHostname(host) || allowNonLoopback) return;
+export function assertSafeBindHost(
+  host: string,
+  allowNonLoopback = false,
+  authMode: "required" | "trusted_local" | "off" = "off",
+) {
+  if (isLoopbackHostname(host)) return;
+  if (allowNonLoopback && authMode === "required") return;
   throw new Error(
-    `TakeBoard 拒绝监听非回环地址 ${host}。当前版本没有账号系统；请使用 SSH 隧道，或在已配置认证反向代理后显式设置 TAKEBOARD_ALLOW_NON_LOOPBACK=1。`,
+    `TakeBoard 拒绝监听非回环地址 ${host}。公网或局域网监听必须同时设置 TAKEBOARD_AUTH_MODE=required、TAKEBOARD_ALLOW_NON_LOOPBACK=1，并通过 HTTPS 反向代理访问。`,
   );
 }
 

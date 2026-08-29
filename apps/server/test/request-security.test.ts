@@ -7,7 +7,8 @@ describe("TakeBoard local request boundary", () => {
     expect(["127.0.0.1", "localhost", "::1", "[::1]"].every(isLoopbackHostname)).toBe(true);
     expect(() => assertSafeBindHost("127.0.0.1")).not.toThrow();
     expect(() => assertSafeBindHost("0.0.0.0")).toThrow(/拒绝监听非回环地址/);
-    expect(() => assertSafeBindHost("0.0.0.0", true)).not.toThrow();
+    expect(() => assertSafeBindHost("0.0.0.0", true, "off")).toThrow(/必须同时设置/);
+    expect(() => assertSafeBindHost("0.0.0.0", true, "required")).not.toThrow();
   });
 
   it("blocks DNS-rebinding hosts and cross-site browser requests", async () => {

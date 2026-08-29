@@ -1,3 +1,4 @@
+export * from "./auth.js";
 export * from "./canvas.js";
 export * from "./command.js";
 export * from "./common.js";

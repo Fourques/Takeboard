@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 test("project hub presents a complete project overview", async ({ page, request }) => {
   test.setTimeout(90_000);

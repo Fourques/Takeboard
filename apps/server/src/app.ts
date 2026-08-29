@@ -3,6 +3,8 @@ import { resolve } from "node:path";
 import fastifyMultipart from "@fastify/multipart";
 import fastifyStatic from "@fastify/static";
 import Fastify, { type FastifyInstance } from "fastify";
+import { type AuthOptions, registerAuth } from "./auth-routes.js";
+import type { AuthMode } from "./auth-service.js";
 import { registerDemoRoutes } from "./demo/routes.js";
 import { registerGenerationRoutes } from "./generation-routes.js";
 import { registerProjectCommandRoutes } from "./project-command-routes.js";
@@ -24,7 +26,16 @@ export type AppOptions = {
   workerOptions?: WorkerRouteOptions;
   webRoot?: string | null;
   requestSecurity?: RequestSecurityOptions;
+  auth?: Partial<AuthOptions> & { mode?: AuthMode };
 };
+
+export function authModeFromEnvironment(): AuthMode {
+  const configured = process.env.TAKEBOARD_AUTH_MODE;
+  if (configured === "off" || configured === "trusted_local" || configured === "required") {
+    return configured;
+  }
+  return process.env.NODE_ENV === "test" ? "off" : "required";
+}
 
 export function buildApp(options: AppOptions = {}): FastifyInstance {
   const app = Fastify({
@@ -35,6 +46,19 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     limits: { fileSize: 100 * 1024 * 1024, files: 1 },
   });
   registerRequestSecurity(app, options.requestSecurity);
+
+  const projectsRoot =
+    options.projectsRoot ?? resolve(process.env.TAKEBOARD_DATA_ROOT ?? ".takeboard-data/projects");
+  const auth = registerAuth(app, {
+    mode: options.auth?.mode ?? authModeFromEnvironment(),
+    databasePath:
+      options.auth?.databasePath ??
+      resolve(process.env.TAKEBOARD_AUTH_DATABASE ?? projectsRoot, ".system", "auth.db"),
+    projectsRoot,
+    ...(options.auth?.secureCookies === undefined
+      ? {}
+      : { secureCookies: options.auth.secureCookies }),
+  });
 
   app.get("/api/health", async () => ({
     service: "takeboard-server",
@@ -50,8 +74,6 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     options.demoDirectory ??
       resolve(process.env.TAKEBOARD_DEMO_DIRECTORY ?? ".takeboard-data/demo.takeboard"),
   );
-  const projectsRoot =
-    options.projectsRoot ?? resolve(process.env.TAKEBOARD_DATA_ROOT ?? ".takeboard-data/projects");
   const comfyUrl = options.comfyUrl ?? process.env.COMFY_URL ?? "http://127.0.0.1:8188";
   const comfyInputRoot = options.comfyInputRoot ?? process.env.COMFY_INPUT_ROOT ?? null;
   const comfyOutputRoot = options.comfyOutputRoot ?? process.env.COMFY_OUTPUT_ROOT ?? null;
@@ -59,6 +81,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     comfyUrl,
     comfyInputRoot,
     comfyOutputRoot,
+    auth,
   });
   registerProjectCommandRoutes(app, projectsRoot);
   registerWorkerRoutes(app, comfyUrl, options.workerOptions);
