@@ -139,6 +139,76 @@ describe("ComfyUI workflow detection", () => {
     expect(documents.has(activeBindingPath)).toBe(true);
   });
 
+  it("imports plain JSON into diagnosis without granting execution or binding it implicitly", async () => {
+    const workflow = {
+      "1": {
+        class_type: "PromptNode",
+        inputs: { text: "A quiet harbor" },
+        _meta: { title: "Positive Prompt" },
+      },
+      "2": {
+        class_type: "SaveImage",
+        inputs: { images: ["1", 0], filename_prefix: "output" },
+      },
+    };
+    const documents = new Map<string, unknown>();
+    const objectInfo = {
+      PromptNode: { input: { required: { text: ["STRING"] } } },
+      SaveImage: {
+        input: {
+          required: { images: ["IMAGE"] },
+          optional: { filename_prefix: ["STRING"] },
+        },
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = decodeURIComponent(String(input));
+        if (url.endsWith("/object_info")) return Response.json(objectInfo);
+        const marker = "/api/userdata/";
+        const markerIndex = url.indexOf(marker);
+        if (markerIndex < 0) throw new Error(`Unexpected ComfyUI request: ${url}`);
+        const path = url.slice(markerIndex + marker.length);
+        if (init?.method === "POST") {
+          documents.set(path, JSON.parse(String(init.body)));
+          return Response.json({});
+        }
+        const document = documents.get(path);
+        return document === undefined
+          ? new Response("missing", { status: 404 })
+          : Response.json(document);
+      }),
+    );
+    const app = buildApp({ comfyUrl: "http://comfy.test", webRoot: null });
+    apps.push(app);
+
+    const imported = await app.inject({
+      method: "POST",
+      url: "/api/workflows/import",
+      ...multipartFile(
+        "custom-image.json",
+        "application/json",
+        Buffer.from(JSON.stringify(workflow)),
+      ),
+    });
+    expect(imported.statusCode, imported.body).toBe(201);
+    expect(imported.json()).toMatchObject({
+      imported: true,
+      execution: "comfy_only",
+      bindingStatus: "needs_binding",
+      candidates: {
+        parameters: { prompt: [expect.objectContaining({ nodeId: "1", input: "text" })] },
+      },
+      diagnostic: { executable: false },
+    });
+    const destination = imported.json().path as string;
+    expect(documents.has(`workflows/${destination}`)).toBe(true);
+    expect(
+      documents.has(`takeboard/bindings/${Buffer.from(destination).toString("base64url")}.json`),
+    ).toBe(false);
+  });
+
   it("blocks referenced workflows, then archives and restores unreferenced imports", async () => {
     const root = await mkdtemp(join(tmpdir(), "takeboard-workflow-archive-"));
     directories.push(root);
@@ -393,6 +463,20 @@ describe("ComfyUI workflow detection", () => {
       status: "needs_binding",
       diagnostic: { path: "TakeBoard/custom-t2i.json" },
     });
+
+    const invalidTransform = await app.inject({
+      method: "PUT",
+      url: "/api/workflows/binding?path=TakeBoard%2Fcustom-t2i.json",
+      payload: {
+        ...draft,
+        trusted: true,
+        parameters: {
+          ...draft.parameters,
+          prompt: [{ nodeId: "1", input: "text", transform: "arbitrary_expression" }],
+        },
+      },
+    });
+    expect(invalidTransform.statusCode).toBe(400);
 
     const enabled = await app.inject({
       method: "PUT",

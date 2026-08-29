@@ -12,6 +12,9 @@ import { ThemeSwitcher } from "./theme-switcher";
 const loadStudioUniverse = () =>
   import("./studio-universe").then((module) => ({ default: module.StudioUniverse }));
 const StudioUniverse = lazy(loadStudioUniverse);
+const OperationsCenter = lazy(() =>
+  import("./operations-center").then((module) => ({ default: module.OperationsCenter })),
+);
 
 function savedSceneQuality(): SceneQuality {
   const value = window.localStorage.getItem("takeboard.scene-quality");
@@ -544,6 +547,9 @@ export function ProjectHub({
             </div>
           </div>
           <div className="hub-header-actions">
+            <Suspense fallback={null}>
+              <OperationsCenter onOpenProject={onOpen} />
+            </Suspense>
             <ThemeSwitcher />
             <DisplaySettings />
             <AccountButton />

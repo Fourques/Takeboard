@@ -20,6 +20,12 @@ import type { FastifyInstance } from "fastify";
 import { createImageProxy, inspectImage, inspectVideo } from "./asset-inspection.js";
 import { projectKey } from "./project-routes.js";
 import { ProjectStore } from "./storage/project-store.js";
+import {
+  comfyOutputReserveBytes,
+  estimatedGenerationBytes,
+  generationCapacityIssues,
+  projectStorageReserveBytes,
+} from "./storage-capacity.js";
 import { applyWorkflowBinding, loadExecutableWorkflow } from "./workflow-bindings.js";
 
 const sha256 = (value: Uint8Array | string) => createHash("sha256").update(value).digest("hex");
@@ -764,16 +770,6 @@ export function registerGenerationRoutes(
           return await reply.code(409).send({ error: "参考素材数量超过该工作流已绑定的输入位置" });
         }
 
-        let comfyImage: string | null = null;
-        if (inputAsset?.mediaType === "image") {
-          const bytes = await readFile(join(directory, inputAsset.storagePath));
-          const extension = extname(inputAsset.originalName) || ".png";
-          comfyImage = await comfy.uploadImage(
-            new Uint8Array(bytes),
-            `takeboard_${current.snapshot.project.id}_${runId}_${inputAsset.id}${extension}`,
-            inputAsset.mimeType,
-          );
-        }
         const seed =
           typeof body.seed === "number" && Number.isSafeInteger(body.seed) && body.seed >= 0
             ? body.seed
@@ -828,6 +824,58 @@ export function registerGenerationRoutes(
           typeof body.negativePrompt === "string" && body.negativePrompt.trim()
             ? body.negativePrompt.trim().slice(0, 10_000)
             : undefined;
+        const outputMediaType =
+          boundWorkflow?.binding.outputMediaType ?? (qwen ? "image" : "video");
+        const estimatedBytes = estimatedGenerationBytes({
+          outputMediaType,
+          width,
+          height,
+          durationSeconds,
+          fps,
+        });
+        const capacityIssues = await generationCapacityIssues(
+          [
+            {
+              label: "TakeBoard 项目盘",
+              path: directory,
+              reserveBytes: projectStorageReserveBytes(),
+            },
+            ...(storage.outputRoot
+              ? [
+                  {
+                    label: "ComfyUI 输出盘",
+                    path: storage.outputRoot,
+                    reserveBytes: comfyOutputReserveBytes(),
+                  },
+                ]
+              : []),
+          ],
+          estimatedBytes,
+        );
+        if (capacityIssues.length > 0) {
+          const gib = (bytes: number) => `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+          return await reply.code(507).send({
+            error: `可用磁盘空间不足，尚未上传素材或提交任务：${capacityIssues
+              .map(
+                (issue) =>
+                  `${issue.label} 可用 ${gib(issue.availableBytes)}，本次至少需要 ${gib(issue.requiredBytes)}（含安全余量）`,
+              )
+              .join("；")}`,
+            code: "INSUFFICIENT_STORAGE",
+            capacity: capacityIssues,
+          });
+        }
+
+        let comfyImage: string | null = null;
+        if (inputAsset?.mediaType === "image") {
+          const bytes = await readFile(join(directory, inputAsset.storagePath));
+          const extension = extname(inputAsset.originalName) || ".png";
+          comfyImage = await comfy.uploadImage(
+            new Uint8Array(bytes),
+            `takeboard_${current.snapshot.project.id}_${runId}_${inputAsset.id}${extension}`,
+            inputAsset.mimeType,
+          );
+        }
         let lastComfyImage: string | null = null;
         if (lastAsset) {
           const lastBytes = await readFile(join(directory, lastAsset.storagePath));
@@ -1078,7 +1126,7 @@ export function registerGenerationRoutes(
             comfyOutputDirectory: `takeboard/${current.snapshot.project.id}/${shot.id}/${runId}`,
             outputAssetId,
             outputTakeId,
-            outputMediaType: boundWorkflow?.binding.outputMediaType ?? (qwen ? "image" : "video"),
+            outputMediaType,
             comfyClientId,
           },
           errorCode: null,

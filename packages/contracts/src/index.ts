@@ -4,6 +4,7 @@ export * from "./command.js";
 export * from "./common.js";
 export * from "./generation.js";
 export * from "./health.js";
+export * from "./operations.js";
 export * from "./project.js";
 export * from "./run.js";
 export * from "./snapshot.js";

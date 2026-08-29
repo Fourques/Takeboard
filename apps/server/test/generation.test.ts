@@ -8,6 +8,7 @@ import { ProjectStore } from "../src/storage/project-store.js";
 const cleanup: Array<() => Promise<void>> = [];
 
 afterEach(async () => {
+  delete process.env.TAKEBOARD_MIN_FREE_DISK_GB;
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   await Promise.all(cleanup.splice(0).map((close) => close()));
@@ -65,6 +66,30 @@ async function projectFixture(storage?: { inputRoot: string; outputRoot: string 
 }
 
 describe("real generation routes", () => {
+  it("blocks generation before contacting ComfyUI when the project disk cannot keep its reserve", async () => {
+    const { app, key, shotId } = await projectFixture();
+    process.env.TAKEBOARD_MIN_FREE_DISK_GB = "999999999";
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/projects/${key}/shots/${shotId}/generate`,
+      payload: {
+        recipePath: "Kino/Kino_MinimaxH3_T2V.json",
+        prompt: "空间不足时不应提交",
+        width: 1920,
+        height: 1080,
+        durationSeconds: 10,
+      },
+    });
+
+    expect(response.statusCode, response.body).toBe(507);
+    expect(response.json()).toMatchObject({ code: "INSUFFICIENT_STORAGE" });
+    expect(response.json().error).toContain("尚未上传素材或提交任务");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("persists 1–4 candidate batch identity and retries only a terminal member", async () => {
     const { app, key, shotId } = await projectFixture();
     let promptSequence = 0;

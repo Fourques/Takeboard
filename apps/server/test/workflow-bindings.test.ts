@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applyWorkflowBinding,
+  discoverBindingCandidates,
   validateWorkflowBinding,
   type WorkflowBinding,
   workflowHash,
@@ -16,7 +17,7 @@ const binding: WorkflowBinding = {
     prompt: [{ nodeId: "text", input: "value" }],
     seed: [{ nodeId: "sampler", input: "seed" }],
     denoise: [{ nodeId: "sampler", input: "denoise" }],
-    duration: [{ nodeId: "video", input: "duration" }],
+    duration: [{ nodeId: "video", input: "duration", transform: "seconds_to_frames" }],
   },
   media: { first_frame: [{ nodeId: "image", input: "image" }] },
   trusted: true,
@@ -37,6 +38,7 @@ describe("workflow binding execution", () => {
       seed: 42,
       denoise: 0.55,
       duration: 7,
+      fps: 24,
       firstFrame: "takeboard/input.png",
       filenamePrefix: "takeboard/project/shot/run/result",
     });
@@ -44,9 +46,29 @@ describe("workflow binding execution", () => {
     expect(result.image?.inputs.image).toBe("takeboard/input.png");
     expect(result.sampler?.inputs.seed).toBe(42);
     expect(result.sampler?.inputs.denoise).toBe(0.55);
-    expect(result.video?.inputs.duration).toBe(7);
+    expect(result.video?.inputs.duration).toBe(168);
     expect(result.save?.inputs.filename_prefix).toBe("takeboard/project/shot/run/result");
     expect(source.text.inputs.value).toBe("old");
+  });
+
+  it("recognizes frame-count controls and suggests a safe FPS conversion", () => {
+    const candidates = discoverBindingCandidates({
+      video: {
+        class_type: "CreateVideo",
+        inputs: { num_frames: 81, frame_rate: 24 },
+        _meta: { title: "Video length" },
+      },
+    });
+    expect(candidates.parameters.duration).toEqual([
+      expect.objectContaining({
+        nodeId: "video",
+        input: "num_frames",
+        suggestedTransform: "seconds_to_frames",
+      }),
+    ]);
+    expect(candidates.parameters.fps).toEqual([
+      expect.objectContaining({ nodeId: "video", input: "frame_rate" }),
+    ]);
   });
 
   it("uses a canonical content hash and rejects missing binding targets", () => {

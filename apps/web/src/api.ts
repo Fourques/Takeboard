@@ -6,6 +6,8 @@ import type {
   AuthStatus,
   CommandAuditEntry,
   InstanceRole,
+  OperationsStorage,
+  OperationsTaskCenter,
   ProjectCommand,
   ProjectCommandPreview,
   ProjectMember,
@@ -177,11 +179,20 @@ export type WorkflowListDiagnostic = {
   message: string;
 };
 
-export type WorkflowBindingTarget = { nodeId: string; input: string };
+export type WorkflowBindingTransform =
+  | "seconds_to_frames"
+  | "seconds_to_frames_plus_one"
+  | "seconds_to_frames_minus_one";
+export type WorkflowBindingTarget = {
+  nodeId: string;
+  input: string;
+  transform?: WorkflowBindingTransform;
+};
 export type WorkflowBindingCandidate = WorkflowBindingTarget & {
   label: string;
   classType: string;
   valueType: "string" | "number" | "boolean" | "unknown";
+  suggestedTransform?: WorkflowBindingTransform;
 };
 export type WorkflowParameterKey =
   | "prompt"
@@ -238,6 +249,11 @@ export type WorkflowRecipeImport = WorkflowSummary &
       bindingProposalIncluded: boolean;
       trustRequired: true;
     };
+  };
+
+export type WorkflowImport = WorkflowSummary &
+  WorkflowBindingInspection & {
+    imported: true;
   };
 
 export type WorkflowArchiveReference = {
@@ -384,6 +400,8 @@ async function executeProjectCommand(
 }
 
 export const projectApi = {
+  tasks: () => jsonRequest<OperationsTaskCenter>("/api/operations/tasks"),
+  storage: () => jsonRequest<OperationsStorage>("/api/operations/storage"),
   list: async () => {
     const payload = await jsonRequest<{ projects: ProjectCatalogItem[] }>("/api/projects");
     for (const project of payload.projects)
@@ -831,7 +849,7 @@ export const workflowApi = {
   import: async (file: File) => {
     const body = new FormData();
     body.set("file", file);
-    return await jsonRequest<WorkflowSummary>("/api/workflows/import", {
+    return await jsonRequest<WorkflowImport>("/api/workflows/import", {
       method: "POST",
       body,
     });

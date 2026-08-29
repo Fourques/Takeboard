@@ -7,6 +7,7 @@ import { type AuthOptions, registerAuth } from "./auth-routes.js";
 import type { AuthMode } from "./auth-service.js";
 import { registerDemoRoutes } from "./demo/routes.js";
 import { registerGenerationRoutes } from "./generation-routes.js";
+import { registerOperationsRoutes } from "./operations-routes.js";
 import { registerProjectCommandRoutes } from "./project-command-routes.js";
 import { registerProjectRequestLock } from "./project-request-lock.js";
 import { registerProjectRoutes } from "./project-routes.js";
@@ -83,6 +84,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     comfyOutputRoot,
     auth,
   });
+  registerOperationsRoutes(app, projectsRoot, auth);
   registerProjectCommandRoutes(app, projectsRoot);
   registerWorkerRoutes(app, comfyUrl, options.workerOptions);
   registerGenerationRoutes(app, projectsRoot, comfyUrl, {

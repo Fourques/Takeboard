@@ -37,7 +37,13 @@ export type WorkflowMediaKey =
 export type WorkflowBindingTarget = {
   nodeId: string;
   input: string;
+  transform?: WorkflowBindingTransform;
 };
+
+export type WorkflowBindingTransform =
+  | "seconds_to_frames"
+  | "seconds_to_frames_plus_one"
+  | "seconds_to_frames_minus_one";
 
 export type WorkflowBinding = {
   version: typeof workflowBindingVersion;
@@ -55,6 +61,7 @@ export type WorkflowBindingCandidate = WorkflowBindingTarget & {
   label: string;
   classType: string;
   valueType: "string" | "number" | "boolean" | "unknown";
+  suggestedTransform?: WorkflowBindingTransform;
 };
 
 export type WorkflowBindingCandidates = {
@@ -123,15 +130,18 @@ export function parseWorkflowBinding(value: unknown, expectedPath?: string) {
           (targets) =>
             Array.isArray(targets) &&
             targets.length <= 32 &&
-            targets.every(
-              (target) =>
+            targets.every((target) => {
+              const candidate = target as WorkflowBindingTarget;
+              return Boolean(
                 target &&
-                typeof target === "object" &&
-                typeof (target as WorkflowBindingTarget).nodeId === "string" &&
-                (target as WorkflowBindingTarget).nodeId.length <= 200 &&
-                typeof (target as WorkflowBindingTarget).input === "string" &&
-                (target as WorkflowBindingTarget).input.length <= 200,
-            ),
+                  typeof target === "object" &&
+                  typeof candidate.nodeId === "string" &&
+                  candidate.nodeId.length <= 200 &&
+                  typeof candidate.input === "string" &&
+                  candidate.input.length <= 200 &&
+                  (candidate.transform === undefined || bindingTransforms.has(candidate.transform)),
+              );
+            }),
         ),
     );
   if (
@@ -223,6 +233,11 @@ const parameterKeys: WorkflowParameterKey[] = [
   "duration",
   "fps",
 ];
+const bindingTransforms = new Set<WorkflowBindingTransform>([
+  "seconds_to_frames",
+  "seconds_to_frames_plus_one",
+  "seconds_to_frames_minus_one",
+]);
 function emptyCandidates(): WorkflowBindingCandidates {
   return {
     parameters: {
@@ -312,16 +327,26 @@ export function discoverBindingCandidates(prompt: ComfyPrompt): WorkflowBindingC
           (genericNumericInput && /\bheight\b|高度/.test(titleHaystack))
         )
           candidates.parameters.height.push(candidate);
-        if (
+        const frameRateInput =
+          /(?:^|_)fps(?:$|_)|frame.?rate/.test(inputName) ||
+          (genericNumericInput && /\bfps\b|frame.?rate|帧率/.test(titleHaystack));
+        const frameCountInput =
+          !frameRateInput &&
+          (/(?:^|_)(?:num_?)?frames?(?:$|_)|frame.?count|video.?length/.test(inputName) ||
+            (genericNumericInput && /frame.?count|num.?frames|帧数/.test(titleHaystack)));
+        if (frameCountInput) {
+          candidates.parameters.duration.push({
+            ...candidate,
+            label: `${candidate.label} · 按 FPS 换算帧数`,
+            suggestedTransform: "seconds_to_frames",
+          });
+        } else if (
           /duration|seconds?/.test(inputName) ||
           (genericNumericInput && /duration|seconds?|时长/.test(titleHaystack))
-        )
+        ) {
           candidates.parameters.duration.push(candidate);
-        if (
-          /(?:^|_)fps(?:$|_)|frame.?rate/.test(inputName) ||
-          (genericNumericInput && /\bfps\b|frame.?rate|帧率/.test(titleHaystack))
-        )
-          candidates.parameters.fps.push(candidate);
+        }
+        if (frameRateInput) candidates.parameters.fps.push(candidate);
       }
       if (typeof value !== "string") continue;
       if (/loadimage|load image|加载图/.test(haystack)) {
@@ -347,10 +372,14 @@ export function suggestedBinding(
   outputMediaType: WorkflowOutputMediaType,
   candidates: WorkflowBindingCandidates,
 ) {
-  const one = (items: WorkflowBindingCandidate[]) =>
-    items[0] ? [{ nodeId: items[0].nodeId, input: items[0].input }] : undefined;
+  const target = ({ nodeId, input, suggestedTransform }: WorkflowBindingCandidate) => ({
+    nodeId,
+    input,
+    ...(suggestedTransform ? { transform: suggestedTransform } : {}),
+  });
+  const one = (items: WorkflowBindingCandidate[]) => (items[0] ? [target(items[0])] : undefined);
   const all = (items: WorkflowBindingCandidate[]) =>
-    items.length > 0 ? items.map(({ nodeId, input }) => ({ nodeId, input })) : undefined;
+    items.length > 0 ? items.map(target) : undefined;
   return {
     version: workflowBindingVersion,
     workflowPath: path,
@@ -385,10 +414,20 @@ function targetExists(prompt: ComfyPrompt, target: WorkflowBindingTarget) {
 
 export function validateWorkflowBinding(prompt: ComfyPrompt, binding: WorkflowBinding) {
   const issues: string[] = [];
-  for (const [key, targets] of Object.entries({ ...binding.parameters, ...binding.media })) {
+  for (const [key, targets] of Object.entries(binding.parameters)) {
     for (const target of targets ?? []) {
       if (!targetExists(prompt, target))
         issues.push(`${key}：节点 ${target.nodeId}.${target.input} 不存在`);
+      if (target.transform && key !== "duration") {
+        issues.push(`${key}：只有时长输入可以使用帧数换算`);
+      }
+    }
+  }
+  for (const [key, targets] of Object.entries(binding.media)) {
+    for (const target of targets ?? []) {
+      if (!targetExists(prompt, target))
+        issues.push(`${key}：节点 ${target.nodeId}.${target.input} 不存在`);
+      if (target.transform) issues.push(`${key}：素材输入不能使用数值换算`);
     }
   }
   if (!(binding.parameters.prompt?.length ?? 0)) issues.push("缺少提示词绑定");
@@ -478,11 +517,20 @@ function applyTargets(
   prompt: ComfyPrompt,
   targets: WorkflowBindingTarget[] | undefined,
   value: unknown,
+  fps?: number,
 ) {
   if (value === undefined) return;
   for (const target of targets ?? []) {
     const node = prompt[target.nodeId];
-    if (node) node.inputs[target.input] = value;
+    if (!node) continue;
+    let resolved = value;
+    if (target.transform && typeof value === "number" && typeof fps === "number") {
+      const frames = Math.max(1, Math.round(value * fps));
+      if (target.transform === "seconds_to_frames") resolved = frames;
+      if (target.transform === "seconds_to_frames_plus_one") resolved = frames + 1;
+      if (target.transform === "seconds_to_frames_minus_one") resolved = Math.max(1, frames - 1);
+    }
+    node.inputs[target.input] = resolved;
   }
 }
 
@@ -492,7 +540,14 @@ export function applyWorkflowBinding(
   values: GenericWorkflowValues,
 ) {
   const prompt = structuredClone(source);
-  for (const key of parameterKeys) applyTargets(prompt, binding.parameters[key], values[key]);
+  for (const key of parameterKeys) {
+    applyTargets(
+      prompt,
+      binding.parameters[key],
+      values[key],
+      typeof values.fps === "number" ? values.fps : undefined,
+    );
+  }
   applyTargets(prompt, binding.media.first_frame, values.firstFrame);
   applyTargets(prompt, binding.media.last_frame, values.lastFrame);
   const mediaValues: Array<[WorkflowBindingTarget[] | undefined, string[] | undefined]> = [

@@ -188,6 +188,13 @@ describe("TakeBoard authentication and authorization", () => {
       headers: { cookie: member.cookie },
     });
     expect(privateCatalog.json().projects).toEqual([]);
+    const privateOperations = await app.inject({
+      method: "GET",
+      url: "/api/operations/storage",
+      headers: { cookie: member.cookie },
+    });
+    expect(privateOperations.statusCode, privateOperations.body).toBe(200);
+    expect(privateOperations.json().projects).toEqual([]);
     const deniedDirect = await app.inject({
       method: "GET",
       url: `/api/projects/${key}`,
@@ -252,6 +259,16 @@ describe("TakeBoard authentication and authorization", () => {
         accessSource: "membership",
       }),
     ]);
+    const sharedOperations = await app.inject({
+      method: "GET",
+      url: "/api/operations/storage",
+      headers: { cookie: member.cookie },
+    });
+    expect(sharedOperations.statusCode, sharedOperations.body).toBe(200);
+    expect(sharedOperations.json().projects).toEqual([
+      expect.objectContaining({ projectKey: key, projectTitle: "Shared production" }),
+    ]);
+    expect(sharedOperations.json().systemBytes).toBeNull();
     const viewerExport = await app.inject({
       method: "GET",
       url: `/api/projects/${key}/export`,

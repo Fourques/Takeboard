@@ -15353,6 +15353,24 @@ html[data-theme="chroma"] .scene-companions img {
 }
 
 @media (max-width: 640px) {
+  .operations-panel {
+    position: fixed;
+    top: 68px;
+    right: 10px;
+    left: 10px;
+    width: auto;
+    max-height: calc(100vh - 78px);
+  }
+
+  .operations-pill {
+    min-width: 42px;
+    width: 42px;
+  }
+
+  .operations-pill > div {
+    display: none;
+  }
+
   .worker-panel {
     position: fixed;
     top: 70px;
@@ -15854,6 +15872,11 @@ html:is([data-display-scale="1-24"], [data-display-scale="1-4"]) .hub-header .wo
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .operations-pill.has-active .operations-pulse,
+  .operation-progress.indeterminate i {
+    animation: none;
+  }
+
   .scene-companion-visual,
   .room-tone-wave i {
     animation: none;

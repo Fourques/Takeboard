@@ -700,21 +700,40 @@ export function registerWorkflowRoutes(
     if (!capability || !outputMediaType) {
       return await reply.code(400).send({ error: "工作流能力或输出类型无效" });
     }
+    let invalidTarget = false;
     const targets = (value: unknown): WorkflowBindingTarget[] | undefined => {
       if (!Array.isArray(value)) return undefined;
-      const parsed = value.slice(0, 32).flatMap((entry) =>
-        entry &&
-        typeof entry === "object" &&
-        typeof (entry as WorkflowBindingTarget).nodeId === "string" &&
-        typeof (entry as WorkflowBindingTarget).input === "string"
-          ? [
-              {
-                nodeId: (entry as WorkflowBindingTarget).nodeId.slice(0, 200),
-                input: (entry as WorkflowBindingTarget).input.slice(0, 200),
-              },
-            ]
-          : [],
-      );
+      const transforms = new Set([
+        "seconds_to_frames",
+        "seconds_to_frames_plus_one",
+        "seconds_to_frames_minus_one",
+      ]);
+      if (value.length > 32) invalidTarget = true;
+      const parsed = value.slice(0, 32).flatMap((entry) => {
+        const candidate = entry as WorkflowBindingTarget;
+        if (
+          !entry ||
+          typeof entry !== "object" ||
+          typeof candidate.nodeId !== "string" ||
+          typeof candidate.input !== "string"
+        ) {
+          invalidTarget = true;
+          return [];
+        }
+        if (candidate.transform !== undefined && !transforms.has(candidate.transform)) {
+          invalidTarget = true;
+          return [];
+        }
+        return [
+          {
+            nodeId: candidate.nodeId.slice(0, 200),
+            input: candidate.input.slice(0, 200),
+            ...(candidate.transform && transforms.has(candidate.transform)
+              ? { transform: candidate.transform }
+              : {}),
+          },
+        ];
+      });
       return parsed.length > 0 ? parsed : undefined;
     };
     const parameterInput =
@@ -756,6 +775,9 @@ export function registerWorkflowRoutes(
         trusted: true,
         verifiedAt: new Date().toISOString(),
       };
+      if (invalidTarget) {
+        return await reply.code(400).send({ error: "参数绑定目标或时长换算方式无效" });
+      }
       const issues = [
         ...validateWorkflowBinding(inspected.prompt, binding),
         ...preflightPromptAgainstObjectInfo(inspected.prompt, inspected.objectInfo),
@@ -984,9 +1006,16 @@ export function registerWorkflowRoutes(
       return await reply.code(502).send({ error: `ComfyUI 保存失败：${response.status}` });
     }
     const relativePath = path.replace(/^workflows\//, "");
-    return await reply
-      .code(201)
-      .send(workflowSummary(relativePath, workflow, editorUrl, null, null));
+    try {
+      return await reply.code(201).send({ imported: true, ...(await inspectPath(relativePath)) });
+    } catch (error) {
+      return await reply.code(201).send({
+        imported: true,
+        ...workflowSummary(relativePath, workflow, editorUrl, null, null),
+        warning:
+          error instanceof Error ? error.message : "工作流已经导入，但当前电脑无法完成节点转换诊断",
+      });
+    }
   });
 
   app.get<{ Querystring: { path?: string } }>(

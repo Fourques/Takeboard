@@ -80,6 +80,7 @@ test("a 500-node production board remains loadable and interactive", async ({ pa
     await page.locator(".react-flow__pane").click({ position: { x: 400, y: 260 } });
     await expect(page.locator(".canvas-status")).toContainText("500 节点");
   } finally {
-    await rm(directory, { recursive: true, force: true });
+    await page.goto("/").catch(() => undefined);
+    await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 });

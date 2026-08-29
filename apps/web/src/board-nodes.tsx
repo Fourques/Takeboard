@@ -205,7 +205,7 @@ function AssetNode({ data }: NodeProps<BoardNode>) {
   );
 }
 
-function ShotNode({ data }: NodeProps<BoardNode>) {
+function ShotNode({ data, id }: NodeProps<BoardNode>) {
   const [titleDraft, setTitleDraft] = useState(data.title);
   const [failedMediaUrl, setFailedMediaUrl] = useState<string | null>(null);
   const [loadedMediaUrl, setLoadedMediaUrl] = useState<string | null>(null);
@@ -517,6 +517,7 @@ function ShotNode({ data }: NodeProps<BoardNode>) {
               <div>
                 <NumericInput
                   id={`${quickSettingsId}-width`}
+                  draftKey={`${id}:width`}
                   aria-label="画布宽度"
                   min={256}
                   max={2048}
@@ -527,6 +528,7 @@ function ShotNode({ data }: NodeProps<BoardNode>) {
                 <i>×</i>
                 <NumericInput
                   id={`${quickSettingsId}-height`}
+                  draftKey={`${id}:height`}
                   aria-label="画布高度"
                   min={256}
                   max={2048}
@@ -541,6 +543,7 @@ function ShotNode({ data }: NodeProps<BoardNode>) {
                 <span>时长</span>
                 <NumericInput
                   id={`${quickSettingsId}-duration`}
+                  draftKey={`${id}:duration`}
                   aria-label="画布时长"
                   min={currentWorkflow?.name.toLowerCase().includes("minimax") ? 4 : 1}
                   max={15}
@@ -554,6 +557,7 @@ function ShotNode({ data }: NodeProps<BoardNode>) {
               <span>Seed</span>
               <NumericInput
                 id={`${quickSettingsId}-seed`}
+                draftKey={`${id}:seed`}
                 aria-label="画布 Seed"
                 min={0}
                 max={2_147_483_647}

@@ -53,7 +53,6 @@ import {
   workflowInputSlots,
 } from "./model-profiles";
 import { NumericInput } from "./numeric-input";
-import { ProjectHub } from "./project-hub";
 import { ThemeSwitcher } from "./theme-switcher";
 
 const AssetLibrary = lazy(() =>
@@ -67,6 +66,12 @@ const RecipeStudio = lazy(() =>
 );
 const Storyboard = lazy(() =>
   import("./storyboard").then((module) => ({ default: module.Storyboard })),
+);
+const OperationsCenter = lazy(() =>
+  import("./operations-center").then((module) => ({ default: module.OperationsCenter })),
+);
+const ProjectHub = lazy(() =>
+  import("./project-hub").then((module) => ({ default: module.ProjectHub })),
 );
 
 const rejectionReasons = ["角色漂移", "运动方向错误", "构图不稳定", "细节异常"];
@@ -3998,15 +4003,16 @@ export function App() {
       try {
         const imported = await workflowApi.import(file);
         await refreshWorkflows();
-        await bindWorkflowToSelectedShot({ ...imported, origin: "imported" });
-        setNotice(`已导入并识别：${imported.name}`);
+        setNotice(`已导入：${imported.name} · 完成映射确认后即可用于镜头`);
+        return imported;
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "Workflow 导入失败");
+        throw cause;
       } finally {
         setBusy(false);
       }
     },
-    [bindWorkflowToSelectedShot, refreshWorkflows],
+    [refreshWorkflows],
   );
 
   const generateReal = useCallback(
@@ -4495,23 +4501,25 @@ export function App() {
 
   if (showHub) {
     return (
-      <ProjectHub
-        busy={busy}
-        error={error}
-        notice={notice}
-        onCreate={createProject}
-        onDelete={deleteProject}
-        onImport={importProject}
-        onOpen={openProject}
-        onRefreshWorker={refreshWorker}
-        onRename={renameProject}
-        onRestore={restoreProject}
-        onStartWorker={startWorker}
-        projects={projects}
-        trashedProjects={trashedProjects}
-        worker={worker}
-        workerBusy={workerBusy}
-      />
+      <Suspense fallback={<main className="loading-screen">正在打开 TakeBoard…</main>}>
+        <ProjectHub
+          busy={busy}
+          error={error}
+          notice={notice}
+          onCreate={createProject}
+          onDelete={deleteProject}
+          onImport={importProject}
+          onOpen={openProject}
+          onRefreshWorker={refreshWorker}
+          onRename={renameProject}
+          onRestore={restoreProject}
+          onStartWorker={startWorker}
+          projects={projects}
+          trashedProjects={trashedProjects}
+          worker={worker}
+          workerBusy={workerBusy}
+        />
+      </Suspense>
     );
   }
 
@@ -4582,6 +4590,9 @@ export function App() {
                   : `✓ 已保存 · r${revision}`}
             </span>
           )}
+          <Suspense fallback={null}>
+            <OperationsCenter onOpenProject={openProject} />
+          </Suspense>
           <ThemeSwitcher compact />
           <DisplaySettings compact />
           <button

@@ -1,10 +1,13 @@
-import { useMemo, useRef, useState } from "react";
+import { type CSSProperties, useMemo, useRef, useState } from "react";
 import {
   type ArchivedWorkflow,
   type WorkflowArchivePreview,
   type WorkflowBindingDraft,
   type WorkflowBindingInspection,
+  type WorkflowBindingTarget,
+  type WorkflowBindingTransform,
   type WorkflowCapability,
+  type WorkflowImport,
   type WorkflowMediaKey,
   type WorkflowParameterKey,
   type WorkflowSummary,
@@ -48,6 +51,31 @@ const mediaLabels: Record<WorkflowMediaKey, string> = {
   reference_video: "参考视频",
   reference_audio: "参考音频",
 };
+const bindingTargetRowStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "auto minmax(0, 1fr) auto auto",
+  alignItems: "center",
+  padding: "7px 9px",
+  borderTop: "1px solid var(--line)",
+  color: "var(--muted)",
+  fontSize: "8px",
+  gap: "7px",
+};
+const bindingTargetLabelStyle: CSSProperties = { display: "contents" };
+const bindingTargetNameStyle: CSSProperties = {
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+const bindingTransformStyle: CSSProperties = {
+  maxWidth: "150px",
+  minHeight: "26px",
+  border: "1px solid var(--line)",
+  borderRadius: "5px",
+  color: "var(--text-1)",
+  background: "var(--surface-1)",
+  fontSize: "8px",
+};
 
 export function RecipeStudio({
   busy,
@@ -67,7 +95,7 @@ export function RecipeStudio({
   canManageWorkflows: boolean;
   editorUrl: string;
   onClose: () => void;
-  onImport: (file: File) => Promise<void>;
+  onImport: (file: File) => Promise<WorkflowImport>;
   onRefresh: () => Promise<void>;
   onSelect: (workflow: WorkflowSummary) => void;
   open: boolean;
@@ -131,13 +159,11 @@ export function RecipeStudio({
     key: WorkflowParameterKey | WorkflowMediaKey,
     nodeId: string,
     input: string,
+    suggestedTransform?: WorkflowBindingTransform,
   ) => {
     setBindingDraft((current) => {
       if (!current) return current;
-      const group = current[groupName] as Record<
-        string,
-        Array<{ nodeId: string; input: string }> | undefined
-      >;
+      const group = current[groupName] as Record<string, WorkflowBindingTarget[] | undefined>;
       const previous = group[key] ?? [];
       const selected = previous.some(
         (target) => target.nodeId === nodeId && target.input === input,
@@ -148,7 +174,37 @@ export function RecipeStudio({
           ...current[groupName],
           [key]: selected
             ? previous.filter((target) => target.nodeId !== nodeId || target.input !== input)
-            : [...previous, { nodeId, input }],
+            : [
+                ...previous,
+                { nodeId, input, ...(suggestedTransform ? { transform: suggestedTransform } : {}) },
+              ],
+        },
+      };
+    });
+  };
+
+  const updateTargetTransform = (
+    key: WorkflowParameterKey,
+    nodeId: string,
+    input: string,
+    transform: "identity" | WorkflowBindingTransform,
+  ) => {
+    setBindingDraft((current) => {
+      if (!current) return current;
+      const targets = current.parameters[key] ?? [];
+      return {
+        ...current,
+        parameters: {
+          ...current.parameters,
+          [key]: targets.map((target) =>
+            target.nodeId === nodeId && target.input === input
+              ? {
+                  nodeId,
+                  input,
+                  ...(transform === "identity" ? {} : { transform }),
+                }
+              : target,
+          ),
         },
       };
     });
@@ -226,6 +282,30 @@ export function RecipeStudio({
       );
     } catch (error) {
       setBindingError(error instanceof Error ? error.message : "Recipe 包导入失败");
+    } finally {
+      setPackageBusy(false);
+    }
+  };
+
+  const importWorkflowJson = async (file: File) => {
+    setPackageBusy(true);
+    setBindingError("");
+    setPackageNotice("");
+    try {
+      const imported = await onImport(file);
+      setInspection(imported);
+      setBindingDraft(imported.binding ?? imported.suggested ?? null);
+      setPackageNoticePath(imported.path);
+      setPackageNotice(
+        imported.candidates
+          ? "Workflow 已隔离导入并完成当前电脑诊断。请核对自动识别的参数位置，再明确启用。"
+          : "Workflow 已安全导入，但当前电脑尚未完成节点转换诊断。修复诊断问题后才能启用。",
+      );
+      if (!imported.candidates) {
+        setBindingError(imported.warning ?? "当前工作流无法转换为可执行 Prompt");
+      }
+    } catch (error) {
+      setBindingError(error instanceof Error ? error.message : "Workflow 导入失败");
     } finally {
       setPackageBusy(false);
     }
@@ -425,7 +505,7 @@ export function RecipeStudio({
                   const file = event.target.files?.[0];
                   if (file) {
                     if (file.name.toLowerCase().endsWith(".tgz")) void importRecipePackage(file);
-                    else void onImport(file);
+                    else void importWorkflowJson(file);
                   }
                   event.target.value = "";
                 }}
@@ -440,7 +520,7 @@ export function RecipeStudio({
                   const file = event.dataTransfer.files[0];
                   if (file) {
                     if (file.name.toLowerCase().endsWith(".tgz")) void importRecipePackage(file);
-                    else void onImport(file);
+                    else void importWorkflowJson(file);
                   }
                 }}
                 disabled={packageBusy}
@@ -571,28 +651,63 @@ export function RecipeStudio({
                               <i>{selected.length ? `${selected.length} 处` : "使用工作流默认"}</i>
                             </summary>
                             {candidates.length ? (
-                              candidates.map((candidate) => (
-                                <label key={`${candidate.nodeId}.${candidate.input}`}>
-                                  <input
-                                    type="checkbox"
-                                    checked={selected.some(
-                                      (target) =>
-                                        target.nodeId === candidate.nodeId &&
-                                        target.input === candidate.input,
-                                    )}
-                                    onChange={() =>
-                                      toggleTarget(
-                                        "parameters",
-                                        key,
-                                        candidate.nodeId,
-                                        candidate.input,
-                                      )
-                                    }
-                                  />
-                                  <span>{candidate.label}</span>
-                                  {advanced ? <code>{candidate.nodeId}</code> : null}
-                                </label>
-                              ))
+                              candidates.map((candidate) => {
+                                const selectedTarget = selected.find(
+                                  (target) =>
+                                    target.nodeId === candidate.nodeId &&
+                                    target.input === candidate.input,
+                                );
+                                return (
+                                  <div
+                                    key={`${candidate.nodeId}.${candidate.input}`}
+                                    style={bindingTargetRowStyle}
+                                  >
+                                    <label style={bindingTargetLabelStyle}>
+                                      <input
+                                        type="checkbox"
+                                        checked={Boolean(selectedTarget)}
+                                        onChange={() =>
+                                          toggleTarget(
+                                            "parameters",
+                                            key,
+                                            candidate.nodeId,
+                                            candidate.input,
+                                            candidate.suggestedTransform,
+                                          )
+                                        }
+                                      />
+                                      <span style={bindingTargetNameStyle}>{candidate.label}</span>
+                                    </label>
+                                    {advanced && key === "duration" && selectedTarget ? (
+                                      <select
+                                        aria-label={`${candidate.label}换算方式`}
+                                        style={bindingTransformStyle}
+                                        value={selectedTarget.transform ?? "identity"}
+                                        onChange={(event) =>
+                                          updateTargetTransform(
+                                            key,
+                                            candidate.nodeId,
+                                            candidate.input,
+                                            event.target.value as
+                                              | "identity"
+                                              | WorkflowBindingTransform,
+                                          )
+                                        }
+                                      >
+                                        <option value="identity">直接写入秒数</option>
+                                        <option value="seconds_to_frames">秒 × FPS</option>
+                                        <option value="seconds_to_frames_plus_one">
+                                          秒 × FPS + 1
+                                        </option>
+                                        <option value="seconds_to_frames_minus_one">
+                                          秒 × FPS - 1
+                                        </option>
+                                      </select>
+                                    ) : null}
+                                    {advanced ? <code>{candidate.nodeId}</code> : null}
+                                  </div>
+                                );
+                              })
                             ) : (
                               <p>未自动识别到候选输入</p>
                             )}

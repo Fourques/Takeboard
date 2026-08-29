@@ -26,6 +26,7 @@ Browser UI
 ├── Canvas projection
 ├── Candidate compare
 ├── Run drawer
+├── Cross-project operations center
 └── Project/scene navigation
         │ REST commands + WebSocket events
         ▼
@@ -47,6 +48,8 @@ ComfyUI Worker
 ```
 
 浏览器不直接持有 ComfyUI、云模型或文件系统凭据。所有生成调用经过本地服务，才能统一记录 Run、预算和输出。
+
+跨项目任务中心只聚合当前账号可访问的项目。它通过项目级 Run API 获取实时进度和执行停止，因此不会建立一条绕过 Owner / Editor 权限的新控制通道。存储扫描忽略符号链接，普通成员只能看到自己可访问的项目；系统数据占用仅向实例管理员返回。
 
 ## 3. 推荐仓库结构
 
@@ -206,6 +209,8 @@ requirements:
 6. Workflow hash 与 Recipe version 保存到每个 Run。
 
 不要把自动识别结果直接当作执行权限。导入向导只生成候选绑定，最终由用户确认能力、输出类型、每个 node/field 映射以及对第三方节点的信任。绑定记录 Workflow 内容哈希；任何节点图修改都会使旧绑定失效。
+
+普通 JSON 导入成功后不会自动写入镜头。服务端会立即尝试把真实 Workflow 转换为 API Prompt、读取当前 ComfyUI 节点定义并返回候选映射；前端直接进入确认向导。视频长度候选同时识别秒数与帧数输入。帧数只允许使用内置的 `秒 × FPS`、`+1` 或 `-1` 换算，不接受任意表达式，换算规则随 Binding 一起参与哈希绑定与导出。
 
 用户导入的 Workflow 不做不可恢复删除。归档前服务端扫描使用中的项目与回收区项目中的镜头绑定和 Run 参数；存在引用时返回结构化引用列表并阻止移动。无引用且确认令牌仍匹配时，文件移动到 ComfyUI 用户目录的 `TakeBoard/.archive/`，恢复时回到原路径，绑定文件保持不变。
 

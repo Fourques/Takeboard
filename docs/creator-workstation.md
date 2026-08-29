@@ -19,8 +19,8 @@ TakeBoard 现在把“项目管理画布”和“ComfyUI 底层工作流”分�
 1. 自动扫描当前 ComfyUI `workflows` 目录；
 2. 识别文生图、图生图、文生视频、图生视频、首尾帧和参考生成；
 3. 展示 JSON 中检测到的模型、节点数量和可调输入；
-4. 拖入 Workflow JSON 或 API Prompt JSON，保存到 ComfyUI 的 `workflows/TakeBoard`；
-5. 为非内置工作流检查 TakeBoard 参数映射，再选择到镜头或进入 ComfyUI 修改底层节点。
+4. 拖入 Workflow JSON 或 API Prompt JSON，隔离保存到 ComfyUI 的 `workflows/TakeBoard` 并立即进入当前电脑诊断；
+5. 为非内置工作流确认 TakeBoard 参数映射和执行信任，验证完成后再选择到镜头，或进入 ComfyUI 修改底层节点。
 
 工作流现在明确分为四种状态：
 
@@ -29,7 +29,7 @@ TakeBoard 现在把“项目管理画布”和“ComfyUI 底层工作流”分�
 - **已验证**：用户检查并信任了提示词、尺寸、Seed、时长和素材入口的节点映射，可直接提交；
 - **映射失效**：底层 Workflow 内容已改变，SHA-256 与确认时不一致，必须重新检查。
 
-建立映射时，TakeBoard 会读取真实 Workflow，转换普通画布节点和多层子图、去掉注释与 Reroute 等前端节点，并用当前 ComfyUI 的 `/object_info` 校验节点类别和必需输入。自动识别只负责给出候选，最终映射与“信任并启用”必须由用户确认。绑定文件保存在 ComfyUI 用户数据的 `takeboard/bindings`，不会改写原 Workflow。
+建立映射时，TakeBoard 会读取真实 Workflow，转换普通画布节点和多层子图、去掉注释与 Reroute 等前端节点，并用当前 ComfyUI 的 `/object_info` 校验节点类别和必需输入。自动识别只负责给出候选，最终映射与“信任并启用”必须由用户确认。视频节点使用 `num_frames`、`frame_count` 等帧数输入时，会建议按当前 FPS 换算；高级模式可以明确选择 `秒 × FPS`、`+1` 或 `-1`，不运行任意公式。绑定文件保存在 ComfyUI 用户数据的 `takeboard/bindings`，不会改写原 Workflow。
 
 导入成功不代表安全或兼容性已经验证。工作流可能包含第三方节点、网络或文件操作；只应启用来源可信且自己理解的工作流。无法可靠转换的扩展图仍会停留在待映射状态，可以从 ComfyUI 导出 API Format 后再导入。
 

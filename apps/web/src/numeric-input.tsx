@@ -12,11 +12,14 @@ type NumericInputProps = Omit<
   "max" | "min" | "onChange" | "step" | "type" | "value"
 > & {
   value: number;
+  draftKey?: string;
   min?: number;
   max?: number;
   step?: number;
   onValueChange: (value: number) => void;
 };
+
+const pendingDrafts = new Map<string, string>();
 
 function formatNumber(value: number) {
   return Number.isFinite(value) ? String(value) : "";
@@ -47,6 +50,7 @@ export function normalizeNumber(value: number, min?: number, max?: number, step?
  */
 export function NumericInput({
   value,
+  draftKey,
   min,
   max,
   step,
@@ -58,11 +62,29 @@ export function NumericInput({
 }: NumericInputProps) {
   const focused = useRef(false);
   const restoreOnBlur = useRef(false);
-  const [draft, setDraft] = useState(() => formatNumber(value));
+  const [draft, setDraft] = useState(() =>
+    draftKey && pendingDrafts.has(draftKey)
+      ? (pendingDrafts.get(draftKey) ?? "")
+      : formatNumber(value),
+  );
+
+  const updateDraft = (next: string) => {
+    if (draftKey) pendingDrafts.set(draftKey, next);
+    setDraft(next);
+  };
+
+  const clearPendingDraft = () => {
+    if (draftKey) pendingDrafts.delete(draftKey);
+  };
 
   useEffect(() => {
-    if (!focused.current) setDraft(formatNumber(value));
-  }, [value]);
+    if (focused.current) return;
+    if (draftKey && pendingDrafts.has(draftKey)) {
+      setDraft(pendingDrafts.get(draftKey) ?? "");
+      return;
+    }
+    setDraft(formatNumber(value));
+  }, [draftKey, value]);
 
   const parsed = draft.trim() === "" ? Number.NaN : Number(draft);
   const invalid =
@@ -73,10 +95,12 @@ export function NumericInput({
 
   const commit = () => {
     if (!Number.isFinite(parsed)) {
+      clearPendingDraft();
       setDraft(formatNumber(value));
       return;
     }
     const next = normalizeNumber(parsed, min, max, step);
+    clearPendingDraft();
     setDraft(formatNumber(next));
     if (next !== value) onValueChange(next);
   };
@@ -85,6 +109,7 @@ export function NumericInput({
     focused.current = false;
     if (restoreOnBlur.current) {
       restoreOnBlur.current = false;
+      clearPendingDraft();
       setDraft(formatNumber(value));
     } else {
       commit();
@@ -116,7 +141,7 @@ export function NumericInput({
       value={draft}
       aria-invalid={invalid || undefined}
       data-empty={draft === "" ? "true" : undefined}
-      onChange={(event) => setDraft(event.target.value)}
+      onChange={(event) => updateDraft(event.target.value)}
       onFocus={(event) => {
         focused.current = true;
         onFocus?.(event);

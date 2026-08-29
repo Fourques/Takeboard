@@ -31,6 +31,7 @@ TakeBoard 不重做 ComfyUI 的节点系统。它在现有 Workflow 和算力之
 - 检测和导入 ComfyUI Workflow，以显式、带哈希的参数绑定运行可信自定义工作流；
 - 执行文生图、图生图、图生视频和首尾帧视频任务；
 - 跟踪 ComfyUI 真实节点进度、取消任务、回收结果，并保存可复现的参数快照；
+- 在跨项目任务中心集中查看、停止和恢复生成，并按项目与数据类型检查磁盘占用；
 - 从首页流式导出、校验并重新导入完整 `.takeboard.tgz` 项目包；
 - 以独立 `.takeboard` 目录保存项目，方便备份、迁移和版本归档。
 - 一次性团队邀请、离线恢复码、可验证实例备份与保留旧数据的离线恢复。
@@ -151,9 +152,11 @@ export COMFY_OUTPUT_ROOT=/path/to/ComfyUI/output
 
 TakeBoard 只启动指向 `127.0.0.1`、`localhost` 或 `::1` 的 ComfyUI。启动目标无法验证、资源不足、已有异常进程或启动超时时都会中止；超时后会停止本次启动的服务。
 
+生成提交前还会检查 TakeBoard 项目盘和已配置的 ComfyUI 输出盘。默认分别保留 5 GB 和 8 GB 安全余量，空间不足时不会先上传素材再报错；可通过 `TAKEBOARD_MIN_FREE_DISK_GB` 和 `COMFY_MIN_FREE_OUTPUT_DISK_GB` 调整阈值。
+
 模型与 Custom Node 的可用性取决于自己的 ComfyUI 环境。TakeBoard 不会自动下载来源不明的模型或节点。
 
-自定义 Workflow 导入后默认处于“待映射”，不会因文件名相似而获得执行权限。在工作流库中检查提示词、尺寸、Seed、时长和素材入口，确认信任并通过当前 ComfyUI 节点预检后，状态才会变成“已验证”。底层 JSON 一旦变化，内容哈希会使旧映射自动失效。详细流程见[创作工作站指南](docs/creator-workstation.md#workflow-与模型)。
+自定义 Workflow 导入后会立即进入当前电脑的节点、模型和参数诊断，但默认仍处于“待映射”，不会提前写入镜头，也不会因文件名相似而获得执行权限。在工作流库中检查提示词、尺寸、Seed、时长和素材入口，确认信任并通过当前 ComfyUI 节点预检后，状态才会变成“已验证”。视频工作流可把秒数安全换算为 `num_frames` / `frame_count`；底层 JSON 一旦变化，内容哈希会使旧映射自动失效。详细流程见[创作工作站指南](docs/creator-workstation.md#workflow-与模型)。
 
 ## 项目数据
 
