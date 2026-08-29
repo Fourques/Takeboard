@@ -6,6 +6,7 @@ import type {
   AuthStatus,
   CommandAuditEntry,
   InstanceRole,
+  OperationsDiagnostics,
   OperationsStorage,
   OperationsTaskCenter,
   ProjectCommand,
@@ -44,6 +45,11 @@ export type ProjectCatalogItem = {
 let csrfToken: string | null = null;
 const knownProjectRevisions = new Map<string, number>();
 
+export function isTimeoutFailure(cause: unknown) {
+  const failureName = cause instanceof Error ? cause.name : "";
+  return failureName === "AbortError" || failureName === "TimeoutError";
+}
+
 export function setApiCsrfToken(value: string | null) {
   csrfToken = value;
 }
@@ -60,9 +66,36 @@ async function apiFetch(path: string, options?: RequestInit) {
     const revision = knownProjectRevisions.get(key);
     if (revision !== undefined) headers.set("x-takeboard-revision", String(revision));
   }
-  const response = await fetch(path, { credentials: "same-origin", ...options, headers });
+  let response: Response;
+  try {
+    response = await fetch(path, { credentials: "same-origin", ...options, headers });
+  } catch (cause) {
+    const timedOut = isTimeoutFailure(cause);
+    throw new TakeBoardApiError(
+      timedOut
+        ? "TakeBoard 请求超时。请保持页面打开，检查服务器或 SSH 连接后重试。"
+        : "无法连接 TakeBoard 服务。请保持页面打开，检查服务状态或 SSH 隧道后重试。",
+      0,
+      timedOut ? "REQUEST_TIMEOUT" : "SERVICE_UNREACHABLE",
+      true,
+      cause,
+    );
+  }
   if (response.status === 401) window.dispatchEvent(new Event("takeboard:auth-required"));
   return response;
+}
+
+export class TakeBoardApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code: string | null,
+    readonly retryable: boolean,
+    cause?: unknown,
+  ) {
+    super(message, { cause });
+    this.name = "TakeBoardApiError";
+  }
 }
 
 export type TrashedProjectItem = {
@@ -343,8 +376,23 @@ async function jsonRequest<T>(path: string, options?: RequestInit): Promise<T> {
         }),
       );
     }
-    if (response.status === 413) throw new Error(payload.error ?? "文件超过当前服务上传上限");
-    throw new Error(payload.error ?? `TakeBoard 请求失败（${response.status}）`);
+    if (response.status === 413) {
+      throw new TakeBoardApiError(
+        payload.error ?? "文件超过当前服务上传上限",
+        response.status,
+        payload.code ?? null,
+        false,
+      );
+    }
+    throw new TakeBoardApiError(
+      payload.error ?? `TakeBoard 请求失败（${response.status}）`,
+      response.status,
+      payload.code ?? null,
+      response.status === 408 ||
+        response.status === 425 ||
+        response.status === 429 ||
+        response.status >= 500,
+    );
   }
   const revisionPayload = payload as unknown as { key?: unknown; revision?: unknown };
   if (typeof revisionPayload.key === "string" && typeof revisionPayload.revision === "number") {
@@ -402,6 +450,7 @@ async function executeProjectCommand(
 export const projectApi = {
   tasks: () => jsonRequest<OperationsTaskCenter>("/api/operations/tasks"),
   storage: () => jsonRequest<OperationsStorage>("/api/operations/storage"),
+  diagnostics: () => jsonRequest<OperationsDiagnostics>("/api/operations/diagnostics"),
   list: async () => {
     const payload = await jsonRequest<{ projects: ProjectCatalogItem[] }>("/api/projects");
     for (const project of payload.projects)

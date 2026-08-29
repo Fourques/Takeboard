@@ -78,13 +78,18 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   const comfyUrl = options.comfyUrl ?? process.env.COMFY_URL ?? "http://127.0.0.1:8188";
   const comfyInputRoot = options.comfyInputRoot ?? process.env.COMFY_INPUT_ROOT ?? null;
   const comfyOutputRoot = options.comfyOutputRoot ?? process.env.COMFY_OUTPUT_ROOT ?? null;
+  const webRoot = options.webRoot ?? process.env.TAKEBOARD_WEB_ROOT ?? null;
   registerProjectRoutes(app, projectsRoot, {
     comfyUrl,
     comfyInputRoot,
     comfyOutputRoot,
     auth,
   });
-  registerOperationsRoutes(app, projectsRoot, auth);
+  registerOperationsRoutes(app, projectsRoot, auth, {
+    version: takeBoardVersion,
+    comfyUrl,
+    webRoot,
+  });
   registerProjectCommandRoutes(app, projectsRoot);
   registerWorkerRoutes(app, comfyUrl, options.workerOptions);
   registerGenerationRoutes(app, projectsRoot, comfyUrl, {
@@ -98,7 +103,6 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     projectsRoot,
   );
 
-  const webRoot = options.webRoot ?? process.env.TAKEBOARD_WEB_ROOT ?? null;
   if (webRoot && existsSync(resolve(webRoot, "index.html"))) {
     void app.register(fastifyStatic, {
       root: resolve(webRoot),

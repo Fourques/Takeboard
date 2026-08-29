@@ -195,6 +195,17 @@ describe("TakeBoard authentication and authorization", () => {
     });
     expect(privateOperations.statusCode, privateOperations.body).toBe(200);
     expect(privateOperations.json().projects).toEqual([]);
+    const privateDiagnostics = await app.inject({
+      method: "GET",
+      url: "/api/operations/diagnostics",
+      headers: { cookie: member.cookie },
+    });
+    expect(privateDiagnostics.statusCode, privateDiagnostics.body).toBe(200);
+    expect(privateDiagnostics.json()).toMatchObject({
+      workload: { visibleProjects: 0, activeRuns: 0, failedRuns: 0 },
+      backup: null,
+    });
+    expect(privateDiagnostics.body).not.toContain("Shared production");
     const deniedDirect = await app.inject({
       method: "GET",
       url: `/api/projects/${key}`,
@@ -269,6 +280,17 @@ describe("TakeBoard authentication and authorization", () => {
       expect.objectContaining({ projectKey: key, projectTitle: "Shared production" }),
     ]);
     expect(sharedOperations.json().systemBytes).toBeNull();
+    const sharedDiagnostics = await app.inject({
+      method: "GET",
+      url: "/api/operations/diagnostics",
+      headers: { cookie: member.cookie },
+    });
+    expect(sharedDiagnostics.statusCode, sharedDiagnostics.body).toBe(200);
+    expect(sharedDiagnostics.json()).toMatchObject({
+      workload: { visibleProjects: 1, activeRuns: 0, failedRuns: 0 },
+      backup: null,
+    });
+    expect(sharedDiagnostics.body).not.toContain("Shared production");
     const viewerExport = await app.inject({
       method: "GET",
       url: `/api/projects/${key}/export`,

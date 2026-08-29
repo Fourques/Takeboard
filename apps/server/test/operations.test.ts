@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createTakeBoardId, toIsoTimestamp } from "@takeboard/domain";
@@ -16,7 +16,12 @@ describe("production operations center", () => {
   it("lists active work across projects and reports categorized storage", async () => {
     const root = await mkdtemp(join(tmpdir(), "takeboard-operations-"));
     cleanup.push(() => rm(root, { recursive: true, force: true }));
-    const app = buildApp({ projectsRoot: root, webRoot: null });
+    const app = buildApp({
+      projectsRoot: root,
+      webRoot: null,
+      // Keep diagnostics deterministic even when a developer has ComfyUI running locally.
+      comfyUrl: "http://127.0.0.1:1",
+    });
     cleanup.push(() => app.close());
 
     const created = await app.inject({
@@ -52,6 +57,9 @@ describe("production operations center", () => {
     });
     await store.save(current.snapshot, { type: "test.operations", payload: {} });
     store.close();
+    const brokenDirectory = join(root, "broken-project.takeboard");
+    await mkdir(brokenDirectory, { recursive: true });
+    await writeFile(join(brokenDirectory, "takeboard.db"), "not a sqlite database", "utf8");
 
     const tasks = await app.inject({ method: "GET", url: "/api/operations/tasks" });
     expect(tasks.statusCode, tasks.body).toBe(200);
@@ -95,5 +103,29 @@ describe("production operations center", () => {
       },
     });
     expect(storage.json().projects[0].totalBytes).toBeGreaterThan(0);
+
+    const diagnostics = await app.inject({ method: "GET", url: "/api/operations/diagnostics" });
+    expect(diagnostics.statusCode, diagnostics.body).toBe(200);
+    expect(diagnostics.json()).toMatchObject({
+      format: "takeboard.support-report",
+      reportVersion: 1,
+      application: {
+        version: "0.1.0",
+        nodeVersion: expect.stringMatching(/^v/),
+        platform: expect.any(String),
+        architecture: expect.any(String),
+        authMode: "off",
+      },
+      workload: { visibleProjects: 1, activeRuns: 1, failedRuns: 0 },
+      checks: expect.arrayContaining([
+        expect.objectContaining({ id: "data.writable", status: "pass" }),
+        expect.objectContaining({ id: "data.projects", status: "warning" }),
+        expect.objectContaining({ id: "runtime.web", status: "pass" }),
+        expect.objectContaining({ id: "worker.comfy", status: "warning" }),
+      ]),
+    });
+    expect(diagnostics.body).not.toContain(root);
+    expect(diagnostics.body).not.toContain("任务中心项目");
+    expect(diagnostics.body).not.toContain("broken-project");
   });
 });

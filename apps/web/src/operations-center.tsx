@@ -1,4 +1,5 @@
 import type {
+  OperationsDiagnostics,
   OperationsStorage,
   OperationsTaskCenter,
   OperationTask,
@@ -50,14 +51,14 @@ const operationsCss = `.operations-control {
 }
 
 .operations-pill strong {
-  font-size: 9px;
+  font-size: calc(11px * var(--ui-scale));
 }
 
 .operations-pill small,
 .operations-panel small,
 .operations-panel em {
   color: var(--text-2);
-  font-size: 8px;
+  font-size: calc(10px * var(--ui-scale));
 }
 
 .operations-pulse {
@@ -99,7 +100,7 @@ const operationsCss = `.operations-control {
 }
 
 .operations-panel > header,
-.operations-panel > nav,
+.operations-tabs,
 .operations-view-actions,
 .operations-view-actions > div,
 .storage-project-list > div,
@@ -115,12 +116,12 @@ const operationsCss = `.operations-control {
 
 .operations-panel > header span {
   color: var(--accent-strong);
-  font-size: 7px;
+  font-size: calc(9px * var(--ui-scale));
   letter-spacing: 0.16em;
 }
 
 .operations-panel > header strong {
-  font-size: 16px;
+  font-size: calc(18px * var(--ui-scale));
 }
 
 .operations-panel > header button {
@@ -130,28 +131,28 @@ const operationsCss = `.operations-control {
   border-radius: 50%;
 }
 
-.operations-panel > nav {
+.operations-tabs {
   justify-content: flex-start;
   padding: 0 18px;
   border-bottom: 1px solid var(--line);
   gap: 18px;
 }
 
-.operations-panel > nav button {
+.operations-tabs button {
   min-height: 36px;
   padding: 0;
   border: 0;
   color: var(--text-2);
   background: transparent;
-  font-size: 9px;
+  font-size: calc(11px * var(--ui-scale));
 }
 
-.operations-panel > nav button.active {
+.operations-tabs button.active {
   color: var(--text-1);
   box-shadow: inset 0 -2px var(--accent);
 }
 
-.operations-panel > nav b {
+.operations-tabs b {
   margin-left: 4px;
   color: var(--green);
 }
@@ -162,11 +163,12 @@ const operationsCss = `.operations-control {
   border: 1px solid var(--red);
   border-radius: 7px;
   color: var(--red);
-  font-size: 8px;
+  font-size: calc(10px * var(--ui-scale));
 }
 
 .operations-task-view,
-.operations-storage-view {
+.operations-storage-view,
+.operations-diagnostic-view {
   min-height: 0;
   overflow: auto;
   padding: 12px 18px 18px;
@@ -174,7 +176,7 @@ const operationsCss = `.operations-control {
 
 .operations-view-actions {
   color: var(--text-2);
-  font-size: 8px;
+  font-size: calc(10px * var(--ui-scale));
   gap: 8px;
 }
 
@@ -183,7 +185,7 @@ const operationsCss = `.operations-control {
   min-height: 27px;
   padding: 0 8px;
   border-radius: 6px;
-  font-size: 8px;
+  font-size: calc(10px * var(--ui-scale));
 }
 
 .operations-task-list {
@@ -213,7 +215,7 @@ const operationsCss = `.operations-control {
 
 .operation-task-state {
   color: var(--text-2);
-  font-size: 8px;
+  font-size: calc(10px * var(--ui-scale));
 }
 
 .operation-task-state i,
@@ -238,7 +240,7 @@ const operationsCss = `.operations-control {
 }
 
 .operation-task-main > strong {
-  font-size: 10px;
+  font-size: calc(12px * var(--ui-scale));
 }
 
 .operation-task-main > em {
@@ -253,7 +255,7 @@ const operationsCss = `.operations-control {
   border-color: var(--red) !important;
   border-radius: 6px;
   color: var(--red) !important;
-  font-size: 8px;
+  font-size: calc(10px * var(--ui-scale));
 }
 
 .operation-progress {
@@ -323,7 +325,7 @@ const operationsCss = `.operations-control {
   justify-content: space-between;
   padding: 9px;
   border-bottom: 1px solid var(--line);
-  font-size: 8px;
+  font-size: calc(10px * var(--ui-scale));
 }
 
 .storage-breakdown span {
@@ -346,8 +348,99 @@ const operationsCss = `.operations-control {
 
 .storage-safety-note {
   color: var(--text-2);
-  font-size: 8px;
+  font-size: calc(10px * var(--ui-scale));
   line-height: 1.5;
+}
+
+.operations-diagnostic-summary {
+  display: grid;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+  gap: 5px;
+}
+
+.operations-diagnostic-summary strong {
+  font-size: calc(15px * var(--ui-scale));
+}
+
+.operations-diagnostic-summary span,
+.operations-diagnostic-summary small {
+  color: var(--text-2);
+  font-size: calc(10px * var(--ui-scale));
+  line-height: 1.5;
+}
+
+.operations-diagnostic-actions {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  gap: 7px;
+}
+
+.operations-diagnostic-actions button {
+  min-height: 31px;
+  padding: 0 10px;
+  border-radius: 7px;
+  font-size: calc(10px * var(--ui-scale));
+}
+
+.operations-diagnostic-list {
+  display: grid;
+  margin-top: 12px;
+  gap: 7px;
+}
+
+.operations-diagnostic-check {
+  display: grid;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--surface-2) 58%, transparent);
+  grid-template-columns: 9px minmax(0, 1fr);
+  gap: 9px;
+}
+
+.operations-diagnostic-check > i {
+  width: 8px;
+  height: 8px;
+  margin-top: 3px;
+  border-radius: 50%;
+  background: var(--green);
+}
+
+.operations-diagnostic-check.warning > i {
+  background: var(--accent);
+}
+
+.operations-diagnostic-check.blocked > i {
+  background: var(--red);
+}
+
+.operations-diagnostic-check > div {
+  display: grid;
+  gap: 3px;
+}
+
+.operations-diagnostic-check strong {
+  font-size: calc(11px * var(--ui-scale));
+}
+
+.operations-diagnostic-check span,
+.operations-diagnostic-check small,
+.operations-report-notice {
+  color: var(--text-2);
+  font-size: calc(10px * var(--ui-scale));
+  line-height: 1.5;
+}
+
+.operations-diagnostic-check small {
+  color: var(--accent-strong);
+}
+
+.operations-report-notice {
+  margin: 9px 0 0;
 }
 
 @media (max-width: 700px) {
@@ -380,6 +473,8 @@ const activeStatuses = new Set<RunStatus>([
   "collecting_outputs",
   "reconciling",
 ]);
+
+const operationsTabs = ["tasks", "storage", "diagnostics"] as const;
 
 const statusLabel: Record<RunStatus, string> = {
   draft: "准备中",
@@ -416,6 +511,21 @@ function taskIdentity(task: OperationTask) {
   return `${task.projectTitle} · ${task.shotLabel}`;
 }
 
+function supportReportWithClient(report: OperationsDiagnostics) {
+  return {
+    ...report,
+    client: {
+      userAgent: navigator.userAgent,
+      language: navigator.language,
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      devicePixelRatio: window.devicePixelRatio,
+      displayScale: window.localStorage.getItem("takeboard.display-scale") ?? "default",
+      theme: document.documentElement.dataset.theme ?? "noir",
+      online: navigator.onLine,
+    },
+  };
+}
+
 function notifyFinishedTasks(
   previous: Map<string, RunStatus> | null,
   tasks: OperationTask[],
@@ -443,13 +553,16 @@ export function OperationsCenter({
   onOpenProject: (key: string) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState<"tasks" | "storage">("tasks");
+  const [tab, setTab] = useState<"tasks" | "storage" | "diagnostics">("tasks");
   const [center, setCenter] = useState<OperationsTaskCenter | null>(null);
   const [storage, setStorage] = useState<OperationsStorage | null>(null);
+  const [diagnostics, setDiagnostics] = useState<OperationsDiagnostics | null>(null);
   const [progress, setProgress] = useState<Record<string, number | null>>({});
   const [busyRunId, setBusyRunId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [storageLoading, setStorageLoading] = useState(false);
+  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
+  const [reportNotice, setReportNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(
     () => window.localStorage.getItem("takeboard.task-notifications") === "1",
@@ -508,6 +621,19 @@ export function OperationsCenter({
     }
   }, []);
 
+  const refreshDiagnostics = useCallback(async () => {
+    setDiagnosticsLoading(true);
+    setReportNotice(null);
+    try {
+      setDiagnostics(await projectApi.diagnostics());
+      setError(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "无法完成运行诊断");
+    } finally {
+      setDiagnosticsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     void refreshTasks();
     const timer = window.setInterval(
@@ -522,6 +648,10 @@ export function OperationsCenter({
   useEffect(() => {
     if (open && tab === "storage" && !storage) void refreshStorage();
   }, [open, refreshStorage, storage, tab]);
+
+  useEffect(() => {
+    if (open && tab === "diagnostics" && !diagnostics) void refreshDiagnostics();
+  }, [diagnostics, open, refreshDiagnostics, tab]);
 
   useEffect(() => {
     if (!open) return;
@@ -578,6 +708,42 @@ export function OperationsCenter({
     }
   };
 
+  const diagnosticCounts = diagnostics?.checks.reduce(
+    (counts, check) => {
+      counts[check.status] += 1;
+      return counts;
+    },
+    { pass: 0, warning: 0, blocked: 0 },
+  );
+
+  const copySupportReport = async () => {
+    if (!diagnostics) return;
+    try {
+      await navigator.clipboard.writeText(
+        JSON.stringify(supportReportWithClient(diagnostics), null, 2),
+      );
+      setError(null);
+      setReportNotice("诊断报告已复制；可以直接粘贴到 GitHub Issue。报告不含素材和账号信息。");
+    } catch {
+      setError("浏览器没有允许复制诊断报告；请使用“下载报告”。");
+    }
+  };
+
+  const downloadSupportReport = () => {
+    if (!diagnostics) return;
+    const content = JSON.stringify(supportReportWithClient(diagnostics), null, 2);
+    const url = URL.createObjectURL(new Blob([`${content}\n`], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `takeboard-support-${diagnostics.generatedAt.slice(0, 10)}.json`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+    setError(null);
+    setReportNotice("诊断报告已下载。发送前仍可自行打开检查内容。");
+  };
+
   return (
     <div className="operations-control" ref={shell}>
       <style>{operationsCss}</style>
@@ -585,29 +751,60 @@ export function OperationsCenter({
         className={`operations-pill ${center?.activeCount ? "has-active" : ""}`}
         type="button"
         aria-expanded={open}
-        aria-label="打开生成任务与存储中心"
+        aria-label="打开生成任务、存储与诊断中心"
         onClick={() => setOpen((current) => !current)}
       >
         <span className="operations-pulse" aria-hidden="true" />
         <div>
           <strong>{center?.activeCount ? `${center.activeCount} 个任务运行中` : "任务中心"}</strong>
-          <small>{center?.failedCount ? `${center.failedCount} 项需要检查` : "生成与存储"}</small>
+          <small>
+            {center?.failedCount ? `${center.failedCount} 项需要检查` : "生成 · 存储 · 诊断"}
+          </small>
         </div>
       </button>
       {open ? (
-        <aside className="operations-panel" aria-label="生成任务与存储中心">
+        <aside className="operations-panel" aria-label="生成任务、存储与诊断中心">
           <header>
             <div>
               <span>PRODUCTION STATUS</span>
-              <strong>任务与存储</strong>
+              <strong>运行中心</strong>
             </div>
             <button type="button" aria-label="关闭任务中心" onClick={() => setOpen(false)}>
               ×
             </button>
           </header>
-          <nav aria-label="任务中心分类">
+          <div
+            className="operations-tabs"
+            role="tablist"
+            aria-label="任务中心分类"
+            onKeyDown={(event) => {
+              if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+              event.preventDefault();
+              const currentIndex = operationsTabs.indexOf(tab);
+              const nextIndex =
+                event.key === "Home"
+                  ? 0
+                  : event.key === "End"
+                    ? operationsTabs.length - 1
+                    : (currentIndex +
+                        (event.key === "ArrowRight" ? 1 : -1) +
+                        operationsTabs.length) %
+                      operationsTabs.length;
+              const nextTab = operationsTabs[nextIndex];
+              if (!nextTab) return;
+              setTab(nextTab);
+              window.requestAnimationFrame(() =>
+                document.getElementById(`operations-tab-${nextTab}`)?.focus(),
+              );
+            }}
+          >
             <button
               type="button"
+              role="tab"
+              id="operations-tab-tasks"
+              aria-controls="operations-panel-tasks"
+              aria-selected={tab === "tasks"}
+              tabIndex={tab === "tasks" ? 0 : -1}
               className={tab === "tasks" ? "active" : ""}
               onClick={() => setTab("tasks")}
             >
@@ -615,15 +812,37 @@ export function OperationsCenter({
             </button>
             <button
               type="button"
+              role="tab"
+              id="operations-tab-storage"
+              aria-controls="operations-panel-storage"
+              aria-selected={tab === "storage"}
+              tabIndex={tab === "storage" ? 0 : -1}
               className={tab === "storage" ? "active" : ""}
               onClick={() => setTab("storage")}
             >
               存储空间
             </button>
-          </nav>
+            <button
+              type="button"
+              role="tab"
+              id="operations-tab-diagnostics"
+              aria-controls="operations-panel-diagnostics"
+              aria-selected={tab === "diagnostics"}
+              tabIndex={tab === "diagnostics" ? 0 : -1}
+              className={tab === "diagnostics" ? "active" : ""}
+              onClick={() => setTab("diagnostics")}
+            >
+              运行诊断
+            </button>
+          </div>
           {error ? <p className="operations-error">{error}</p> : null}
           {tab === "tasks" ? (
-            <div className="operations-task-view">
+            <div
+              className="operations-task-view"
+              role="tabpanel"
+              id="operations-panel-tasks"
+              aria-labelledby="operations-tab-tasks"
+            >
               <div className="operations-view-actions">
                 <span>
                   {loading ? "正在读取任务…" : `最近 ${center?.tasks.length ?? 0} 条运行`}
@@ -699,8 +918,13 @@ export function OperationsCenter({
                 ) : null}
               </div>
             </div>
-          ) : (
-            <div className="operations-storage-view">
+          ) : tab === "storage" ? (
+            <div
+              className="operations-storage-view"
+              role="tabpanel"
+              id="operations-panel-storage"
+              aria-labelledby="operations-tab-storage"
+            >
               <div className="storage-capacity-card">
                 <span>当前磁盘可用</span>
                 <strong>
@@ -763,6 +987,71 @@ export function OperationsCenter({
               <p className="storage-safety-note">
                 生成前会检查项目盘与 ComfyUI 输出盘；空间不足时不会上传素材或强行排队。
               </p>
+            </div>
+          ) : (
+            <div
+              className="operations-diagnostic-view"
+              role="tabpanel"
+              id="operations-panel-diagnostics"
+              aria-labelledby="operations-tab-diagnostics"
+              aria-busy={diagnosticsLoading}
+            >
+              <section className="operations-diagnostic-summary">
+                <span>SUPPORT REPORT · v{diagnostics?.application.version ?? "—"}</span>
+                <strong>
+                  {diagnosticsLoading
+                    ? "正在核对当前环境…"
+                    : diagnosticCounts?.blocked
+                      ? `${diagnosticCounts.blocked} 项会阻止正常使用`
+                      : diagnosticCounts?.warning
+                        ? `${diagnosticCounts.warning} 项建议处理`
+                        : diagnostics
+                          ? "当前基础环境正常"
+                          : "尚未运行诊断"}
+                </strong>
+                <small>
+                  {diagnostics
+                    ? `${diagnostics.workload.visibleProjects} 个可见项目 · ${diagnostics.workload.activeRuns} 个运行中任务 · ${diagnostics.application.platform}/${diagnostics.application.architecture}`
+                    : "只检查运行环境与汇总状态，不读取素材、提示词或账号内容。"}
+                </small>
+              </section>
+              <div className="operations-diagnostic-actions">
+                <button
+                  type="button"
+                  disabled={diagnosticsLoading}
+                  onClick={() => void refreshDiagnostics()}
+                >
+                  {diagnosticsLoading ? "检查中…" : "重新检查"}
+                </button>
+                <button
+                  type="button"
+                  disabled={!diagnostics}
+                  onClick={() => void copySupportReport()}
+                >
+                  复制报告
+                </button>
+                <button type="button" disabled={!diagnostics} onClick={downloadSupportReport}>
+                  下载报告
+                </button>
+              </div>
+              {reportNotice ? (
+                <p className="operations-report-notice" role="status">
+                  {reportNotice}
+                </p>
+              ) : null}
+              <div className="operations-diagnostic-list">
+                {diagnostics?.checks.map((check) => (
+                  <article className={`operations-diagnostic-check ${check.status}`} key={check.id}>
+                    <i aria-hidden="true" />
+                    <div>
+                      <strong>{check.title}</strong>
+                      <span>{check.detail}</span>
+                      {check.action ? <small>下一步：{check.action}</small> : null}
+                    </div>
+                  </article>
+                ))}
+              </div>
+              {diagnostics ? <p className="storage-safety-note">{diagnostics.privacy}</p> : null}
             </div>
           )}
         </aside>

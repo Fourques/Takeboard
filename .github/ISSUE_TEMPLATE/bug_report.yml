@@ -1,0 +1,85 @@
+name: Bug report / 缺陷报告
+description: Report a reproducible TakeBoard failure without exposing private media or secrets.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve TakeBoard. Open **任务中心 → 运行诊断** and download the redacted report when possible. Never paste cookies, tokens, environment values, private prompts or private media.
+  - type: input
+    id: version
+    attributes:
+      label: TakeBoard version / 版本
+      placeholder: v0.1.0 or commit SHA
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Operating system / 操作系统
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area / 影响区域
+      options:
+        - Install or start
+        - Remote or SSH access
+        - Project hub
+        - Canvas or inspector
+        - Asset library
+        - Generation or ComfyUI
+        - Workflow import or binding
+        - Accounts or permissions
+        - Export, import or backup
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps / 复现步骤
+      placeholder: "1. Open…\n2. Select…\n3. Observe…"
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result and data state / 实际结果与数据状态
+      description: Include the exact visible error and whether the project remained saved.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result / 期望结果
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Redacted diagnostics / 脱敏诊断
+      description: Drag in the downloaded support JSON or paste only the relevant checks.
+      render: json
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context / 补充信息
+      description: Screenshots are useful after hiding private project and account information.
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check / 安全确认
+      options:
+        - label: I checked that this report contains no credentials, cookies, tokens, private prompts or private media.
+          required: true
+        - label: I searched existing issues for the same failure.
+          required: true

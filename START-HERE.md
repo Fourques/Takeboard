@@ -1,75 +1,53 @@
-# TakeBoard 开工入口
+# TakeBoard 从这里开始
 
-更新时间：2026-08-13
-当前阶段：M0 真实工作站纵向切片
-执行假设：1 名主开发者，借助 AI 编码；每周 5 个有效开发日。
+更新时间：2026-08-30
+当前阶段：0.1.0 Public Preview
 
-实施状态见 [执行进度](docs/progress.md)。项目主页、新建项目、角色/场景资产库、ComfyUI Workflow 自动检测与导入、本地执行节点、I2V/首尾帧 Recipe、Run/Take 回收和画布布局持久化均已可用。
+TakeBoard 是面向 ComfyUI 创作者的开源、本地优先 AI 影像工作台。它已经从早期 M0 验证进入公开预览：核心项目闭环、跨平台启动、账号权限、Workflow Binding、生成恢复、数据迁移和运行诊断均已落地；正式版仍需要陌生用户任务测试、真实 GPU 兼容矩阵和签名桌面安装。
 
-当前已有可运行的纵向 Demo，启动和操作步骤见 [完整 Demo 指南](docs/demo-guide.md)。
-自托管部署和真实生成步骤见 [自托管指南](docs/self-hosting.md)。
-多主题创作台、Workflow/模型兼容边界和资产使用方式见 [创作工作站指南](docs/creator-workstation.md)。
+## 我只是想开始使用
 
-## 现在只做什么
+| 系统 | 操作 |
+| --- | --- |
+| macOS | 右键打开 `START-TAKEBOARD.command` |
+| Windows | 双击 `START-TAKEBOARD.cmd` |
+| Linux | 首次运行 `npm run easy:setup`，以后运行 `npm run easy` |
 
-用一个真实的本地 ComfyUI Workflow 跑通唯一黄金路径：
+启动失败时运行 `npm run easy:doctor`。远程使用运行
+`npm run easy:remote -- your-server`；它使用标准 SSH、自动探测端口，并在退出时释放隧道。
+
+完整说明见 [README](README.md)、[创作工作站指南](docs/creator-workstation.md)、[远程访问](docs/remote-access.md)和[自托管部署](docs/self-hosting.md)。
+
+## 推荐的第一个真实任务
 
 ```text
-新建项目
-  → 把文字和参考图放到画布
-  → 创建镜头
-  → 选择来源节点和 Recipe
-  → 批量生成 4 个 Take
-  → 对比、淘汰、批准 1 个
-  → 关闭项目并重新打开
-  → 来源、候选和批准状态全部恢复
+创建空白项目
+  → 导入一张原始图片或参考视频
+  → 创建镜头并建立首帧/尾帧/参考连线
+  → 选择内置 Recipe，或诊断并显式绑定自己的 Workflow
+  → 生成 1–4 个独立候选
+  → 比较、淘汰并批准一个 Take
+  → 在分镜墙与只读粗剪中检查顺序
+  → 下载完整项目包和脱敏运行诊断
+  → 关闭、重开并确认来源和批准状态仍在
 ```
 
-这两周不是做“小型 TapNow”，而是验证这条路径是否可靠、是否比“ComfyUI + 文件夹”更清楚。
+没有 ComfyUI 时，项目、画布、资产和分镜仍可使用；真实生成会明确显示执行端离线，不会伪造成功。
 
-## 已锁定的七个决定
+## 我想贡献代码或 Workflow
 
-1. 产品主界面是 TapNow 式内容画布，不是 ComfyUI 节点图，也不是专业剪辑时间线。
-2. M0 只接一个本地 ComfyUI，不接 Agent、不接多云供应商、不做自动路由。
-3. 画布布局与影视项目数据分离；更换画布库不能破坏 Shot、Run、Take 和 Approval。
-4. 首选 React + TypeScript + React Flow；不采用当前生产使用需要许可证的 tldraw SDK。
-5. 本地服务也使用 TypeScript，保持单语言 monorepo；SQLite 保存事务状态，开放 JSON 快照保证迁移和调试。
-6. Run 和 Approval 追加记录，不覆盖历史；媒体文件不塞入数据库。
-7. 两周 Gate 通过后，才验证 Local Draft → Paid Final、BYOK 和预算上限。
+1. 阅读 [贡献指南](CONTRIBUTING.md)和[安全策略](SECURITY.md)；
+2. 使用 GitHub Issue chooser 选择 Bug、Workflow 兼容性或功能建议；
+3. 运行 `pnpm verify`，用户流程变更还需运行 `pnpm test:e2e`；
+4. 大型产品、数据或安全变更先形成 Issue，并同步 `docs/decisions.md`。
 
-## 开工顺序
+自定义 ComfyUI Workflow 不会因为导入成功或文件名相似而直接执行。需要明确的参数/媒体 Binding、内容哈希、依赖预检和用户信任；TakeBoard 也不会自动安装模型或 Custom Node。
 
-按 [实施路线与任务清单](docs/roadmap.md) 的 `TB-001` 到 `TB-012` 执行。前五天必须得到一个可保存、可恢复的假数据画布；后五天才接真实 ComfyUI。
+## 当前发布边界
 
-不要先做：
+- 适合：个人本机、SSH 远程、可信小团队自托管；
+- 有条件适合：经严格 HTTPS/Host/Origin 配置的团队入口；
+- 不适合：直接暴露端口、公网多租户 SaaS、企业身份、零技术支持消费级分发；
+- 不宣称：任意 Workflow 自动执行、所有 GPU/节点组合兼容、完整专业剪辑软件。
 
-- Agent 聊天框；
-- 剧本自动拆镜；
-- 完整时间线；
-- 团队协作；
-- 自动安装 Custom Node；
-- 模型市场；
-- Electron/Tauri 安装包；
-- 同时支持十家 API。
-
-## 两周 Gate
-
-只有以下条件全部满足，才进入 M1：
-
-- 10 镜、40 次 Run 中，Run/输出/Take 关联正确率至少 95%；
-- 关闭重开后节点、连线、候选、批准和文件引用不丢失；
-- 用户不用打开 ComfyUI 图，也能说清每个候选使用了哪些来源；
-- 至少 3/5 名目标用户愿意拿真实小项目继续试用；
-- 单个开发者没有把超过一半时间耗在 Custom Node 兼容上。
-
-若技术通过、画布价值不通过，收缩为 Recipe Runner + Candidate Manager。若技术不通过，不继续做大画布。
-
-## 文档地图
-
-- [MVP 产品需求](docs/mvp-prd.md)
-- [技术架构与数据边界](docs/architecture.md)
-- [架构与产品决策记录](docs/decisions.md)
-- [实施路线与任务清单](docs/roadmap.md)
-- [实现审查与升级记录](docs/review-2026-08-13.md)
-- [竞品与用户验证计划](docs/research-plan.md)
-- [完整项目论证](docs/product-strategy.md)
+完整证据和下一道 Gate 见[成熟度评估](docs/maturity-audit-2026-08-30.md)，历史实施计划见[路线图](docs/roadmap.md)，本轮推广节奏见[首轮推广执行包](docs/launch-kit.md)。

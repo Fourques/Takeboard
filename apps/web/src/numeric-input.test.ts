@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeNumber } from "./numeric-input";
+import { isNumberDraftValid, normalizeNumber } from "./numeric-input";
 
 describe("numeric input normalization", () => {
   it("clamps only when the user commits instead of injecting a leading zero", () => {
@@ -14,5 +14,12 @@ describe("numeric input normalization", () => {
 
   it("preserves an unrestricted valid value", () => {
     expect(normalizeNumber(42)).toBe(42);
+  });
+
+  it("keeps incomplete drafts separate from committed values", () => {
+    expect(isNumberDraftValid("", 256, 2048)).toBe(false);
+    expect(isNumberDraftValid("32", 256, 2048)).toBe(false);
+    expect(isNumberDraftValid("832", 256, 2048)).toBe(true);
+    expect(isNumberDraftValid("not-a-number")).toBe(false);
   });
 });

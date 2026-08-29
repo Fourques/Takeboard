@@ -23,3 +23,65 @@ test("display scale is clear by default and remains a user choice", async ({ pag
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-display-scale", "1-24");
 });
+
+test("workspace, operations and storyboard have no serious WCAG A/AA violations", async ({
+  page,
+  request,
+}) => {
+  const title = `无障碍验收 ${Date.now()}`;
+  const created = await request.post("/api/projects", { data: { title } });
+  expect(created.ok(), await created.text()).toBeTruthy();
+  const { key } = (await created.json()) as { key: string };
+
+  try {
+    await page.goto("/");
+    await page
+      .locator(".project-card")
+      .filter({ hasText: title })
+      .getByRole("button", { name: /打开画板/ })
+      .click();
+    await expect(page.getByRole("region", { name: "TakeBoard 创作画布" })).toBeVisible();
+
+    const workspaceResults = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+      .analyze();
+    expect(
+      workspaceResults.violations.filter(
+        (violation) => violation.impact === "critical" || violation.impact === "serious",
+      ),
+      JSON.stringify(workspaceResults.violations, null, 2),
+    ).toEqual([]);
+
+    await page.getByRole("button", { name: "打开生成任务、存储与诊断中心" }).click();
+    await expect(
+      page.getByRole("complementary", { name: "生成任务、存储与诊断中心" }),
+    ).toBeVisible();
+    const operationsResults = await new AxeBuilder({ page })
+      .include(".operations-panel")
+      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+      .analyze();
+    expect(
+      operationsResults.violations.filter(
+        (violation) => violation.impact === "critical" || violation.impact === "serious",
+      ),
+      JSON.stringify(operationsResults.violations, null, 2),
+    ).toEqual([]);
+    await page.getByRole("button", { name: "关闭任务中心" }).click();
+
+    await page.getByRole("button", { name: "打开分镜墙" }).click();
+    const storyboard = page.getByRole("dialog", { name: "项目分镜墙" });
+    await expect(storyboard).toBeVisible();
+    const storyboardResults = await new AxeBuilder({ page })
+      .include(".storyboard-shell")
+      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+      .analyze();
+    expect(
+      storyboardResults.violations.filter(
+        (violation) => violation.impact === "critical" || violation.impact === "serious",
+      ),
+      JSON.stringify(storyboardResults.violations, null, 2),
+    ).toEqual([]);
+  } finally {
+    await request.delete(`/api/projects/${key}`);
+  }
+});

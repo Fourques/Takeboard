@@ -1,0 +1,50 @@
+name: Feature request / 功能建议
+description: Propose a creator outcome, not only a new control or technology.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Creator problem / 创作者问题
+      description: What task is slow, unsafe or unclear today, and for whom?
+    validations:
+      required: true
+  - type: textarea
+    id: current
+    attributes:
+      label: Current workaround / 当前做法
+      description: Explain the current TakeBoard/ComfyUI steps and their cost.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome / 期望结果
+      description: Describe the completed workflow; UI details are optional.
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Frequency / 使用频率
+      options:
+        - Every session
+        - Every project
+        - Occasionally
+        - Edge case
+    validations:
+      required: true
+  - type: textarea
+    id: safety
+    attributes:
+      label: Data, compute and permission impact / 数据、算力与权限影响
+      description: Could this spend GPU time, modify media, delete data or affect teammates?
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting / 提交前
+      options:
+        - label: I searched existing issues and the roadmap.
+          required: true

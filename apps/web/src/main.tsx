@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import { AppErrorBoundary } from "./app-error-boundary";
 import { AuthGate } from "./auth-ui";
 import { resolveDisplayScale } from "./display-scale";
 import "./styles.css";
@@ -21,8 +22,10 @@ if (!rootElement) {
 
 createRoot(rootElement).render(
   <StrictMode>
-    <AuthGate>
-      <App />
-    </AuthGate>
+    <AppErrorBoundary>
+      <AuthGate>
+        <App />
+      </AuthGate>
+    </AppErrorBoundary>
   </StrictMode>,
 );

@@ -1,5 +1,7 @@
 # TakeBoard
 
+<p align="right"><a href="README.en.md">English</a> · 简体中文</p>
+
 <p align="center">
   <strong>把素材、镜头、工作流与每一次生成，放回同一张导演板。</strong><br />
   面向 ComfyUI 创作者的开源、本地优先 AI 影像工作台。
@@ -9,7 +11,7 @@
   <a href="https://github.com/Fourques/Takeboard/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Fourques/Takeboard/actions/workflows/ci.yml/badge.svg" /></a>
   <a href="LICENSE"><img alt="Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-315EFB.svg" /></a>
   <img alt="Node.js 22.12+" src="https://img.shields.io/badge/Node.js-22.12%2B-171717?logo=nodedotjs" />
-  <img alt="Public preview 0.1.0" src="https://img.shields.io/badge/status-public_preview_0.1.0-D99A46" />
+  <a href="https://github.com/Fourques/Takeboard/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/Fourques/Takeboard?include_prereleases&label=public%20preview&color=D99A46" /></a>
 </p>
 
 ![TakeBoard 项目主页](docs/assets/takeboard-home.webp)
@@ -32,9 +34,11 @@ TakeBoard 不重做 ComfyUI 的节点系统。它在现有 Workflow 和算力之
 - 执行文生图、图生图、图生视频和首尾帧视频任务；
 - 跟踪 ComfyUI 真实节点进度、取消任务、回收结果，并保存可复现的参数快照；
 - 在跨项目任务中心集中查看、停止和恢复生成，并按项目与数据类型检查磁盘占用；
+- 生成脱敏运行诊断报告，明确区分正常、警告和阻断项，便于远程排障；
 - 从首页流式导出、校验并重新导入完整 `.takeboard.tgz` 项目包；
 - 以独立 `.takeboard` 目录保存项目，方便备份、迁移和版本归档。
 - 一次性团队邀请、离线恢复码、可验证实例备份与保留旧数据的离线恢复。
+- 在分镜墙中按真实镜头顺序播放只读粗剪；未采用镜头显示为计划空镜，不伪装成成片。
 
 ```text
 角色 / 场景 / 道具 / 参考图
@@ -226,6 +230,7 @@ pnpm format       # 格式化代码
 | [数据目录](docs/data-layout.md) | 项目隔离、备份与迁移 |
 | [技术架构](docs/architecture.md) | 模块边界、数据流与安全约束 |
 | [易用性与可靠性审计](docs/usability-audit.md) | 完整用户旅程、已修断点与后续里程碑 |
+| [成熟度评估](docs/maturity-audit-2026-08-30.md) | 当前上线边界、质量证据、风险和下一阶段 Gate |
 | [开发路线图](docs/roadmap.md) | Gate、验收标准与后续方向 |
 
 ## 路线图
@@ -238,10 +243,17 @@ pnpm format       # 格式化代码
 - [x] 带内容哈希、显式信任和执行前校验的 Workflow Binding v1
 - [x] 带完整性清单、依赖诊断与目标机重新信任的可移植 Workflow/Binding Recipe 包
 - [x] 分镜墙、镜头排序、缩略图和整片覆盖率
-- [ ] 只读粗剪与时间线预览
+- [x] 只读粗剪与时间线预览
 - [ ] 多 Worker、远程算力与可解释的执行策略
 - [x] 完整项目包导入导出与升级前自动备份
 - [ ] 成本统计与跨镜头审批
+
+## 反馈与贡献
+
+- 遇到运行问题：先打开“任务中心 → 运行诊断”，下载报告后使用 [Bug 报告](https://github.com/Fourques/Takeboard/issues/new/choose)；
+- 自定义 Workflow 无法运行：使用专门的兼容性表单，附脱敏后的节点与绑定信息；
+- 较大改动：先阅读 [贡献指南](CONTRIBUTING.md) 并在 Issue 中确认产品边界；
+- 安全问题：不要公开提交，请按 [安全策略](SECURITY.md) 私下报告。
 
 ## License
 

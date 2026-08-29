@@ -222,6 +222,17 @@ function ShotNode({ data, id }: NodeProps<BoardNode>) {
     durationSeconds: data.inlineControls?.durationSeconds ?? 5,
     seed: data.inlineControls?.seed ?? 0,
   }));
+  const [numericDraftValidity, setNumericDraftValidity] = useState({
+    width: true,
+    height: true,
+    duration: true,
+    seed: true,
+  });
+  const updateNumericDraftValidity = (field: keyof typeof numericDraftValidity, valid: boolean) => {
+    setNumericDraftValidity((current) =>
+      current[field] === valid ? current : { ...current, [field]: valid },
+    );
+  };
   const settingsDraftRef = useRef(settingsDraft);
   settingsDraftRef.current = settingsDraft;
   const updateSettingsDraft = (input: Partial<typeof settingsDraft>) => {
@@ -283,6 +294,10 @@ function ShotNode({ data, id }: NodeProps<BoardNode>) {
       ) ?? [])
     : (data.inlineControls?.workflows ?? []);
   const draftParameterInvalid =
+    !numericDraftValidity.width ||
+    !numericDraftValidity.height ||
+    !numericDraftValidity.seed ||
+    (data.inlineControls?.outputLabel === "视频" && !numericDraftValidity.duration) ||
     !Number.isFinite(settingsDraft.width) ||
     settingsDraft.width < 256 ||
     settingsDraft.width > 2048 ||
@@ -517,23 +532,27 @@ function ShotNode({ data, id }: NodeProps<BoardNode>) {
               <div>
                 <NumericInput
                   id={`${quickSettingsId}-width`}
-                  draftKey={`${id}:width`}
+                  draftKey={`${id}:${data.inlineControls.workflowPath}:width`}
                   aria-label="画布宽度"
                   min={256}
                   max={2048}
                   step={32}
                   value={settingsDraft.width}
+                  preserveEmptyOnBlur
+                  onDraftValidityChange={(valid) => updateNumericDraftValidity("width", valid)}
                   onValueChange={(width) => updateSettingsDraft({ width })}
                 />
                 <i>×</i>
                 <NumericInput
                   id={`${quickSettingsId}-height`}
-                  draftKey={`${id}:height`}
+                  draftKey={`${id}:${data.inlineControls.workflowPath}:height`}
                   aria-label="画布高度"
                   min={256}
                   max={2048}
                   step={32}
                   value={settingsDraft.height}
+                  preserveEmptyOnBlur
+                  onDraftValidityChange={(valid) => updateNumericDraftValidity("height", valid)}
                   onValueChange={(height) => updateSettingsDraft({ height })}
                 />
               </div>
@@ -543,12 +562,14 @@ function ShotNode({ data, id }: NodeProps<BoardNode>) {
                 <span>时长</span>
                 <NumericInput
                   id={`${quickSettingsId}-duration`}
-                  draftKey={`${id}:duration`}
+                  draftKey={`${id}:${data.inlineControls.workflowPath}:duration`}
                   aria-label="画布时长"
                   min={currentWorkflow?.name.toLowerCase().includes("minimax") ? 4 : 1}
                   max={15}
                   step={0.5}
                   value={settingsDraft.durationSeconds}
+                  preserveEmptyOnBlur
+                  onDraftValidityChange={(valid) => updateNumericDraftValidity("duration", valid)}
                   onValueChange={(durationSeconds) => updateSettingsDraft({ durationSeconds })}
                 />
               </label>
@@ -557,12 +578,14 @@ function ShotNode({ data, id }: NodeProps<BoardNode>) {
               <span>Seed</span>
               <NumericInput
                 id={`${quickSettingsId}-seed`}
-                draftKey={`${id}:seed`}
+                draftKey={`${id}:${data.inlineControls.workflowPath}:seed`}
                 aria-label="画布 Seed"
                 min={0}
                 max={2_147_483_647}
                 step={1}
                 value={settingsDraft.seed}
+                preserveEmptyOnBlur
+                onDraftValidityChange={(valid) => updateNumericDraftValidity("seed", valid)}
                 onValueChange={(seed) => updateSettingsDraft({ seed })}
               />
             </label>

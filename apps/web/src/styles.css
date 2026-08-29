@@ -9811,72 +9811,6 @@ html[data-theme="light"] .project-card-art {
   }
 }
 
-/* Readability scale changes text—not the canvas coordinate system. Keeping React Flow at 1:1
-   prevents pointer, connection and scrolling drift while still offering meaningful type choices. */
-:where(
-  .hub-header,
-  .hub-projects,
-  .topbar,
-  .sidebar,
-  .canvas-toolbar,
-  .inspector,
-  .shot-inline-console,
-  .recipe-studio,
-  .asset-library,
-  .command-history
-) :is(button, input, textarea, select, label) {
-  font-size: calc(11px * var(--ui-scale));
-}
-
-:where(
-    .hub-header,
-    .hub-projects,
-    .topbar,
-    .sidebar,
-    .canvas-toolbar,
-    .inspector,
-    .shot-inline-console,
-    .recipe-studio,
-    .asset-library,
-    .command-history
-  )
-  :is(p, small) {
-  font-size: calc(10px * var(--ui-scale));
-}
-
-.section-kicker,
-.node-heading,
-.node-facts,
-.board-card > footer,
-.shot-generated-facts,
-.shot-input > span,
-.shot-inline-progress-detail {
-  font-size: calc(9px * var(--ui-scale));
-}
-
-.board-card h3,
-.shot-planning-surface strong,
-.project-board-title strong {
-  font-size: calc(13px * var(--ui-scale));
-}
-
-.project-card-copy strong {
-  font-size: calc(16px * var(--ui-scale));
-}
-
-.project-card-copy span,
-.hub-header .worker-pill strong,
-.hub-header .worker-pill span {
-  font-size: calc(10px * var(--ui-scale));
-}
-
-.project-card-copy small,
-.worker-safety-checks span,
-.worker-safety-note,
-.worker-ready-detail small {
-  font-size: calc(9px * var(--ui-scale));
-}
-
 /* Verified workflow, metadata, layout and rendering controls */
 .scene-quality-setting {
   display: grid;
@@ -12997,86 +12931,6 @@ html[data-theme="light"] .project-card-art {
   flex-wrap: wrap;
 }
 
-.resume-project-button {
-  display: flex;
-  min-width: min(270px, 100%);
-  min-height: 58px;
-  align-items: center;
-  justify-content: space-between;
-  padding: 9px 13px 9px 15px;
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--hub-sage) 42%, var(--hub-line));
-  border-radius: 5px;
-  color: var(--hub-copy);
-  text-align: left;
-  background:
-    linear-gradient(90deg, color-mix(in srgb, var(--hub-sage) 11%, transparent), transparent 62%),
-    color-mix(in srgb, var(--hub-surface) 86%, transparent);
-  box-shadow: 0 16px 38px rgb(0 0 0 / 14%);
-  cursor: pointer;
-  transition:
-    border-color 180ms ease,
-    transform 180ms ease,
-    box-shadow 180ms ease;
-  gap: 22px;
-}
-
-.resume-project-button > span {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.resume-project-button small {
-  color: var(--hub-sage);
-  font-size: 8px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-}
-
-.resume-project-button strong {
-  overflow: hidden;
-  font-size: 12px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.resume-project-button b {
-  display: grid;
-  width: 30px;
-  height: 30px;
-  flex: 0 0 auto;
-  place-items: center;
-  border: 1px solid var(--hub-line);
-  border-radius: 50%;
-  color: var(--hub-accent);
-  font-size: 11px;
-  font-weight: 400;
-}
-
-.resume-project-button:hover {
-  border-color: var(--hub-sage);
-  box-shadow: 0 20px 48px rgb(0 0 0 / 20%);
-  transform: translateY(-2px);
-}
-
-.resume-project-button:disabled {
-  cursor: wait;
-  opacity: 0.58;
-}
-
-.hero-capabilities > span {
-  flex-direction: column;
-  gap: 4px;
-}
-
-.hero-capabilities small {
-  font-size: 7px;
-  font-weight: 600;
-}
-
 .artifact-universe {
   cursor: grab;
   user-select: none;
@@ -13112,167 +12966,7 @@ html[data-theme="light"] .project-card-art {
   z-index: 3;
 }
 
-.artifact-index,
-.artifact-worker,
-.artifact-projects,
-.artifact-interaction,
-.artifact-reset {
-  z-index: 8;
-  position: absolute;
-}
-
-.artifact-index {
-  top: 9%;
-  left: 7%;
-  display: flex;
-  flex-direction: column;
-  color: var(--hub-muted);
-  pointer-events: none;
-  gap: 5px;
-}
-
-.artifact-index::before {
-  width: 30px;
-  height: 1px;
-  margin-bottom: 3px;
-  background: var(--hub-accent);
-  content: "";
-}
-
-.artifact-index span,
-.artifact-worker,
-.artifact-projects span {
-  font:
-    7px ui-monospace,
-    "SFMono-Regular",
-    monospace;
-  letter-spacing: 0.14em;
-}
-
-.artifact-index strong {
-  color: var(--hub-copy);
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-}
-
-.artifact-worker {
-  top: 9%;
-  right: 6%;
-  display: flex;
-  align-items: center;
-  padding: 7px 9px;
-  border: 1px solid var(--hub-line);
-  border-radius: 3px;
-  color: var(--hub-muted);
-  background: color-mix(in srgb, var(--hub-bg) 64%, transparent);
-  pointer-events: none;
-  backdrop-filter: blur(9px);
-  gap: 7px;
-}
-
-.artifact-worker i {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--hub-accent);
-}
-
-.artifact-worker.ready i {
-  background: var(--hub-sage);
-  box-shadow: 0 0 10px var(--hub-sage);
-}
-
-.artifact-projects {
-  right: 7%;
-  bottom: 14%;
-  display: flex;
-  align-items: flex-end;
-  flex-direction: column;
-  color: var(--hub-muted);
-  pointer-events: none;
-  gap: 2px;
-}
-
-.artifact-projects strong {
-  color: var(--hub-copy);
-  font:
-    34px / 1 ui-monospace,
-    "SFMono-Regular",
-    monospace;
-  font-weight: 300;
-  letter-spacing: -0.08em;
-}
-
-.artifact-interaction {
-  bottom: 7%;
-  left: 50%;
-  display: flex;
-  align-items: center;
-  min-width: 158px;
-  padding: 8px 12px;
-  border: 1px solid var(--hub-line);
-  border-radius: 4px;
-  color: var(--hub-copy);
-  background: color-mix(in srgb, var(--hub-bg) 68%, transparent);
-  pointer-events: none;
-  backdrop-filter: blur(12px);
-  transform: translateX(-50%);
-  gap: 9px;
-}
-
-.artifact-interaction > span {
-  color: var(--hub-accent);
-  font-size: 17px;
-}
-
-.artifact-interaction div {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.artifact-interaction strong {
-  font-size: 9px;
-  font-weight: 600;
-}
-
-.artifact-interaction small {
-  color: var(--hub-muted);
-  font-size: 7px;
-}
-
-.artifact-reset {
-  right: 7%;
-  bottom: 6.8%;
-  display: grid;
-  width: 34px;
-  height: 34px;
-  place-items: center;
-  border: 1px solid var(--hub-line);
-  border-radius: 50%;
-  color: var(--hub-muted);
-  background: color-mix(in srgb, var(--hub-bg) 70%, transparent);
-  font-size: 14px;
-  cursor: pointer;
-  backdrop-filter: blur(12px);
-  transition:
-    border-color 160ms ease,
-    color 160ms ease,
-    transform 160ms ease;
-}
-
-.artifact-reset:hover {
-  border-color: var(--hub-accent);
-  color: var(--hub-accent);
-  transform: rotate(-35deg);
-}
-
 @media (max-width: 1180px) {
-  .resume-project-button {
-    min-width: 230px;
-  }
-
   .hub-hero-actions .new-project-button,
   .ghost-hero-button {
     padding-right: 15px;
@@ -13310,12 +13004,6 @@ html[data-theme="light"] .project-card-art {
     grid-template-columns: 1fr 1fr;
   }
 
-  .resume-project-button {
-    width: 100%;
-    min-width: 0;
-    grid-column: 1 / -1;
-  }
-
   .hub-hero-actions .new-project-button,
   .ghost-hero-button {
     min-width: 0;
@@ -13329,60 +13017,11 @@ html[data-theme="light"] .project-card-art {
   .hero-capabilities > span {
     align-items: flex-start;
   }
-
-  .artifact-index {
-    top: 7%;
-    left: 3%;
-  }
-
-  .artifact-index span,
-  .artifact-worker {
-    display: none;
-  }
-
-  .artifact-index strong {
-    font-size: 9px;
-  }
-
-  .artifact-projects {
-    top: 7%;
-    right: 3%;
-    bottom: auto;
-  }
-
-  .artifact-projects strong {
-    font-size: 24px;
-  }
-
-  .artifact-projects span {
-    font-size: 6px;
-  }
-
-  .artifact-interaction {
-    bottom: 4%;
-    min-width: 145px;
-    padding: 7px 10px;
-  }
-
-  .artifact-reset {
-    right: 3%;
-    bottom: 4%;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hub-header-create,
-  .resume-project-button,
-  .artifact-reset {
+  .hub-header-create {
     transition: none;
-  }
-}
-
-@media (min-width: 881px) and (max-width: 1350px) {
-  .resume-project-button {
-    width: 100%;
-    min-width: 0;
-    flex-basis: 100%;
   }
 }
 
@@ -15930,9 +15569,13 @@ html:is([data-display-scale="1-24"], [data-display-scale="1-4"]) .hub-header .wo
   .shot-inline-console,
   .recipe-studio,
   .asset-library,
-  .command-history
+  .command-history,
+  .auth-shell,
+  .storyboard-shell,
+  .display-settings-popover,
+  .node-editor-modal
 ) :is(button, input, textarea, select, label) {
-  font-size: calc(11px * var(--ui-scale));
+  font-size: calc(12px * var(--ui-scale));
 }
 
 :where(
@@ -15945,10 +15588,14 @@ html:is([data-display-scale="1-24"], [data-display-scale="1-4"]) .hub-header .wo
     .shot-inline-console,
     .recipe-studio,
     .asset-library,
-    .command-history
+    .command-history,
+    .auth-shell,
+    .storyboard-shell,
+    .display-settings-popover,
+    .node-editor-modal
   )
-  :is(p, small) {
-  font-size: calc(10px * var(--ui-scale));
+  :is(p, small, dd, dt) {
+  font-size: calc(11px * var(--ui-scale));
 }
 
 .section-kicker,
@@ -15982,4 +15629,77 @@ html:is([data-display-scale="1-24"], [data-display-scale="1-4"]) .hub-header .wo
 .worker-safety-note,
 .worker-ready-detail small {
   font-size: calc(9px * var(--ui-scale));
+}
+
+.brand div span,
+.sidebar .section-kicker,
+.sidebar-bottom > span {
+  color: var(--text-2);
+  font-size: calc(9px * var(--ui-scale));
+}
+
+.shot-navigator-tools > fieldset button,
+.shot-list-empty,
+.asset-import small,
+.sidebar-bottom div,
+.sidebar-bottom small {
+  color: var(--text-2);
+  font-size: calc(10px * var(--ui-scale));
+}
+
+@media (max-width: 640px) {
+  .hub-header-inner {
+    width: calc(100% - 28px);
+    gap: 10px;
+  }
+
+  .hub-brand > div {
+    display: none;
+  }
+
+  .hub-brand {
+    min-width: 30px;
+    flex: 0 0 30px;
+  }
+
+  .hub-header-actions {
+    min-width: 0;
+    justify-content: flex-end;
+    gap: 5px;
+  }
+
+  .hub-header-actions :is(.operations-pill, .display-settings > button, .account-button),
+  .hub-header-actions
+    :is(.hub-help-button, .hub-recycle-button, .hub-header-import, .hub-header-create) {
+    width: 36px;
+    min-width: 36px;
+  }
+
+  .hub-header .account-button {
+    min-height: 36px;
+    padding: 2px;
+    grid-template-columns: 1fr;
+  }
+
+  .hub-header .account-button > span {
+    grid-row: auto;
+  }
+
+  .hub-header .account-button :is(b, small) {
+    display: none;
+  }
+
+  .hub-header-actions
+    :is(.hub-help-button, .hub-recycle-button, .hub-header-import, .hub-header-create) {
+    padding-right: 0;
+    padding-left: 0;
+    justify-content: center;
+    font-size: 0;
+  }
+
+  .hub-header-actions
+    :is(.hub-help-button, .hub-recycle-button, .hub-header-import, .hub-header-create)
+    > span {
+    font-size: 13px;
+  }
 }

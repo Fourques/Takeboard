@@ -5,9 +5,11 @@ is required by default. The server refuses a non-loopback bind unless authentica
 the operator explicitly sets `TAKEBOARD_ALLOW_NON_LOOPBACK=1`; it also rejects unapproved `Host` and
 browser `Origin` values to reduce DNS-rebinding and cross-site request risks.
 
-Please do not report vulnerabilities through public issues. Until a dedicated security address is
-published, contact the repository owner privately. Include the affected version, reproduction steps,
-and impact, but never include real API keys, cookies, private media, or access tokens.
+Please do not report vulnerabilities through public issues. Use the repository's
+[private security advisory form](https://github.com/Fourques/Takeboard/security/advisories/new).
+Include the affected version, reproduction steps and impact, but never include real API keys,
+cookies, private media or access tokens unless the maintainer explicitly provides a secure transfer
+method.
 
 TakeBoard does not auto-install ComfyUI custom nodes. A custom node is arbitrary Python code and must
 be reviewed and installed by the machine owner. Remote access must use an authenticated tunnel or

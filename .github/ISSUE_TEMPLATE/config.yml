@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability / 安全漏洞
+    url: https://github.com/Fourques/Takeboard/security/advisories/new
+    about: Report credentials, access-control bypasses and other vulnerabilities privately.
+  - name: Questions and production feedback / 使用交流
+    url: https://github.com/Fourques/Takeboard/discussions
+    about: Ask setup questions and share creator workflows without opening a bug.

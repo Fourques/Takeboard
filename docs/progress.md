@@ -1,31 +1,38 @@
 # TakeBoard 执行进度
 
-更新时间：2026-08-20
-当前工作点：真实本地生成闭环、图片 Recipe 与项目重开后的 Run 自动恢复均已完成；下一步是四候选批量、WebSocket 真实进度和整片分镜墙。
+更新时间：2026-08-30
+当前阶段：0.1.0 Public Preview 发布门禁
 
-| 任务 | 状态 | 已验证结果 |
+## 已完成纵向闭环
+
+| 领域 | 状态 | 可验证结果 |
 | --- | --- | --- |
-| `TB-001` 范围与 ADR | 完成 | M0 黄金路径、非目标和 Gate 已冻结 |
-| `TB-002` Monorepo 与质量门槛 | 完成 | Node 24/pnpm pin、Web/Server/Packages、CI、lint/typecheck/test/build |
-| `TB-003` 领域契约 | 完成 | Zod + JSON Schema、UUIDv7、Run 状态机、Take/Approval 和跨对象一致性 |
-| `TB-004` 项目存储 | 完成 | SQLite migration、真实 revision/event log、数据库与开放快照协同提交、创建/修改/重开测试 |
-| `TB-005` 最小画布 | Demo 完成 | Text/Entity/Asset/Shot/Take Stack、引用边、拖动保存、重开恢复 |
-| `TB-006` Asset ingest | 完成 | 文件导入、SHA-256、签名/MIME/尺寸/解码校验、512px JPEG 代理图 |
-| `TB-007` Fake Executor | Demo 完成 | 4 独立 Run/Take、候选对比、淘汰、批准、撤销旧批准、刷新恢复 |
-| `TB-008` Comfy Worker | 完成 | localhost 健康、设备/显存、Workflow 与模型检测 |
-| `TB-009` Recipe 与预检 | 完成 | Contract 0.1、Wan/MiniMax/LTX 原生映射、object_info 入队预检 |
-| `TB-010` 真实生成 | 完成 | 提交前落盘、异常补偿、重开恢复、幂等输出回收、可重试取消；Wan/MiniMax/Qwen 路径验证 |
+| 项目与画布 | 完成 | 多项目、Scene/Shot/Asset/Text/Entity/Take Stack、位置与连线持久化、上下文检查器 |
+| 素材 | 完成 | 原件保留、签名/MIME/尺寸检查、代理图、图片/视频/音频语义输入、资产库整理 |
+| Workflow | Public Preview 完成 | 内置 Recipe、UI Workflow 诊断、Binding v1、内容哈希、依赖预检、可移植 Recipe 包 |
+| 真实生成 | 完成 | 提交、真实/不确定进度、取消、断线对账、输出回收、Run/Take 来源、批量候选与重试 |
+| 审核与整片 | 完成 | 候选比较、淘汰/批准、分镜墙、顺序调整、覆盖率、只读粗剪 |
+| 数据安全 | 完成 | 项目目录隔离、回收区、完整性导入导出、迁移前备份/回滚、实例备份/恢复 |
+| 账号权限 | 可信团队完成 | 账号、设备会话、恢复码、邀请、实例角色、项目 Owner/Editor/Viewer 与审计 |
+| 运行维护 | 完成 | easy launcher、SSH helper、安全启动 ComfyUI、任务/存储中心、脱敏运行诊断 |
+| 发布与协作 | 进行中 | 中英文 README、Issue/PR 模板、成熟度边界、GitHub Release 与首轮反馈招募 |
 
-## 当前质量基线
+## 当前质量门禁
 
-- 自动测试：57 个（契约、领域、Recipe、执行器、服务）；
-- 领域规则测试：5 个；
-- 服务端测试：27 个；
-- Playwright 黄金路径：4 个，真实 Chromium 完整通过；
-- `pnpm verify`：通过；
-- `playwright test`：通过，覆盖重置、生成、淘汰、批准、真实项目与后台 Run 重开恢复。
+- Linux、macOS、Windows：锁文件安装、lint、typecheck、build、unit/integration tests；
+- Linux production Chromium：账号、权限、主页、项目、素材、连线、Workflow、生成恢复、视频预览、分镜、删除、备份与诊断旅程；
+- Release Gate：40 Run 恢复与 500 节点画布性能阈值；
+- GPU Gate：独立脚本对已启动的私有实例执行真实生成，不能由 Fake Executor 替代；
+- Bundle Gate：初始资源、最大异步 Chunk 与 CSS 均有硬阈值，超出即构建失败。
 
-## 下一纵向切片
+最新一次通过的准确测试数、性能值和 CI 链接应记录在 GitHub Release；本文不复制易漂移的统计数字。
 
-先完成“一组四候选”批量提交、服务端无人值守对账和 WebSocket 真实进度，再建设分镜墙与整片覆盖率。Qwen
-Image 2512 继续承担官方 T2I/I2I Recipe，Fake Executor 继续作为 CI 和无 GPU Demo。
+## 发布后最近任务
+
+1. 三平台净机验证并记录 easy launcher 的首次成功率；
+2. 邀请 5 名陌生创作者各自带一个真实 Workflow 完成任务，不远程代操作；
+3. 每周执行私有 GPU Gate，形成模型/ComfyUI/Custom Node/Workflow 哈希兼容矩阵；
+4. 录制 60–90 秒不隐藏失败边界的真实演示；
+5. 设计签名桌面安装、定时异地备份与存储生命周期 Gate。
+
+更完整的上线判定见[成熟度评估](maturity-audit-2026-08-30.md)，历史任务分解见[路线图](roadmap.md)。

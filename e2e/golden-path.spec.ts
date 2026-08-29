@@ -55,6 +55,14 @@ test("project hub presents a complete project overview", async ({ page, request 
     expect(responsiveBackdropWidth).toBeGreaterThanOrEqual(viewport.width - 0.1);
     await expect(projectShelf).not.toHaveClass(/is-visible/);
     if (viewport.width === 390) {
+      const mobileHeader = page.locator(".hub-header");
+      expect(
+        await mobileHeader.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
+      ).toBe(true);
+      await expect(mobileHeader.getByRole("button", { name: "导入项目包" })).toBeInViewport();
+      await expect(mobileHeader.getByRole("button", { name: "新建项目" })).toBeInViewport();
+      await expect(page.getByRole("button", { name: "启用可旋转的三维导演板" })).toBeVisible();
+      await page.waitForTimeout(400);
       await page.screenshot({
         path: "test-results/takeboard-home-mobile.png",
         animations: "disabled",
@@ -745,11 +753,18 @@ test("a user can create and reopen a real project", async ({ page }) => {
   const canvasWidth = page.getByLabel("画布宽度");
   await canvasWidth.fill("");
   await expect(canvasWidth).toHaveValue("");
+  await expect(canvasWidth).toHaveAttribute("aria-invalid", "true");
+  await canvasWidth.press("Tab");
+  await expect(canvasWidth).toHaveValue("");
+  await expect(page.locator(".shot-inline-generate")).toBeDisabled();
   await canvasWidth.fill("832");
   await canvasWidth.press("Enter");
   await expect(canvasWidth).toHaveValue("832");
+  await expect(canvasWidth).not.toHaveAttribute("aria-invalid", "true");
   const canvasDuration = page.getByLabel("画布时长");
   await canvasDuration.fill("");
+  await expect(canvasDuration).toHaveValue("");
+  await canvasDuration.press("Tab");
   await expect(canvasDuration).toHaveValue("");
   await canvasDuration.fill("3.5");
   await canvasDuration.press("Enter");
@@ -993,7 +1008,32 @@ test("a user can create and reopen a real project", async ({ page }) => {
     fullPage: true,
     animations: "disabled",
   });
-  await storyboard.getByRole("button", { name: "关闭分镜墙" }).click();
+  const storyboardWallTab = storyboard.getByRole("tab", { name: "分镜墙" });
+  await storyboardWallTab.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(storyboard.getByRole("tab", { name: "粗剪预览" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(storyboard.getByLabel("只读粗剪预览")).toBeVisible();
+  await expect(storyboard.locator(".rough-cut-timeline > button")).toHaveCount(2);
+  await expect(
+    storyboard.getByText("这是只读节奏预览，不裁切或改写原始图片与视频。"),
+  ).toBeVisible();
+  await page.screenshot({
+    path: "test-results/takeboard-rough-cut.png",
+    fullPage: true,
+    animations: "disabled",
+  });
+  const roughCutPlay = storyboard.getByRole("button", { name: "播放粗剪" });
+  await roughCutPlay.click();
+  const roughCutPause = storyboard.getByRole("button", { name: "暂停", exact: true });
+  await expect(roughCutPause).toHaveAttribute("aria-pressed", "true");
+  await roughCutPause.click();
+  await expect(roughCutPlay).toHaveAttribute("aria-pressed", "false");
+  await storyboard.getByRole("tab", { name: "分镜墙" }).click();
+  await page.keyboard.press("Escape");
+  await expect(storyboard).toBeHidden();
 
   await shotNodes.last().click({ button: "right" });
   await page.getByRole("menuitem", { name: /删除镜头/ }).click();

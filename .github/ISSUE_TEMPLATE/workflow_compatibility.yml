@@ -1,0 +1,89 @@
+name: Workflow compatibility / 工作流兼容性
+description: Report a ComfyUI Workflow that imports but cannot be safely bound or executed.
+title: "[Workflow]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        TakeBoard intentionally does not execute a UI Workflow by filename alone. This form helps identify a safe parameter Binding. Redact local paths, prompts, credentials and private asset names before attaching JSON.
+  - type: input
+    id: takeboard
+    attributes:
+      label: TakeBoard version / 版本
+      placeholder: v0.1.0 or commit SHA
+    validations:
+      required: true
+  - type: input
+    id: comfy
+    attributes:
+      label: ComfyUI version / 版本
+      placeholder: Commit SHA or release
+    validations:
+      required: true
+  - type: dropdown
+    id: capability
+    attributes:
+      label: Intended capability / 目标能力
+      options:
+        - Text to image
+        - Image to image
+        - Text to video
+        - Image to video
+        - First/last frame to video
+        - Reference image/video/audio
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: state
+    attributes:
+      label: TakeBoard state / 当前状态
+      options:
+        - Import blocked
+        - Imported, needs binding
+        - Binding candidates incomplete
+        - Dependency check blocked
+        - Trusted binding became stale
+        - Execution failed after validation
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Models and Custom Nodes / 模型与自定义节点
+      description: List package names and versions when known; do not include absolute paths.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostic
+    attributes:
+      label: Structured diagnostic / 结构化诊断
+      description: Paste the redacted dependency/binding diagnostics shown by TakeBoard.
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: expected_bindings
+    attributes:
+      label: Expected parameter and media bindings / 预期映射
+      description: Identify prompt, seed, width/height, duration/frames, media inputs and output nodes if known.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction / 复现
+      description: Explain how the workflow runs in ComfyUI and where TakeBoard stops.
+    validations:
+      required: true
+  - type: checkboxes
+    id: trust
+    attributes:
+      label: Trust and privacy / 信任与隐私
+      options:
+        - label: I reviewed the third-party Custom Nodes and understand that they execute code on my machine.
+          required: true
+        - label: Attached content is redacted and contains no credentials, private media, prompts or absolute paths.
+          required: true

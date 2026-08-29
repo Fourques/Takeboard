@@ -16,6 +16,8 @@ type NumericInputProps = Omit<
   min?: number;
   max?: number;
   step?: number;
+  preserveEmptyOnBlur?: boolean;
+  onDraftValidityChange?: (valid: boolean) => void;
   onValueChange: (value: number) => void;
 };
 
@@ -23,6 +25,16 @@ const pendingDrafts = new Map<string, string>();
 
 function formatNumber(value: number) {
   return Number.isFinite(value) ? String(value) : "";
+}
+
+export function isNumberDraftValid(draft: string, min?: number, max?: number) {
+  if (draft.trim() === "") return false;
+  const parsed = Number(draft);
+  return (
+    Number.isFinite(parsed) &&
+    (min === undefined || parsed >= min) &&
+    (max === undefined || parsed <= max)
+  );
 }
 
 function decimalPlaces(value: number) {
@@ -54,6 +66,8 @@ export function NumericInput({
   min,
   max,
   step,
+  preserveEmptyOnBlur = false,
+  onDraftValidityChange,
   onValueChange,
   onBlur,
   onFocus,
@@ -62,6 +76,8 @@ export function NumericInput({
 }: NumericInputProps) {
   const focused = useRef(false);
   const restoreOnBlur = useRef(false);
+  const validityCallbackRef = useRef(onDraftValidityChange);
+  validityCallbackRef.current = onDraftValidityChange;
   const [draft, setDraft] = useState(() =>
     draftKey && pendingDrafts.has(draftKey)
       ? (pendingDrafts.get(draftKey) ?? "")
@@ -69,7 +85,12 @@ export function NumericInput({
   );
 
   const updateDraft = (next: string) => {
-    if (draftKey) pendingDrafts.set(draftKey, next);
+    if (draftKey) {
+      pendingDrafts.delete(draftKey);
+      pendingDrafts.set(draftKey, next);
+      const oldestDraft = pendingDrafts.keys().next().value as string | undefined;
+      if (pendingDrafts.size > 500 && oldestDraft) pendingDrafts.delete(oldestDraft);
+    }
     setDraft(next);
   };
 
@@ -87,14 +108,20 @@ export function NumericInput({
   }, [draftKey, value]);
 
   const parsed = draft.trim() === "" ? Number.NaN : Number(draft);
+  const draftIsValid = isNumberDraftValid(draft, min, max);
   const invalid =
-    draft.trim() !== "" &&
-    (!Number.isFinite(parsed) ||
-      (min !== undefined && parsed < min) ||
-      (max !== undefined && parsed > max));
+    (preserveEmptyOnBlur && draft.trim() === "") || (draft.trim() !== "" && !draftIsValid);
+
+  useEffect(() => {
+    validityCallbackRef.current?.(draftIsValid);
+  }, [draftIsValid]);
 
   const commit = () => {
     if (!Number.isFinite(parsed)) {
+      if (preserveEmptyOnBlur) {
+        updateDraft(draft);
+        return;
+      }
       clearPendingDraft();
       setDraft(formatNumber(value));
       return;
@@ -124,6 +151,7 @@ export function NumericInput({
     } else if (event.key === "Escape") {
       event.preventDefault();
       restoreOnBlur.current = true;
+      clearPendingDraft();
       setDraft(formatNumber(value));
       event.currentTarget.blur();
     }

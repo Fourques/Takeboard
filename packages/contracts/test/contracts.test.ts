@@ -4,6 +4,7 @@ import {
   assetSchema,
   canvasEdgeSchema,
   healthResponseSchema,
+  operationsDiagnosticsSchema,
   projectSnapshotJsonSchema,
   projectSnapshotSchema,
   resolveGenerationResolution,
@@ -41,6 +42,38 @@ describe("healthResponseSchema", () => {
         version: schemaVersion,
       }),
     ).toEqual({ service: "takeboard-server", status: "ok", version: schemaVersion });
+  });
+});
+
+describe("operationsDiagnosticsSchema", () => {
+  it("accepts a redacted support report contract", () => {
+    const parsed = operationsDiagnosticsSchema.parse({
+      format: "takeboard.support-report",
+      reportVersion: 1,
+      generatedAt: "2026-08-30T00:00:00.000Z",
+      application: {
+        version: "0.1.0",
+        nodeVersion: "v22.23.1",
+        platform: "linux",
+        architecture: "x64",
+        uptimeSeconds: 42,
+        authMode: "required",
+      },
+      workload: { visibleProjects: 2, activeRuns: 1, failedRuns: 0 },
+      backup: { count: 1, latestCreatedAt: "2026-08-29T00:00:00.000Z" },
+      checks: [
+        {
+          id: "data.writable",
+          category: "data",
+          status: "pass",
+          title: "项目目录可写",
+          detail: "服务可以保存项目。",
+          action: null,
+        },
+      ],
+      privacy: "不包含项目名称、账号、素材内容、提示词、绝对路径、Cookie、Token 或环境变量值。",
+    });
+    expect(parsed.checks[0]?.status).toBe("pass");
   });
 });
 
