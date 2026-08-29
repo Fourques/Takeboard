@@ -4,7 +4,9 @@ import { mkdir, opendir, readFile, rename, rm, stat } from "node:fs/promises";
 import { basename, dirname, join, normalize, relative, resolve, sep } from "node:path";
 import { type Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { isDeepStrictEqual } from "node:util";
 import { createGunzip, createGzip } from "node:zlib";
+import { projectSnapshotSchema } from "@takeboard/contracts";
 import { extract, type Header, pack } from "tar-stream";
 import { ProjectStore } from "./storage/project-store.js";
 
@@ -168,10 +170,21 @@ function parseManifest(value: Buffer): ProjectPackageManifest {
   if (
     manifest.format !== "takeboard.project-package" ||
     manifest.version !== 1 ||
+    typeof manifest.exportedAt !== "string" ||
+    !Number.isFinite(Date.parse(manifest.exportedAt)) ||
     typeof manifest.sourceKey !== "string" ||
+    manifest.sourceKey.length < 1 ||
+    manifest.sourceKey.length > 200 ||
+    basename(manifest.sourceKey) !== manifest.sourceKey ||
     typeof manifest.projectId !== "string" ||
+    manifest.projectId.length < 1 ||
+    manifest.projectId.length > 256 ||
     typeof manifest.title !== "string" ||
+    manifest.title.trim().length < 1 ||
+    manifest.title.length > 200 ||
     typeof manifest.revision !== "number" ||
+    !Number.isSafeInteger(manifest.revision) ||
+    manifest.revision < 1 ||
     !Array.isArray(manifest.files)
   ) {
     throw new ProjectArchiveError(400, "项目包格式或版本不受支持");
@@ -347,6 +360,9 @@ export async function importProjectArchive(projectsRoot: string, archivePath: st
     if (!actualFiles.has("project.takeboard.json") || !actualFiles.has("takeboard.db")) {
       throw new ProjectArchiveError(400, "项目包缺少项目清单或数据库");
     }
+    const portableSnapshot = projectSnapshotSchema.parse(
+      JSON.parse(await readFile(join(extractedProject, "project.takeboard.json"), "utf8")),
+    );
     const store = ProjectStore.openExisting(extractedProject);
     if (!store) throw new ProjectArchiveError(400, "项目包不是可读取的 TakeBoard 项目");
     let current: ReturnType<ProjectStore["loadCurrent"]>;
@@ -355,7 +371,13 @@ export async function importProjectArchive(projectsRoot: string, archivePath: st
     } finally {
       store.close();
     }
-    if (!current || current.snapshot.project.id !== manifest.projectId) {
+    if (
+      !current ||
+      current.snapshot.project.id !== manifest.projectId ||
+      current.snapshot.project.title !== manifest.title ||
+      current.revision !== manifest.revision ||
+      !isDeepStrictEqual(current.snapshot, portableSnapshot)
+    ) {
       throw new ProjectArchiveError(400, "项目包清单与项目数据库不一致");
     }
     const duplicateKey = await findActiveProjectById(root, manifest.projectId);

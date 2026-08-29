@@ -632,6 +632,19 @@ export async function restoreInstanceOffline(
       await rm(`${authPath}${suffix}`, { force: true });
     await copyFile(join(workRoot, "files", identityName), authPath);
     authReplaced = true;
+    const restoredIdentity = new BetterSqlite3(authPath, { fileMustExist: true });
+    try {
+      restoredIdentity.pragma("foreign_keys = ON");
+      restoredIdentity.transaction(() => {
+        restoredIdentity.prepare("DELETE FROM auth_sessions").run();
+        restoredIdentity.prepare("DELETE FROM auth_login_failures").run();
+      })();
+      if (restoredIdentity.pragma("quick_check", { simple: true }) !== "ok") {
+        throw new Error("恢复后的身份数据库完整性检查失败");
+      }
+    } finally {
+      restoredIdentity.close();
+    }
     const receipt = {
       format: "takeboard.offline-restore-receipt",
       version: 1,
@@ -639,6 +652,7 @@ export async function restoreInstanceOffline(
       sourceCreatedAt: staged.createdAt,
       projects: staged.projectCount,
       users: staged.userCount,
+      sessionsRevoked: true,
       previousData: rollbackRoot,
     };
     const { writeFile } = await import("node:fs/promises");

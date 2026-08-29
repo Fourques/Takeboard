@@ -4,6 +4,21 @@ import { ComfyClient } from "../src/index.js";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("ComfyUI task ownership", () => {
+  it("releases live-progress ownership when prompt submission is rejected", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ error: "invalid prompt" }, { status: 400 })),
+    );
+    const client = new ComfyClient("http://comfy.test", { liveProgress: false });
+
+    await expect(
+      client.submit({ sample: { class_type: "KSampler", inputs: {} } }, "client-rejected"),
+    ).rejects.toThrow("ComfyUI rejected prompt");
+
+    client.watchProgress("prompt-rejected", "client-rejected");
+    expect(client.progress("prompt-rejected")).toMatchObject({ percent: null });
+  });
+
   it("deletes only the requested queued prompt without interrupting another running job", async () => {
     const requests: Array<{ url: string; init?: RequestInit }> = [];
     vi.stubGlobal(

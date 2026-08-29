@@ -572,7 +572,7 @@ export class AuthService {
         .run(passwordHash, timestamp, user.id);
       this.revokeAllSessions(user.id);
       this.client
-        .prepare("DELETE FROM auth_login_failures WHERE email = ? OR ip_address = ?")
+        .prepare("DELETE FROM auth_login_failures WHERE email = ? AND ip_address = ?")
         .run(normalizedEmail, address);
       this.audit(
         user.id,
@@ -624,7 +624,7 @@ export class AuthService {
       .prepare("UPDATE auth_users SET last_login_at = ?, updated_at = ? WHERE id = ?")
       .run(timestamp, timestamp, row.id);
     this.client
-      .prepare("DELETE FROM auth_login_failures WHERE email = ? OR ip_address = ?")
+      .prepare("DELETE FROM auth_login_failures WHERE email = ? AND ip_address = ?")
       .run(normalized, address);
     this.audit(row.id, "auth.login", "session", null, {}, ip);
     return { user: this.getUser(row.id), rateLimited: false } as const;
@@ -750,32 +750,38 @@ export class AuthService {
     input: { status?: "active" | "disabled"; instanceRole?: InstanceRole },
     ip: string | null,
   ) {
-    const current = this.getUser(userId);
-    if (!current) throw new Error("成员不存在");
-    if (actorId === userId && input.status === "disabled") throw new Error("不能停用自己的账号");
-    if (
-      current.instanceRole === "admin" &&
-      (input.status === "disabled" || input.instanceRole === "member")
-    ) {
-      const otherAdmins = this.listUsers().filter(
-        (user) => user.id !== userId && user.instanceRole === "admin" && user.status === "active",
+    this.client.transaction(() => {
+      const current = this.getUser(userId);
+      if (!current) throw new Error("成员不存在");
+      if (actorId === userId && input.status === "disabled") {
+        throw new Error("不能停用自己的账号");
+      }
+      if (
+        current.instanceRole === "admin" &&
+        (input.status === "disabled" || input.instanceRole === "member")
+      ) {
+        const otherAdmins = this.client
+          .prepare(`SELECT COUNT(*) FROM auth_users
+            WHERE id <> ? AND instance_role = 'admin' AND status = 'active'`)
+          .pluck()
+          .get(userId) as number;
+        if (otherAdmins === 0) throw new Error("至少需要保留一位可用管理员");
+      }
+      const nextStatus = input.status ?? current.status;
+      const nextRole = input.instanceRole ?? current.instanceRole;
+      this.client
+        .prepare("UPDATE auth_users SET status = ?, instance_role = ?, updated_at = ? WHERE id = ?")
+        .run(nextStatus, nextRole, nowIso(), userId);
+      if (nextStatus === "disabled") this.revokeAllSessions(userId);
+      this.audit(
+        actorId,
+        "user.updated",
+        "user",
+        userId,
+        { status: nextStatus, instanceRole: nextRole },
+        ip,
       );
-      if (otherAdmins.length === 0) throw new Error("至少需要保留一位可用管理员");
-    }
-    const nextStatus = input.status ?? current.status;
-    const nextRole = input.instanceRole ?? current.instanceRole;
-    this.client
-      .prepare("UPDATE auth_users SET status = ?, instance_role = ?, updated_at = ? WHERE id = ?")
-      .run(nextStatus, nextRole, nowIso(), userId);
-    if (nextStatus === "disabled") this.revokeAllSessions(userId);
-    this.audit(
-      actorId,
-      "user.updated",
-      "user",
-      userId,
-      { status: nextStatus, instanceRole: nextRole },
-      ip,
-    );
+    })();
     return this.requireUser(userId);
   }
 
@@ -837,32 +843,46 @@ export class AuthService {
     actorId: string,
     ip: string | null,
   ) {
-    if (!this.getUser(userId)) throw new Error("成员不存在");
-    this.client
-      .prepare(`INSERT INTO project_members (project_id, user_id, role, created_at, created_by)
-      VALUES (?, ?, ?, ?, ?) ON CONFLICT(project_id, user_id) DO UPDATE SET role = excluded.role`)
-      .run(projectId, userId, role, nowIso(), actorId);
-    this.audit(actorId, "project.member_set", "project", projectId, { userId, role }, ip);
+    const user = this.getUser(userId);
+    if (!user) throw new Error("成员不存在");
+    if (user.status !== "active") throw new Error("不能把已停用账号加入项目");
+    this.client.transaction(() => {
+      const currentRole = this.projectRole(projectId, userId);
+      if (currentRole === "owner" && role !== "owner") {
+        const owners = this.client
+          .prepare("SELECT COUNT(*) FROM project_members WHERE project_id = ? AND role = 'owner'")
+          .pluck()
+          .get(projectId) as number;
+        if (owners <= 1) throw new Error("项目至少需要保留一位 Owner");
+      }
+      this.client
+        .prepare(`INSERT INTO project_members (project_id, user_id, role, created_at, created_by)
+        VALUES (?, ?, ?, ?, ?) ON CONFLICT(project_id, user_id) DO UPDATE SET role = excluded.role`)
+        .run(projectId, userId, role, nowIso(), actorId);
+      this.audit(actorId, "project.member_set", "project", projectId, { userId, role }, ip);
+    })();
     return this.listProjectMembers(projectId);
   }
 
   removeProjectMember(projectId: string, userId: string, actorId: string, ip: string | null) {
-    const role = this.projectRole(projectId, userId);
-    if (!role) return false;
-    if (role === "owner") {
-      const owners = this.client
-        .prepare("SELECT COUNT(*) FROM project_members WHERE project_id = ? AND role = 'owner'")
-        .pluck()
-        .get(projectId) as number;
-      if (owners <= 1) throw new Error("项目至少需要保留一位 Owner");
-    }
-    const changed =
-      this.client
-        .prepare("DELETE FROM project_members WHERE project_id = ? AND user_id = ?")
-        .run(projectId, userId).changes > 0;
-    if (changed)
-      this.audit(actorId, "project.member_removed", "project", projectId, { userId }, ip);
-    return changed;
+    return this.client.transaction(() => {
+      const role = this.projectRole(projectId, userId);
+      if (!role) return false;
+      if (role === "owner") {
+        const owners = this.client
+          .prepare("SELECT COUNT(*) FROM project_members WHERE project_id = ? AND role = 'owner'")
+          .pluck()
+          .get(projectId) as number;
+        if (owners <= 1) throw new Error("项目至少需要保留一位 Owner");
+      }
+      const changed =
+        this.client
+          .prepare("DELETE FROM project_members WHERE project_id = ? AND user_id = ?")
+          .run(projectId, userId).changes > 0;
+      if (changed)
+        this.audit(actorId, "project.member_removed", "project", projectId, { userId }, ip);
+      return changed;
+    })();
   }
 
   audit(

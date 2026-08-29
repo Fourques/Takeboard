@@ -121,10 +121,18 @@ function buildOutdated() {
   const builtAt = Math.min(statSync(serverBuild).mtimeMs, statSync(webBuild).mtimeMs);
   const sourceAt = Math.max(
     newestModification(join(repoDir, "apps", "server", "src")),
+    newestModification(join(repoDir, "apps", "server", "package.json")),
+    newestModification(join(repoDir, "apps", "server", "tsconfig.json")),
+    newestModification(join(repoDir, "apps", "server", "tsconfig.build.json")),
     newestModification(join(repoDir, "apps", "web", "src")),
+    newestModification(join(repoDir, "apps", "web", "package.json")),
+    newestModification(join(repoDir, "apps", "web", "index.html")),
+    newestModification(join(repoDir, "apps", "web", "tsconfig.json")),
+    newestModification(join(repoDir, "apps", "web", "vite.config.ts")),
     newestModification(join(repoDir, "packages")),
     newestModification(join(repoDir, "package.json")),
     newestModification(join(repoDir, "pnpm-workspace.yaml")),
+    newestModification(join(repoDir, "tsconfig.base.json")),
   );
   return sourceAt > builtAt;
 }
@@ -135,11 +143,12 @@ function installOutdated() {
   return newestModification(join(repoDir, "pnpm-lock.yaml")) > statSync(modulesState).mtimeMs;
 }
 
-async function waitForStop(port) {
+async function waitForStop(port, pid = null) {
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    if (await portAvailable(port)) return;
+    if ((await portAvailable(port)) && (pid === null || !processAlive(pid))) return true;
     await new Promise((resolveWait) => setTimeout(resolveWait, 250));
   }
+  return false;
 }
 
 async function portAvailable(port) {
@@ -360,12 +369,22 @@ async function start() {
   try {
     try {
       lock = openSync(launchLockFile, "wx", 0o600);
+      writeFileSync(lock, String(process.pid));
     } catch {
-      const stale =
-        existsSync(launchLockFile) && Date.now() - statSync(launchLockFile).mtimeMs > 2 * 60_000;
+      let ownerPid = null;
+      try {
+        const candidate = Number(readFileSync(launchLockFile, "utf8").trim());
+        if (Number.isSafeInteger(candidate) && candidate > 0) ownerPid = candidate;
+      } catch {
+        // Legacy or partially written lock files are judged by age below.
+      }
+      const stale = ownerPid
+        ? !processAlive(ownerPid)
+        : existsSync(launchLockFile) && Date.now() - statSync(launchLockFile).mtimeMs > 30 * 60_000;
       if (!stale) throw new Error("另一个 TakeBoard 启动过程正在运行，请稍候再试");
       rmSync(launchLockFile, { force: true });
       lock = openSync(launchLockFile, "wx", 0o600);
+      writeFileSync(lock, String(process.pid));
     }
     return await startUnlocked();
   } finally {
@@ -378,16 +397,20 @@ async function start() {
 
 async function stop() {
   const state = readState();
-  if (
-    !state?.instanceId ||
-    !processAlive(state.pid) ||
-    !(await health(state.port, 1_500, state.instanceId))
-  ) {
+  if (!state?.instanceId || !processAlive(state.pid)) {
     rmSync(stateFile, { force: true });
     console.log("TakeBoard 简易服务当前没有运行。");
     return;
   }
+  if (!(await health(state.port, 1_500, state.instanceId))) {
+    throw new Error(
+      `记录中的进程 ${state.pid} 仍存在，但无法验证它是否属于 TakeBoard。状态文件已保留，请先运行 npm run easy:doctor，避免误停其他程序。`,
+    );
+  }
   process.kill(state.pid, "SIGTERM");
+  if (!(await waitForStop(state.port, state.pid))) {
+    throw new Error(`TakeBoard 进程 ${state.pid} 没有在预期时间内停止，请查看日志：${logFile}`);
+  }
   rmSync(stateFile, { force: true });
   console.log("TakeBoard 已停止。项目数据不会删除。");
 }
@@ -549,6 +572,16 @@ async function restore(archive, confirmation) {
     (await health(state.port, 1_500, state.instanceId))
   ) {
     throw new Error("TakeBoard 仍在运行。请先执行 npm run easy:stop，再进行离线恢复");
+  }
+  const configuredPort = Number(runtimeEnvironment.TAKEBOARD_PORT);
+  const candidatePorts = Number.isSafeInteger(configuredPort)
+    ? [configuredPort]
+    : Array.from({ length: 20 }, (_, index) => 48120 + index);
+  const detectedPort = await findTakeBoard(candidatePorts);
+  if (detectedPort !== null) {
+    throw new Error(
+      `端口 ${detectedPort} 仍有 TakeBoard 服务运行。请先停止 systemd、开发服务或其他启动方式，再进行离线恢复。`,
+    );
   }
   if (buildOutdated()) {
     const manager = packageManager();

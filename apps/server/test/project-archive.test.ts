@@ -112,6 +112,69 @@ describe("TakeBoard project packages", () => {
     expect(existsSync(join(root, "escaped.txt"))).toBe(false);
   });
 
+  it("rejects signed package metadata that disagrees with the project database", async () => {
+    const sourceRoot = await temporaryRoot("takeboard-package-metadata-source-");
+    const destinationRoot = await temporaryRoot("takeboard-package-metadata-destination-");
+    const sourceKey = "metadata-check.takeboard";
+    const sourceDirectory = join(sourceRoot, sourceKey);
+    const created = await new ProjectService().create({
+      projectDirectory: sourceDirectory,
+      title: "Metadata check",
+    });
+    const archivePath = join(sourceRoot, "metadata-check.tgz");
+    await pipeline(
+      await createProjectArchive(sourceDirectory, {
+        sourceKey,
+        projectId: created.snapshot.project.id,
+        title: created.snapshot.project.title,
+        revision: created.revision + 1,
+      }),
+      createWriteStream(archivePath),
+    );
+
+    await expect(importProjectArchive(destinationRoot, archivePath)).rejects.toMatchObject({
+      statusCode: 400,
+      message: expect.stringMatching(/清单与项目数据库不一致/),
+    });
+  });
+
+  it("rejects a signed package whose portable snapshot disagrees with SQLite", async () => {
+    const sourceRoot = await temporaryRoot("takeboard-package-snapshot-source-");
+    const destinationRoot = await temporaryRoot("takeboard-package-snapshot-destination-");
+    const sourceKey = "snapshot-check.takeboard";
+    const sourceDirectory = join(sourceRoot, sourceKey);
+    const created = await new ProjectService().create({
+      projectDirectory: sourceDirectory,
+      title: "Database title",
+    });
+    await writeFile(
+      join(sourceDirectory, "project.takeboard.json"),
+      `${JSON.stringify(
+        {
+          ...created.snapshot,
+          project: { ...created.snapshot.project, title: "Portable title" },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    const archivePath = join(sourceRoot, "snapshot-check.tgz");
+    await pipeline(
+      await createProjectArchive(sourceDirectory, {
+        sourceKey,
+        projectId: created.snapshot.project.id,
+        title: created.snapshot.project.title,
+        revision: created.revision,
+      }),
+      createWriteStream(archivePath),
+    );
+
+    await expect(importProjectArchive(destinationRoot, archivePath)).rejects.toMatchObject({
+      statusCode: 400,
+      message: expect.stringMatching(/清单与项目数据库不一致/),
+    });
+  });
+
   it("rejects a package when any extracted file differs from its signed manifest", async () => {
     const root = await temporaryRoot("takeboard-package-integrity-");
     const archivePath = join(root, "tampered.tgz");

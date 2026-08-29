@@ -49,7 +49,7 @@ npm run easy:restore -- /path/to/backup.takeboard-instance.tgz --confirm
 npm run easy
 ```
 
-离线恢复会替换身份数据库和备份中同 ID 的项目，但把恢复前数据保留在 `.system/offline-restore-rollbacks/<id>/`。实例备份包含密码摘要和私有素材，应加密保存并与恢复码分开存放。不要手工编辑 SQLite 表。
+离线恢复会替换身份数据库和备份中同 ID 的项目，但把恢复前数据保留在 `.system/offline-restore-rollbacks/<id>/`。恢复完成后会撤销备份中的全部旧会话和登录失败记录，所有设备必须重新登录，避免备份时的旧 Cookie 重新获得访问权。实例备份包含密码摘要和私有素材，应加密保存并与恢复码分开存放。不要手工编辑 SQLite 表。
 
 ## 公网部署检查
 

@@ -125,6 +125,21 @@ export class ComfyProgressTracker {
     this.sockets.delete(entry.clientId);
   }
 
+  abandon(clientId: string) {
+    const promptIds = [...this.entries.entries()]
+      .filter(([, entry]) => entry.clientId === clientId)
+      .map(([id]) => id);
+    for (const id of promptIds) this.entries.delete(id);
+    this.pending.delete(clientId);
+    for (const [id, messages] of this.buffered) {
+      const remaining = messages.filter((message) => message.clientId !== clientId);
+      if (remaining.length === 0) this.buffered.delete(id);
+      else this.buffered.set(id, remaining);
+    }
+    this.sockets.get(clientId)?.close();
+    this.sockets.delete(clientId);
+  }
+
   ingest(clientId: string, message: ComfyMessage) {
     const data = message.data ?? {};
     if (message.type === "status") {

@@ -1061,23 +1061,28 @@ export class ComfyClient {
 
   async submit(prompt: ComfyPrompt, clientId = this.createClientId()) {
     this.progressTracker.connect(clientId, prompt);
-    const response = await fetch(`${this.baseUrl}/prompt`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ prompt, client_id: clientId }),
-      signal: AbortSignal.timeout(30_000),
-    });
-    const result = (await response.json()) as {
-      prompt_id?: string;
-      number?: number;
-      error?: string;
-      node_errors?: Record<string, unknown>;
-    };
-    if (!response.ok || !result.prompt_id) {
-      throw new Error(`ComfyUI rejected prompt: ${JSON.stringify(result)}`);
+    try {
+      const response = await fetch(`${this.baseUrl}/prompt`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prompt, client_id: clientId }),
+        signal: AbortSignal.timeout(30_000),
+      });
+      const result = (await response.json()) as {
+        prompt_id?: string;
+        number?: number;
+        error?: string;
+        node_errors?: Record<string, unknown>;
+      };
+      if (!response.ok || !result.prompt_id) {
+        throw new Error(`ComfyUI rejected prompt: ${JSON.stringify(result)}`);
+      }
+      this.progressTracker.register(result.prompt_id, clientId, result.number);
+      return result.prompt_id;
+    } catch (error) {
+      this.progressTracker.abandon(clientId);
+      throw error;
     }
-    this.progressTracker.register(result.prompt_id, clientId, result.number);
-    return result.prompt_id;
   }
 
   private async queueState(promptId: string) {

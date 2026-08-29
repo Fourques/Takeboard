@@ -41,6 +41,7 @@ describe("TakeBoard instance backups", () => {
       firstShotIntent: "A verified frame",
     });
     auth.grantProjectOwner(created.snapshot.project.id, admin.id);
+    const sessionBeforeBackup = auth.createSession(admin.id, "backup-test", "127.0.0.1");
 
     const backup = await createInstanceBackup(dataRoot, auth);
     expect(backup).toMatchObject({ projectCount: 1, userCount: 1 });
@@ -95,12 +96,13 @@ describe("TakeBoard instance backups", () => {
       archive,
       join(dataRoot, ".system", "auth.db"),
     );
-    expect(receipt).toMatchObject({ projects: 1, users: 1 });
+    expect(receipt).toMatchObject({ projects: 1, users: 1, sessionsRevoked: true });
     const restoredAuth = new AuthService(join(dataRoot, ".system", "auth.db"), "required");
     expect(restoredAuth.listUsers()).toEqual([
       expect.objectContaining({ email: "backup@example.com" }),
     ]);
     expect(restoredAuth.projectRole(created.snapshot.project.id, admin.id)).toBe("owner");
+    expect(restoredAuth.resolveSession(sessionBeforeBackup.token)).toBeNull();
     restoredAuth.close();
   }, 30_000);
 });

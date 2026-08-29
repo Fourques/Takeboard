@@ -135,6 +135,15 @@ describe("TakeBoard authentication and authorization", () => {
     });
     const key = created.json().key as string;
 
+    const lastOwnerDemotion = await app.inject({
+      method: "PUT",
+      url: `/api/projects/${key}/members/${adminId}`,
+      headers: { cookie: admin.cookie, "x-takeboard-csrf": admin.csrf },
+      payload: { role: "editor" },
+    });
+    expect(lastOwnerDemotion.statusCode).toBe(400);
+    expect(lastOwnerDemotion.json().error).toContain("至少需要保留一位 Owner");
+
     const memberCreated = await app.inject({
       method: "POST",
       url: "/api/admin/users",
@@ -387,6 +396,45 @@ describe("TakeBoard authentication and authorization", () => {
     });
     expect(currentStillWorks.statusCode).toBe(200);
   }, 20_000);
+
+  it("does not let a successful login erase IP throttling evidence for other accounts", async () => {
+    const app = await authApp();
+    await app.inject({
+      method: "POST",
+      url: "/api/auth/bootstrap",
+      payload: {
+        name: "Owner",
+        email: "owner@example.com",
+        password: "owner uses a private passphrase",
+      },
+    });
+    for (let attempt = 0; attempt < 7; attempt += 1) {
+      const failed = await app.inject({
+        method: "POST",
+        url: "/api/auth/login",
+        payload: { email: "victim@example.com", password: `incorrect passphrase ${attempt}` },
+      });
+      expect(failed.statusCode).toBe(401);
+    }
+    const legitimate = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { email: "owner@example.com", password: "owner uses a private passphrase" },
+    });
+    expect(legitimate.statusCode, legitimate.body).toBe(200);
+    const eighthFailure = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { email: "victim@example.com", password: "still incorrect passphrase" },
+    });
+    expect(eighthFailure.statusCode).toBe(401);
+    const rateLimited = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { email: "victim@example.com", password: "another incorrect passphrase" },
+    });
+    expect(rateLimited.statusCode).toBe(429);
+  }, 30_000);
 
   it("uses expiring one-time invitations without exposing an administrator-chosen password", async () => {
     const app = await authApp();

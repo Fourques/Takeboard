@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { schemaVersion } from "@takeboard/contracts";
@@ -56,6 +56,10 @@ describe("ProjectStore", () => {
     expect((await firstStore.save(snapshot())).revision).toBe(1);
     expect((await firstStore.save(snapshot("Renamed film"))).revision).toBe(2);
     firstStore.close();
+    await writeFile(
+      join(projectDirectory, "project.takeboard.json"),
+      `${JSON.stringify(snapshot("Interrupted newer snapshot"), null, 2)}\n`,
+    );
 
     const reopenedStore = await ProjectStore.open(projectDirectory);
     expect(reopenedStore.load(projectId)).toMatchObject({

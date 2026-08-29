@@ -3,6 +3,7 @@ import {
   copyFileSync,
   existsSync,
   mkdirSync,
+  readFileSync,
   renameSync,
   statSync,
   unlinkSync,
@@ -143,6 +144,12 @@ export class ProjectStore {
     }
     this.client = client;
     this.database = drizzle(this.client);
+    try {
+      this.reconcilePortableSnapshot();
+    } catch (error) {
+      this.client.close();
+      throw error;
+    }
   }
 
   static async open(projectDirectory: string) {
@@ -429,6 +436,35 @@ export class ProjectStore {
       renameSync(recoverySnapshot, destination);
     } finally {
       await unlink(recoverySnapshot).catch(() => undefined);
+    }
+  }
+
+  private reconcilePortableSnapshot() {
+    const row = this.client.prepare("SELECT snapshot_json FROM project_state LIMIT 1").get() as
+      | { snapshot_json: string }
+      | undefined;
+    if (!row) return;
+    const snapshot = projectSnapshotSchema.parse(JSON.parse(row.snapshot_json));
+    const expected = `${JSON.stringify(snapshot, null, 2)}\n`;
+    const destination = join(this.projectDirectory, snapshotFileName);
+    try {
+      if (readFileSync(destination, "utf8") === expected) return;
+    } catch {
+      // A missing or interrupted portable snapshot is rebuilt from SQLite below.
+    }
+    const temporary = join(
+      this.projectDirectory,
+      `.${snapshotFileName}.${process.pid}.${randomUUID()}.reconcile.tmp`,
+    );
+    try {
+      writeFileSync(temporary, expected, { encoding: "utf8", mode: 0o600, flag: "wx" });
+      renameSync(temporary, destination);
+    } finally {
+      try {
+        unlinkSync(temporary);
+      } catch {
+        // The atomic rename removes the temporary path on success.
+      }
     }
   }
 

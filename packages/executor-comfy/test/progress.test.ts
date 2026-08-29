@@ -67,4 +67,23 @@ describe("ComfyUI live progress", () => {
     });
     expect(tracker.get("prompt-queue")?.queueRemaining).toBe(4);
   });
+
+  it("discards pending and buffered progress when submission is abandoned", () => {
+    const tracker = new ComfyProgressTracker("http://comfy.test", false);
+    tracker.connect("client-rejected", {
+      sample: { class_type: "KSampler", inputs: {}, _meta: { title: "采样" } },
+    });
+    tracker.ingest("client-rejected", {
+      type: "progress",
+      data: { prompt_id: "prompt-rejected", node: "sample", value: 4, max: 8 },
+    });
+
+    tracker.abandon("client-rejected");
+    tracker.register("prompt-rejected", "another-client");
+
+    expect(tracker.get("prompt-rejected")).toMatchObject({
+      percent: null,
+      detail: "等待执行端开始任务",
+    });
+  });
 });
