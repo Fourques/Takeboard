@@ -65,6 +65,144 @@ async function projectFixture(storage?: { inputRoot: string; outputRoot: string 
 }
 
 describe("real generation routes", () => {
+  it("persists 1–4 candidate batch identity and retries only a terminal member", async () => {
+    const { app, key, shotId } = await projectFixture();
+    let promptSequence = 0;
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/object_info")) {
+        return Response.json(
+          objectInfo([
+            "UNETLoader",
+            "CLIPLoader",
+            "VAELoader",
+            "MiniMaxH3ImageToVideo",
+            "RandomNoise",
+            "BasicGuider",
+            "KSamplerSelect",
+            "BasicScheduler",
+            "SamplerCustomAdvanced",
+            "VAEDecode",
+            "CreateVideo",
+            "SaveVideo",
+          ]),
+        );
+      }
+      if (url.endsWith("/prompt")) {
+        promptSequence += 1;
+        return Response.json({ prompt_id: `prompt-batch-${promptSequence}` });
+      }
+      if (/\/api\/jobs\/prompt-batch-\d+\/cancel$/.test(url)) {
+        return Response.json({ cancelled: true });
+      }
+      if (url.endsWith("/history")) return new Response(null, { status: 200 });
+      if (url.endsWith("/queue")) return Response.json({ queue_running: [], queue_pending: [] });
+      if (url.endsWith("/free")) return new Response(null, { status: 200 });
+      throw new Error(`Unexpected ComfyUI request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const invalid = await app.inject({
+      method: "POST",
+      url: `/api/projects/${key}/shots/${shotId}/generate`,
+      payload: {
+        recipePath: "Kino/Kino_MinimaxH3_T2V.json",
+        prompt: "批次边界测试",
+        candidateBatchId: "batch_test1234",
+        candidateIndex: 1,
+        candidateCount: 5,
+      },
+    });
+    expect(invalid.statusCode).toBe(400);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    const submitCandidate = (candidateIndex: number, seed: number) =>
+      app.inject({
+        method: "POST",
+        url: `/api/projects/${key}/shots/${shotId}/generate`,
+        payload: {
+          recipePath: "Kino/Kino_MinimaxH3_T2V.json",
+          prompt: "一组真实候选",
+          seed,
+          candidateBatchId: "batch_test1234",
+          candidateIndex,
+          candidateCount: 2,
+        },
+      });
+    const first = await submitCandidate(1, 31);
+    const second = await submitCandidate(2, 47);
+    expect(first.statusCode, first.body).toBe(202);
+    expect(second.statusCode, second.body).toBe(202);
+    expect(second.json()).toMatchObject({
+      candidateBatchId: "batch_test1234",
+      candidateIndex: 2,
+      candidateCount: 2,
+      snapshot: {
+        runs: [
+          expect.objectContaining({
+            parameters: expect.objectContaining({
+              candidateBatchId: "batch_test1234",
+              candidateIndex: 1,
+              candidateCount: 2,
+              seed: 31,
+            }),
+          }),
+          expect.objectContaining({
+            parameters: expect.objectContaining({
+              candidateBatchId: "batch_test1234",
+              candidateIndex: 2,
+              candidateCount: 2,
+              seed: 47,
+            }),
+          }),
+        ],
+      },
+    });
+
+    const blockedRetry = await app.inject({
+      method: "POST",
+      url: `/api/projects/${key}/shots/${shotId}/generate`,
+      payload: {
+        recipePath: "Kino/Kino_MinimaxH3_T2V.json",
+        prompt: "不能重试运行中任务",
+        retryOfRunId: second.json().runId,
+      },
+    });
+    expect(blockedRetry.statusCode).toBe(409);
+
+    const cancelled = await app.inject({
+      method: "POST",
+      url: `/api/projects/${key}/runs/${second.json().runId}/cancel`,
+    });
+    expect(cancelled.statusCode, cancelled.body).toBe(200);
+
+    const retried = await app.inject({
+      method: "POST",
+      url: `/api/projects/${key}/shots/${shotId}/generate`,
+      payload: {
+        recipePath: "Kino/Kino_MinimaxH3_T2V.json",
+        prompt: "一组真实候选",
+        seed: 47,
+        candidateBatchId: "batch_test1234",
+        candidateIndex: 2,
+        candidateCount: 2,
+        retryOfRunId: second.json().runId,
+      },
+    });
+    expect(retried.statusCode, retried.body).toBe(202);
+    expect(retried.json().snapshot.runs).toHaveLength(3);
+    expect(retried.json().snapshot.runs[2]).toMatchObject({
+      status: "running",
+      parameters: {
+        candidateBatchId: "batch_test1234",
+        candidateIndex: 2,
+        candidateCount: 2,
+        retryOfRunId: second.json().runId,
+        seed: 47,
+      },
+    });
+  });
+
   it("rejects workflows that have no trusted binding", async () => {
     const { app, key, shotId } = await projectFixture();
     const fetchMock = vi.fn();

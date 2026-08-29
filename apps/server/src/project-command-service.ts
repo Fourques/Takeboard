@@ -19,6 +19,7 @@ export class ProjectCommandError extends Error {
   constructor(
     readonly statusCode: 400 | 404 | 409,
     message: string,
+    readonly details: Record<string, unknown> = {},
   ) {
     super(message);
     this.name = "ProjectCommandError";
@@ -84,6 +85,12 @@ type ProjectCommandInverse =
       items: CanvasItem[];
       edges: CanvasEdge[];
       sceneOrders: Array<{ shotId: string; order: number }>;
+    }
+  | {
+      kind: "restore_shot_orders";
+      sceneId: string;
+      previous: Array<{ shotId: string; order: number }>;
+      applied: Array<{ shotId: string; order: number }>;
     };
 
 type CommandPlan = {
@@ -183,6 +190,7 @@ function assertRevision(expectedRevision: number | undefined, currentRevision: n
     throw new ProjectCommandError(
       409,
       `项目已由其他操作更新（当前版本 ${currentRevision}，请求基于版本 ${expectedRevision}），请刷新后重试`,
+      { code: "REVISION_CONFLICT", currentRevision, expectedRevision },
     );
   }
 }
@@ -834,6 +842,68 @@ function buildPlan(
     };
   }
 
+  if (command.type === "shot.reorder") {
+    const target = snapshot.shots.find((candidate) => candidate.id === command.shotId);
+    if (!target) throw new ProjectCommandError(404, "镜头不存在");
+    const sceneShots = snapshot.shots
+      .filter((candidate) => candidate.sceneId === target.sceneId)
+      .sort((left, right) => left.order - right.order || left.id.localeCompare(right.id));
+    if (command.toIndex >= sceneShots.length) {
+      throw new ProjectCommandError(400, "目标顺序超出当前场次的镜头范围");
+    }
+    const fromIndex = sceneShots.findIndex((candidate) => candidate.id === target.id);
+    if (fromIndex === command.toIndex) {
+      throw new ProjectCommandError(409, "镜头已经位于这个顺序");
+    }
+    const previous = sceneShots.map((candidate) => ({
+      shotId: candidate.id,
+      order: candidate.order,
+    }));
+    const [moved] = sceneShots.splice(fromIndex, 1);
+    if (!moved) throw new ProjectCommandError(404, "镜头不存在");
+    sceneShots.splice(command.toIndex, 0, moved);
+    const changed: Shot[] = [];
+    sceneShots.forEach((candidate, order) => {
+      if (candidate.order === order) return;
+      candidate.order = order;
+      candidate.updatedAt = timestamp;
+      changed.push(candidate);
+    });
+    const applied = sceneShots.map((candidate) => ({
+      shotId: candidate.id,
+      order: candidate.order,
+    }));
+    touch(snapshot, timestamp);
+    return {
+      snapshot,
+      summary: `将“${target.label}”移到第 ${command.toIndex + 1} 位`,
+      effects: changed.map((candidate) =>
+        effect(
+          "update",
+          "shot",
+          candidate.id,
+          candidate.label,
+          `顺序调整为 ${candidate.order + 1}`,
+        ),
+      ),
+      warnings: ["只调整当前场次的播放顺序；画布节点位置和生成记录保持不变"],
+      requiresConfirmation: false,
+      inverse: {
+        kind: "restore_shot_orders",
+        sceneId: target.sceneId,
+        previous,
+        applied,
+      },
+      result: {
+        shotId: target.id,
+        sceneId: target.sceneId,
+        fromIndex,
+        toIndex: command.toIndex,
+        orderedShotIds: sceneShots.map((candidate) => candidate.id),
+      },
+    };
+  }
+
   const shot = snapshot.shots.find((candidate) => candidate.id === command.shotId);
   if (!shot) throw new ProjectCommandError(404, "镜头不存在");
   if (snapshot.runs.some((run) => run.shotId === shot.id)) {
@@ -1007,6 +1077,23 @@ function applyInverse(
       item.x = entry.from.x;
       item.y = entry.from.y;
       item.updatedAt = timestamp;
+    }
+  } else if (inverse.kind === "restore_shot_orders") {
+    const current = snapshot.shots
+      .filter((shot) => shot.sceneId === inverse.sceneId)
+      .map((shot) => ({ shotId: shot.id, order: shot.order }))
+      .sort((left, right) => left.shotId.localeCompare(right.shotId));
+    const applied = [...inverse.applied].sort((left, right) =>
+      left.shotId.localeCompare(right.shotId),
+    );
+    if (JSON.stringify(current) !== JSON.stringify(applied)) {
+      throw new ProjectCommandError(409, "无法撤销：镜头顺序在本次调整后又发生了变化");
+    }
+    for (const previous of inverse.previous) {
+      const shot = snapshot.shots.find((candidate) => candidate.id === previous.shotId);
+      if (!shot) throw new ProjectCommandError(409, "无法撤销：原顺序中的镜头已不存在");
+      shot.order = previous.order;
+      shot.updatedAt = timestamp;
     }
   } else if (inverse.kind === "restore_domain_record") {
     const collection =

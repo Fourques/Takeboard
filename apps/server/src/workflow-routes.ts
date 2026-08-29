@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { ComfyPrompt } from "@takeboard/executor-comfy";
@@ -9,8 +9,10 @@ import {
   inspectWorkflowDocument,
   inspectWorkflowForBinding,
   isWorkflowPath,
+  parseWorkflowBinding,
   preflightPromptAgainstObjectInfo,
   readWorkflowBinding,
+  readWorkflowBindingProposal,
   suggestedBinding,
   validateWorkflowBinding,
   type WorkflowBinding,
@@ -19,8 +21,14 @@ import {
   workflowBindingVersion,
   workflowHash,
   writeWorkflowBinding,
+  writeWorkflowBindingProposal,
 } from "./workflow-bindings.js";
 import { buildWorkflowDiagnostic } from "./workflow-diagnostics.js";
+import {
+  createWorkflowRecipeArchive,
+  parseWorkflowRecipeArchive,
+  WorkflowRecipePackageError,
+} from "./workflow-recipe-package.js";
 
 type WorkflowNode = {
   type?: string;
@@ -142,6 +150,28 @@ function detectModels(nodes: WorkflowNode[]) {
     }
   }
   return [...models];
+}
+
+function detectNodeTypes(nodes: WorkflowNode[]) {
+  return [
+    ...new Set(
+      nodes
+        .map((node) => node.type ?? node.class_type)
+        .filter((value): value is string => typeof value === "string" && value.length > 0),
+    ),
+  ].sort();
+}
+
+function isComfyWorkflowDocument(workflow: WorkflowJson) {
+  const apiPrompt = Object.values(workflow).some(
+    (node) =>
+      node &&
+      typeof node === "object" &&
+      typeof (node as WorkflowNode).class_type === "string" &&
+      (node as WorkflowNode).inputs &&
+      typeof (node as WorkflowNode).inputs === "object",
+  );
+  return Array.isArray(workflow.nodes) || apiPrompt;
 }
 
 function installedModels(value: unknown) {
@@ -459,15 +489,17 @@ export function registerWorkflowRoutes(
   projectsRoot: string,
 ) {
   const inspectPath = async (path: string) => {
-    const [workflow, current, objectInfo] = await Promise.all([
+    const [workflow, current, proposal, objectInfo] = await Promise.all([
       fetchWorkflow(comfyUrl, path),
       readWorkflowBinding(comfyUrl, path),
+      readWorkflowBindingProposal(comfyUrl, path),
       fetchComfyObjectInfo(comfyUrl),
     ]);
     const inventory = installedModels(objectInfo);
     const summary = workflowSummary(path, workflow, editorUrl, inventory, current);
     const inspected = inspectWorkflowDocument(workflow, objectInfo, summary.workflowHash);
     const outputMediaType = detectedOutputMediaType(summary.capability, inspected.prompt, current);
+    const activeProposal = proposal?.workflowHash === inspected.workflowHash ? proposal : null;
     const suggested = suggestedBinding(
       path,
       inspected.workflowHash,
@@ -492,8 +524,9 @@ export function registerWorkflowRoutes(
       status: summary.bindingStatus,
       diagnostic,
       candidates: inspected.candidates,
-      binding: current ?? suggested,
+      binding: current ?? activeProposal ?? suggested,
       suggested,
+      bindingProposal: activeProposal ? "recipe_package" : null,
       conversionIssues: preflightPromptAgainstObjectInfo(inspected.prompt, objectInfo),
       warning:
         summary.bindingStatus === "built_in"
@@ -741,6 +774,185 @@ export function registerWorkflowRoutes(
     }
   });
 
+  app.get<{ Querystring: { path?: string } }>(
+    "/api/workflows/recipe-package",
+    async (request, reply) => {
+      const path = request.query.path;
+      if (!isWorkflowPath(path)) return await reply.code(400).send({ error: "工作流路径无效" });
+      try {
+        const [workflow, binding] = await Promise.all([
+          fetchWorkflow(comfyUrl, path),
+          readWorkflowBinding(comfyUrl, path),
+        ]);
+        const hash = workflowHash(workflow);
+        const activeBinding = binding?.workflowHash === hash ? binding : null;
+        const summary = workflowSummary(path, workflow, editorUrl, null, activeBinding);
+        const nodes = allNodes(workflow);
+        const outputMediaType =
+          activeBinding?.outputMediaType ??
+          (["text_to_image", "image_to_image"].includes(summary.capability) ? "image" : "video");
+        const stream = createWorkflowRecipeArchive({
+          name: summary.name,
+          sourcePath: path,
+          workflowHash: hash,
+          capability: summary.capability,
+          outputMediaType,
+          models: detectModels(nodes),
+          nodeTypes: detectNodeTypes(nodes),
+          workflow,
+          binding: activeBinding,
+        });
+        const filename = `${summary.name.replace(/[^a-zA-Z0-9\u4e00-\u9fff_-]+/g, "-").slice(0, 80) || "workflow"}.takeboard-recipe.tgz`;
+        reply.header("content-type", "application/gzip");
+        reply.header(
+          "content-disposition",
+          `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
+        );
+        return await reply.send(stream);
+      } catch (error) {
+        return await reply.code(404).send({
+          error: error instanceof Error ? error.message : "无法导出 Recipe 包",
+        });
+      }
+    },
+  );
+
+  app.post("/api/workflows/recipe-package/import", async (request, reply) => {
+    const upload = await request.file();
+    if (
+      !upload ||
+      (!upload.filename.toLowerCase().endsWith(".takeboard-recipe.tgz") &&
+        !upload.filename.toLowerCase().endsWith(".tgz"))
+    ) {
+      return await reply.code(400).send({ error: "请选择 .takeboard-recipe.tgz 文件" });
+    }
+    try {
+      const recipe = await parseWorkflowRecipeArchive(await upload.toBuffer());
+      if (!isWorkflowPath(recipe.manifest.sourcePath)) {
+        return await reply.code(400).send({ error: "Recipe 原始工作流路径无效" });
+      }
+      const workflow = recipe.workflow as WorkflowJson;
+      if (!workflow || typeof workflow !== "object" || !isComfyWorkflowDocument(workflow)) {
+        return await reply.code(400).send({ error: "Recipe 中的 Workflow 无法识别" });
+      }
+      const hash = workflowHash(workflow);
+      if (hash !== recipe.manifest.workflowHash) {
+        return await reply.code(400).send({ error: "Recipe Workflow 内容哈希与清单不一致" });
+      }
+      const nodes = allNodes(workflow);
+      const actualModels = detectModels(nodes).sort();
+      const actualNodeTypes = detectNodeTypes(nodes);
+      if (
+        JSON.stringify(actualModels) !==
+          JSON.stringify([...new Set(recipe.manifest.dependencies.models)].sort()) ||
+        JSON.stringify(actualNodeTypes) !==
+          JSON.stringify([...new Set(recipe.manifest.dependencies.nodeTypes)].sort())
+      ) {
+        return await reply.code(400).send({ error: "Recipe 依赖清单与 Workflow 内容不一致" });
+      }
+      const packagedBinding = recipe.binding ? parseWorkflowBinding(recipe.binding) : null;
+      if (recipe.binding && !packagedBinding) {
+        return await reply.code(400).send({ error: "Recipe 参数绑定格式无效" });
+      }
+      if (
+        packagedBinding &&
+        (packagedBinding.workflowHash !== hash ||
+          packagedBinding.capability !== recipe.manifest.capability ||
+          packagedBinding.outputMediaType !== recipe.manifest.outputMediaType)
+      ) {
+        return await reply.code(400).send({ error: "Recipe 参数绑定与 Workflow 清单不一致" });
+      }
+      const safeName = recipe.manifest.name
+        .replace(/[^a-zA-Z0-9_-]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 70);
+      const destination = `TakeBoard/${safeName || "workflow"}-${randomUUID().slice(0, 8)}.json`;
+      const proposal = packagedBinding
+        ? {
+            ...packagedBinding,
+            workflowPath: destination,
+            workflowHash: hash,
+            verifiedAt: new Date().toISOString(),
+          }
+        : null;
+      if (proposal) await writeWorkflowBindingProposal(comfyUrl, destination, proposal);
+      const saved = await fetch(
+        `${comfyUrl}/api/userdata/${encodeURIComponent(`workflows/${destination}`)}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(workflow),
+          signal: AbortSignal.timeout(5_000),
+        },
+      );
+      if (!saved.ok) {
+        return await reply.code(502).send({ error: `ComfyUI 保存失败：${saved.status}` });
+      }
+      try {
+        const inspected = await inspectPath(destination);
+        return await reply.code(201).send({
+          imported: true,
+          ...inspected,
+          recipePackage: {
+            format: recipe.manifest.format,
+            version: recipe.manifest.version,
+            sourcePath: recipe.manifest.sourcePath,
+            bindingProposalIncluded: Boolean(proposal),
+            trustRequired: true,
+          },
+        });
+      } catch (error) {
+        return await reply.code(201).send({
+          imported: true,
+          ...workflowSummary(destination, workflow, editorUrl, null, null),
+          recipePackage: {
+            format: recipe.manifest.format,
+            version: recipe.manifest.version,
+            sourcePath: recipe.manifest.sourcePath,
+            bindingProposalIncluded: Boolean(proposal),
+            trustRequired: true,
+          },
+          diagnostic: {
+            path: destination,
+            workflowHash: hash,
+            health: "unknown",
+            executable: false,
+            nodeCount: nodes.length,
+            capability: recipe.manifest.capability,
+            outputMediaType: recipe.manifest.outputMediaType,
+            bindingStatus: "needs_binding",
+            modelStatus: "unknown",
+            models: actualModels,
+            missingModels: [],
+            missingNodeTypes: [],
+            checks: [
+              {
+                id: "recipe.import-diagnostic",
+                category: "nodes",
+                status: "unknown",
+                code: "COMFY_DIAGNOSTIC_UNAVAILABLE",
+                title: "尚未完成当前电脑诊断",
+                detail:
+                  error instanceof Error
+                    ? error.message
+                    : "Recipe 已安全导入，但当前无法连接 ComfyUI 完成依赖诊断。",
+                nodeIds: [],
+                remediation: "连接当前 ComfyUI 后重新检测工作流，再确认参数绑定。",
+              },
+            ],
+          },
+        });
+      }
+    } catch (error) {
+      if (error instanceof WorkflowRecipePackageError) {
+        return await reply.code(error.statusCode).send({ error: error.message });
+      }
+      return await reply.code(400).send({
+        error: error instanceof Error ? error.message : "Recipe 包导入失败",
+      });
+    }
+  });
+
   app.post("/api/workflows/import", async (request, reply) => {
     const upload = await request.file();
     if (!upload?.filename.toLowerCase().endsWith(".json")) {
@@ -753,15 +965,7 @@ export function registerWorkflowRoutes(
     } catch {
       return await reply.code(400).send({ error: "JSON 文件无法解析" });
     }
-    const apiPrompt = Object.values(workflow).some(
-      (node) =>
-        node &&
-        typeof node === "object" &&
-        typeof (node as WorkflowNode).class_type === "string" &&
-        (node as WorkflowNode).inputs &&
-        typeof (node as WorkflowNode).inputs === "object",
-    );
-    if (!Array.isArray(workflow.nodes) && !apiPrompt) {
+    if (!isComfyWorkflowDocument(workflow)) {
       return await reply.code(400).send({ error: "文件不是 ComfyUI Workflow 或 API Prompt" });
     }
     const safeName = upload.filename

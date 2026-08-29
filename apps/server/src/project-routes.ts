@@ -274,6 +274,7 @@ export function registerProjectRoutes(
           return opened
             ? {
                 key: entry.name,
+                revision: opened.revision,
                 id: opened.snapshot.project.id,
                 title: opened.snapshot.project.title,
                 aspectRatio: (() => {
@@ -293,6 +294,11 @@ export function registerProjectRoutes(
                     ? "owner"
                     : options.auth.projectRole(opened.snapshot.project.id, context.user.id)
                   : "owner",
+                membershipRole: context
+                  ? options.auth.projectRole(opened.snapshot.project.id, context.user.id)
+                  : "owner",
+                accessSource:
+                  context?.user.instanceRole === "admin" ? "instance_admin" : "membership",
                 boards: opened.snapshot.scenes.slice(0, 8).map((scene) => {
                   const items = opened.snapshot.canvasItems
                     .filter((item) => item.sceneId === scene.id)
@@ -643,6 +649,24 @@ export function registerProjectRoutes(
     const opened = await service.open(join(root, key));
     if (!opened) return await reply.code(404).send({ error: "项目不存在" });
     return { key, ...opened };
+  });
+
+  app.get<{ Params: { key: string } }>("/api/projects/:key/sync", async (request, reply) => {
+    const key = projectKey(request.params.key);
+    if (!key) return await reply.code(400).send({ error: "项目标识无效" });
+    const store = ProjectStore.openExisting(join(root, key));
+    if (!store) return await reply.code(404).send({ error: "项目不存在" });
+    try {
+      const currentRevision = store.currentRevision();
+      if (currentRevision === null) return await reply.code(404).send({ error: "项目不存在" });
+      const etag = `"takeboard-r${currentRevision}"`;
+      reply.header("etag", etag).header("cache-control", "no-store");
+      if (request.headers["if-none-match"] === etag) return await reply.code(304).send();
+      const current = store.loadCurrent();
+      return current ? { key, ...current } : await reply.code(404).send({ error: "项目不存在" });
+    } finally {
+      store.close();
+    }
   });
 
   app.patch<{ Params: { key: string } }>("/api/projects/:key", async (request, reply) => {

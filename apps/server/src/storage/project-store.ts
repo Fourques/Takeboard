@@ -170,6 +170,11 @@ export class ProjectStore {
     return new ProjectStore(resolvedDirectory);
   }
 
+  backupDatabase(destination: string) {
+    this.client.pragma("wal_checkpoint(PASSIVE)");
+    this.client.prepare("VACUUM INTO ?").run(resolve(destination));
+  }
+
   async save(untrustedSnapshot: unknown, event: ProjectStoreEvent = { type: "project.saved" }) {
     const snapshot = projectSnapshotSchema.parse(untrustedSnapshot);
     const snapshotJson = `${JSON.stringify(snapshot, null, 2)}\n`;
@@ -306,6 +311,14 @@ export class ProjectStore {
       revision: row.revision,
       snapshot: projectSnapshotSchema.parse(JSON.parse(row.snapshotJson)),
     };
+  }
+
+  currentRevision() {
+    return (
+      (this.client.prepare("SELECT revision FROM project_state LIMIT 1").pluck().get() as
+        | number
+        | undefined) ?? null
+    );
   }
 
   loadCurrent(): { revision: number; snapshot: ProjectSnapshot } | null {

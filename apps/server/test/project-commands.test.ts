@@ -168,6 +168,12 @@ describe("project command API", () => {
 
   it("rejects stale revisions and unsafe undo after later edits", async () => {
     const { app, key, revision } = await fixture();
+    const unchanged = await app.inject({
+      method: "GET",
+      url: `/api/projects/${key}/sync`,
+      headers: { "if-none-match": `"takeboard-r${revision}"` },
+    });
+    expect(unchanged.statusCode).toBe(304);
     const created = await app.inject({
       method: "POST",
       url: `/api/projects/${key}/commands`,
@@ -188,6 +194,30 @@ describe("project command API", () => {
     });
     expect(stale.statusCode).toBe(409);
     expect(stale.json().error).toContain("当前版本");
+    expect(stale.json()).toMatchObject({
+      code: "REVISION_CONFLICT",
+      currentRevision: revision + 1,
+      expectedRevision: revision,
+    });
+    const synchronized = await app.inject({
+      method: "GET",
+      url: `/api/projects/${key}/sync`,
+      headers: { "if-none-match": `"takeboard-r${revision}"` },
+    });
+    expect(synchronized.statusCode).toBe(200);
+    expect(synchronized.headers.etag).toBe(`"takeboard-r${revision + 1}"`);
+    expect(synchronized.json()).toMatchObject({ revision: revision + 1 });
+    const staleRename = await app.inject({
+      method: "PATCH",
+      url: `/api/projects/${key}`,
+      headers: { "x-takeboard-revision": String(revision) },
+      payload: { title: "不应覆盖更新" },
+    });
+    expect(staleRename.statusCode).toBe(409);
+    expect(staleRename.json()).toMatchObject({
+      code: "REVISION_CONFLICT",
+      currentRevision: revision + 1,
+    });
 
     const moved = await app.inject({
       method: "POST",
@@ -209,6 +239,67 @@ describe("project command API", () => {
     });
     expect(unsafeUndo.statusCode).toBe(409);
     expect(unsafeUndo.json().error).toContain("已经被修改");
+  });
+
+  it("reorders shots within a scene and safely restores the prior sequence", async () => {
+    const { app, key, revision } = await fixture();
+    const created: Array<{ shotId: string; revision: number }> = [];
+    let currentRevision = revision;
+    for (const [index, label] of ["远景", "中景", "特写"].entries()) {
+      const response = await app.inject({
+        method: "POST",
+        url: `/api/projects/${key}/commands`,
+        payload: {
+          command: { type: "canvas.create_shot", label },
+          requestId: `test:reorder-create:000${index}`,
+          expectedRevision: currentRevision,
+        },
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      created.push({ shotId: response.json().shotId, revision: response.json().revision });
+      currentRevision = response.json().revision;
+    }
+
+    const command = { type: "shot.reorder" as const, shotId: created[2]?.shotId ?? "", toIndex: 0 };
+    const preview = await app.inject({
+      method: "POST",
+      url: `/api/projects/${key}/commands/preview`,
+      payload: { command, expectedRevision: currentRevision },
+    });
+    expect(preview.statusCode, preview.body).toBe(200);
+    expect(preview.json().preview).toMatchObject({
+      commandType: "shot.reorder",
+      requiresConfirmation: false,
+      undoable: true,
+      warnings: [expect.stringContaining("画布节点位置")],
+    });
+
+    const reordered = await app.inject({
+      method: "POST",
+      url: `/api/projects/${key}/commands`,
+      payload: {
+        command,
+        requestId: "test:reorder-shot:0001",
+        expectedRevision: currentRevision,
+      },
+    });
+    expect(reordered.statusCode, reordered.body).toBe(200);
+    expect(
+      [...reordered.json().snapshot.shots]
+        .sort((left, right) => left.order - right.order)
+        .map((shot) => shot.label),
+    ).toEqual(["特写", "远景", "中景"]);
+
+    const undone = await app.inject({
+      method: "POST",
+      url: `/api/projects/${key}/commands/${reordered.json().commandId}/undo`,
+    });
+    expect(undone.statusCode, undone.body).toBe(200);
+    expect(
+      [...undone.json().snapshot.shots]
+        .sort((left, right) => left.order - right.order)
+        .map((shot) => shot.label),
+    ).toEqual(["远景", "中景", "特写"]);
   });
 
   it("records and safely reverses text edits and canvas duplication", async () => {

@@ -92,6 +92,8 @@ export function isWorkflowPath(path: unknown): path is string {
 
 const bindingPath = (path: string) =>
   `takeboard/bindings/${Buffer.from(path).toString("base64url")}.json`;
+const bindingProposalPath = (path: string) =>
+  `takeboard/binding-proposals/${Buffer.from(path).toString("base64url")}.json`;
 
 async function fetchJson(comfyUrl: string, path: string, timeout = 5_000) {
   const response = await fetch(`${comfyUrl}/api/userdata/${encodeURIComponent(path)}`, {
@@ -111,45 +113,66 @@ export async function fetchComfyObjectInfo(comfyUrl: string) {
   return (await response.json()) as ComfyObjectInfo;
 }
 
+export function parseWorkflowBinding(value: unknown, expectedPath?: string) {
+  const binding = value as Partial<WorkflowBinding> | null;
+  const targetGroupValid = (group: unknown) =>
+    Boolean(
+      group &&
+        typeof group === "object" &&
+        Object.values(group).every(
+          (targets) =>
+            Array.isArray(targets) &&
+            targets.length <= 32 &&
+            targets.every(
+              (target) =>
+                target &&
+                typeof target === "object" &&
+                typeof (target as WorkflowBindingTarget).nodeId === "string" &&
+                (target as WorkflowBindingTarget).nodeId.length <= 200 &&
+                typeof (target as WorkflowBindingTarget).input === "string" &&
+                (target as WorkflowBindingTarget).input.length <= 200,
+            ),
+        ),
+    );
+  if (
+    !binding ||
+    binding.version !== workflowBindingVersion ||
+    (expectedPath !== undefined && binding.workflowPath !== expectedPath) ||
+    typeof binding.workflowPath !== "string" ||
+    !isWorkflowPath(binding.workflowPath) ||
+    binding.trusted !== true ||
+    typeof binding.workflowHash !== "string" ||
+    !/^[a-f0-9]{64}$/.test(binding.workflowHash) ||
+    typeof binding.verifiedAt !== "string" ||
+    Number.isNaN(Date.parse(binding.verifiedAt)) ||
+    ![
+      "text_to_image",
+      "image_to_image",
+      "text_to_video",
+      "image_to_video",
+      "first_last_video",
+      "reference_video",
+    ].includes(String(binding.capability)) ||
+    !["image", "video"].includes(String(binding.outputMediaType)) ||
+    !targetGroupValid(binding.parameters) ||
+    !targetGroupValid(binding.media)
+  ) {
+    return null;
+  }
+  return binding as WorkflowBinding;
+}
+
 export async function readWorkflowBinding(comfyUrl: string, path: string) {
   try {
-    const binding = (await fetchJson(comfyUrl, bindingPath(path))) as Partial<WorkflowBinding>;
-    const targetGroupValid = (group: unknown) =>
-      Boolean(
-        group &&
-          typeof group === "object" &&
-          Object.values(group).every(
-            (targets) =>
-              Array.isArray(targets) &&
-              targets.every(
-                (target) =>
-                  target &&
-                  typeof target === "object" &&
-                  typeof (target as WorkflowBindingTarget).nodeId === "string" &&
-                  typeof (target as WorkflowBindingTarget).input === "string",
-              ),
-          ),
-      );
-    if (
-      binding.version !== workflowBindingVersion ||
-      binding.workflowPath !== path ||
-      binding.trusted !== true ||
-      typeof binding.workflowHash !== "string" ||
-      ![
-        "text_to_image",
-        "image_to_image",
-        "text_to_video",
-        "image_to_video",
-        "first_last_video",
-        "reference_video",
-      ].includes(String(binding.capability)) ||
-      !["image", "video"].includes(String(binding.outputMediaType)) ||
-      !targetGroupValid(binding.parameters) ||
-      !targetGroupValid(binding.media)
-    ) {
-      return null;
-    }
-    return binding as WorkflowBinding;
+    return parseWorkflowBinding(await fetchJson(comfyUrl, bindingPath(path)), path);
+  } catch {
+    return null;
+  }
+}
+
+export async function readWorkflowBindingProposal(comfyUrl: string, path: string) {
+  try {
+    return parseWorkflowBinding(await fetchJson(comfyUrl, bindingProposalPath(path)), path);
   } catch {
     return null;
   }
@@ -170,6 +193,23 @@ export async function writeWorkflowBinding(
     },
   );
   if (!response.ok) throw new Error(`ComfyUI 保存参数绑定失败：${response.status}`);
+}
+
+export async function writeWorkflowBindingProposal(
+  comfyUrl: string,
+  path: string,
+  binding: WorkflowBinding,
+) {
+  const response = await fetch(
+    `${comfyUrl}/api/userdata/${encodeURIComponent(bindingProposalPath(path))}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(binding),
+      signal: AbortSignal.timeout(5_000),
+    },
+  );
+  if (!response.ok) throw new Error(`ComfyUI 保存 Recipe 映射草案失败：${response.status}`);
 }
 
 const parameterKeys: WorkflowParameterKey[] = [

@@ -29,6 +29,7 @@ export const projectCommandTypeSchema = z.enum([
   "canvas.move_item",
   "canvas.arrange_scene",
   "canvas.remove_item",
+  "shot.reorder",
   "shot.delete",
 ]);
 
@@ -105,6 +106,11 @@ export const projectCommandSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("shot.delete"),
     shotId: shotIdSchema,
+  }),
+  z.object({
+    type: z.literal("shot.reorder"),
+    shotId: shotIdSchema,
+    toIndex: z.number().int().nonnegative().max(10_000),
   }),
 ]);
 

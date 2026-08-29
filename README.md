@@ -33,6 +33,7 @@ TakeBoard 不重做 ComfyUI 的节点系统。它在现有 Workflow 和算力之
 - 跟踪 ComfyUI 真实节点进度、取消任务、回收结果，并保存可复现的参数快照；
 - 从首页流式导出、校验并重新导入完整 `.takeboard.tgz` 项目包；
 - 以独立 `.takeboard` 目录保存项目，方便备份、迁移和版本归档。
+- 一次性团队邀请、离线恢复码、可验证实例备份与保留旧数据的离线恢复。
 
 ```text
 角色 / 场景 / 道具 / 参考图
@@ -202,12 +203,14 @@ React 19 · Vite · React Flow · Three.js
 ```bash
 pnpm verify       # lint + typecheck + build + unit/integration tests
 pnpm test:e2e     # Playwright 浏览器流程
+pnpm gate:release # 完整自动发布门槛（含 40 Run 与 500 节点）
+pnpm gate:gpu     # 对已启动实例执行一次真实 GPU 端到端门槛
 pnpm format       # 格式化代码
 ```
 
 首次运行浏览器测试前执行 `pnpm exec playwright install chromium`。服务器已有 Chrome 时，也可以通过 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/google-chrome` 指定现有浏览器。
 
-提交 Workflow 兼容性问题时，请附上 ComfyUI 版本、相关 Custom Node、期望输入输出和脱敏后的复现步骤；不要提交 API Key、私有素材或其他凭据。
+发布门槛、阈值和真实 GPU 使用方式见[发布门槛](docs/release-gates.md)。提交 Workflow 兼容性问题时，请附上 ComfyUI 版本、相关 Custom Node、期望输入输出和脱敏后的复现步骤；不要提交 API Key、私有素材或其他凭据。
 
 ## 文档
 
@@ -228,9 +231,11 @@ pnpm format       # 格式化代码
 - [x] 内容画布、素材节点与语义连线
 - [x] Workflow 检测、导入和常用参数映射
 - [x] ComfyUI 任务、取消、结果回收与 Take 管理
+- [x] 1–4 个真实候选批次、独立 Run、整批停止与单候选重试
 - [x] 带内容哈希、显式信任和执行前校验的 Workflow Binding v1
-- [ ] 社区 Recipe 示例与可移植 Binding 包
-- [ ] 分镜墙、整片覆盖率和只读粗剪
+- [x] 带完整性清单、依赖诊断与目标机重新信任的可移植 Workflow/Binding Recipe 包
+- [x] 分镜墙、镜头排序、缩略图和整片覆盖率
+- [ ] 只读粗剪与时间线预览
 - [ ] 多 Worker、远程算力与可解释的执行策略
 - [x] 完整项目包导入导出与升级前自动备份
 - [ ] 成本统计与跨镜头审批

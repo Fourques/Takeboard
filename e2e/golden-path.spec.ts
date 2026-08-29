@@ -704,6 +704,11 @@ test("a user can create and reopen a real project", async ({ page }) => {
   await page.locator(".recipe-selector").click();
   await expect(page.getByRole("heading", { name: "工作流与模型" })).toBeVisible();
   await expect(page.getByText("TakeBoard 内置")).toBeVisible();
+  await expect(page.getByText("导入 Workflow 或 Recipe 包")).toBeVisible();
+  await expect(page.getByRole("link", { name: "导出包" }).first()).toHaveAttribute(
+    "href",
+    /\/api\/workflows\/recipe-package\?path=/,
+  );
   await expect(page.getByRole("button", { name: /Wan22 FLF2V/ })).toContainText("2 个画面位置");
   await expect(page.getByRole("button", { name: /MiniMax H3 R2V/ })).toContainText("12 个画面位置");
   await page.getByRole("button", { name: /MiniMax H3 R2V/ }).click();
@@ -716,6 +721,13 @@ test("a user can create and reopen a real project", async ({ page }) => {
   await expect(page.getByText("无需图片输入")).toBeVisible();
   await expect(page.locator(".react-flow__node-shot .shot-input")).toHaveCount(0);
   await expect(page.getByLabel("宽度", { exact: true })).toHaveValue("1664");
+  const candidateCountControl = page.getByRole("group", { name: "每批候选数量" });
+  await expect(candidateCountControl.getByRole("button")).toHaveCount(4);
+  await candidateCountControl.getByRole("button", { name: "3", exact: true }).click();
+  await expect(
+    candidateCountControl.getByRole("button", { name: "3", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "生成 3 个" })).toBeVisible();
   await page.screenshot({
     path: "test-results/takeboard-qwen-text-page.png",
     fullPage: true,
@@ -965,6 +977,23 @@ test("a user can create and reopen a real project", async ({ page }) => {
   await page.getByRole("menuitem", { name: /复制/ }).click();
   await page.keyboard.press("Meta+V");
   await expect(shotNodes).toHaveCount(originalShotCount + 1);
+
+  await page.getByRole("button", { name: "打开分镜墙" }).click();
+  const storyboard = page.getByRole("dialog", { name: "项目分镜墙" });
+  await expect(storyboard).toBeVisible();
+  await expect(storyboard.getByLabel("整片覆盖率")).toContainText("APPROVED");
+  await expect(storyboard.locator(".storyboard-card")).toHaveCount(2);
+  const orderBefore = await storyboard.locator(".storyboard-card-copy strong").allTextContents();
+  await storyboard.getByRole("button", { name: `${orderBefore[1]} 前移` }).click();
+  await expect(storyboard.locator(".storyboard-card-copy strong").first()).toHaveText(
+    orderBefore[1] ?? "",
+  );
+  await page.screenshot({
+    path: "test-results/takeboard-storyboard.png",
+    fullPage: true,
+    animations: "disabled",
+  });
+  await storyboard.getByRole("button", { name: "关闭分镜墙" }).click();
 
   await shotNodes.last().click({ button: "right" });
   await page.getByRole("menuitem", { name: /删除镜头/ }).click();

@@ -16,7 +16,7 @@ import { mkdir } from "node:fs/promises";
 import { createServer } from "node:net";
 import { homedir, platform } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repoDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const stateDir =
@@ -533,6 +533,41 @@ async function remote(host) {
   if (ssh.exitCode === null) await new Promise((resolveExit) => ssh.once("exit", resolveExit));
 }
 
+async function restore(archive, confirmation) {
+  if (!archive || confirmation !== "--confirm") {
+    throw new Error(
+      "用法：npm run easy -- restore /path/to/backup.takeboard-instance.tgz --confirm",
+    );
+  }
+  const source = resolve(archive);
+  if (!existsSync(source) || !statSync(source).isFile())
+    throw new Error(`找不到实例备份：${source}`);
+  const state = readState();
+  if (
+    state?.instanceId &&
+    processAlive(state.pid) &&
+    (await health(state.port, 1_500, state.instanceId))
+  ) {
+    throw new Error("TakeBoard 仍在运行。请先执行 npm run easy:stop，再进行离线恢复");
+  }
+  if (buildOutdated()) {
+    const manager = packageManager();
+    if (!manager) throw new Error(messages.noPnpm);
+    console.log("正在准备恢复工具…");
+    run(manager.command, [...manager.prefix, "build"]);
+  }
+  const module = await import(
+    pathToFileURL(join(repoDir, "apps", "server", "dist", "instance-backup.js")).href
+  );
+  const authDatabase =
+    runtimeEnvironment.TAKEBOARD_AUTH_DATABASE || join(dataRoot(), ".system", "auth.db");
+  console.log("正在隔离解包并验证所有哈希、身份数据库和项目数据库…");
+  const receipt = await module.restoreInstanceOffline(dataRoot(), source, authDatabase);
+  console.log(`恢复完成：${receipt.projects} 个项目、${receipt.users} 个账号。`);
+  console.log(`恢复前数据保留在：${receipt.previousData}`);
+  console.log("现在可以运行 npm run easy 启动 TakeBoard。");
+}
+
 function help() {
   printHeader();
   console.log(`用法：node scripts/takeboard-easy.mjs <命令>
@@ -542,16 +577,19 @@ function help() {
   stop           停止简易后台服务
   doctor         用中文检查常见问题并给出下一步
   remote <主机>  通过标准 SSH 连接远端 TakeBoard
+  restore <文件> --confirm
+                 停止服务后完整恢复实例备份，并保留恢复前数据
   help           显示帮助`);
 }
 
-const [command = "start", argument] = process.argv.slice(2);
+const [command = "start", argument, confirmation] = process.argv.slice(2);
 try {
   if (command === "setup") await setup();
   else if (command === "start") await start();
   else if (command === "stop") await stop();
   else if (command === "doctor") await doctor();
   else if (command === "remote") await remote(argument);
+  else if (command === "restore") await restore(argument, confirmation);
   else help();
 } catch (error) {
   console.error(`操作失败：${error instanceof Error ? error.message : String(error)}`);

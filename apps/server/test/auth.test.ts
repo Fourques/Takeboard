@@ -93,7 +93,14 @@ describe("TakeBoard authentication and authorization", () => {
       url: "/api/projects",
       headers: { cookie: owner.cookie },
     });
-    expect(projects.json().projects).toEqual([expect.objectContaining({ key, role: "owner" })]);
+    expect(projects.json().projects).toEqual([
+      expect.objectContaining({
+        key,
+        role: "owner",
+        membershipRole: "owner",
+        accessSource: "instance_admin",
+      }),
+    ]);
 
     const duplicateBootstrap = await app.inject({
       method: "POST",
@@ -184,6 +191,24 @@ describe("TakeBoard authentication and authorization", () => {
       headers: { cookie: member.cookie },
     });
     expect(deniedAdmin.statusCode).toBe(403);
+    const deniedRecipeExport = await app.inject({
+      method: "GET",
+      url: "/api/workflows/recipe-package?path=TakeBoard%2Fprivate.json",
+      headers: { cookie: member.cookie },
+    });
+    expect(deniedRecipeExport.statusCode).toBe(403);
+    for (const url of [
+      "/api/workflows/raw?path=TakeBoard%2Fprivate.json",
+      "/api/workflows/archive-preview?path=TakeBoard%2Fprivate.json",
+      "/api/workflows/archives",
+    ]) {
+      const deniedWorkflowAdministration = await app.inject({
+        method: "GET",
+        url,
+        headers: { cookie: member.cookie },
+      });
+      expect(deniedWorkflowAdministration.statusCode).toBe(403);
+    }
 
     const shared = await app.inject({
       method: "PUT",
@@ -205,6 +230,32 @@ describe("TakeBoard authentication and authorization", () => {
       headers: { cookie: member.cookie },
     });
     expect(visible.statusCode).toBe(200);
+    const memberCatalog = await app.inject({
+      method: "GET",
+      url: "/api/projects",
+      headers: { cookie: member.cookie },
+    });
+    expect(memberCatalog.json().projects).toEqual([
+      expect.objectContaining({
+        key,
+        role: "viewer",
+        membershipRole: "viewer",
+        accessSource: "membership",
+      }),
+    ]);
+    const viewerExport = await app.inject({
+      method: "GET",
+      url: `/api/projects/${key}/export`,
+      headers: { cookie: member.cookie },
+    });
+    expect(viewerExport.statusCode).toBe(403);
+    const viewerTrash = await app.inject({
+      method: "GET",
+      url: "/api/projects/trash",
+      headers: { cookie: member.cookie },
+    });
+    expect(viewerTrash.statusCode).toBe(200);
+    expect(viewerTrash.json().projects).toEqual([]);
     const viewerWrite = await app.inject({
       method: "PATCH",
       url: `/api/projects/${key}`,
@@ -226,6 +277,12 @@ describe("TakeBoard authentication and authorization", () => {
       payload: { title: "Editor changed this" },
     });
     expect(editorWrite.statusCode, editorWrite.body).toBe(200);
+    const editorExport = await app.inject({
+      method: "GET",
+      url: `/api/projects/${key}/export`,
+      headers: { cookie: member.cookie },
+    });
+    expect(editorExport.statusCode).toBe(403);
     const editorDelete = await app.inject({
       method: "DELETE",
       url: `/api/projects/${key}`,
@@ -247,6 +304,34 @@ describe("TakeBoard authentication and authorization", () => {
         expect.objectContaining({ action: "project.member_set" }),
       ]),
     );
+    const promotedOwner = await app.inject({
+      method: "PUT",
+      url: `/api/projects/${key}/members/${memberId}`,
+      headers: { cookie: admin.cookie, "x-takeboard-csrf": admin.csrf },
+      payload: { role: "owner" },
+    });
+    expect(promotedOwner.statusCode, promotedOwner.body).toBe(200);
+    const ownerDelete = await app.inject({
+      method: "DELETE",
+      url: `/api/projects/${key}`,
+      headers: { cookie: member.cookie, "x-takeboard-csrf": member.csrf },
+    });
+    expect(ownerDelete.statusCode, ownerDelete.body).toBe(200);
+    const ownerTrash = await app.inject({
+      method: "GET",
+      url: "/api/projects/trash",
+      headers: { cookie: member.cookie },
+    });
+    expect(ownerTrash.json().projects).toEqual([
+      expect.objectContaining({ originalKey: key, title: "Editor changed this" }),
+    ]);
+    const trashKey = ownerTrash.json().projects[0].trashKey as string;
+    const ownerRestore = await app.inject({
+      method: "POST",
+      url: `/api/projects/trash/${trashKey}/restore`,
+      headers: { cookie: member.cookie, "x-takeboard-csrf": member.csrf },
+    });
+    expect(ownerRestore.statusCode, ownerRestore.body).toBe(200);
   }, 20_000);
 
   it("requires the current password and revokes other sessions after a password change", async () => {
@@ -302,4 +387,130 @@ describe("TakeBoard authentication and authorization", () => {
     });
     expect(currentStillWorks.statusCode).toBe(200);
   }, 20_000);
+
+  it("uses expiring one-time invitations without exposing an administrator-chosen password", async () => {
+    const app = await authApp();
+    const bootstrap = await app.inject({
+      method: "POST",
+      url: "/api/auth/bootstrap",
+      payload: {
+        name: "Admin",
+        email: "admin@example.com",
+        password: "administrator invitation passphrase",
+      },
+    });
+    const admin = sessionHeaders(bootstrap);
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/admin/invitations",
+      headers: { cookie: admin.cookie, "x-takeboard-csrf": admin.csrf },
+      payload: {
+        name: "Cinematographer",
+        email: "camera@example.com",
+        instanceRole: "member",
+        expiresHours: 24,
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const token = created.json().token as string;
+    expect(token).toHaveLength(43);
+    expect(created.json().invitation).toMatchObject({
+      email: "camera@example.com",
+      status: "pending",
+    });
+
+    const listed = await app.inject({
+      method: "GET",
+      url: "/api/admin/invitations",
+      headers: { cookie: admin.cookie },
+    });
+    expect(listed.body).not.toContain(token);
+
+    const inspected = await app.inject({
+      method: "GET",
+      url: `/api/auth/invitations/${token}`,
+    });
+    expect(inspected.statusCode).toBe(200);
+    expect(inspected.json().invitation).toEqual(
+      expect.objectContaining({ email: "camera@example.com", instanceRole: "member" }),
+    );
+
+    const accepted = await app.inject({
+      method: "POST",
+      url: `/api/auth/invitations/${token}`,
+      payload: { password: "cinematographer private passphrase" },
+    });
+    expect(accepted.statusCode, accepted.body).toBe(201);
+    expect(accepted.json().user).toMatchObject({
+      email: "camera@example.com",
+      mustChangePassword: false,
+    });
+    const replay = await app.inject({
+      method: "POST",
+      url: `/api/auth/invitations/${token}`,
+      payload: { password: "another private passphrase" },
+    });
+    expect(replay.statusCode).toBe(404);
+  }, 20_000);
+
+  it("rotates one-time recovery codes and revokes every existing session after recovery", async () => {
+    const app = await authApp();
+    const bootstrap = await app.inject({
+      method: "POST",
+      url: "/api/auth/bootstrap",
+      payload: {
+        name: "Owner",
+        email: "owner@example.com",
+        password: "original account recovery passphrase",
+      },
+    });
+    const owner = sessionHeaders(bootstrap);
+    const generated = await app.inject({
+      method: "POST",
+      url: "/api/auth/recovery-codes",
+      headers: { cookie: owner.cookie, "x-takeboard-csrf": owner.csrf },
+      payload: { currentPassword: "original account recovery passphrase" },
+    });
+    expect(generated.statusCode, generated.body).toBe(200);
+    expect(generated.json().codes).toHaveLength(10);
+    expect(generated.json().status.available).toBe(10);
+    const code = generated.json().codes[0] as string;
+
+    const recovered = await app.inject({
+      method: "POST",
+      url: "/api/auth/recover",
+      payload: {
+        email: "owner@example.com",
+        code: code.toLowerCase().replaceAll("-", " "),
+        newPassword: "replacement account recovery passphrase",
+      },
+    });
+    expect(recovered.statusCode, recovered.body).toBe(200);
+    const revoked = await app.inject({
+      method: "GET",
+      url: "/api/projects",
+      headers: { cookie: owner.cookie },
+    });
+    expect(revoked.statusCode).toBe(401);
+
+    const reused = await app.inject({
+      method: "POST",
+      url: "/api/auth/recover",
+      payload: {
+        email: "owner@example.com",
+        code,
+        newPassword: "this attempt cannot reuse the code",
+      },
+    });
+    expect(reused.statusCode).toBe(400);
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: {
+        email: "owner@example.com",
+        password: "replacement account recovery passphrase",
+      },
+    });
+    expect(login.statusCode, login.body).toBe(200);
+  }, 30_000);
 });

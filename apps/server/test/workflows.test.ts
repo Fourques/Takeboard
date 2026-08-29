@@ -3,10 +3,24 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
-import { discoverBindingCandidates } from "../src/workflow-bindings.js";
+import { discoverBindingCandidates, workflowHash } from "../src/workflow-bindings.js";
 
 const apps: ReturnType<typeof buildApp>[] = [];
 const directories: string[] = [];
+
+function multipartFile(filename: string, mimeType: string, bytes: Uint8Array) {
+  const boundary = "----takeboard-workflow-package";
+  return {
+    payload: Buffer.concat([
+      Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: ${mimeType}\r\n\r\n`,
+      ),
+      Buffer.from(bytes),
+      Buffer.from(`\r\n--${boundary}--\r\n`),
+    ]),
+    headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+  };
+}
 
 afterEach(async () => {
   vi.unstubAllGlobals();
@@ -17,6 +31,114 @@ afterEach(async () => {
 });
 
 describe("ComfyUI workflow detection", () => {
+  it("exports and safely imports a portable Recipe without inheriting execution trust", async () => {
+    const sourcePath = "TakeBoard/custom-t2i.json";
+    const workflow = {
+      "1": {
+        class_type: "PromptNode",
+        inputs: { text: "A quiet harbor" },
+        _meta: { title: "Positive Prompt" },
+      },
+      "2": {
+        class_type: "SaveImage",
+        inputs: { images: ["1", 0], filename_prefix: "output" },
+      },
+    };
+    const hash = workflowHash(workflow);
+    const binding = {
+      version: 1,
+      workflowPath: sourcePath,
+      workflowHash: hash,
+      capability: "text_to_image",
+      outputMediaType: "image",
+      parameters: { prompt: [{ nodeId: "1", input: "text" }] },
+      media: {},
+      trusted: true,
+      verifiedAt: "2026-08-30T00:00:00.000Z",
+    };
+    const bindingPath = `takeboard/bindings/${Buffer.from(sourcePath).toString("base64url")}.json`;
+    const documents = new Map<string, unknown>([
+      [`workflows/${sourcePath}`, workflow],
+      [bindingPath, binding],
+    ]);
+    const objectInfo = {
+      PromptNode: { input: { required: { text: ["STRING"] } } },
+      SaveImage: {
+        input: {
+          required: { images: ["IMAGE"] },
+          optional: { filename_prefix: ["STRING"] },
+        },
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = decodeURIComponent(String(input));
+        if (url.endsWith("/object_info")) return Response.json(objectInfo);
+        const marker = "/api/userdata/";
+        const markerIndex = url.indexOf(marker);
+        if (markerIndex >= 0) {
+          const path = url.slice(markerIndex + marker.length);
+          if (init?.method === "POST") {
+            documents.set(path, JSON.parse(String(init.body)));
+            return Response.json({});
+          }
+          const document = documents.get(path);
+          return document === undefined
+            ? new Response("missing", { status: 404 })
+            : Response.json(document);
+        }
+        throw new Error(`Unexpected ComfyUI request: ${url}`);
+      }),
+    );
+    const app = buildApp({ comfyUrl: "http://comfy.test", webRoot: null });
+    apps.push(app);
+
+    const exported = await app.inject({
+      method: "GET",
+      url: `/api/workflows/recipe-package?path=${encodeURIComponent(sourcePath)}`,
+    });
+    expect(exported.statusCode, exported.body).toBe(200);
+    expect(exported.headers["content-type"]).toContain("application/gzip");
+    expect(exported.headers["content-disposition"]).toContain("takeboard-recipe.tgz");
+
+    const imported = await app.inject({
+      method: "POST",
+      url: "/api/workflows/recipe-package/import",
+      ...multipartFile("portable.takeboard-recipe.tgz", "application/gzip", exported.rawPayload),
+    });
+    expect(imported.statusCode, imported.body).toBe(201);
+    expect(imported.json()).toMatchObject({
+      imported: true,
+      execution: "comfy_only",
+      bindingStatus: "needs_binding",
+      bindingProposal: "recipe_package",
+      recipePackage: {
+        sourcePath,
+        bindingProposalIncluded: true,
+        trustRequired: true,
+      },
+      binding: {
+        capability: "text_to_image",
+        parameters: { prompt: [{ nodeId: "1", input: "text" }] },
+      },
+    });
+    const destination = imported.json().path as string;
+    const activeBindingPath = `takeboard/bindings/${Buffer.from(destination).toString("base64url")}.json`;
+    const proposalPath = `takeboard/binding-proposals/${Buffer.from(destination).toString("base64url")}.json`;
+    expect(documents.has(`workflows/${destination}`)).toBe(true);
+    expect(documents.has(proposalPath)).toBe(true);
+    expect(documents.has(activeBindingPath)).toBe(false);
+
+    const trusted = await app.inject({
+      method: "PUT",
+      url: `/api/workflows/binding?path=${encodeURIComponent(destination)}`,
+      payload: { ...imported.json().binding, trusted: true },
+    });
+    expect(trusted.statusCode, trusted.body).toBe(200);
+    expect(documents.has(activeBindingPath)).toBe(true);
+  });
+
   it("blocks referenced workflows, then archives and restores unreferenced imports", async () => {
     const root = await mkdtemp(join(tmpdir(), "takeboard-workflow-archive-"));
     directories.push(root);

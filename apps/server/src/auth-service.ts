@@ -3,10 +3,12 @@ import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type {
   Account,
+  AccountInvitation,
   AccountSession,
   InstanceRole,
   ProjectMember,
   ProjectRole,
+  RecoveryCodeStatus,
 } from "@takeboard/contracts";
 import BetterSqlite3 from "better-sqlite3";
 
@@ -37,6 +39,28 @@ type SessionRow = {
   ip_address: string | null;
 };
 
+type InvitationRow = {
+  id: string;
+  token_hash: string;
+  email: string;
+  name: string;
+  instance_role: InstanceRole;
+  status: "pending" | "accepted" | "revoked";
+  created_at: string;
+  expires_at: string;
+  created_by: string;
+  accepted_at: string | null;
+  accepted_by: string | null;
+};
+
+type RecoveryCodeRow = {
+  id: string;
+  user_id: string;
+  code_hash: string;
+  created_at: string;
+  used_at: string | null;
+};
+
 const scryptParameters = { N: 2 ** 15, r: 8, p: 3, maxmem: 160 * 1024 * 1024 } as const;
 const absoluteSessionMilliseconds = 7 * 24 * 60 * 60 * 1000;
 const idleSessionMilliseconds = 24 * 60 * 60 * 1000;
@@ -60,6 +84,35 @@ function normalizeEmail(email: string) {
 
 function tokenDigest(token: string) {
   return createHash("sha256").update(token).digest("hex");
+}
+
+function normalizeRecoveryCode(code: string) {
+  return code
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+}
+
+function createRecoveryCode() {
+  const alphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+  const bytes = randomBytes(16);
+  let value = "";
+  for (const byte of bytes) value += alphabet[byte % alphabet.length];
+  return `TB-${value.slice(0, 4)}-${value.slice(4, 8)}-${value.slice(8, 12)}-${value.slice(12)}`;
+}
+
+function toInvitation(row: InvitationRow): AccountInvitation {
+  const expired = row.status === "pending" && Date.parse(row.expires_at) <= Date.now();
+  return {
+    id: row.id,
+    email: row.email,
+    name: row.name,
+    instanceRole: row.instance_role,
+    status: expired ? "expired" : row.status,
+    createdAt: row.created_at,
+    expiresAt: row.expires_at,
+    acceptedAt: row.accepted_at,
+  };
 }
 
 export function csrfForSessionToken(token: string) {
@@ -124,10 +177,12 @@ function toAccount(row: UserRow): Account {
 
 export class AuthService {
   private readonly client: BetterSqlite3.Database;
+  private readonly databasePath: string;
   readonly mode: AuthMode;
 
   constructor(databasePath: string, mode: AuthMode) {
     const resolved = databasePath === ":memory:" ? databasePath : resolve(databasePath);
+    this.databasePath = resolved;
     if (resolved !== ":memory:") mkdirSync(dirname(resolved), { recursive: true, mode: 0o700 });
     this.client = new BetterSqlite3(resolved);
     this.mode = mode;
@@ -190,11 +245,48 @@ export class AuthService {
         created_at TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS auth_audit_created_idx ON auth_audit_log(created_at DESC);
+      CREATE TABLE IF NOT EXISTS auth_invitations (
+        id TEXT PRIMARY KEY NOT NULL,
+        token_hash TEXT NOT NULL UNIQUE,
+        email TEXT NOT NULL COLLATE NOCASE,
+        name TEXT NOT NULL,
+        instance_role TEXT NOT NULL CHECK (instance_role IN ('admin', 'member')),
+        status TEXT NOT NULL CHECK (status IN ('pending', 'accepted', 'revoked')),
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        created_by TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+        accepted_at TEXT,
+        accepted_by TEXT REFERENCES auth_users(id) ON DELETE SET NULL
+      );
+      CREATE INDEX IF NOT EXISTS auth_invitations_email_idx
+        ON auth_invitations(email, created_at DESC);
+      CREATE TABLE IF NOT EXISTS auth_recovery_codes (
+        id TEXT PRIMARY KEY NOT NULL,
+        user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+        code_hash TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL,
+        used_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS auth_recovery_codes_user_idx
+        ON auth_recovery_codes(user_id, used_at);
     `);
   }
 
   close() {
     this.client.close();
+  }
+
+  backupDatabase(destination: string) {
+    if (this.databasePath === ":memory:") throw new Error("内存身份数据库不能创建实例备份");
+    this.client.pragma("wal_checkpoint(PASSIVE)");
+    this.client.prepare("VACUUM INTO ?").run(resolve(destination));
+  }
+
+  verifyCurrentPassword(userId: string, password: string) {
+    const row = this.client
+      .prepare("SELECT password_hash FROM auth_users WHERE id = ?")
+      .get(userId) as { password_hash: string } | undefined;
+    return Boolean(row && verifyPassword(password, row.password_hash));
   }
 
   configured() {
@@ -283,6 +375,215 @@ export class AuthService {
       ip,
     );
     return this.requireUser(id);
+  }
+
+  createInvitation(
+    input: { email: string; name: string; instanceRole: InstanceRole; expiresHours?: number },
+    actorId: string,
+    ip: string | null,
+  ) {
+    const email = normalizeEmail(input.email);
+    const name = input.name.trim();
+    if (!/^\S+@\S+\.\S+$/.test(email) || email.length > 254) throw new Error("请输入有效邮箱地址");
+    if (!name || name.length > 120) throw new Error("姓名需要为 1–120 个字符");
+    if (this.userRowByEmail(email)) throw new Error("这个邮箱已经存在");
+    const expiresHours = Math.max(1, Math.min(168, Math.trunc(input.expiresHours ?? 72)));
+    const token = randomBytes(32).toString("base64url");
+    const id = randomUUID();
+    const createdAt = nowIso();
+    const expiresAt = new Date(Date.now() + expiresHours * 60 * 60 * 1000).toISOString();
+    this.client.transaction(() => {
+      this.client
+        .prepare(
+          "UPDATE auth_invitations SET status = 'revoked' WHERE email = ? AND status = 'pending'",
+        )
+        .run(email);
+      this.client
+        .prepare(`INSERT INTO auth_invitations
+          (id, token_hash, email, name, instance_role, status, created_at, expires_at, created_by)
+          VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)`)
+        .run(
+          id,
+          tokenDigest(token),
+          email,
+          name,
+          input.instanceRole,
+          createdAt,
+          expiresAt,
+          actorId,
+        );
+      this.audit(
+        actorId,
+        "invitation.created",
+        "invitation",
+        id,
+        { email, instanceRole: input.instanceRole, expiresAt },
+        ip,
+      );
+    })();
+    const row = this.client
+      .prepare("SELECT * FROM auth_invitations WHERE id = ?")
+      .get(id) as InvitationRow;
+    return { invitation: toInvitation(row), token };
+  }
+
+  listInvitations() {
+    return (
+      this.client
+        .prepare("SELECT * FROM auth_invitations ORDER BY created_at DESC LIMIT 100")
+        .all() as InvitationRow[]
+    ).map(toInvitation);
+  }
+
+  invitationForToken(token: string) {
+    if (!token || token.length > 200) return null;
+    const row = this.client
+      .prepare("SELECT * FROM auth_invitations WHERE token_hash = ?")
+      .get(tokenDigest(token)) as InvitationRow | undefined;
+    if (!row) return null;
+    const invitation = toInvitation(row);
+    return invitation.status === "pending" ? invitation : null;
+  }
+
+  revokeInvitation(invitationId: string, actorId: string, ip: string | null) {
+    const changed =
+      this.client
+        .prepare(
+          "UPDATE auth_invitations SET status = 'revoked' WHERE id = ? AND status = 'pending'",
+        )
+        .run(invitationId).changes > 0;
+    if (changed) this.audit(actorId, "invitation.revoked", "invitation", invitationId, {}, ip);
+    return changed;
+  }
+
+  acceptInvitation(token: string, password: string, ip: string | null) {
+    const invitation = this.invitationForToken(token);
+    if (!invitation) return null;
+    const passwordHash = hashPassword(password);
+    const userId = randomUUID();
+    const timestamp = nowIso();
+    this.client.transaction(() => {
+      const current = this.client
+        .prepare("SELECT * FROM auth_invitations WHERE id = ?")
+        .get(invitation.id) as InvitationRow | undefined;
+      if (!current || toInvitation(current).status !== "pending") throw new Error("邀请已经失效");
+      if (this.userRowByEmail(current.email)) throw new Error("这个邮箱已经注册");
+      this.client
+        .prepare(`INSERT INTO auth_users
+          (id, email, name, password_hash, instance_role, status, must_change_password, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, 'active', 0, ?, ?)`)
+        .run(
+          userId,
+          current.email,
+          current.name,
+          passwordHash,
+          current.instance_role,
+          timestamp,
+          timestamp,
+        );
+      const accepted = this.client
+        .prepare(`UPDATE auth_invitations SET status = 'accepted', accepted_at = ?, accepted_by = ?
+          WHERE id = ? AND status = 'pending'`)
+        .run(timestamp, userId, invitation.id);
+      if (accepted.changes !== 1) throw new Error("邀请已经失效");
+      this.audit(
+        userId,
+        "invitation.accepted",
+        "invitation",
+        invitation.id,
+        { email: current.email },
+        ip,
+      );
+    })();
+    return this.requireUser(userId);
+  }
+
+  recoveryCodeStatus(userId: string): RecoveryCodeStatus {
+    const row = this.client
+      .prepare(`SELECT COUNT(*) AS available, MAX(created_at) AS generated_at
+        FROM auth_recovery_codes WHERE user_id = ? AND used_at IS NULL`)
+      .get(userId) as { available: number; generated_at: string | null };
+    return { available: row.available, generatedAt: row.generated_at };
+  }
+
+  generateRecoveryCodes(
+    userId: string,
+    currentPassword: string,
+    ip: string | null,
+  ): { codes: string[]; status: RecoveryCodeStatus } | null {
+    const row = this.client.prepare("SELECT * FROM auth_users WHERE id = ?").get(userId) as
+      | UserRow
+      | undefined;
+    if (!row || !verifyPassword(currentPassword, row.password_hash)) return null;
+    const codes = Array.from({ length: 10 }, createRecoveryCode);
+    const createdAt = nowIso();
+    this.client.transaction(() => {
+      this.client.prepare("DELETE FROM auth_recovery_codes WHERE user_id = ?").run(userId);
+      const insert = this.client.prepare(`INSERT INTO auth_recovery_codes
+        (id, user_id, code_hash, created_at, used_at) VALUES (?, ?, ?, ?, NULL)`);
+      for (const code of codes) {
+        insert.run(randomUUID(), userId, tokenDigest(normalizeRecoveryCode(code)), createdAt);
+      }
+      this.audit(
+        userId,
+        "auth.recovery_codes_rotated",
+        "user",
+        userId,
+        { count: codes.length },
+        ip,
+      );
+    })();
+    return { codes, status: this.recoveryCodeStatus(userId) };
+  }
+
+  recoverPassword(email: string, code: string, nextPassword: string, ip: string | null) {
+    const normalizedEmail = normalizeEmail(email);
+    const address = ip ?? "unknown";
+    if (!this.loginAllowed(normalizedEmail, address).allowed) {
+      return { recovered: false, rateLimited: true } as const;
+    }
+    const user = this.userRowByEmail(normalizedEmail);
+    const normalizedCode = normalizeRecoveryCode(code);
+    const codeRow =
+      user && normalizedCode.length >= 16
+        ? (this.client
+            .prepare(`SELECT * FROM auth_recovery_codes
+          WHERE user_id = ? AND code_hash = ? AND used_at IS NULL`)
+            .get(user.id, tokenDigest(normalizedCode)) as RecoveryCodeRow | undefined)
+        : undefined;
+    if (user?.status !== "active" || !codeRow) {
+      this.client
+        .prepare("INSERT INTO auth_login_failures (email, ip_address, created_at) VALUES (?, ?, ?)")
+        .run(normalizedEmail, address, nowIso());
+      this.audit(user?.id ?? null, "auth.recovery_failed", "user", user?.id ?? null, {}, ip);
+      return { recovered: false, rateLimited: false } as const;
+    }
+    const passwordHash = hashPassword(nextPassword);
+    const timestamp = nowIso();
+    this.client.transaction(() => {
+      const consumed = this.client
+        .prepare("UPDATE auth_recovery_codes SET used_at = ? WHERE id = ? AND used_at IS NULL")
+        .run(timestamp, codeRow.id);
+      if (consumed.changes !== 1) throw new Error("恢复码已经使用");
+      this.client
+        .prepare(
+          "UPDATE auth_users SET password_hash = ?, must_change_password = 0, updated_at = ? WHERE id = ?",
+        )
+        .run(passwordHash, timestamp, user.id);
+      this.revokeAllSessions(user.id);
+      this.client
+        .prepare("DELETE FROM auth_login_failures WHERE email = ? OR ip_address = ?")
+        .run(normalizedEmail, address);
+      this.audit(
+        user.id,
+        "auth.password_recovered",
+        "user",
+        user.id,
+        { recoveryCodeId: codeRow.id },
+        ip,
+      );
+    })();
+    return { recovered: true, rateLimited: false } as const;
   }
 
   loginAllowed(email: string, ip: string) {

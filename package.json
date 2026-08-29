@@ -13,6 +13,7 @@
     "easy:stop": "node scripts/takeboard-easy.mjs stop",
     "easy:doctor": "node scripts/takeboard-easy.mjs doctor",
     "easy:remote": "node scripts/takeboard-easy.mjs remote",
+    "easy:restore": "node scripts/takeboard-easy.mjs restore",
     "dev": "pnpm --parallel --filter @takeboard/server --filter @takeboard/web dev",
     "dev:web": "pnpm --filter @takeboard/web dev",
     "dev:server": "pnpm --filter @takeboard/server dev",
@@ -22,6 +23,8 @@
     "format": "biome format --write .",
     "test": "pnpm -r --if-present test",
     "test:e2e": "pnpm build && playwright test",
+    "gate:release": "pnpm verify && pnpm test:e2e",
+    "gate:gpu": "node scripts/gpu-release-gate.mjs",
     "verify": "pnpm lint && pnpm typecheck && pnpm build && pnpm test"
   },
   "devDependencies": {

@@ -8,6 +8,7 @@ type CommandHistoryProps = {
   onRefresh: () => void;
   onUndo: (commandId: string) => void;
   open: boolean;
+  readOnly: boolean;
 };
 
 const effectWords = {
@@ -26,6 +27,7 @@ export function CommandHistory({
   onRefresh,
   onUndo,
   open,
+  readOnly,
 }: CommandHistoryProps) {
   if (!open) return null;
   return (
@@ -76,7 +78,7 @@ export function CommandHistory({
             ) : (
               <p>状态没有发生额外变化</p>
             )}
-            {entry.status === "applied" && entry.undoable ? (
+            {!readOnly && entry.status === "applied" && entry.undoable ? (
               <button
                 className="command-history-undo"
                 type="button"

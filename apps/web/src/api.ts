@@ -1,5 +1,6 @@
 import type {
   Account,
+  AccountInvitation,
   AccountSession,
   AuthAuditEntry,
   AuthStatus,
@@ -10,6 +11,8 @@ import type {
   ProjectMember,
   ProjectRole,
   ProjectSnapshot,
+  PublicInvitation,
+  RecoveryCodeStatus,
   WorkflowDiagnostic,
 } from "@takeboard/contracts";
 
@@ -20,6 +23,7 @@ export type DemoPayload = {
 
 export type ProjectCatalogItem = {
   key: string;
+  revision: number;
   id: string;
   title: string;
   aspectRatio: string;
@@ -27,11 +31,16 @@ export type ProjectCatalogItem = {
   shotCount: number;
   activeRunCount: number;
   updatedAt: string;
+  /** Effective role used by older clients and action guards. */
   role: ProjectRole;
+  /** The actual project membership, which can be absent for an instance administrator. */
+  membershipRole: ProjectRole | null;
+  accessSource: "membership" | "instance_admin";
   boards: ProjectBoardPreview[];
 };
 
 let csrfToken: string | null = null;
+const knownProjectRevisions = new Map<string, number>();
 
 export function setApiCsrfToken(value: string | null) {
   csrfToken = value;
@@ -42,6 +51,12 @@ async function apiFetch(path: string, options?: RequestInit) {
   const method = (options?.method ?? "GET").toUpperCase();
   if (csrfToken && !["GET", "HEAD", "OPTIONS"].includes(method)) {
     headers.set("x-takeboard-csrf", csrfToken);
+  }
+  const projectMatch = /^\/api\/projects\/([^/?]+)/.exec(path);
+  if (projectMatch?.[1] && !["GET", "HEAD", "OPTIONS"].includes(method)) {
+    const key = decodeURIComponent(projectMatch[1]);
+    const revision = knownProjectRevisions.get(key);
+    if (revision !== undefined) headers.set("x-takeboard-revision", String(revision));
   }
   const response = await fetch(path, { credentials: "same-origin", ...options, headers });
   if (response.status === 401) window.dispatchEvent(new Event("takeboard:auth-required"));
@@ -54,6 +69,30 @@ export type TrashedProjectItem = {
   title: string;
   shotCount: number;
   deletedAt: string;
+};
+
+export type InstanceBackup = {
+  id: string;
+  filename: string;
+  createdAt: string;
+  size: number;
+  projectCount: number;
+  userCount: number;
+};
+
+export type StagedRestore = {
+  restoreId: string;
+  createdAt: string;
+  projectCount: number;
+  userCount: number;
+  projects: Array<{
+    key: string;
+    projectId: string;
+    title: string;
+    revision: number;
+    alreadyExists: boolean;
+  }>;
+  expiresAt: string;
 };
 
 export type ProjectBoardPreview = {
@@ -186,7 +225,20 @@ export type WorkflowBindingInspection = {
   warning?: string;
   message?: string;
   diagnostic?: WorkflowDiagnostic;
+  bindingProposal?: "recipe_package" | null;
 };
+
+export type WorkflowRecipeImport = WorkflowSummary &
+  WorkflowBindingInspection & {
+    imported: true;
+    recipePackage: {
+      format: "takeboard.workflow-recipe";
+      version: 1;
+      sourcePath: string;
+      bindingProposalIncluded: boolean;
+      trustRequired: true;
+    };
+  };
 
 export type WorkflowArchiveReference = {
   projectKey: string;
@@ -262,10 +314,27 @@ async function jsonRequest<T>(path: string, options?: RequestInit): Promise<T> {
     headers.set("content-type", "application/json");
   }
   const response = await apiFetch(path, { ...options, headers });
-  const payload = (await response.json().catch(() => ({}))) as T & { error?: string };
+  const payload = (await response.json().catch(() => ({}))) as T & {
+    error?: string;
+    code?: string;
+    currentRevision?: number;
+  };
   if (!response.ok) {
+    if (response.status === 409 && payload.code === "REVISION_CONFLICT") {
+      window.dispatchEvent(
+        new CustomEvent("takeboard:revision-conflict", {
+          detail: { path, currentRevision: payload.currentRevision },
+        }),
+      );
+    }
     if (response.status === 413) throw new Error(payload.error ?? "文件超过当前服务上传上限");
     throw new Error(payload.error ?? `TakeBoard 请求失败（${response.status}）`);
+  }
+  const revisionPayload = payload as unknown as { key?: unknown; revision?: unknown };
+  if (typeof revisionPayload.key === "string" && typeof revisionPayload.revision === "number") {
+    const key = revisionPayload.key;
+    const revision = revisionPayload.revision;
+    knownProjectRevisions.set(key, Math.max(revision, knownProjectRevisions.get(key) ?? 0));
   }
   return payload;
 }
@@ -315,9 +384,36 @@ async function executeProjectCommand(
 }
 
 export const projectApi = {
-  list: () => jsonRequest<{ projects: ProjectCatalogItem[] }>("/api/projects"),
-  open: (key: string) =>
-    jsonRequest<DemoPayload & { key: string }>(`/api/projects/${encodeURIComponent(key)}`),
+  list: async () => {
+    const payload = await jsonRequest<{ projects: ProjectCatalogItem[] }>("/api/projects");
+    for (const project of payload.projects)
+      knownProjectRevisions.set(project.key, project.revision);
+    return payload;
+  },
+  markRevision: (key: string, revision: number) => {
+    knownProjectRevisions.set(key, revision);
+  },
+  open: async (key: string) => {
+    const payload = await jsonRequest<DemoPayload & { key: string }>(
+      `/api/projects/${encodeURIComponent(key)}`,
+    );
+    knownProjectRevisions.set(key, payload.revision);
+    return payload;
+  },
+  sync: async (key: string, revision: number) => {
+    const response = await apiFetch(`/api/projects/${encodeURIComponent(key)}/sync`, {
+      headers: { "if-none-match": `"takeboard-r${revision}"` },
+    });
+    if (response.status === 304) return null;
+    const payload = (await response.json().catch(() => ({}))) as DemoPayload & {
+      key: string;
+      error?: string;
+    };
+    if (!response.ok || !payload.snapshot) {
+      throw new Error(payload.error ?? `项目同步失败（${response.status}）`);
+    }
+    return payload;
+  },
   create: (input: { title: string }) =>
     jsonRequest<DemoPayload & { key: string }>("/api/projects", {
       method: "POST",
@@ -350,6 +446,16 @@ export const projectApi = {
     executeProjectCommand(key, { type: "shot.delete", shotId }) as Promise<
       CommandResponse & { removedShotId: string; removedItemIds: string[] }
     >,
+  reorderShot: (key: string, shotId: string, toIndex: number) =>
+    executeProjectCommand(key, { type: "shot.reorder", shotId, toIndex }) as Promise<
+      CommandResponse & {
+        shotId: string;
+        sceneId: string;
+        fromIndex: number;
+        toIndex: number;
+        orderedShotIds: string[];
+      }
+    >,
   createTextNode: (
     key: string,
     input: { title?: string; body?: string; sceneId?: string; x?: number; y?: number },
@@ -362,11 +468,16 @@ export const projectApi = {
       method: "PATCH",
       body: JSON.stringify({ title }),
     }),
-  delete: (key: string) =>
-    jsonRequest<{ key: string; deleted: true; recoverable: true; stoppedRunCount: number }>(
-      `/api/projects/${encodeURIComponent(key)}`,
-      { method: "DELETE" },
-    ),
+  delete: async (key: string) => {
+    const result = await jsonRequest<{
+      key: string;
+      deleted: true;
+      recoverable: true;
+      stoppedRunCount: number;
+    }>(`/api/projects/${encodeURIComponent(key)}`, { method: "DELETE" });
+    knownProjectRevisions.delete(key);
+    return result;
+  },
   trash: () => jsonRequest<{ projects: TrashedProjectItem[] }>("/api/projects/trash"),
   restore: (trashKey: string) =>
     jsonRequest<{ restored: true; key: string; title: string }>(
@@ -458,12 +569,25 @@ export const projectApi = {
       seed: number;
       steps: number;
       denoise: number;
+      candidateBatchId?: string;
+      candidateIndex?: number;
+      candidateCount?: number;
+      retryOfRunId?: string;
     },
   ) =>
-    jsonRequest<DemoPayload & { key: string; runId: string; promptId: string }>(
-      `/api/projects/${encodeURIComponent(key)}/shots/${encodeURIComponent(shotId)}/generate`,
-      { method: "POST", body: JSON.stringify(settings) },
-    ),
+    jsonRequest<
+      DemoPayload & {
+        key: string;
+        runId: string;
+        promptId: string;
+        candidateBatchId: string | null;
+        candidateIndex: number | null;
+        candidateCount: number | null;
+      }
+    >(`/api/projects/${encodeURIComponent(key)}/shots/${encodeURIComponent(shotId)}/generate`, {
+      method: "POST",
+      body: JSON.stringify(settings),
+    }),
   run: (key: string, runId: string) =>
     jsonRequest<
       DemoPayload & {
@@ -581,6 +705,20 @@ export const authApi = {
       method: "POST",
       body: JSON.stringify({ email, password }),
     }),
+  invitation: (token: string) =>
+    jsonRequest<{ invitation: PublicInvitation }>(
+      `/api/auth/invitations/${encodeURIComponent(token)}`,
+    ),
+  acceptInvitation: (token: string, password: string) =>
+    jsonRequest<{ user: Account; csrfToken: string }>(
+      `/api/auth/invitations/${encodeURIComponent(token)}`,
+      { method: "POST", body: JSON.stringify({ password }) },
+    ),
+  recover: (email: string, code: string, newPassword: string) =>
+    jsonRequest<{ recovered: true; revokedSessions: true }>("/api/auth/recover", {
+      method: "POST",
+      body: JSON.stringify({ email, code, newPassword }),
+    }),
   logout: () => jsonRequest<{ loggedOut: true }>("/api/auth/logout", { method: "POST" }),
   sessions: () => jsonRequest<{ sessions: AccountSession[] }>("/api/auth/sessions"),
   revokeSession: (sessionId: string) =>
@@ -598,9 +736,52 @@ export const authApi = {
       method: "POST",
       body: JSON.stringify({ currentPassword, newPassword }),
     }),
+  recoveryCodeStatus: () => jsonRequest<{ status: RecoveryCodeStatus }>("/api/auth/recovery-codes"),
+  generateRecoveryCodes: (currentPassword: string) =>
+    jsonRequest<{ codes: string[]; status: RecoveryCodeStatus }>("/api/auth/recovery-codes", {
+      method: "POST",
+      body: JSON.stringify({ currentPassword }),
+    }),
   users: () => jsonRequest<{ users: Account[] }>("/api/admin/users"),
+  invitations: () => jsonRequest<{ invitations: AccountInvitation[] }>("/api/admin/invitations"),
+  createInvitation: (input: {
+    name: string;
+    email: string;
+    instanceRole: InstanceRole;
+    expiresHours: number;
+  }) =>
+    jsonRequest<{ invitation: AccountInvitation; token: string }>("/api/admin/invitations", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  revokeInvitation: (invitationId: string) =>
+    jsonRequest<{ revoked: true }>(`/api/admin/invitations/${encodeURIComponent(invitationId)}`, {
+      method: "DELETE",
+    }),
   audit: (limit = 100) =>
     jsonRequest<{ entries: AuthAuditEntry[] }>(`/api/admin/audit?limit=${limit}`),
+  backups: () => jsonRequest<{ backups: InstanceBackup[] }>("/api/admin/backups"),
+  createBackup: () =>
+    jsonRequest<{ backup: InstanceBackup }>("/api/admin/backups", { method: "POST" }),
+  backupDownloadUrl: (backupId: string) =>
+    `/api/admin/backups/${encodeURIComponent(backupId)}/download`,
+  inspectBackup: async (file: File) => {
+    const body = new FormData();
+    body.set("file", file);
+    return await jsonRequest<{ restore: StagedRestore }>("/api/admin/backups/inspect", {
+      method: "POST",
+      body,
+    });
+  },
+  applyRestore: (restoreId: string, currentPassword: string, confirmation: string) =>
+    jsonRequest<{ restored: string[]; skipped: string[]; identityRestored: false }>(
+      `/api/admin/backups/restores/${encodeURIComponent(restoreId)}/apply`,
+      { method: "POST", body: JSON.stringify({ currentPassword, confirmation }) },
+    ),
+  discardRestore: (restoreId: string) =>
+    jsonRequest<{ removed: true }>(`/api/admin/backups/restores/${encodeURIComponent(restoreId)}`, {
+      method: "DELETE",
+    }),
   createUser: (input: {
     name: string;
     email: string;
@@ -645,10 +826,20 @@ export const workflowApi = {
       error?: string;
     }>("/api/workflows"),
   rawUrl: (path: string) => `/api/workflows/raw?path=${encodeURIComponent(path)}`,
+  recipePackageUrl: (path: string) =>
+    `/api/workflows/recipe-package?path=${encodeURIComponent(path)}`,
   import: async (file: File) => {
     const body = new FormData();
     body.set("file", file);
     return await jsonRequest<WorkflowSummary>("/api/workflows/import", {
+      method: "POST",
+      body,
+    });
+  },
+  importRecipePackage: async (file: File) => {
+    const body = new FormData();
+    body.set("file", file);
+    return await jsonRequest<WorkflowRecipeImport>("/api/workflows/recipe-package/import", {
       method: "POST",
       body,
     });

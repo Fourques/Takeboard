@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { createTakeBoardId, toIsoTimestamp } from "@takeboard/domain";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
+import { acquireProjectLock } from "../src/project-request-lock.js";
 import { ProjectStore } from "../src/storage/project-store.js";
 
 const cleanup: Array<() => Promise<void>> = [];
@@ -59,6 +60,29 @@ afterEach(async () => {
 });
 
 describe("TakeBoard project API", () => {
+  it("serializes project creation behind the instance catalog lock", async () => {
+    const root = await mkdtemp(join(tmpdir(), "takeboard-catalog-lock-"));
+    cleanup.push(() => rm(root, { recursive: true, force: true }));
+    const app = buildApp({ projectsRoot: root, webRoot: null });
+    cleanup.push(() => app.close());
+    const release = await acquireProjectLock("__catalog__");
+    let settled = false;
+    const pending = app
+      .inject({ method: "POST", url: "/api/projects", payload: { title: "锁内新项目" } })
+      .then((response) => {
+        settled = true;
+        return response;
+      });
+    try {
+      await new Promise<void>((resolveTick) => setImmediate(resolveTick));
+      expect(settled).toBe(false);
+    } finally {
+      release();
+    }
+    const created = await pending;
+    expect(created.statusCode, created.body).toBe(201);
+  });
+
   it("stops active generation before moving a project to trash", async () => {
     const root = await mkdtemp(join(tmpdir(), "takeboard-delete-active-run-"));
     cleanup.push(() => rm(root, { recursive: true, force: true }));
@@ -282,6 +306,7 @@ describe("TakeBoard project API", () => {
     const listed = await app.inject({ method: "GET", url: "/api/projects" });
     expect(listed.json().projects[0]).toMatchObject({
       key,
+      revision: created.json().revision,
       aspectRatio: "自由画布",
       sceneCount: 1,
       shotCount: 0,

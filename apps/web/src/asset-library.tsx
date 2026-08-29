@@ -165,6 +165,7 @@ export function AssetLibrary({
   onUpload,
   open,
   projectKey,
+  readOnly,
   selectedFirstFrameId,
   selectedLastFrameId,
   selectedReferenceId,
@@ -201,6 +202,7 @@ export function AssetLibrary({
   ) => Promise<{ ok: boolean; error?: string; assetId?: string }>;
   open: boolean;
   projectKey: string;
+  readOnly: boolean;
   selectedFirstFrameId: string | null;
   selectedLastFrameId: string | null;
   selectedReferenceId: string | null;
@@ -240,6 +242,12 @@ export function AssetLibrary({
     message: string;
   }>({ state: "idle", message: "原文件保持不变；单个文件不超过 100 MB" });
   const input = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!readOnly) return;
+    setImportOpen(false);
+    setContextMenu(null);
+  }, [readOnly]);
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -388,6 +396,7 @@ export function AssetLibrary({
   ];
 
   const handleFiles = async (files: File[]) => {
+    if (readOnly) return;
     const accepted = files.filter((file) => {
       const supported = [
         "image/png",
@@ -443,12 +452,13 @@ export function AssetLibrary({
   };
 
   const updateTags = async (customTags: string[]) => {
-    if (!selectedAsset) return;
+    if (readOnly || !selectedAsset) return;
     const result = await onUpdateAsset(selectedAsset.id, { customTags });
     setActionStatus(result.ok ? "标签已保存" : (result.error ?? "标签保存失败"));
   };
 
   const updateKind = async (assetId: string, libraryKind: AssetKind | null) => {
+    if (readOnly) return;
     const result = await onUpdateAsset(assetId, { libraryKind });
     setActionStatus(result.ok ? "分类已更新" : (result.error ?? "分类保存失败"));
     if (result.ok) setContextMenu(null);
@@ -501,14 +511,18 @@ export function AssetLibrary({
                 </div>
               ) : null}
             </div>
-            <button
-              type="button"
-              className="asset-import-trigger"
-              onClick={() => setImportOpen((current) => !current)}
-            >
-              <VaultIcon name="upload" />
-              导入素材
-            </button>
+            {readOnly ? (
+              <span className="asset-read-only-badge">VIEW ONLY</span>
+            ) : (
+              <button
+                type="button"
+                className="asset-import-trigger"
+                onClick={() => setImportOpen((current) => !current)}
+              >
+                <VaultIcon name="upload" />
+                导入素材
+              </button>
+            )}
             <button
               type="button"
               className="asset-close-button"
@@ -639,25 +653,27 @@ export function AssetLibrary({
                     <small>从原文件补全信息，不转码、不修改视频内容。</small>
                   </span>
                 </div>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() =>
-                    void onInspectMetadata().then((result) => {
-                      setActionStatus(
-                        result.ok
-                          ? `已补全 ${result.updated ?? 0} 段视频${result.warnings ? `，${result.warnings} 个暂无法识别` : ""}`
-                          : (result.error ?? "识别失败"),
-                      );
-                    })
-                  }
-                >
-                  {busy ? "正在识别…" : "补全信息"}
-                </button>
+                {!readOnly ? (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() =>
+                      void onInspectMetadata().then((result) => {
+                        setActionStatus(
+                          result.ok
+                            ? `已补全 ${result.updated ?? 0} 段视频${result.warnings ? `，${result.warnings} 个暂无法识别` : ""}`
+                            : (result.error ?? "识别失败"),
+                        );
+                      })
+                    }
+                  >
+                    {busy ? "正在识别…" : "补全信息"}
+                  </button>
+                ) : null}
               </div>
             ) : null}
 
-            {importOpen ? (
+            {importOpen && !readOnly ? (
               // biome-ignore lint/a11y/noStaticElementInteractions: Native file dragging requires events on the complete import surface; its button remains keyboard-accessible.
               <div
                 className={`asset-import-drawer ${dragActive ? "dragging" : ""}`}
@@ -767,6 +783,7 @@ export function AssetLibrary({
                     className={`asset-vault-card ${asset.id === selectedAssetId ? "selected" : ""}`}
                     onClick={() => setSelectedAssetId(asset.id)}
                     onDoubleClick={() => {
+                      if (readOnly) return;
                       setSelectedAssetId(asset.id);
                       void onAddToCanvas(asset.id).then((result) =>
                         setActionStatus(result.ok ? "已加入画布" : (result.error ?? "操作失败")),
@@ -849,10 +866,16 @@ export function AssetLibrary({
                 <div className="asset-empty">
                   <VaultIcon name={query ? "search" : "image"} />
                   <strong>{query ? "没有匹配的素材" : "这里还没有素材"}</strong>
-                  <p>调整筛选条件，或导入图片与参考视频。</p>
-                  <button type="button" onClick={() => setImportOpen(true)}>
-                    导入素材
-                  </button>
+                  <p>
+                    {readOnly
+                      ? "调整筛选条件查看其他素材。"
+                      : "调整筛选条件，或导入图片与参考视频。"}
+                  </p>
+                  {!readOnly ? (
+                    <button type="button" onClick={() => setImportOpen(true)}>
+                      导入素材
+                    </button>
+                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -883,6 +906,7 @@ export function AssetLibrary({
                     className="asset-rename"
                     onSubmit={(event) => {
                       event.preventDefault();
+                      if (readOnly) return;
                       const title = renameValue.trim();
                       if (!title || title === selectedAsset.originalName) return;
                       void onUpdateAsset(selectedAsset.id, { title }).then((result) =>
@@ -894,19 +918,22 @@ export function AssetLibrary({
                     <div>
                       <input
                         id="asset-detail-name"
+                        readOnly={readOnly}
                         value={renameValue}
                         onChange={(event) => setRenameValue(event.target.value)}
                       />
-                      <button
-                        type="submit"
-                        disabled={
-                          busy ||
-                          !renameValue.trim() ||
-                          renameValue.trim() === selectedAsset.originalName
-                        }
-                      >
-                        保存
-                      </button>
+                      {!readOnly ? (
+                        <button
+                          type="submit"
+                          disabled={
+                            busy ||
+                            !renameValue.trim() ||
+                            renameValue.trim() === selectedAsset.originalName
+                          }
+                        >
+                          保存
+                        </button>
+                      ) : null}
                     </div>
                   </form>
 
@@ -915,7 +942,7 @@ export function AssetLibrary({
                     <select
                       className="asset-kind-select"
                       value={selectedKind ?? "loose"}
-                      disabled={busy}
+                      disabled={busy || readOnly}
                       onChange={(event) =>
                         void updateKind(
                           selectedAsset.id,
@@ -947,48 +974,56 @@ export function AssetLibrary({
                   <div className="asset-detail-section">
                     <span className="asset-detail-label">标签</span>
                     <div className="asset-detail-tags">
-                      {selectedAsset.customTags.map((tag) => (
-                        <button
-                          type="button"
-                          key={tag}
-                          onClick={() =>
-                            void updateTags(
-                              selectedAsset.customTags.filter((candidate) => candidate !== tag),
-                            )
-                          }
-                          aria-label={`移除标签 ${tag}`}
-                        >
-                          {tag}
-                          <b>×</b>
-                        </button>
-                      ))}
+                      {selectedAsset.customTags.map((tag) =>
+                        readOnly ? (
+                          <span className="asset-read-only-tag" key={tag}>
+                            {tag}
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            key={tag}
+                            onClick={() =>
+                              void updateTags(
+                                selectedAsset.customTags.filter((candidate) => candidate !== tag),
+                              )
+                            }
+                            aria-label={`移除标签 ${tag}`}
+                          >
+                            {tag}
+                            <b>×</b>
+                          </button>
+                        ),
+                      )}
                     </div>
-                    <form
-                      className="asset-tag-input"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        const tag = tagValue.trim();
-                        if (
-                          !tag ||
-                          selectedAsset.customTags.includes(tag) ||
-                          selectedAsset.customTags.length >= 24
-                        )
-                          return;
-                        setTagValue("");
-                        void updateTags([...selectedAsset.customTags, tag]);
-                      }}
-                    >
-                      <input
-                        value={tagValue}
-                        onChange={(event) => setTagValue(event.target.value)}
-                        placeholder="输入标签后回车"
-                        aria-label="新增资产标签"
-                        maxLength={40}
-                      />
-                      <button type="submit" disabled={!tagValue.trim()}>
-                        ＋
-                      </button>
-                    </form>
+                    {!readOnly ? (
+                      <form
+                        className="asset-tag-input"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          const tag = tagValue.trim();
+                          if (
+                            !tag ||
+                            selectedAsset.customTags.includes(tag) ||
+                            selectedAsset.customTags.length >= 24
+                          )
+                            return;
+                          setTagValue("");
+                          void updateTags([...selectedAsset.customTags, tag]);
+                        }}
+                      >
+                        <input
+                          value={tagValue}
+                          onChange={(event) => setTagValue(event.target.value)}
+                          placeholder="输入标签后回车"
+                          aria-label="新增资产标签"
+                          maxLength={40}
+                        />
+                        <button type="submit" disabled={!tagValue.trim()}>
+                          ＋
+                        </button>
+                      </form>
+                    ) : null}
                   </div>
 
                   <div className="asset-detail-section">
@@ -1043,85 +1078,100 @@ export function AssetLibrary({
                     </dl>
                   </div>
 
-                  <div className="asset-detail-section asset-use-section">
-                    <span className="asset-detail-label">用于创作</span>
-                    <button
-                      type="button"
-                      className="asset-primary-action"
-                      disabled={busy}
-                      onClick={() =>
-                        void onAddToCanvas(selectedAsset.id).then((result) =>
-                          setActionStatus(result.ok ? "已加入画布" : (result.error ?? "操作失败")),
-                        )
-                      }
-                    >
-                      <VaultIcon name="canvas" />
-                      {canvasAssetIds.has(selectedAsset.id) ? "定位画布节点" : "加入当前画布"}
-                    </button>
-                    {selectedShotLabel ? (
-                      <>
-                        <p>连接到「{selectedShotLabel}」</p>
-                        <div className="asset-connect-actions">
-                          {selectedAsset.mediaType === "image" && allowedSlots.first ? (
-                            <button
-                              type="button"
-                              className={selectedAsset.id === selectedFirstFrameId ? "active" : ""}
-                              onClick={() => onPickFrame(selectedAsset.id, "first")}
-                            >
-                              首帧
-                            </button>
-                          ) : null}
-                          {selectedAsset.mediaType === "image" && allowedSlots.last ? (
-                            <button
-                              type="button"
-                              className={selectedAsset.id === selectedLastFrameId ? "active" : ""}
-                              onClick={() => onPickFrame(selectedAsset.id, "last")}
-                            >
-                              尾帧
-                            </button>
-                          ) : null}
-                          {selectedAsset.mediaType === "image" && allowedSlots.reference ? (
-                            <button
-                              type="button"
-                              className={
-                                selectedReferenceImageIds.includes(selectedAsset.id) ||
-                                selectedAsset.id === selectedReferenceId
-                                  ? "active"
-                                  : ""
-                              }
-                              onClick={() => onPickFrame(selectedAsset.id, "reference")}
-                            >
-                              参考图
-                            </button>
-                          ) : null}
-                          {selectedAsset.mediaType === "video" && allowedSlots.referenceVideo ? (
-                            <button
-                              type="button"
-                              className={
-                                selectedReferenceVideoIds.includes(selectedAsset.id) ? "active" : ""
-                              }
-                              onClick={() => onPickFrame(selectedAsset.id, "referenceVideo")}
-                            >
-                              参考视频
-                            </button>
-                          ) : null}
-                          {selectedAsset.mediaType === "audio" && allowedSlots.referenceAudio ? (
-                            <button
-                              type="button"
-                              className={
-                                selectedReferenceAudioIds.includes(selectedAsset.id) ? "active" : ""
-                              }
-                              onClick={() => onPickFrame(selectedAsset.id, "referenceAudio")}
-                            >
-                              参考音频
-                            </button>
-                          ) : null}
-                        </div>
-                      </>
-                    ) : (
-                      <p>选择一个镜头后，可直接连接到模型输入。</p>
-                    )}
-                  </div>
+                  {!readOnly ? (
+                    <div className="asset-detail-section asset-use-section">
+                      <span className="asset-detail-label">用于创作</span>
+                      <button
+                        type="button"
+                        className="asset-primary-action"
+                        disabled={busy}
+                        onClick={() =>
+                          void onAddToCanvas(selectedAsset.id).then((result) =>
+                            setActionStatus(
+                              result.ok ? "已加入画布" : (result.error ?? "操作失败"),
+                            ),
+                          )
+                        }
+                      >
+                        <VaultIcon name="canvas" />
+                        {canvasAssetIds.has(selectedAsset.id) ? "定位画布节点" : "加入当前画布"}
+                      </button>
+                      {selectedShotLabel ? (
+                        <>
+                          <p>连接到「{selectedShotLabel}」</p>
+                          <div className="asset-connect-actions">
+                            {selectedAsset.mediaType === "image" && allowedSlots.first ? (
+                              <button
+                                type="button"
+                                className={
+                                  selectedAsset.id === selectedFirstFrameId ? "active" : ""
+                                }
+                                onClick={() => onPickFrame(selectedAsset.id, "first")}
+                              >
+                                首帧
+                              </button>
+                            ) : null}
+                            {selectedAsset.mediaType === "image" && allowedSlots.last ? (
+                              <button
+                                type="button"
+                                className={selectedAsset.id === selectedLastFrameId ? "active" : ""}
+                                onClick={() => onPickFrame(selectedAsset.id, "last")}
+                              >
+                                尾帧
+                              </button>
+                            ) : null}
+                            {selectedAsset.mediaType === "image" && allowedSlots.reference ? (
+                              <button
+                                type="button"
+                                className={
+                                  selectedReferenceImageIds.includes(selectedAsset.id) ||
+                                  selectedAsset.id === selectedReferenceId
+                                    ? "active"
+                                    : ""
+                                }
+                                onClick={() => onPickFrame(selectedAsset.id, "reference")}
+                              >
+                                参考图
+                              </button>
+                            ) : null}
+                            {selectedAsset.mediaType === "video" && allowedSlots.referenceVideo ? (
+                              <button
+                                type="button"
+                                className={
+                                  selectedReferenceVideoIds.includes(selectedAsset.id)
+                                    ? "active"
+                                    : ""
+                                }
+                                onClick={() => onPickFrame(selectedAsset.id, "referenceVideo")}
+                              >
+                                参考视频
+                              </button>
+                            ) : null}
+                            {selectedAsset.mediaType === "audio" && allowedSlots.referenceAudio ? (
+                              <button
+                                type="button"
+                                className={
+                                  selectedReferenceAudioIds.includes(selectedAsset.id)
+                                    ? "active"
+                                    : ""
+                                }
+                                onClick={() => onPickFrame(selectedAsset.id, "referenceAudio")}
+                              >
+                                参考音频
+                              </button>
+                            ) : null}
+                          </div>
+                        </>
+                      ) : (
+                        <p>选择一个镜头后，可直接连接到模型输入。</p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="asset-detail-section asset-view-only-note">
+                      <span className="asset-detail-label">只读访问</span>
+                      <p>可以检查、播放和下载素材；项目编辑者可整理分类或连接镜头。</p>
+                    </div>
+                  )}
                   {actionStatus ? (
                     <div className="asset-action-status" aria-live="polite">
                       {actionStatus}
@@ -1171,21 +1221,23 @@ export function AssetLibrary({
               <VaultIcon name="info" />
               查看详情
             </button>
-            <button
-              type="button"
-              role="menuitem"
-              disabled={busy}
-              onClick={() =>
-                void onAddToCanvas(contextAsset.id).then((result) => {
-                  setActionStatus(result.ok ? "已加入画布" : (result.error ?? "操作失败"));
-                  setContextMenu(null);
-                })
-              }
-            >
-              <VaultIcon name="canvas" />
-              {canvasAssetIds.has(contextAsset.id) ? "定位画布节点" : "加入当前画布"}
-            </button>
-            {selectedShotLabel ? (
+            {!readOnly ? (
+              <button
+                type="button"
+                role="menuitem"
+                disabled={busy}
+                onClick={() =>
+                  void onAddToCanvas(contextAsset.id).then((result) => {
+                    setActionStatus(result.ok ? "已加入画布" : (result.error ?? "操作失败"));
+                    setContextMenu(null);
+                  })
+                }
+              >
+                <VaultIcon name="canvas" />
+                {canvasAssetIds.has(contextAsset.id) ? "定位画布节点" : "加入当前画布"}
+              </button>
+            ) : null}
+            {!readOnly && selectedShotLabel ? (
               <div className="asset-context-group">
                 <span>连接到「{selectedShotLabel}」</span>
                 <div>
@@ -1247,38 +1299,40 @@ export function AssetLibrary({
                 </div>
               </div>
             ) : null}
-            <div className="asset-context-group asset-context-kinds">
-              <span>移动到</span>
-              <div>
-                {(
-                  [
-                    ["character", "人物"],
-                    ["location", "场景"],
-                    ["prop", "道具"],
-                    ["loose", "待整理"],
-                  ] as const
-                ).map(([value, label]) => {
-                  const related = entitiesByAsset.get(contextAsset.id) ?? [];
-                  const currentKind = assetLibraryKind(contextAsset, related) ?? "loose";
-                  return (
-                    <button
-                      type="button"
-                      className={currentKind === value ? "active" : ""}
-                      key={value}
-                      disabled={busy}
-                      onClick={() =>
-                        void updateKind(
-                          contextAsset.id,
-                          value === "loose" ? null : (value as AssetKind),
-                        )
-                      }
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
+            {!readOnly ? (
+              <div className="asset-context-group asset-context-kinds">
+                <span>移动到</span>
+                <div>
+                  {(
+                    [
+                      ["character", "人物"],
+                      ["location", "场景"],
+                      ["prop", "道具"],
+                      ["loose", "待整理"],
+                    ] as const
+                  ).map(([value, label]) => {
+                    const related = entitiesByAsset.get(contextAsset.id) ?? [];
+                    const currentKind = assetLibraryKind(contextAsset, related) ?? "loose";
+                    return (
+                      <button
+                        type="button"
+                        className={currentKind === value ? "active" : ""}
+                        key={value}
+                        disabled={busy}
+                        onClick={() =>
+                          void updateKind(
+                            contextAsset.id,
+                            value === "loose" ? null : (value as AssetKind),
+                          )
+                        }
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            ) : null}
             <a
               role="menuitem"
               href={projectApi.assetUrl(projectKey, contextAsset.id)}

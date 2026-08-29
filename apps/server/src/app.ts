@@ -67,7 +67,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     instanceId: process.env.TAKEBOARD_INSTANCE_ID ?? null,
   }));
 
-  registerProjectRequestLock(app);
+  registerProjectRequestLock(app, projectsRoot);
 
   registerDemoRoutes(
     app,

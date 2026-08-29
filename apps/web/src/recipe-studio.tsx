@@ -51,6 +51,7 @@ const mediaLabels: Record<WorkflowMediaKey, string> = {
 
 export function RecipeStudio({
   busy,
+  canManageWorkflows,
   editorUrl,
   onClose,
   onImport,
@@ -63,6 +64,7 @@ export function RecipeStudio({
   workflows,
 }: {
   busy: boolean;
+  canManageWorkflows: boolean;
   editorUrl: string;
   onClose: () => void;
   onImport: (file: File) => Promise<void>;
@@ -86,6 +88,9 @@ export function RecipeStudio({
   const [archives, setArchives] = useState<ArchivedWorkflow[] | null>(null);
   const [archiveBusy, setArchiveBusy] = useState(false);
   const [archiveError, setArchiveError] = useState("");
+  const [packageNotice, setPackageNotice] = useState("");
+  const [packageNoticePath, setPackageNoticePath] = useState("");
+  const [packageBusy, setPackageBusy] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const filtered = useMemo(
     () =>
@@ -204,6 +209,28 @@ export function RecipeStudio({
     }
   };
 
+  const importRecipePackage = async (file: File) => {
+    setPackageBusy(true);
+    setBindingError("");
+    setPackageNotice("");
+    try {
+      const imported = await workflowApi.importRecipePackage(file);
+      await onRefresh();
+      setInspection(imported);
+      setBindingDraft(imported.binding ?? imported.suggested ?? null);
+      setPackageNoticePath(imported.path);
+      setPackageNotice(
+        imported.recipePackage.bindingProposalIncluded
+          ? "Workflow 与映射草案已通过完整性校验。请核对当前电脑的节点、模型和参数位置，再明确启用。"
+          : "Workflow 已通过完整性校验。此包没有映射草案，请完成参数绑定后启用。",
+      );
+    } catch (error) {
+      setBindingError(error instanceof Error ? error.message : "Recipe 包导入失败");
+    } finally {
+      setPackageBusy(false);
+    }
+  };
+
   if (!open) return null;
   return (
     <div className="studio-backdrop">
@@ -228,9 +255,11 @@ export function RecipeStudio({
             >
               {advanced ? "简洁" : "高级"}
             </button>
-            <button type="button" onClick={() => void openArchives()} disabled={archiveBusy}>
-              归档
-            </button>
+            {canManageWorkflows ? (
+              <button type="button" onClick={() => void openArchives()} disabled={archiveBusy}>
+                归档
+              </button>
+            ) : null}
             <button type="button" onClick={() => void onRefresh()} disabled={busy}>
               ↻ 检测
             </button>
@@ -352,10 +381,24 @@ export function RecipeStudio({
                     className="recipe-binding-action"
                     onClick={() => void configureBinding(workflow)}
                   >
-                    {workflow.execution === "bound" ? "检查映射" : "建立映射"}
+                    {canManageWorkflows
+                      ? workflow.execution === "bound"
+                        ? "检查映射"
+                        : "建立映射"
+                      : "查看诊断"}
                   </button>
                 ) : null}
-                {workflow.origin === "imported" ? (
+                {canManageWorkflows ? (
+                  <a
+                    className="recipe-package-action"
+                    href={workflowApi.recipePackageUrl(workflow.path)}
+                    download
+                    title="导出 Workflow、参数映射、依赖清单与内容哈希"
+                  >
+                    导出包
+                  </a>
+                ) : null}
+                {canManageWorkflows && workflow.origin === "imported" ? (
                   <button
                     type="button"
                     className="recipe-archive-action"
@@ -372,34 +415,53 @@ export function RecipeStudio({
               <div className="recipe-empty">这个分类还没有 Workflow。拖入 JSON 后会自动检测。</div>
             ) : null}
           </div>
-          <div className="workflow-import-wrap">
-            <input
-              ref={fileInput}
-              type="file"
-              accept="application/json,.json"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) void onImport(file);
-                event.target.value = "";
-              }}
-            />
-            <button
-              className="workflow-import"
-              type="button"
-              onClick={() => fileInput.current?.click()}
-              onDragOver={(event) => event.preventDefault()}
-              onDrop={(event) => {
-                event.preventDefault();
-                const file = event.dataTransfer.files[0];
-                if (file) void onImport(file);
-              }}
-            >
-              <span>↧</span>
-              <strong>拖入 ComfyUI Workflow JSON</strong>
-              <p>导入后先检查节点映射与依赖；只有你明确信任并通过预检后才能直接运行。</p>
-              <i>选择 JSON</i>
-            </button>
-          </div>
+          {canManageWorkflows ? (
+            <div className="workflow-import-wrap">
+              <input
+                ref={fileInput}
+                type="file"
+                accept="application/json,.json,application/gzip,.tgz,.takeboard-recipe.tgz"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) {
+                    if (file.name.toLowerCase().endsWith(".tgz")) void importRecipePackage(file);
+                    else void onImport(file);
+                  }
+                  event.target.value = "";
+                }}
+              />
+              <button
+                className="workflow-import"
+                type="button"
+                onClick={() => fileInput.current?.click()}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  const file = event.dataTransfer.files[0];
+                  if (file) {
+                    if (file.name.toLowerCase().endsWith(".tgz")) void importRecipePackage(file);
+                    else void onImport(file);
+                  }
+                }}
+                disabled={packageBusy}
+              >
+                <span>↧</span>
+                <strong>{packageBusy ? "正在隔离验包…" : "导入 Workflow 或 Recipe 包"}</strong>
+                <p>
+                  JSON 用于单机导入；Recipe
+                  包同时携带映射草案、依赖清单与哈希，但不会自动获得执行信任。
+                </p>
+                <i>选择 .json / .takeboard-recipe.tgz</i>
+              </button>
+              {bindingError && !inspection ? (
+                <p className="workflow-package-error">{bindingError}</p>
+              ) : null}
+            </div>
+          ) : (
+            <div className="workflow-readonly-note">
+              工作流由实例管理员管理。你可以查看依赖诊断和使用已验证的 Recipe。
+            </div>
+          )}
         </div>
         <footer className="studio-footer">
           <div>
@@ -423,6 +485,9 @@ export function RecipeStudio({
                       ? inspection.path
                       : "确认生成类型、输出和需要由画布控制的内容；工作流原文件不会被改写。"}
                   </p>
+                  {inspection.path === packageNoticePath && packageNotice ? (
+                    <div className="recipe-package-notice">{packageNotice}</div>
+                  ) : null}
                 </div>
                 <button type="button" onClick={() => setInspection(null)} aria-label="关闭映射面板">
                   ×
@@ -577,21 +642,25 @@ export function RecipeStudio({
               <footer>
                 <p>{inspection.warning ?? bindingError}</p>
                 {bindingError ? <strong>{bindingError}</strong> : null}
-                <button
-                  type="button"
-                  onClick={() => void saveBinding()}
-                  disabled={
-                    !bindingDraft ||
-                    bindingBusy ||
-                    Boolean(
-                      inspection.diagnostic?.checks.some(
-                        (item) => item.status === "blocked" && item.category !== "binding",
-                      ) ?? inspection.conversionIssues?.length,
-                    )
-                  }
-                >
-                  {bindingBusy ? "正在验证…" : "信任此工作流并启用"}
-                </button>
+                {canManageWorkflows ? (
+                  <button
+                    type="button"
+                    onClick={() => void saveBinding()}
+                    disabled={
+                      !bindingDraft ||
+                      bindingBusy ||
+                      Boolean(
+                        inspection.diagnostic?.checks.some(
+                          (item) => item.status === "blocked" && item.category !== "binding",
+                        ) ?? inspection.conversionIssues?.length,
+                      )
+                    }
+                  >
+                    {bindingBusy ? "正在验证…" : "信任此工作流并启用"}
+                  </button>
+                ) : (
+                  <span>只读诊断 · 请联系实例管理员修改映射</span>
+                )}
               </footer>
             </section>
           </div>

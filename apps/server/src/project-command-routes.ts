@@ -10,7 +10,7 @@ import { ProjectStore } from "./storage/project-store.js";
 
 function sendCommandError(reply: FastifyReply, error: unknown) {
   if (error instanceof ProjectCommandError) {
-    return reply.code(error.statusCode).send({ error: error.message });
+    return reply.code(error.statusCode).send({ error: error.message, ...error.details });
   }
   throw error;
 }

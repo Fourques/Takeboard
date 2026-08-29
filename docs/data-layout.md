@@ -22,8 +22,10 @@ TAKEBOARD_DATA_ROOT/
 │   ├── exports/                 # 用户主动导出的成片或项目包
 │   ├── backups/migrations/      # 数据库迁移前的一致性备份与清单
 │   └── trash/                   # 项目内部的可恢复编辑预留区
-└── .trash/
+├── .trash/
     └── my-film.takeboard.<id>/  # 首页删除的完整项目，可从回收区恢复
+├── .system/backups/             # 最近 5 份可下载实例备份
+└── .system/offline-restore-rollbacks/ # 离线恢复前的可回滚副本
 ```
 
 ## 数据原则
@@ -51,3 +53,5 @@ TAKEBOARD_DATA_ROOT/
 打开旧项目且检测到待执行数据库迁移时，TakeBoard 会先在 `backups/migrations/<时间>-<迁移编号>/` 创建 SQLite 一致性副本、便携快照和迁移清单。迁移失败会自动恢复原数据库；备份目录不会被再次打入项目包，避免递归膨胀。自动迁移备份不是长期备份替代品，重要项目仍应保留独立项目包或整目录副本。
 
 同一项目 ID 不会被重复导入或从回收区重复恢复；这避免两个目录继续编辑同一项目身份而破坏生成和引用关系。
+
+实例备份使用 `takeboard.instance-backup` v1 清单，内部包含身份数据库一致性副本与逐项目 `.takeboard.tgz`；导入时会逐层校验路径、长度、SHA-256、SQLite 完整性、项目 ID 和 revision。在线向导只补回缺失项目；离线恢复工具才会替换身份与同 ID 项目，并保留恢复前数据。

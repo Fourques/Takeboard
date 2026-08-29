@@ -606,6 +606,43 @@ export function registerGenerationRoutes(
           typeof request.body === "object" && request.body !== null
             ? (request.body as Record<string, unknown>)
             : {};
+        const candidateBatchId =
+          typeof body.candidateBatchId === "string" ? body.candidateBatchId : null;
+        const candidateIndex =
+          typeof body.candidateIndex === "number" && Number.isSafeInteger(body.candidateIndex)
+            ? body.candidateIndex
+            : null;
+        const candidateCount =
+          typeof body.candidateCount === "number" && Number.isSafeInteger(body.candidateCount)
+            ? body.candidateCount
+            : null;
+        const hasCandidateMetadata =
+          body.candidateBatchId !== undefined ||
+          body.candidateIndex !== undefined ||
+          body.candidateCount !== undefined;
+        if (
+          hasCandidateMetadata &&
+          (!candidateBatchId ||
+            !/^batch_[A-Za-z0-9_-]{8,100}$/.test(candidateBatchId) ||
+            candidateIndex === null ||
+            candidateCount === null ||
+            candidateCount < 1 ||
+            candidateCount > 4 ||
+            candidateIndex < 1 ||
+            candidateIndex > candidateCount)
+        ) {
+          return await reply.code(400).send({ error: "候选批次信息无效；每批仅支持 1–4 个结果" });
+        }
+        const retryOfRunId = typeof body.retryOfRunId === "string" ? body.retryOfRunId : null;
+        if (retryOfRunId) {
+          const retryTarget = current.snapshot.runs.find((run) => run.id === retryOfRunId);
+          if (!retryTarget || retryTarget.shotId !== shot.id) {
+            return await reply.code(404).send({ error: "要重试的运行记录不存在" });
+          }
+          if (!["failed", "cancelled", "orphaned"].includes(retryTarget.status)) {
+            return await reply.code(409).send({ error: "只有失败、已取消或失联的运行可以重试" });
+          }
+        }
         const recipePath =
           typeof body.recipePath === "string" ? body.recipePath : "Kino/Kino_Wan22_I2V.json";
         const previousRecipePath = [...current.snapshot.runs]
@@ -1027,6 +1064,14 @@ export function registerGenerationRoutes(
             ...(miniMaxReference
               ? { referenceImageSize: body.referenceImageSize === "max" ? "max" : "match" }
               : {}),
+            ...(candidateBatchId
+              ? {
+                  candidateBatchId,
+                  candidateIndex,
+                  candidateCount,
+                }
+              : {}),
+            ...(retryOfRunId ? { retryOfRunId } : {}),
             comfyInputFiles: [
               comfyImage,
               lastComfyImage,
@@ -1070,11 +1115,21 @@ export function registerGenerationRoutes(
             runId,
             promptId,
             recipe: recipeVersion,
+            candidateBatchId,
+            candidateIndex,
+            candidateCount,
           },
         });
-        return await reply
-          .code(202)
-          .send({ key, runId, promptId, progress: liveProgress(preparedRun), ...saved });
+        return await reply.code(202).send({
+          key,
+          runId,
+          promptId,
+          candidateBatchId,
+          candidateIndex,
+          candidateCount,
+          progress: liveProgress(preparedRun),
+          ...saved,
+        });
       } catch (error) {
         let remoteCancellationConfirmed = submittedPromptId === null && !submissionStarted;
         if (submittedPromptId) {

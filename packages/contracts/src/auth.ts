@@ -43,6 +43,27 @@ export type AccountSession = {
   ipAddress: string | null;
 };
 
+export type AccountInvitation = {
+  id: string;
+  email: string;
+  name: string;
+  instanceRole: InstanceRole;
+  status: "pending" | "accepted" | "revoked" | "expired";
+  createdAt: string;
+  expiresAt: string;
+  acceptedAt: string | null;
+};
+
+export type PublicInvitation = Pick<
+  AccountInvitation,
+  "email" | "name" | "instanceRole" | "expiresAt"
+>;
+
+export type RecoveryCodeStatus = {
+  available: number;
+  generatedAt: string | null;
+};
+
 export type AuthAuditEntry = {
   sequence: number;
   actor: Pick<Account, "id" | "name" | "email"> | null;

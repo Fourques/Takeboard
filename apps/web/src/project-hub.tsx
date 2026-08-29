@@ -156,6 +156,12 @@ function ProjectCard({
   project: ProjectCatalogItem;
 }) {
   const [boardIndex, setBoardIndex] = useState(0);
+  const canManage = project.role !== "viewer" || project.accessSource === "instance_admin";
+  const canDelete = project.role === "owner" || project.accessSource === "instance_admin";
+  const accessLabel =
+    project.accessSource === "instance_admin"
+      ? "ADMIN ACCESS"
+      : (project.membershipRole?.toUpperCase() ?? project.role.toUpperCase());
   const activeBoard = project.boards[Math.min(boardIndex, Math.max(project.boards.length - 1, 0))];
   const preview = useMemo(() => boardLayout(activeBoard), [activeBoard]);
 
@@ -238,7 +244,16 @@ function ProjectCard({
             {project.sceneCount} 场 · {project.shotCount} 镜头 · {project.aspectRatio}
           </span>
           <small>{formatUpdatedAt(project.updatedAt)}</small>
-          <em className={`project-role role-${project.role}`}>{project.role.toUpperCase()}</em>
+          <em
+            className={`project-role role-${project.accessSource === "instance_admin" ? "admin" : project.role}`}
+            title={
+              project.accessSource === "instance_admin"
+                ? "实例管理员可进行故障恢复；这不代表项目 Owner 成员关系"
+                : undefined
+            }
+          >
+            {accessLabel}
+          </em>
         </div>
         <div className="project-card-actions">
           <button
@@ -249,31 +264,33 @@ function ProjectCard({
           >
             打开画板 <ActionIcon name="open" />
           </button>
-          {project.role !== "viewer" ? (
+          {canManage ? (
             <button type="button" onClick={onRename} aria-label={`重命名 ${project.title}`}>
               <ActionIcon name="rename" />
             </button>
           ) : null}
-          {project.activeRunCount === 0 ? (
-            <a
-              href={`/api/projects/${encodeURIComponent(project.key)}/export`}
-              download
-              aria-label={`导出 ${project.title}`}
-              title="导出完整项目包"
-            >
-              <ActionIcon name="export" />
-            </a>
-          ) : (
-            <button
-              type="button"
-              disabled
-              aria-label={`${project.title} 正在生成，暂时不能导出`}
-              title="等待生成任务结束后再导出"
-            >
-              <ActionIcon name="export" />
-            </button>
-          )}
-          {project.role === "owner" ? (
+          {canDelete ? (
+            project.activeRunCount === 0 ? (
+              <a
+                href={`/api/projects/${encodeURIComponent(project.key)}/export`}
+                download
+                aria-label={`导出 ${project.title}`}
+                title="导出完整项目包"
+              >
+                <ActionIcon name="export" />
+              </a>
+            ) : (
+              <button
+                type="button"
+                disabled
+                aria-label={`${project.title} 正在生成，暂时不能导出`}
+                title="等待生成任务结束后再导出"
+              >
+                <ActionIcon name="export" />
+              </button>
+            )
+          ) : null}
+          {canDelete ? (
             <button
               className="project-card-delete-button"
               type="button"

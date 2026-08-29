@@ -65,6 +65,9 @@ const CommandHistory = lazy(() =>
 const RecipeStudio = lazy(() =>
   import("./recipe-studio").then((module) => ({ default: module.RecipeStudio })),
 );
+const Storyboard = lazy(() =>
+  import("./storyboard").then((module) => ({ default: module.Storyboard })),
+);
 
 const rejectionReasons = ["角色漂移", "运动方向错误", "构图不稳定", "细节异常"];
 const canvasSnapGrid: [number, number] = [12, 12];
@@ -766,6 +769,19 @@ type GenerationProgress = {
   elapsedSeconds: number;
 };
 
+type GenerationLaunchOptions = {
+  candidateCount?: number;
+  candidateBatchId?: string;
+  candidateIndex?: number;
+  retryOfRunId?: string;
+  compiledPrompt?: string;
+  firstFrameAssetId?: string | null;
+  lastFrameAssetId?: string | null;
+  referenceImageAssetIds?: string[];
+  referenceVideoAssetIds?: string[];
+  referenceAudioAssetIds?: string[];
+};
+
 function realGenerationProgress(
   progress: {
     phase: "queued" | "running" | "collecting";
@@ -788,6 +804,7 @@ type ContextInspectorProps = {
   item: CanvasItem;
   snapshot: ProjectSnapshot;
   projectKey: string | null;
+  readOnly: boolean;
   selectedShot: Shot | null;
   onOpenAssets: () => void;
   onUseAsset: (
@@ -809,6 +826,7 @@ function NodeContextInspector({
   item,
   snapshot,
   projectKey,
+  readOnly,
   selectedShot,
   onOpenAssets,
   onUseAsset,
@@ -849,18 +867,24 @@ function NodeContextInspector({
           </div>
           <div className="context-copy">{text?.body || "这个节点还没有内容。"}</div>
         </section>
-        <section className="context-action-card">
-          <span>用于当前镜头</span>
-          <strong>{selectedShot?.label ?? "尚未选择镜头"}</strong>
-          <p>将文本追加到镜头提示词中，之后仍可在镜头面板继续编辑。</p>
-          <button
-            type="button"
-            disabled={!selectedShot || !text?.body.trim()}
-            onClick={() => text && onUseText(text.body)}
-          >
-            ＋ 追加到镜头提示词
-          </button>
-        </section>
+        {!readOnly ? (
+          <section className="context-action-card">
+            <span>用于当前镜头</span>
+            <strong>{selectedShot?.label ?? "尚未选择镜头"}</strong>
+            <p>将文本追加到镜头提示词中，之后仍可在镜头面板继续编辑。</p>
+            <button
+              type="button"
+              disabled={!selectedShot || !text?.body.trim()}
+              onClick={() => text && onUseText(text.body)}
+            >
+              ＋ 追加到镜头提示词
+            </button>
+          </section>
+        ) : (
+          <div className="viewer-context-note">
+            只读访问 · 可以查看文本内容，不能改写镜头提示词。
+          </div>
+        )}
         <ContextSelectionHint />
       </aside>
     );
@@ -936,13 +960,15 @@ function NodeContextInspector({
           <button type="button" className="secondary" onClick={onOpenAssets}>
             打开资产库
           </button>
-          <button
-            type="button"
-            disabled={!selectedShot || !firstImage}
-            onClick={() => firstImage && onUseAsset(firstImage.id, "referenceAssetId")}
-          >
-            设为镜头参考
-          </button>
+          {!readOnly ? (
+            <button
+              type="button"
+              disabled={!selectedShot || !firstImage}
+              onClick={() => firstImage && onUseAsset(firstImage.id, "referenceAssetId")}
+            >
+              设为镜头参考
+            </button>
+          ) : null}
         </section>
         <ContextSelectionHint />
       </aside>
@@ -962,7 +988,7 @@ function NodeContextInspector({
       .map((edge) => edge.targetSlot),
   );
   const addCustomTag = () => {
-    if (!asset) return;
+    if (readOnly || !asset) return;
     const tag = customTagDraft.trim();
     if (!tag || asset.customTags.includes(tag)) return;
     onSetAssetCustomTags(asset.id, [...asset.customTags, tag]);
@@ -1061,43 +1087,55 @@ function NodeContextInspector({
             </div>
             {asset.customTags.length ? (
               <div className="custom-tag-list">
-                {asset.customTags.map((tag) => (
-                  <button
-                    type="button"
-                    key={tag}
-                    aria-label={`移除标签 ${tag}`}
-                    onClick={() =>
-                      onSetAssetCustomTags(
-                        asset.id,
-                        asset.customTags.filter((candidate) => candidate !== tag),
-                      )
-                    }
-                  >
-                    {tag}
-                    <span>×</span>
-                  </button>
-                ))}
+                {asset.customTags.map((tag) =>
+                  readOnly ? (
+                    <span className="viewer-custom-tag" key={tag}>
+                      {tag}
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      key={tag}
+                      aria-label={`移除标签 ${tag}`}
+                      onClick={() =>
+                        onSetAssetCustomTags(
+                          asset.id,
+                          asset.customTags.filter((candidate) => candidate !== tag),
+                        )
+                      }
+                    >
+                      {tag}
+                      <span>×</span>
+                    </button>
+                  ),
+                )}
               </div>
             ) : null}
-            <div className="custom-tag-entry">
-              <input
-                aria-label="新增自定义标签"
-                value={customTagDraft}
-                maxLength={40}
-                placeholder="例如：冷色、夜景、定妆"
-                onChange={(event) => setCustomTagDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    addCustomTag();
-                  }
-                }}
-              />
-              <button type="button" disabled={!customTagDraft.trim()} onClick={addCustomTag}>
-                添加
-              </button>
-            </div>
-            <p>自定义标签只用于整理与检索，不会改变模型输入。</p>
+            {!readOnly ? (
+              <div className="custom-tag-entry">
+                <input
+                  aria-label="新增自定义标签"
+                  value={customTagDraft}
+                  maxLength={40}
+                  placeholder="例如：冷色、夜景、定妆"
+                  onChange={(event) => setCustomTagDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      addCustomTag();
+                    }
+                  }}
+                />
+                <button type="button" disabled={!customTagDraft.trim()} onClick={addCustomTag}>
+                  添加
+                </button>
+              </div>
+            ) : null}
+            <p>
+              {readOnly
+                ? "标签由项目编辑者维护。"
+                : "自定义标签只用于整理与检索，不会改变模型输入。"}
+            </p>
           </section>
         </>
       ) : null}
@@ -1167,6 +1205,9 @@ type InspectorProps = {
   onOpenRecipes: () => void;
   generateDisabledReason: string | null;
   progress: GenerationProgress | null;
+  candidateCount: number;
+  onCandidateCountChange: (count: number) => void;
+  onRetryRun: (run: Run) => void;
   onClose: () => void;
   readOnly: boolean;
 };
@@ -1199,6 +1240,9 @@ function Inspector({
   onOpenRecipes,
   generateDisabledReason,
   progress,
+  candidateCount,
+  onCandidateCountChange,
+  onRetryRun,
   onClose,
   readOnly,
 }: InspectorProps) {
@@ -1255,6 +1299,28 @@ function Inspector({
     settings.width,
     settings.height,
   );
+  const shotRuns = runs.filter((run) => run.shotId === shot.id);
+  const latestBatchId = [...shotRuns]
+    .reverse()
+    .map((run) => run.parameters.candidateBatchId)
+    .find((value): value is string => typeof value === "string");
+  const latestBatchRuns = latestBatchId
+    ? [...shotRuns]
+        .filter((run) => run.parameters.candidateBatchId === latestBatchId)
+        .reduce<Map<number, Run>>((latestByIndex, run) => {
+          const index = run.parameters.candidateIndex;
+          if (typeof index === "number") latestByIndex.set(index, run);
+          return latestByIndex;
+        }, new Map())
+    : new Map<number, Run>();
+  const orderedBatchRuns = [...latestBatchRuns.entries()].sort(([left], [right]) => left - right);
+  const expectedBatchCount =
+    orderedBatchRuns.find(([, run]) => typeof run.parameters.candidateCount === "number")?.[1]
+      .parameters.candidateCount ?? orderedBatchRuns.length;
+  const batchCompleted = orderedBatchRuns.filter(([, run]) => run.status === "completed").length;
+  const batchFailed = orderedBatchRuns.filter(([, run]) =>
+    ["failed", "cancelled", "orphaned"].includes(run.status),
+  ).length;
 
   return (
     <aside className="inspector" aria-label="镜头候选检查器">
@@ -1699,35 +1765,96 @@ function Inspector({
         </section>
       ) : null}
 
+      {orderedBatchRuns.length > 1 || batchFailed > 0 ? (
+        <section className="candidate-batch-status" aria-label="最近一批候选的运行状态">
+          <div className="candidate-batch-heading">
+            <div>
+              <span>LATEST BATCH</span>
+              <strong>
+                {batchCompleted}/{String(expectedBatchCount)} 已完成
+              </strong>
+            </div>
+            {batchFailed > 0 ? <small>{batchFailed} 个需要处理</small> : null}
+          </div>
+          <div className="candidate-batch-runs">
+            {orderedBatchRuns.map(([index, run]) => {
+              const retryable = ["failed", "cancelled", "orphaned"].includes(run.status);
+              const statusLabel =
+                run.status === "completed"
+                  ? "已完成"
+                  : run.status === "failed"
+                    ? "失败"
+                    : run.status === "cancelled"
+                      ? "已停止"
+                      : run.status === "orphaned"
+                        ? "待核对"
+                        : run.status === "queued"
+                          ? "排队中"
+                          : "生成中";
+              return (
+                <div className={`candidate-run-state status-${run.status}`} key={run.id}>
+                  <span>{String(index).padStart(2, "0")}</span>
+                  <div>
+                    <strong>{statusLabel}</strong>
+                    <small>seed {String(run.parameters.seed ?? "—")}</small>
+                  </div>
+                  {retryable && !readOnly ? (
+                    <button type="button" disabled={busy} onClick={() => onRetryRun(run)}>
+                      同参数重试
+                    </button>
+                  ) : (
+                    <i />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
+
       <div className="candidate-title-row">
         <div>
           <h3>候选 Takes</h3>
           <p>{takes.length > 0 ? `${takes.length} 个结果 · 点击比较` : "先生成一组可选择的结果"}</p>
         </div>
-        <button
-          className="generate-button"
-          type="button"
-          onClick={onGenerate}
-          disabled={readOnly || busy || !!generateDisabledReason}
-          title={generateDisabledReason ?? undefined}
-        >
-          {busy ? <span className="spinner" /> : <span>✦</span>}
-          {busy
-            ? progress
-              ? `${progress.label}${progress.percent === null ? "" : ` · ${progress.percent}%`}`
-              : "处理中…"
-            : isDemo
-              ? takes.length > 0
-                ? "再抽 4 个"
-                : "生成 4 个"
-              : workflow?.execution === "comfy_only"
-                ? "在 ComfyUI 中打开"
-                : takes.length > 0
-                  ? "再生成 1 个"
-                  : workflow && ["text_to_image", "image_to_image"].includes(workflow.capability)
-                    ? "生成图片"
-                    : "生成视频"}
-        </button>
+        <div className="candidate-generation-actions">
+          {!isDemo && workflow?.execution !== "comfy_only" ? (
+            <fieldset className="candidate-count-control" aria-label="每批候选数量">
+              {[1, 2, 3, 4].map((count) => (
+                <button
+                  type="button"
+                  className={candidateCount === count ? "active" : ""}
+                  aria-pressed={candidateCount === count}
+                  disabled={readOnly || busy}
+                  onClick={() => onCandidateCountChange(count)}
+                  key={count}
+                >
+                  {count}
+                </button>
+              ))}
+            </fieldset>
+          ) : null}
+          <button
+            className="generate-button"
+            type="button"
+            onClick={onGenerate}
+            disabled={readOnly || busy || !!generateDisabledReason}
+            title={generateDisabledReason ?? undefined}
+          >
+            {busy ? <span className="spinner" /> : <span>✦</span>}
+            {busy
+              ? progress
+                ? `${progress.label}${progress.percent === null ? "" : ` · ${progress.percent}%`}`
+                : "处理中…"
+              : isDemo
+                ? takes.length > 0
+                  ? "再抽 4 个"
+                  : "生成 4 个"
+                : workflow?.execution === "comfy_only"
+                  ? "在 ComfyUI 中打开"
+                  : `生成 ${candidateCount} 个`}
+          </button>
+        </div>
       </div>
 
       {!isDemo && generateDisabledReason ? (
@@ -1913,6 +2040,10 @@ export function App() {
   const [comfyEditorUrl, setComfyEditorUrl] = useState("http://127.0.0.1:48188");
   const [recipeOpen, setRecipeOpen] = useState(false);
   const [assetLibraryOpen, setAssetLibraryOpen] = useState(false);
+  const [storyboardOpen, setStoryboardOpen] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<"current" | "updated" | "pending" | "offline">(
+    "current",
+  );
   const [generationSettings, setGenerationSettings] = useState<GenerationSettings>(() => ({
     ...defaultGenerationSettings,
     ...loadModelPreferences(defaultGenerationSettings.recipePath),
@@ -1920,6 +2051,7 @@ export function App() {
   const [generationBusy, setGenerationBusy] = useState(false);
   const [generationCancelling, setGenerationCancelling] = useState(false);
   const [generationProgress, setGenerationProgress] = useState<GenerationProgress | null>(null);
+  const [candidateCount, setCandidateCount] = useState(1);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameTitle, setRenameTitle] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 1120);
@@ -1933,13 +2065,25 @@ export function App() {
   const pendingAssetPosition = useRef<{ x: number; y: number } | null>(null);
   const generationScopeRef = useRef("");
   const generationTokenRef = useRef(0);
+  const generationRunIdsRef = useRef<string[]>([]);
   const projectCatalogRequestRef = useRef(0);
   const acceptedProjectIdRef = useRef<string | null>(null);
   const acceptedRevisionRef = useRef(0);
+  const pendingSyncRef = useRef<NonNullable<Awaited<ReturnType<typeof projectApi.sync>>> | null>(
+    null,
+  );
+  const interactionActiveRef = useRef(false);
   const selectedEdgeIdentityRef = useRef<CanvasEdgeIdentity | null>(null);
   const latestSnapshotRef = useRef(snapshot);
   const selectionProjectRef = useRef<string | null>(null);
   latestSnapshotRef.current = snapshot;
+  interactionActiveRef.current = Boolean(
+    nodeEditDraft ||
+      pendingCanvasRemoval ||
+      pendingCanvasArrange ||
+      deletingShotPreview ||
+      renameOpen,
+  );
   const activeProjectRole =
     projectMode === "project" && projectKey
       ? (projects.find((project) => project.key === projectKey)?.role ?? "owner")
@@ -1981,6 +2125,15 @@ export function App() {
     },
     [],
   );
+
+  const applyPendingSync = useCallback(() => {
+    const payload = pendingSyncRef.current;
+    if (!payload || !projectKey) return;
+    pendingSyncRef.current = null;
+    if (acceptPayload(payload)) projectApi.markRevision(projectKey, payload.revision);
+    setSyncStatus("updated");
+    setNotice("已载入其他设备的更新");
+  }, [acceptPayload, projectKey]);
 
   const refreshCommandHistory = useCallback(async () => {
     if (!projectKey || projectMode !== "project") return;
@@ -2054,6 +2207,74 @@ export function App() {
       }
     });
   }, []);
+
+  useEffect(() => {
+    if (showHub || projectMode !== "project" || !projectKey || !acceptedProjectIdRef.current)
+      return;
+    let stopped = false;
+    let syncing = false;
+    let timer = 0;
+    const synchronize = async () => {
+      if (stopped || syncing) return;
+      if (document.visibilityState === "hidden") {
+        timer = window.setTimeout(() => void synchronize(), 5_000);
+        return;
+      }
+      syncing = true;
+      try {
+        const payload = await projectApi.sync(projectKey, acceptedRevisionRef.current);
+        if (stopped) return;
+        if (payload) {
+          if (interactionActiveRef.current) {
+            pendingSyncRef.current = payload;
+            setSyncStatus("pending");
+          } else if (acceptPayload(payload)) {
+            projectApi.markRevision(projectKey, payload.revision);
+            setSyncStatus("updated");
+          }
+        } else if (!pendingSyncRef.current) {
+          setSyncStatus("current");
+        }
+      } catch {
+        if (!stopped) setSyncStatus("offline");
+      } finally {
+        syncing = false;
+        if (!stopped) timer = window.setTimeout(() => void synchronize(), 4_000);
+      }
+    };
+    const syncNow = () => {
+      window.clearTimeout(timer);
+      void synchronize();
+    };
+    timer = window.setTimeout(() => void synchronize(), 1_500);
+    window.addEventListener("focus", syncNow);
+    document.addEventListener("visibilitychange", syncNow);
+    return () => {
+      stopped = true;
+      window.clearTimeout(timer);
+      window.removeEventListener("focus", syncNow);
+      document.removeEventListener("visibilitychange", syncNow);
+    };
+  }, [acceptPayload, projectKey, projectMode, showHub]);
+
+  useEffect(() => {
+    const recoverConflict = (event: Event) => {
+      if (!projectKey || projectMode !== "project") return;
+      const detail = (event as CustomEvent<{ path?: string }>).detail;
+      if (!detail?.path?.includes(`/api/projects/${encodeURIComponent(projectKey)}`)) return;
+      void projectApi
+        .open(projectKey)
+        .then((payload) => {
+          acceptPayload(payload);
+          pendingSyncRef.current = null;
+          setSyncStatus("updated");
+          setError("项目刚刚在其他设备发生变化；已载入最新版本，请确认后再次执行刚才的操作。");
+        })
+        .catch(() => setSyncStatus("offline"));
+    };
+    window.addEventListener("takeboard:revision-conflict", recoverConflict);
+    return () => window.removeEventListener("takeboard:revision-conflict", recoverConflict);
+  }, [acceptPayload, projectKey, projectMode]);
 
   useEffect(() => {
     if (showHub || projectMode !== "demo" || !snapshot) return;
@@ -2275,20 +2496,28 @@ export function App() {
   const selectedTakes = snapshot?.takes.filter((take) => take.shotId === selectedShotId) ?? [];
   const visibleShots = useMemo(() => {
     const normalizedQuery = shotQuery.trim().toLocaleLowerCase("zh-CN");
-    return (snapshot?.shots ?? []).filter(
-      (shot) =>
-        `${shot.label} ${shot.intent}`.toLocaleLowerCase("zh-CN").includes(normalizedQuery) &&
-        (shotFilter === "all" ||
-          (shotFilter === "approved" && shot.status === "approved") ||
-          (shotFilter === "todo" && shot.status !== "approved")),
-    );
-  }, [shotFilter, shotQuery, snapshot?.shots]);
-  const activeRun = [...(snapshot?.runs ?? [])]
-    .reverse()
-    .find(
-      (run) =>
-        run.shotId === selectedShotId && !["completed", "failed", "cancelled"].includes(run.status),
-    );
+    const sceneOrder = new Map(snapshot?.scenes.map((scene) => [scene.id, scene.order]) ?? []);
+    return (snapshot?.shots ?? [])
+      .filter(
+        (shot) =>
+          `${shot.label} ${shot.intent}`.toLocaleLowerCase("zh-CN").includes(normalizedQuery) &&
+          (shotFilter === "all" ||
+            (shotFilter === "approved" && shot.status === "approved") ||
+            (shotFilter === "todo" && shot.status !== "approved")),
+      )
+      .sort(
+        (left, right) =>
+          (sceneOrder.get(left.sceneId) ?? 0) - (sceneOrder.get(right.sceneId) ?? 0) ||
+          left.order - right.order ||
+          left.id.localeCompare(right.id),
+      );
+  }, [shotFilter, shotQuery, snapshot?.scenes, snapshot?.shots]);
+  const activeRuns = (snapshot?.runs ?? []).filter(
+    (run) =>
+      run.shotId === selectedShotId &&
+      !["completed", "failed", "cancelled", "orphaned"].includes(run.status),
+  );
+  const activeRun = activeRuns.at(-1);
 
   useEffect(() => {
     if (!selectedShot || !selectedWorkflow || projectMode !== "project") return;
@@ -2490,6 +2719,10 @@ export function App() {
 
   const openNodeEditor = useCallback(
     (itemId: string) => {
+      if (!canEditProject) {
+        setNotice("Viewer 权限为只读；可以查看节点，但不能修改内容");
+        return;
+      }
       if (projectMode !== "project") {
         setNotice("示例画布为只读；新建或打开项目后即可编辑节点");
         return;
@@ -2554,11 +2787,11 @@ export function App() {
         });
       }
     },
-    [projectMode, snapshot],
+    [canEditProject, projectMode, snapshot],
   );
 
   const saveNodeEditor = useCallback(async () => {
-    if (!projectKey || !nodeEditDraft) return;
+    if (!projectKey || !nodeEditDraft || !canEditProject) return;
     setBusy(true);
     setError(null);
     try {
@@ -2578,7 +2811,7 @@ export function App() {
     } finally {
       setBusy(false);
     }
-  }, [acceptPayload, nodeEditDraft, projectKey]);
+  }, [acceptPayload, canEditProject, nodeEditDraft, projectKey]);
 
   const updateSelectedShot = useCallback(
     async (input: {
@@ -2587,7 +2820,13 @@ export function App() {
       durationSeconds: number;
       aspectRatio: Shot["aspectRatio"];
     }) => {
-      if (!projectKey || projectMode !== "project" || !selectedShotId || !snapshot) {
+      if (
+        !projectKey ||
+        projectMode !== "project" ||
+        !selectedShotId ||
+        !snapshot ||
+        !canEditProject
+      ) {
         setNotice("示例镜头不会写入修改");
         return;
       }
@@ -2611,12 +2850,12 @@ export function App() {
         setBusy(false);
       }
     },
-    [acceptPayload, projectKey, projectMode, selectedShotId, snapshot],
+    [acceptPayload, canEditProject, projectKey, projectMode, selectedShotId, snapshot],
   );
 
   const removeCanvasItem = useCallback(
     async (itemId: string, preview: ProjectCommandPreview) => {
-      if (!projectKey || projectMode !== "project") {
+      if (!projectKey || projectMode !== "project" || !canEditProject) {
         setNotice("功能示例不会删除节点");
         return;
       }
@@ -2642,11 +2881,11 @@ export function App() {
         setBusy(false);
       }
     },
-    [acceptPayload, projectKey, projectMode, snapshot?.canvasItems],
+    [acceptPayload, canEditProject, projectKey, projectMode, snapshot?.canvasItems],
   );
 
   const previewCanvasArrange = useCallback(async () => {
-    if (!projectKey || projectMode !== "project" || !activeScene) return;
+    if (!projectKey || projectMode !== "project" || !activeScene || !canEditProject) return;
     setBusy(true);
     setError(null);
     try {
@@ -2660,10 +2899,17 @@ export function App() {
     } finally {
       setBusy(false);
     }
-  }, [activeScene, projectKey, projectMode]);
+  }, [activeScene, canEditProject, projectKey, projectMode]);
 
   const confirmCanvasArrange = useCallback(async () => {
-    if (!projectKey || projectMode !== "project" || !activeScene || !pendingCanvasArrange) return;
+    if (
+      !projectKey ||
+      projectMode !== "project" ||
+      !activeScene ||
+      !pendingCanvasArrange ||
+      !canEditProject
+    )
+      return;
     setBusy(true);
     setError(null);
     try {
@@ -2686,6 +2932,7 @@ export function App() {
   }, [
     acceptPayload,
     activeScene,
+    canEditProject,
     flowInstance,
     pendingCanvasArrange,
     projectKey,
@@ -2695,6 +2942,7 @@ export function App() {
 
   const deleteCanvasItem = useCallback(
     (itemId: string) => {
+      if (!canEditProject) return;
       const item = snapshot?.canvasItems.find((candidate) => candidate.id === itemId);
       if (!item) return;
       setCanvasContextMenu(null);
@@ -2728,11 +2976,18 @@ export function App() {
         )
         .finally(() => setBusy(false));
     },
-    [projectKey, projectMode, snapshot],
+    [canEditProject, projectKey, projectMode, snapshot],
   );
 
   const confirmDeleteShot = useCallback(async () => {
-    if (!projectKey || projectMode !== "project" || !deletingShotItem || !deletingShot) return;
+    if (
+      !projectKey ||
+      projectMode !== "project" ||
+      !deletingShotItem ||
+      !deletingShot ||
+      !canEditProject
+    )
+      return;
     setBusy(true);
     setError(null);
     try {
@@ -2757,11 +3012,19 @@ export function App() {
     } finally {
       setBusy(false);
     }
-  }, [acceptPayload, deletingShot, deletingShotItem, deletingShotPreview, projectKey, projectMode]);
+  }, [
+    acceptPayload,
+    canEditProject,
+    deletingShot,
+    deletingShotItem,
+    deletingShotPreview,
+    projectKey,
+    projectMode,
+  ]);
 
   const deleteCanvasEdge = useCallback(
     async (edgeId: string, requestedIdentity?: CanvasEdgeIdentity) => {
-      if (!projectKey || projectMode !== "project" || !snapshot) return;
+      if (!projectKey || projectMode !== "project" || !snapshot || !canEditProject) return;
       const identity = requestedIdentity ?? selectedEdgeIdentityRef.current;
       const edge =
         (identity
@@ -2806,12 +3069,12 @@ export function App() {
         setBusy(false);
       }
     },
-    [acceptPayload, projectKey, projectMode, snapshot],
+    [acceptPayload, canEditProject, projectKey, projectMode, snapshot],
   );
 
   const duplicateCanvasItem = useCallback(
     async (itemId: string, position?: { x: number; y: number }) => {
-      if (!projectKey || projectMode !== "project") {
+      if (!projectKey || projectMode !== "project" || !canEditProject) {
         setNotice("功能示例不会复制节点");
         return;
       }
@@ -2838,18 +3101,29 @@ export function App() {
         setBusy(false);
       }
     },
-    [acceptPayload, projectKey, projectMode],
+    [acceptPayload, canEditProject, projectKey, projectMode],
   );
 
-  const copyCanvasItem = useCallback((itemId: string, mode: "copy" | "cut") => {
-    setCanvasClipboard({ itemId, mode });
-    setCanvasContextMenu(null);
-    setNotice(mode === "copy" ? "节点已复制，右键空白处粘贴" : "节点已剪切，粘贴前不会移除");
-  }, []);
+  const copyCanvasItem = useCallback(
+    (itemId: string, mode: "copy" | "cut") => {
+      if (!canEditProject) return;
+      setCanvasClipboard({ itemId, mode });
+      setCanvasContextMenu(null);
+      setNotice(mode === "copy" ? "节点已复制，右键空白处粘贴" : "节点已剪切，粘贴前不会移除");
+    },
+    [canEditProject],
+  );
 
   const pasteCanvasItem = useCallback(
     async (position?: { x: number; y: number }) => {
-      if (!canvasClipboard || !snapshot || !projectKey || projectMode !== "project") return;
+      if (
+        !canvasClipboard ||
+        !snapshot ||
+        !projectKey ||
+        projectMode !== "project" ||
+        !canEditProject
+      )
+        return;
       const source = snapshot.canvasItems.find((item) => item.id === canvasClipboard.itemId);
       if (!source) {
         setCanvasClipboard(null);
@@ -2876,7 +3150,15 @@ export function App() {
         setBusy(false);
       }
     },
-    [acceptPayload, canvasClipboard, duplicateCanvasItem, projectKey, projectMode, snapshot],
+    [
+      acceptPayload,
+      canEditProject,
+      canvasClipboard,
+      duplicateCanvasItem,
+      projectKey,
+      projectMode,
+      snapshot,
+    ],
   );
 
   useEffect(() => {
@@ -2893,6 +3175,7 @@ export function App() {
             nodeEditDraft ||
             recipeOpen ||
             assetLibraryOpen ||
+            storyboardOpen ||
             renameOpen,
         );
         setCanvasContextMenu(null);
@@ -2905,6 +3188,7 @@ export function App() {
         setNodeEditDraft(null);
         setRecipeOpen(false);
         setAssetLibraryOpen(false);
+        setStoryboardOpen(false);
         setRenameOpen(false);
         if (!overlayOpen) {
           setSelectedCanvasItemId(null);
@@ -2935,6 +3219,7 @@ export function App() {
         return;
       }
       const command = event.metaKey || event.ctrlKey;
+      if (!canEditProject) return;
       if (command && event.key.toLowerCase() === "c" && selectedCanvasItemId) {
         event.preventDefault();
         copyCanvasItem(selectedCanvasItemId, "copy");
@@ -2959,6 +3244,7 @@ export function App() {
     return () => window.removeEventListener("keydown", handleShortcut);
   }, [
     canvasClipboard,
+    canEditProject,
     canvasContextMenu,
     canvasGuideOpen,
     commandHistoryOpen,
@@ -2978,12 +3264,14 @@ export function App() {
     nodeEditDraft,
     recipeOpen,
     assetLibraryOpen,
+    storyboardOpen,
     renameOpen,
   ]);
 
   const openNodeContextMenu = useCallback(
     (event: ReactMouseEvent, node: BoardNode) => {
       event.preventDefault();
+      if (!canEditProject) return;
       const point = flowInstance?.screenToFlowPosition({ x: event.clientX, y: event.clientY }) ?? {
         x: node.position.x,
         y: node.position.y,
@@ -3002,12 +3290,13 @@ export function App() {
         edge: null,
       });
     },
-    [flowInstance, snapshot?.canvasItems],
+    [canEditProject, flowInstance, snapshot?.canvasItems],
   );
 
   const openPaneContextMenu = useCallback(
     (event: ReactMouseEvent | MouseEvent) => {
       event.preventDefault();
+      if (!canEditProject) return;
       setSelectedCanvasItemId(null);
       setSelectedShotId(null);
       setSelectedEdgeId(null);
@@ -3025,7 +3314,7 @@ export function App() {
         edge: null,
       });
     },
-    [flowInstance],
+    [canEditProject, flowInstance],
   );
 
   const openEdgeContextMenu = useCallback(
@@ -3077,7 +3366,13 @@ export function App() {
 
   const onConnect = useCallback(
     (connection: Connection) => {
-      if (!projectKey || projectMode !== "project" || !connection.source || !connection.target) {
+      if (
+        !projectKey ||
+        projectMode !== "project" ||
+        !connection.source ||
+        !connection.target ||
+        !canEditProject
+      ) {
         setNotice("功能示例中的连线不会写入项目");
         return;
       }
@@ -3126,7 +3421,7 @@ export function App() {
         )
         .finally(() => setBusy(false));
     },
-    [acceptPayload, projectKey, projectMode],
+    [acceptPayload, canEditProject, projectKey, projectMode],
   );
 
   const connectAssetFromLibrary = useCallback(
@@ -3134,7 +3429,8 @@ export function App() {
       assetId: string,
       slot: "first" | "last" | "reference" | "referenceVideo" | "referenceAudio",
     ) => {
-      if (!projectKey || projectMode !== "project" || !snapshot || !selectedShot) return;
+      if (!projectKey || projectMode !== "project" || !snapshot || !selectedShot || !canEditProject)
+        return;
       const target = snapshot.canvasItems.find(
         (item) => item.refType === "shot" && item.refId === selectedShot.id,
       );
@@ -3193,12 +3489,12 @@ export function App() {
         setBusy(false);
       }
     },
-    [acceptPayload, projectKey, projectMode, selectedShot, snapshot],
+    [acceptPayload, canEditProject, projectKey, projectMode, selectedShot, snapshot],
   );
 
   const addAssetToCanvasFromLibrary = useCallback(
     async (assetId: string) => {
-      if (!projectKey || projectMode !== "project" || !snapshot) {
+      if (!projectKey || projectMode !== "project" || !snapshot || !canEditProject) {
         return { ok: false, error: "请先打开一个本地项目" };
       }
       const existing = snapshot.canvasItems.find(
@@ -3245,7 +3541,15 @@ export function App() {
         setBusy(false);
       }
     },
-    [acceptPayload, activeScene?.id, projectKey, projectMode, selectedShot, snapshot],
+    [
+      acceptPayload,
+      activeScene?.id,
+      canEditProject,
+      projectKey,
+      projectMode,
+      selectedShot,
+      snapshot,
+    ],
   );
 
   const updateAssetMetadata = useCallback(
@@ -3257,7 +3561,7 @@ export function App() {
         libraryKind?: "character" | "location" | "prop" | null;
       },
     ) => {
-      if (!projectKey || projectMode !== "project") {
+      if (!projectKey || projectMode !== "project" || !canEditProject) {
         return { ok: false, error: "示例项目不会保存资产修改" };
       }
       setBusy(true);
@@ -3281,11 +3585,11 @@ export function App() {
         setBusy(false);
       }
     },
-    [acceptPayload, projectKey, projectMode],
+    [acceptPayload, canEditProject, projectKey, projectMode],
   );
 
   const inspectHistoricalAssetMetadata = useCallback(async () => {
-    if (!projectKey || projectMode !== "project") {
+    if (!projectKey || projectMode !== "project" || !canEditProject) {
       return { ok: false, error: "示例项目不会修改资产信息" };
     }
     setBusy(true);
@@ -3309,10 +3613,11 @@ export function App() {
     } finally {
       setBusy(false);
     }
-  }, [acceptPayload, projectKey, projectMode]);
+  }, [acceptPayload, canEditProject, projectKey, projectMode]);
 
   const setAssetCustomTags = useCallback(
     async (assetId: string, customTags: string[]) => {
+      if (!canEditProject) return;
       const asset = snapshot?.assets.find((candidate) => candidate.id === assetId);
       if (!asset) return;
 
@@ -3333,7 +3638,7 @@ export function App() {
 
       await updateAssetMetadata(assetId, { customTags });
     },
-    [projectKey, projectMode, snapshot?.assets, updateAssetMetadata],
+    [canEditProject, projectKey, projectMode, snapshot?.assets, updateAssetMetadata],
   );
 
   const openProject = useCallback(
@@ -3345,6 +3650,8 @@ export function App() {
       setError(null);
       try {
         const payload = await projectApi.open(key);
+        pendingSyncRef.current = null;
+        setSyncStatus("current");
         window.sessionStorage.removeItem("takeboard.resumeDemo");
         setBlankCanvasGuideOpen(false);
         setProjectKey(key);
@@ -3545,7 +3852,7 @@ export function App() {
 
   const createShot = useCallback(
     async (position?: { x: number; y: number }) => {
-      if (!projectKey || projectMode !== "project") return;
+      if (!projectKey || projectMode !== "project" || !canEditProject) return;
       setBusy(true);
       setError(null);
       try {
@@ -3560,12 +3867,12 @@ export function App() {
         setBusy(false);
       }
     },
-    [acceptPayload, projectKey, projectMode],
+    [acceptPayload, canEditProject, projectKey, projectMode],
   );
 
   const createTextNode = useCallback(
     async (position: { x: number; y: number }) => {
-      if (!projectKey || projectMode !== "project") return;
+      if (!projectKey || projectMode !== "project" || !canEditProject) return;
       setBusy(true);
       setError(null);
       try {
@@ -3585,7 +3892,7 @@ export function App() {
         setBusy(false);
       }
     },
-    [acceptPayload, activeScene, projectKey, projectMode],
+    [acceptPayload, activeScene, canEditProject, projectKey, projectMode],
   );
 
   const uploadAsset = useCallback(
@@ -3600,6 +3907,7 @@ export function App() {
       },
     ) => {
       if (!projectKey) return { ok: false, error: "请先打开一个项目" };
+      if (!canEditProject) return { ok: false, error: "Viewer 权限为只读" };
       setBusy(true);
       setError(null);
       try {
@@ -3620,7 +3928,7 @@ export function App() {
         setBusy(false);
       }
     },
-    [acceptPayload, projectKey],
+    [acceptPayload, canEditProject, projectKey],
   );
 
   const refreshWorkflows = useCallback(async () => {
@@ -3702,7 +4010,11 @@ export function App() {
   );
 
   const generateReal = useCallback(
-    async (shot: Shot, settingsOverride: Partial<GenerationSettings> = {}) => {
+    async (
+      shot: Shot,
+      settingsOverride: Partial<GenerationSettings> = {},
+      launchOptions: GenerationLaunchOptions = {},
+    ) => {
       if (!projectKey) return;
       const submittedSettings = { ...generationSettings, ...settingsOverride };
       const effectiveDisabledReason =
@@ -3736,42 +4048,113 @@ export function App() {
         setGenerationProgress({
           phase: "queued",
           label: "正在提交任务",
-          detail: "构建可复现的运行快照",
+          detail: "构建候选批次与可复现的运行快照",
           percent: null,
           elapsedSeconds: 0,
         });
         const miniMaxH3 = selectedModelProfile.family === "minimax_h3";
-        const submitted = await projectApi.generate(projectKey, shot.id, {
-          ...submittedSettings,
-          ...(miniMaxH3
-            ? {
-                promptSource: submittedSettings.prompt,
-                prompt: compileMiniMaxH3Mentions(submittedSettings.prompt, promptMentions),
-              }
-            : {}),
-          referenceImageAssetIds: selectedReferenceImageIds,
-          referenceVideoAssetIds: selectedReferenceVideoIds,
-          referenceAudioAssetIds: selectedReferenceAudioIds,
-        });
+        const requestedCount = Math.min(4, Math.max(1, launchOptions.candidateCount ?? 1));
+        const batchId =
+          launchOptions.candidateBatchId ??
+          `batch_${Date.now().toString(36)}_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
+        const firstCandidateIndex = launchOptions.candidateIndex ?? 1;
+        const batchSize = launchOptions.candidateIndex ? 1 : requestedCount;
+        const seeds = Array.from({ length: batchSize }, (_, offset) =>
+          launchOptions.retryOfRunId
+            ? submittedSettings.seed
+            : (submittedSettings.seed + offset * 104_729) % 2_147_483_648,
+        );
+        const submissionResults = await Promise.allSettled(
+          seeds.map((seed, offset) =>
+            projectApi.generate(projectKey, shot.id, {
+              ...submittedSettings,
+              seed,
+              promptSource: submittedSettings.prompt,
+              prompt:
+                launchOptions.compiledPrompt ??
+                (miniMaxH3
+                  ? compileMiniMaxH3Mentions(submittedSettings.prompt, promptMentions)
+                  : submittedSettings.prompt),
+              firstFrameAssetId:
+                launchOptions.firstFrameAssetId === undefined
+                  ? submittedSettings.firstFrameAssetId
+                  : launchOptions.firstFrameAssetId,
+              lastFrameAssetId:
+                launchOptions.lastFrameAssetId === undefined
+                  ? submittedSettings.lastFrameAssetId
+                  : launchOptions.lastFrameAssetId,
+              referenceImageAssetIds:
+                launchOptions.referenceImageAssetIds ?? selectedReferenceImageIds,
+              referenceVideoAssetIds:
+                launchOptions.referenceVideoAssetIds ?? selectedReferenceVideoIds,
+              referenceAudioAssetIds:
+                launchOptions.referenceAudioAssetIds ?? selectedReferenceAudioIds,
+              candidateBatchId: batchId,
+              candidateIndex: firstCandidateIndex + offset,
+              candidateCount: requestedCount,
+              ...(launchOptions.retryOfRunId ? { retryOfRunId: launchOptions.retryOfRunId } : {}),
+            }),
+          ),
+        );
+        const submitted = submissionResults.flatMap((result) =>
+          result.status === "fulfilled" ? [result.value] : [],
+        );
+        for (const result of submitted) acceptPayload(result, shot.id);
+        if (submissionResults.some((result) => result.status === "rejected")) {
+          const refreshed = await projectApi.open(projectKey).catch(() => null);
+          if (refreshed) acceptPayload(refreshed, shot.id);
+        }
+        const latestSnapshot = latestSnapshotRef.current;
+        const batchRunIds = [
+          ...new Set([
+            ...submitted.map((result) => result.runId),
+            ...(latestSnapshot?.runs
+              .filter((run) => run.parameters.candidateBatchId === batchId)
+              .map((run) => run.id) ?? []),
+          ]),
+        ];
+        generationRunIdsRef.current = batchRunIds;
         if (generationTokenRef.current !== token) {
-          await projectApi.cancelRun(projectKey, submitted.runId).catch(() => undefined);
+          await Promise.allSettled(
+            batchRunIds.map((runId) => projectApi.cancelRun(projectKey, runId)),
+          );
           return;
         }
-        acceptPayload(submitted, shot.id);
-        setNotice(`${selectedWorkflow?.name ?? "Recipe"} 已开始生成，运行记录已保存`);
+        const submissionFailures = submissionResults.length - submitted.length;
+        if (batchRunIds.length === 0) {
+          const firstFailure = submissionResults.find(
+            (result): result is PromiseRejectedResult => result.status === "rejected",
+          );
+          throw firstFailure?.reason instanceof Error
+            ? firstFailure.reason
+            : new Error("候选任务未能提交到执行端");
+        }
+        setNotice(
+          submissionFailures > 0
+            ? `${batchRunIds.length} 个运行已保存，${submissionFailures} 个提交需要重试`
+            : `${selectedWorkflow?.name ?? "Recipe"} 已提交 ${batchRunIds.length} 个独立运行`,
+        );
+        const terminalStatuses = new Set(["completed", "failed", "cancelled", "orphaned"]);
+        const runStates = new Map<string, string>();
         let consecutiveSyncFailures = 0;
         while (generationTokenRef.current === token) {
           await new Promise((resolve) => window.setTimeout(resolve, 3_000));
           if (generationTokenRef.current !== token) return;
-          let result: Awaited<ReturnType<typeof projectApi.run>>;
-          try {
-            result = await projectApi.run(projectKey, submitted.runId);
-            consecutiveSyncFailures = 0;
-          } catch {
+          const pendingRunIds = batchRunIds.filter(
+            (runId) => !terminalStatuses.has(runStates.get(runId) ?? "running"),
+          );
+          if (pendingRunIds.length === 0) break;
+          const synchronized = await Promise.allSettled(
+            pendingRunIds.map((runId) => projectApi.run(projectKey, runId)),
+          );
+          const successful = synchronized.flatMap((result) =>
+            result.status === "fulfilled" ? [result.value] : [],
+          );
+          if (successful.length === 0) {
             consecutiveSyncFailures += 1;
             setGenerationProgress({
               phase: "running",
-              label: "生成仍在后台执行",
+              label: `正在生成 ${batchRunIds.length} 个候选`,
               detail: `状态同步暂时中断，正在第 ${consecutiveSyncFailures} 次重连`,
               percent: null,
               elapsedSeconds: Math.round((Date.now() - startedAt) / 1000),
@@ -3781,36 +4164,62 @@ export function App() {
             );
             continue;
           }
+          consecutiveSyncFailures = 0;
           if (generationTokenRef.current !== token) return;
-          acceptPayload(result);
-          setGenerationProgress(realGenerationProgress(result.progress, startedAt));
-          if (result.status === "completed") {
-            setGenerationProgress({
-              phase: "collecting",
-              label: "正在整理结果",
-              detail: "写入候选、预览与运行谱系",
-              percent: 100,
-              elapsedSeconds: Math.round((Date.now() - startedAt) / 1000),
-            });
-            const isImage =
-              selectedWorkflow &&
-              ["text_to_image", "image_to_image"].includes(selectedWorkflow.capability);
-            setNotice(`${shot.label} 已生成真实${isImage ? "图片" : "视频"} Take`);
-            return;
+          for (const result of successful) {
+            runStates.set(result.runId, result.status);
+            acceptPayload(result, shot.id);
           }
-          if (result.status === "failed")
-            throw new Error("生成任务失败，请查看运行记录或执行节点日志");
-          if (result.status === "cancelled") {
-            setNotice(`${shot.label} 的生成任务已停止并清理`);
-            return;
-          }
+          const knownRuns = latestSnapshotRef.current?.runs.filter((run) =>
+            batchRunIds.includes(run.id),
+          );
+          for (const run of knownRuns ?? []) runStates.set(run.id, run.status);
+          const completed = batchRunIds.filter(
+            (runId) => runStates.get(runId) === "completed",
+          ).length;
+          const failed = batchRunIds.filter((runId) =>
+            ["failed", "cancelled", "orphaned"].includes(runStates.get(runId) ?? ""),
+          ).length;
+          const running = batchRunIds.length - completed - failed;
+          const livePercents = successful
+            .map((result) => result.progress?.percent)
+            .filter((percent): percent is number => typeof percent === "number");
+          setGenerationProgress({
+            phase: running > 0 ? "running" : "collecting",
+            label: running > 0 ? `正在生成 ${batchRunIds.length} 个候选` : "正在整理候选",
+            detail: `${completed} 已完成 · ${running} 执行中${failed > 0 ? ` · ${failed} 失败` : ""}`,
+            percent:
+              livePercents.length === running && running > 0
+                ? Math.round(
+                    (completed * 100 + livePercents.reduce((sum, percent) => sum + percent, 0)) /
+                      batchRunIds.length,
+                  )
+                : running === 0
+                  ? 100
+                  : null,
+            elapsedSeconds: Math.round((Date.now() - startedAt) / 1000),
+          });
         }
+        const finalRuns = latestSnapshotRef.current?.runs.filter((run) =>
+          batchRunIds.includes(run.id),
+        );
+        const completed = finalRuns?.filter((run) => run.status === "completed").length ?? 0;
+        const failed = (finalRuns?.length ?? 0) - completed;
+        const isImage =
+          selectedWorkflow &&
+          ["text_to_image", "image_to_image"].includes(selectedWorkflow.capability);
+        setNotice(
+          failed > 0
+            ? `${shot.label} 完成 ${completed} 个候选，${failed} 个可单独重试`
+            : `${shot.label} 已生成 ${completed} 个真实${isImage ? "图片" : "视频"}候选`,
+        );
       } catch (cause) {
         if (generationTokenRef.current === token) {
           setError(cause instanceof Error ? cause.message : "生成失败");
         }
       } finally {
         if (generationTokenRef.current === token) {
+          generationRunIdsRef.current = [];
           setGenerationBusy(false);
           window.setTimeout(() => {
             if (generationTokenRef.current === token) setGenerationProgress(null);
@@ -3833,6 +4242,67 @@ export function App() {
     ],
   );
 
+  const retryGenerationRun = useCallback(
+    async (run: Run) => {
+      const shot = latestSnapshotRef.current?.shots.find((item) => item.id === run.shotId);
+      if (!shot) {
+        setError("原镜头已不存在，无法重试这个候选");
+        return;
+      }
+      const numberParameter = (name: string, fallback: number) => {
+        const value = run.parameters[name];
+        return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+      };
+      const stringParameter = (name: string, fallback: string) => {
+        const value = run.parameters[name];
+        return typeof value === "string" ? value : fallback;
+      };
+      const inputIds = (slotPrefix: string) =>
+        run.inputs
+          .filter((input) => input.refType === "asset" && input.slot.startsWith(slotPrefix))
+          .map((input) => input.refId);
+      const storedBatchId = run.parameters.candidateBatchId;
+      const storedCandidateIndex = run.parameters.candidateIndex;
+      const storedCandidateCount = run.parameters.candidateCount;
+      await generateReal(
+        shot,
+        {
+          recipePath: stringParameter("recipePath", generationSettings.recipePath),
+          prompt: stringParameter(
+            "promptSource",
+            stringParameter("prompt", generationSettings.prompt),
+          ),
+          negativePrompt:
+            typeof run.parameters.negativePrompt === "string" ? run.parameters.negativePrompt : "",
+          width: numberParameter("width", generationSettings.width),
+          height: numberParameter("height", generationSettings.height),
+          durationSeconds: numberParameter("durationSeconds", generationSettings.durationSeconds),
+          fps: numberParameter("fps", generationSettings.fps),
+          seed: numberParameter("seed", generationSettings.seed),
+          steps: numberParameter("steps", generationSettings.steps),
+          denoise: numberParameter("denoise", generationSettings.denoise),
+          referenceImageSize: run.parameters.referenceImageSize === "max" ? "max" : "match",
+        },
+        {
+          candidateCount: typeof storedCandidateCount === "number" ? storedCandidateCount : 1,
+          candidateBatchId:
+            typeof storedBatchId === "string"
+              ? storedBatchId
+              : `batch_${Date.now().toString(36)}_retry000`,
+          candidateIndex: typeof storedCandidateIndex === "number" ? storedCandidateIndex : 1,
+          retryOfRunId: run.id,
+          compiledPrompt: stringParameter("prompt", generationSettings.prompt),
+          firstFrameAssetId: inputIds("start_image")[0] ?? null,
+          lastFrameAssetId: inputIds("last_image")[0] ?? null,
+          referenceImageAssetIds: inputIds("reference_image_"),
+          referenceVideoAssetIds: inputIds("reference_video_"),
+          referenceAudioAssetIds: inputIds("reference_audio_"),
+        },
+      );
+    },
+    [generateReal, generationSettings],
+  );
+
   const cancelGeneration = useCallback(async () => {
     generationTokenRef.current += 1;
     setGenerationCancelling(true);
@@ -3844,18 +4314,27 @@ export function App() {
       elapsedSeconds: generationProgress?.elapsedSeconds ?? 0,
     });
     try {
-      if (projectMode === "project" && projectKey && activeRun) {
-        const result = await projectApi.cancelRun(projectKey, activeRun.id);
-        acceptPayload(result, activeRun.shotId);
-        if (!result.cancelled) {
-          setNotice(result.warning ?? "本地已停止跟踪，但执行端尚未确认取消，可稍后再次清理");
-        } else {
-          setNotice(
-            result.resourcesReleased
-              ? "生成已停止，相关文件已清理，执行资源已释放"
-              : "生成已停止，相关文件已清理",
-          );
+      const runIds = [
+        ...new Set([...generationRunIdsRef.current, ...activeRuns.map((run) => run.id)]),
+      ];
+      if (projectMode === "project" && projectKey && runIds.length > 0) {
+        const results = await Promise.allSettled(
+          runIds.map((runId) => projectApi.cancelRun(projectKey, runId)),
+        );
+        const stopped = results.flatMap((result) =>
+          result.status === "fulfilled" ? [result.value] : [],
+        );
+        for (const result of stopped) {
+          const run = result.snapshot.runs.find((item) => item.id === result.runId);
+          acceptPayload(result, run?.shotId);
         }
+        const unconfirmed = stopped.filter((result) => !result.cancelled).length;
+        const requestFailures = results.length - stopped.length;
+        setNotice(
+          unconfirmed + requestFailures > 0
+            ? `${stopped.length} 个任务已处理，${unconfirmed + requestFailures} 个仍需稍后核对`
+            : `${stopped.length} 个生成任务已停止并完成清理`,
+        );
       } else {
         setNotice("已停止本次生成准备");
       }
@@ -3865,8 +4344,9 @@ export function App() {
       setGenerationBusy(false);
       setGenerationCancelling(false);
       setGenerationProgress(null);
+      generationRunIdsRef.current = [];
     }
-  }, [acceptPayload, activeRun, generationProgress?.elapsedSeconds, projectKey, projectMode]);
+  }, [acceptPayload, activeRuns, generationProgress?.elapsedSeconds, projectKey, projectMode]);
 
   const runAction = useCallback(
     async (action: () => ReturnType<typeof demoApi.get>, message: string, shotId?: string) => {
@@ -3905,9 +4385,9 @@ export function App() {
         );
         return;
       }
-      await generateReal(shot, settingsOverride);
+      await generateReal(shot, settingsOverride, { candidateCount });
     },
-    [generateReal, projectMode, runAction],
+    [candidateCount, generateReal, projectMode, runAction],
   );
 
   useEffect(() => {
@@ -4081,7 +4561,27 @@ export function App() {
         </button>
         <div className="top-actions">
           {!canEditProject ? <span className="read-only-badge">VIEW ONLY</span> : null}
-          <span className="save-status">✓ 已保存 · r{revision}</span>
+          {syncStatus === "pending" ? (
+            <button
+              className="save-status"
+              type="button"
+              onClick={applyPendingSync}
+              title="当前编辑完成后，点击载入其他设备的更新"
+            >
+              ↻ 有新版本 · 当前 r{revision}
+            </button>
+          ) : (
+            <span
+              className="save-status"
+              title={syncStatus === "offline" ? "暂时无法检查其他设备的更新" : "项目已保存"}
+            >
+              {syncStatus === "offline"
+                ? `○ 同步待重连 · r${revision}`
+                : syncStatus === "updated"
+                  ? `✓ 已同步 · r${revision}`
+                  : `✓ 已保存 · r${revision}`}
+            </span>
+          )}
           <ThemeSwitcher compact />
           <DisplaySettings compact />
           <button
@@ -4168,7 +4668,15 @@ export function App() {
           <span className="section-kicker">SHOTS</span>
           <div className="shot-list-heading-actions">
             <span>{snapshot.shots.length}</span>
-            {projectMode === "project" ? (
+            <button
+              type="button"
+              aria-label="打开分镜墙"
+              title="打开分镜墙"
+              onClick={() => setStoryboardOpen(true)}
+            >
+              ▦
+            </button>
+            {projectMode === "project" && canEditProject ? (
               <button
                 type="button"
                 aria-label="添加镜头"
@@ -4234,7 +4742,7 @@ export function App() {
                   );
                   if (shotItem) {
                     setSelectedCanvasItemId(shotItem.id);
-                  } else if (projectMode === "project" && projectKey) {
+                  } else if (projectMode === "project" && projectKey && canEditProject) {
                     setBusy(true);
                     void projectApi
                       .addCanvasItem(projectKey, {
@@ -4300,9 +4808,11 @@ export function App() {
                 event.target.value = "";
               }}
             />
-            <button type="button" disabled={busy} onClick={() => assetInput.current?.click()}>
-              ＋ 导入参考素材
-            </button>
+            {canEditProject ? (
+              <button type="button" disabled={busy} onClick={() => assetInput.current?.click()}>
+                ＋ 导入参考素材
+              </button>
+            ) : null}
             <button
               type="button"
               className="vault-button"
@@ -4379,7 +4889,7 @@ export function App() {
             >
               ?
             </button>
-            {projectMode === "project" ? (
+            {projectMode === "project" && canEditProject ? (
               <button
                 className="canvas-arrange-toggle"
                 type="button"
@@ -4511,7 +5021,9 @@ export function App() {
             setSelectedCanvasItemId(null);
             setSelectedShotId(null);
             setInspectorOpen(false);
-            setNotice("连线已选中 · 按 Delete 删除");
+            setNotice(
+              canEditProject ? "连线已选中 · 按 Delete 删除" : "连线已选中 · Viewer 只读查看",
+            );
           }}
           onEdgeContextMenu={openEdgeContextMenu}
           onNodeDoubleClick={(_event, node) => {
@@ -4522,7 +5034,7 @@ export function App() {
               setInspectorOpen(true);
               return;
             }
-            openNodeEditor(node.id);
+            if (canEditProject) openNodeEditor(node.id);
           }}
           onNodeContextMenu={openNodeContextMenu}
           onPaneContextMenu={openPaneContextMenu}
@@ -4552,8 +5064,7 @@ export function App() {
                 : demoApi.move(node.id, position.x, position.y)
             )
               .then((payload) => {
-                setSnapshot(payload.snapshot);
-                setRevision(payload.revision);
+                acceptPayload(payload);
               })
               .catch((cause: unknown) =>
                 setError(cause instanceof Error ? cause.message : "位置保存失败"),
@@ -4637,7 +5148,7 @@ export function App() {
                 type="button"
                 role="menuitem"
                 className="danger"
-                disabled={contextEdge.immutable}
+                disabled={!canEditProject || contextEdge.immutable}
                 onClick={() => void deleteCanvasEdge(contextEdge.id, contextEdge)}
               >
                 <span>⌫</span>
@@ -4785,6 +5296,7 @@ export function App() {
           item={selectedCanvasItem}
           snapshot={snapshot}
           projectKey={projectMode === "project" ? projectKey : null}
+          readOnly={!canEditProject}
           selectedShot={selectedShot}
           onOpenAssets={() => setAssetLibraryOpen(true)}
           onUseAsset={(assetId, slot) => {
@@ -4830,6 +5342,9 @@ export function App() {
           onOpenRecipes={() => setRecipeOpen(true)}
           generateDisabledReason={generationDisabledReason}
           progress={generationProgress}
+          candidateCount={candidateCount}
+          onCandidateCountChange={setCandidateCount}
+          onRetryRun={(run) => void retryGenerationRun(run)}
           readOnly={!canEditProject}
           onClose={() => setInspectorOpen(false)}
           workerLabel={
@@ -4839,7 +5354,7 @@ export function App() {
           }
           onGenerate={() => void requestShotGeneration(selectedShot)}
           onCancel={() => void cancelGeneration()}
-          canCancel={generationBusy || Boolean(activeRun)}
+          canCancel={generationBusy || activeRuns.length > 0}
           cancelling={generationCancelling}
           onReject={(takeId, reason) =>
             void runAction(
@@ -4872,9 +5387,40 @@ export function App() {
           </div>
         }
       >
+        {storyboardOpen ? (
+          <Storyboard
+            snapshot={snapshot}
+            projectKey={projectMode === "project" ? projectKey : null}
+            readOnly={!canEditProject || projectMode === "demo"}
+            onClose={() => setStoryboardOpen(false)}
+            onOpenShot={(shotId) => {
+              setSelectedShotId(shotId);
+              setInspectorOpen(true);
+              setStoryboardOpen(false);
+              const shotItem = snapshot.canvasItems.find(
+                (item) => item.refType === "shot" && item.refId === shotId,
+              );
+              setSelectedCanvasItemId(shotItem?.id ?? null);
+            }}
+            onReorderShot={async (shotId, toIndex) => {
+              if (!projectKey || !canEditProject) return false;
+              setError(null);
+              try {
+                const payload = await projectApi.reorderShot(projectKey, shotId, toIndex);
+                acceptPayload(payload, shotId);
+                setNotice("镜头播放顺序已保存；画布布局保持不变");
+                return true;
+              } catch (cause) {
+                setError(cause instanceof Error ? cause.message : "镜头顺序调整失败");
+                return false;
+              }
+            }}
+          />
+        ) : null}
         {recipeOpen ? (
           <RecipeStudio
             busy={busy}
+            canManageWorkflows={!authUser || authUser.instanceRole === "admin"}
             editorUrl={comfyEditorUrl}
             onClose={() => setRecipeOpen(false)}
             onImport={importWorkflow}
@@ -4896,6 +5442,7 @@ export function App() {
             onRefresh={() => void refreshCommandHistory()}
             onUndo={(commandId) => void undoProjectCommand(commandId)}
             open
+            readOnly={!canEditProject}
           />
         ) : null}
         {projectKey && assetLibraryOpen ? (
@@ -4914,6 +5461,7 @@ export function App() {
             }
             open
             projectKey={projectKey}
+            readOnly={!canEditProject}
             selectedShotLabel={selectedShot?.label ?? null}
             selectedFirstFrameId={generationSettings.firstFrameAssetId}
             selectedLastFrameId={generationSettings.lastFrameAssetId}
