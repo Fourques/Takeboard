@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdir, readdir, readFile, rm, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
-import type { ProjectSnapshot } from "@takeboard/contracts";
+import { type ProjectSnapshot, resolveGenerationResolution } from "@takeboard/contracts";
 import { createTakeBoardId, toIsoTimestamp } from "@takeboard/domain";
 import {
   buildLtx23I2VPrompt,
@@ -17,7 +17,7 @@ import {
   qwenImage2512Resolution,
 } from "@takeboard/executor-comfy";
 import type { FastifyInstance } from "fastify";
-import { createImageProxy, inspectImage } from "./asset-inspection.js";
+import { createImageProxy, inspectImage, inspectVideo } from "./asset-inspection.js";
 import { projectKey } from "./project-routes.js";
 import { ProjectStore } from "./storage/project-store.js";
 import { applyWorkflowBinding, loadExecutableWorkflow } from "./workflow-bindings.js";
@@ -45,6 +45,36 @@ function importedImageNodeSize(image: { width: number; height: number } | null) 
   const width = Math.round(Math.min(420, Math.max(240, 300 * Math.sqrt(ratio))));
   const previewHeight = Math.min(440, width / ratio);
   return { width, height: Math.round(previewHeight + 76) };
+}
+
+function takeStackPosition(snapshot: ProjectSnapshot, shotId: string) {
+  const shotItem = snapshot.canvasItems.find(
+    (item) => item.refType === "shot" && item.refId === shotId,
+  );
+  if (!shotItem) return { x: 560, y: 180 };
+  const shotWidth = Math.max(470, shotItem.width);
+  const shotHeight = Math.max(190, shotItem.height);
+  const stack = { width: 280, height: 190 };
+  const gap = 64;
+  const candidates = [
+    { x: shotItem.x + shotWidth + gap, y: shotItem.y },
+    { x: shotItem.x, y: shotItem.y + shotHeight + gap },
+    { x: shotItem.x, y: shotItem.y - stack.height - gap },
+    { x: shotItem.x - stack.width - gap, y: shotItem.y },
+  ];
+  const overlaps = (candidate: { x: number; y: number }) =>
+    snapshot.canvasItems.some((item) => {
+      if (item.id === shotItem.id) return false;
+      const width = item.refType === "shot" ? Math.max(470, item.width) : item.width;
+      const height = Math.max(120, item.height);
+      return !(
+        candidate.x + stack.width + 24 <= item.x ||
+        item.x + width + 24 <= candidate.x ||
+        candidate.y + stack.height + 24 <= item.y ||
+        item.y + height + 24 <= candidate.y
+      );
+    });
+  return candidates.find((candidate) => !overlaps(candidate)) ?? { x: 560, y: 180 };
 }
 
 function parseByteRange(header: string, size: number) {
@@ -160,12 +190,21 @@ export function registerGenerationRoutes(
     if (!kind) return await reply.code(415).send({ error: "仅支持图片、视频和音频素材" });
     const bytes = await upload.toBuffer();
     let imageInfo: ReturnType<typeof inspectImage> | null = null;
+    let videoInfo: ReturnType<typeof inspectVideo> | null = null;
     if (kind === "image") {
       try {
         imageInfo = inspectImage(bytes, upload.mimetype);
       } catch (error) {
         return await reply.code(422).send({
           error: error instanceof Error ? error.message : "图片文件无效",
+        });
+      }
+    } else if (kind === "video") {
+      try {
+        videoInfo = inspectVideo(bytes, upload.mimetype);
+      } catch (error) {
+        return await reply.code(422).send({
+          error: error instanceof Error ? error.message : "视频文件无效",
         });
       }
     }
@@ -196,7 +235,7 @@ export function registerGenerationRoutes(
         return await reply.code(422).send({ error: "图片无法完整解码或生成安全预览" });
       }
       const proxyPath = proxyStoragePath;
-      const canvasSize = importedImageNodeSize(imageInfo);
+      const canvasSize = importedImageNodeSize(imageInfo ?? videoInfo);
       current.snapshot.assets.push({
         id: assetId,
         projectId: current.snapshot.project.id,
@@ -208,8 +247,13 @@ export function registerGenerationRoutes(
         sha256: sha256(bytes),
         storagePath,
         proxyPath,
-        width: imageInfo?.width ?? null,
-        height: imageInfo?.height ?? null,
+        width: imageInfo?.width ?? videoInfo?.width ?? null,
+        height: imageInfo?.height ?? videoInfo?.height ?? null,
+        durationSeconds: videoInfo?.durationSeconds ?? null,
+        frameRate: videoInfo?.frameRate ?? null,
+        metadataInspectedAt: kind === "video" ? timestamp : null,
+        metadataInspectionError:
+          kind === "video" && !videoInfo ? "当前视频封装未提供可读取的轨道信息" : null,
         libraryKind: entityKind,
         customTags: [],
         createdAt: timestamp,
@@ -269,6 +313,78 @@ export function registerGenerationRoutes(
       store.close();
     }
   });
+
+  app.post<{ Params: { key: string } }>(
+    "/api/projects/:key/assets/inspect-metadata",
+    async (request, reply) => {
+      const key = projectKey(request.params.key);
+      if (!key) return await reply.code(400).send({ error: "项目标识无效" });
+      const directory = join(root, key);
+      const store = ProjectStore.openExisting(directory);
+      if (!store) return await reply.code(404).send({ error: "项目不存在" });
+      try {
+        const current = store.loadCurrent();
+        if (!current) return await reply.code(404).send({ error: "项目不存在" });
+        const candidates = current.snapshot.assets.filter(
+          (asset) => asset.mediaType === "video" && !asset.metadataInspectedAt,
+        );
+        const updatedAssetIds: string[] = [];
+        const warnings: Array<{ assetId: string; name: string; reason: string }> = [];
+        const timestamp = toIsoTimestamp();
+        for (const asset of candidates) {
+          try {
+            const bytes = await readFile(join(directory, asset.storagePath));
+            const info = inspectVideo(bytes, asset.mimeType);
+            if (!info) {
+              asset.metadataInspectedAt = timestamp;
+              asset.metadataInspectionError = "当前视频封装未提供可读取的轨道信息";
+              asset.updatedAt = timestamp;
+              updatedAssetIds.push(asset.id);
+              warnings.push({
+                assetId: asset.id,
+                name: asset.originalName,
+                reason: "暂不支持识别这种视频封装格式",
+              });
+              continue;
+            }
+            asset.width = info.width;
+            asset.height = info.height;
+            asset.durationSeconds = info.durationSeconds;
+            asset.frameRate = info.frameRate;
+            asset.metadataInspectedAt = timestamp;
+            asset.metadataInspectionError = null;
+            asset.updatedAt = timestamp;
+            updatedAssetIds.push(asset.id);
+          } catch (error) {
+            warnings.push({
+              assetId: asset.id,
+              name: asset.originalName,
+              reason: error instanceof Error ? error.message : "读取视频信息失败",
+            });
+          }
+        }
+        if (updatedAssetIds.length === 0) {
+          return {
+            key,
+            revision: current.revision,
+            snapshot: current.snapshot,
+            inspected: candidates.length,
+            updatedAssetIds,
+            warnings,
+          };
+        }
+        current.snapshot.project.updatedAt = timestamp;
+        current.snapshot.exportedAt = timestamp;
+        const saved = await store.save(current.snapshot, {
+          type: "asset.metadata_inspected",
+          payload: { inspected: candidates.length, updatedAssetIds, warningCount: warnings.length },
+        });
+        return { key, inspected: candidates.length, updatedAssetIds, warnings, ...saved };
+      } finally {
+        store.close();
+      }
+    },
+  );
 
   app.patch<{ Params: { key: string; assetId: string } }>(
     "/api/projects/:key/assets/:assetId",
@@ -386,6 +502,18 @@ export function registerGenerationRoutes(
           return await reply.code(404).send({ error: "运行记录不存在" });
         }
         if (["completed", "failed", "cancelled"].includes(run.status)) {
+          const shot = current.snapshot.shots.find((item) => item.id === run.shotId);
+          if (shot?.status === "generating") {
+            const timestamp = toIsoTimestamp();
+            refreshShotStatus(current.snapshot, run.shotId, timestamp);
+            current.snapshot.project.updatedAt = timestamp;
+            current.snapshot.exportedAt = timestamp;
+            const saved = await store.save(current.snapshot, {
+              type: "run.status_reconciled",
+              payload: { runId: run.id, status: run.status },
+            });
+            return { key, runId: run.id, status: run.status, cancelled: false, ...saved };
+          }
           return { key, runId: run.id, status: run.status, cancelled: false, ...current };
         }
         let dispatched = run.promptId === null;
@@ -721,6 +849,7 @@ export function registerGenerationRoutes(
             ...(negativePrompt ? { negative_prompt: negativePrompt } : {}),
             seed,
             steps,
+            denoise,
             width,
             height,
             duration: durationSeconds,
@@ -764,6 +893,7 @@ export function registerGenerationRoutes(
             steps,
           });
         } else if (ltxImage && comfyImage) {
+          effectiveSize = resolveGenerationResolution("multiple_32", width, height).effective;
           const workflow = await comfy.workflow(recipePath);
           prompt = buildLtx23I2VPrompt(workflow, {
             image: comfyImage,
@@ -875,9 +1005,18 @@ export function registerGenerationRoutes(
             seed,
             width: effectiveSize.width,
             height: effectiveSize.height,
-            ...(qwen ? {} : { durationSeconds, fps }),
-            ...(ltxImage ? {} : { steps }),
-            ...(qwenImage ? { denoise } : {}),
+            ...(boundWorkflow
+              ? {
+                  ...(boundWorkflow.binding.parameters.duration?.length ? { durationSeconds } : {}),
+                  ...(boundWorkflow.binding.parameters.fps?.length ? { fps } : {}),
+                  ...(boundWorkflow.binding.parameters.steps?.length ? { steps } : {}),
+                  ...(boundWorkflow.binding.parameters.denoise?.length ? { denoise } : {}),
+                }
+              : {
+                  ...(qwen ? {} : { durationSeconds, fps }),
+                  ...(ltxImage ? {} : { steps }),
+                  ...(qwenImage ? { denoise } : {}),
+                }),
             recipePath,
             prompt: positivePrompt,
             promptSource:
@@ -1107,6 +1246,7 @@ export function registerGenerationRoutes(
             ? "video/webm"
             : "video/mp4";
         const imageInfo = expectsImage ? inspectImage(bytes, mimeType) : null;
+        const videoInfo = expectsImage ? null : inspectVideo(bytes, mimeType);
         const proxyStoragePath = expectsImage ? `assets/proxies/${assetId}.jpg` : null;
         const proxyPath =
           proxyStoragePath &&
@@ -1124,8 +1264,13 @@ export function registerGenerationRoutes(
             sha256: sha256(bytes),
             storagePath,
             proxyPath,
-            width: imageInfo?.width ?? null,
-            height: imageInfo?.height ?? null,
+            width: imageInfo?.width ?? videoInfo?.width ?? null,
+            height: imageInfo?.height ?? videoInfo?.height ?? null,
+            durationSeconds: videoInfo?.durationSeconds ?? null,
+            frameRate: videoInfo?.frameRate ?? null,
+            metadataInspectedAt: expectsImage ? null : timestamp,
+            metadataInspectionError:
+              !expectsImage && !videoInfo ? "当前视频封装未提供可读取的轨道信息" : null,
             customTags: [],
             createdAt: timestamp,
             updatedAt: timestamp,
@@ -1157,13 +1302,14 @@ export function registerGenerationRoutes(
               (item) => item.refType === "take_stack" && item.refId === shot.id,
             )
           ) {
+            const stackPosition = takeStackPosition(current.snapshot, shot.id);
             current.snapshot.canvasItems.push({
               id: createTakeBoardId("canvas_item"),
               sceneId: shot.sceneId,
               refType: "take_stack",
               refId: shot.id,
-              x: 560,
-              y: 180,
+              x: stackPosition.x,
+              y: stackPosition.y,
               width: 280,
               height: 190,
               zIndex: 2,

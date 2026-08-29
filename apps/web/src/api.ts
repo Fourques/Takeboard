@@ -1,4 +1,10 @@
-import type { ProjectSnapshot } from "@takeboard/contracts";
+import type {
+  CommandAuditEntry,
+  ProjectCommand,
+  ProjectCommandPreview,
+  ProjectSnapshot,
+  WorkflowDiagnostic,
+} from "@takeboard/contracts";
 
 export type DemoPayload = {
   revision: number;
@@ -97,6 +103,14 @@ export type WorkflowSummary = {
   bindingStatus?: "built_in" | "ready" | "stale" | "needs_binding";
   workflowHash?: string;
   origin?: "built_in" | "imported" | "comfyui";
+  diagnostic?: WorkflowDiagnostic;
+};
+
+export type WorkflowListDiagnostic = {
+  path: string;
+  status: "blocked" | "unknown";
+  code: string;
+  message: string;
 };
 
 export type WorkflowBindingTarget = { nodeId: string; input: string };
@@ -110,6 +124,7 @@ export type WorkflowParameterKey =
   | "negative_prompt"
   | "seed"
   | "steps"
+  | "denoise"
   | "width"
   | "height"
   | "duration"
@@ -145,6 +160,32 @@ export type WorkflowBindingInspection = {
   conversionIssues?: string[];
   warning?: string;
   message?: string;
+  diagnostic?: WorkflowDiagnostic;
+};
+
+export type WorkflowArchiveReference = {
+  projectKey: string;
+  projectTitle: string;
+  location: "active" | "trash";
+  shotIds: string[];
+  shotLabels: string[];
+  runCount: number;
+};
+
+export type WorkflowArchivePreview = {
+  path: string;
+  name: string;
+  workflowHash: string;
+  references: WorkflowArchiveReference[];
+  blocked: boolean;
+  confirmationToken: string;
+};
+
+export type ArchivedWorkflow = {
+  archivePath: string;
+  originalPath: string;
+  name: string;
+  archivedAt: string;
 };
 
 async function request(path: string, options?: RequestInit): Promise<DemoPayload> {
@@ -198,10 +239,54 @@ async function jsonRequest<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(path, { ...options, headers });
   const payload = (await response.json().catch(() => ({}))) as T & { error?: string };
   if (!response.ok) {
-    if (response.status === 413) throw new Error("文件超过 100 MB 上传上限");
+    if (response.status === 413) throw new Error(payload.error ?? "文件超过当前服务上传上限");
     throw new Error(payload.error ?? `TakeBoard 请求失败（${response.status}）`);
   }
   return payload;
+}
+
+type CommandResponse = DemoPayload & {
+  key: string;
+  commandId: string;
+  replayed: boolean;
+  status: "applied" | "undone";
+  result: Record<string, unknown>;
+};
+
+function commandRequestId() {
+  return `web:${crypto.randomUUID()}`;
+}
+
+async function previewProjectCommand(key: string, command: ProjectCommand) {
+  return await jsonRequest<{ key: string; preview: ProjectCommandPreview }>(
+    `/api/projects/${encodeURIComponent(key)}/commands/preview`,
+    { method: "POST", body: JSON.stringify({ command }) },
+  );
+}
+
+async function executeProjectCommand(
+  key: string,
+  command: ProjectCommand,
+  preview?: ProjectCommandPreview,
+) {
+  const requiresPreview =
+    command.type === "canvas.remove_item" ||
+    command.type === "shot.delete" ||
+    command.type === "canvas.connect_items" ||
+    command.type === "canvas.arrange_scene";
+  const confirmedPreview =
+    preview ?? (requiresPreview ? (await previewProjectCommand(key, command)).preview : null);
+  return await jsonRequest<CommandResponse>(`/api/projects/${encodeURIComponent(key)}/commands`, {
+    method: "POST",
+    body: JSON.stringify({
+      command,
+      requestId: commandRequestId(),
+      ...(confirmedPreview ? { expectedRevision: confirmedPreview.currentRevision } : {}),
+      ...(confirmedPreview?.confirmationToken
+        ? { confirmationToken: confirmedPreview.confirmationToken }
+        : {}),
+    }),
+  });
 }
 
 export const projectApi = {
@@ -213,6 +298,18 @@ export const projectApi = {
       method: "POST",
       body: JSON.stringify(input),
     }),
+  importPackage: (file: File) => {
+    const body = new FormData();
+    body.append("projectPackage", file);
+    return jsonRequest<{
+      imported: true;
+      key: string;
+      title: string;
+      projectId: string;
+      revision: number;
+    }>("/api/projects/import", { method: "POST", body });
+  },
+  exportUrl: (key: string) => `/api/projects/${encodeURIComponent(key)}/export`,
   createShot: (
     key: string,
     input: {
@@ -221,25 +318,20 @@ export const projectApi = {
       y?: number;
     } = {},
   ) =>
-    jsonRequest<DemoPayload & { key: string; shotId: string; itemId: string }>(
-      `/api/projects/${encodeURIComponent(key)}/shots`,
-      { method: "POST", body: JSON.stringify(input) },
-    ),
+    executeProjectCommand(key, { type: "canvas.create_shot", ...input }) as Promise<
+      CommandResponse & { shotId: string; itemId: string }
+    >,
   deleteShot: (key: string, shotId: string) =>
-    jsonRequest<DemoPayload & { key: string; removedShotId: string; removedItemIds: string[] }>(
-      `/api/projects/${encodeURIComponent(key)}/shots/${encodeURIComponent(shotId)}`,
-      {
-        method: "DELETE",
-      },
-    ),
+    executeProjectCommand(key, { type: "shot.delete", shotId }) as Promise<
+      CommandResponse & { removedShotId: string; removedItemIds: string[] }
+    >,
   createTextNode: (
     key: string,
     input: { title?: string; body?: string; sceneId?: string; x?: number; y?: number },
   ) =>
-    jsonRequest<DemoPayload & { key: string; textId: string; itemId: string }>(
-      `/api/projects/${encodeURIComponent(key)}/text-nodes`,
-      { method: "POST", body: JSON.stringify(input) },
-    ),
+    executeProjectCommand(key, { type: "canvas.create_text", ...input }) as Promise<
+      CommandResponse & { textId: string; itemId: string }
+    >,
   rename: (key: string, title: string) =>
     jsonRequest<DemoPayload & { key: string }>(`/api/projects/${encodeURIComponent(key)}`, {
       method: "PATCH",
@@ -262,44 +354,18 @@ export const projectApi = {
     targetItemId: string,
     targetSlot: "first_frame" | "last_frame" | "reference" | "reference_video" | "reference_audio",
   ) =>
-    jsonRequest<DemoPayload & { key: string }>(
-      `/api/projects/${encodeURIComponent(key)}/canvas-connections`,
-      {
-        method: "POST",
-        body: JSON.stringify({ sourceItemId, targetItemId, targetSlot }),
-      },
-    ),
+    executeProjectCommand(key, {
+      type: "canvas.connect_items",
+      sourceItemId,
+      targetItemId,
+      targetSlot,
+    }),
   disconnect: (key: string, edgeId: string) =>
-    jsonRequest<DemoPayload & { key: string; removedEdgeId: string }>(
-      `/api/projects/${encodeURIComponent(key)}/canvas-connections/${encodeURIComponent(edgeId)}`,
-      { method: "DELETE" },
-    ),
-  disconnectMatching: (
-    key: string,
-    connection: {
-      sourceItemId: string;
-      targetItemId: string;
-      targetSlot:
-        | "first_frame"
-        | "last_frame"
-        | "reference"
-        | "reference_video"
-        | "reference_audio"
-        | null;
-    },
-  ) =>
-    jsonRequest<DemoPayload & { key: string; removedEdgeId: string }>(
-      `/api/projects/${encodeURIComponent(key)}/canvas-connections`,
-      { method: "DELETE", body: JSON.stringify(connection) },
-    ),
+    executeProjectCommand(key, { type: "canvas.disconnect", edgeId }) as Promise<
+      CommandResponse & { removedEdgeId: string }
+    >,
   move: (key: string, itemId: string, x: number, y: number) =>
-    jsonRequest<DemoPayload & { key: string }>(
-      `/api/projects/${encodeURIComponent(key)}/canvas-position`,
-      {
-        method: "PATCH",
-        body: JSON.stringify({ itemId, x, y }),
-      },
-    ),
+    executeProjectCommand(key, { type: "canvas.move_item", itemId, x, y }),
   uploadAsset: async (
     key: string,
     file: File,
@@ -337,6 +403,15 @@ export const projectApi = {
       `/api/projects/${encodeURIComponent(key)}/assets/${encodeURIComponent(assetId)}`,
       { method: "PATCH", body: JSON.stringify(input) },
     ),
+  inspectAssetMetadata: (key: string) =>
+    jsonRequest<
+      DemoPayload & {
+        key: string;
+        inspected: number;
+        updatedAssetIds: string[];
+        warnings: Array<{ assetId: string; name: string; reason: string }>;
+      }
+    >(`/api/projects/${encodeURIComponent(key)}/assets/inspect-metadata`, { method: "POST" }),
   generate: (
     key: string,
     shotId: string,
@@ -405,15 +480,13 @@ export const projectApi = {
       y?: number;
     },
   ) =>
-    jsonRequest<DemoPayload & { key: string; itemId: string }>(
-      `/api/projects/${encodeURIComponent(key)}/canvas-items`,
-      { method: "POST", body: JSON.stringify(input) },
-    ),
+    executeProjectCommand(key, { type: "canvas.add_item", ...input }) as Promise<
+      CommandResponse & { itemId: string }
+    >,
   duplicateCanvasItem: (key: string, itemId: string, x?: number, y?: number) =>
-    jsonRequest<DemoPayload & { key: string; itemId: string }>(
-      `/api/projects/${encodeURIComponent(key)}/canvas-items/${encodeURIComponent(itemId)}/duplicate`,
-      { method: "POST", body: JSON.stringify({ x, y }) },
-    ),
+    executeProjectCommand(key, { type: "canvas.duplicate_item", itemId, x, y }) as Promise<
+      CommandResponse & { itemId: string; copyMode: "independent" | "reference" }
+    >,
   editCanvasItem: (
     key: string,
     itemId: string,
@@ -425,15 +498,22 @@ export const projectApi = {
       durationSeconds?: number;
       aspectRatio?: "9:16" | "16:9" | "1:1" | "4:5" | "2.35:1";
     },
-  ) =>
-    jsonRequest<DemoPayload & { key: string }>(
-      `/api/projects/${encodeURIComponent(key)}/canvas-items/${encodeURIComponent(itemId)}`,
-      { method: "PATCH", body: JSON.stringify(input) },
-    ),
+  ) => executeProjectCommand(key, { type: "canvas.edit_item", itemId, ...input }),
   deleteCanvasItem: (key: string, itemId: string) =>
-    jsonRequest<DemoPayload & { key: string; removedItemId: string }>(
-      `/api/projects/${encodeURIComponent(key)}/canvas-items/${encodeURIComponent(itemId)}`,
-      { method: "DELETE" },
+    executeProjectCommand(key, { type: "canvas.remove_item", itemId }) as Promise<
+      CommandResponse & { removedItemId: string }
+    >,
+  previewCommand: (key: string, command: ProjectCommand) => previewProjectCommand(key, command),
+  executeCommand: (key: string, command: ProjectCommand, preview?: ProjectCommandPreview) =>
+    executeProjectCommand(key, command, preview),
+  audit: (key: string, limit = 50) =>
+    jsonRequest<{ key: string; revision: number; entries: CommandAuditEntry[] }>(
+      `/api/projects/${encodeURIComponent(key)}/audit?limit=${limit}`,
+    ),
+  undo: (key: string, commandId: string) =>
+    jsonRequest<CommandResponse & { undoneCommandId: string }>(
+      `/api/projects/${encodeURIComponent(key)}/commands/${encodeURIComponent(commandId)}/undo`,
+      { method: "POST" },
     ),
   reject: (key: string, takeId: string, reason: string) =>
     jsonRequest<DemoPayload & { key: string }>(
@@ -470,6 +550,7 @@ export const workflowApi = {
       editorUrl: string;
       workflows: WorkflowSummary[];
       warnings: string[];
+      diagnostics?: WorkflowListDiagnostic[];
       error?: string;
     }>("/api/workflows"),
   rawUrl: (path: string) => `/api/workflows/raw?path=${encodeURIComponent(path)}`,
@@ -485,6 +566,10 @@ export const workflowApi = {
     jsonRequest<WorkflowBindingInspection>(
       `/api/workflows/binding?path=${encodeURIComponent(path)}`,
     ),
+  inspectWorkflow: (path: string) =>
+    jsonRequest<WorkflowBindingInspection>(
+      `/api/workflows/inspect?path=${encodeURIComponent(path)}`,
+    ),
   saveBinding: (path: string, binding: WorkflowBindingDraft) =>
     jsonRequest<{ status: "ready"; binding: WorkflowBindingDraft }>(
       `/api/workflows/binding?path=${encodeURIComponent(path)}`,
@@ -493,4 +578,25 @@ export const workflowApi = {
         body: JSON.stringify({ ...binding, trusted: true }),
       },
     ),
+  archivePreview: (path: string) =>
+    jsonRequest<WorkflowArchivePreview>(
+      `/api/workflows/archive-preview?path=${encodeURIComponent(path)}`,
+    ),
+  archive: (preview: WorkflowArchivePreview) =>
+    jsonRequest<{ archived: true; archivePath: string; originalPath: string }>(
+      "/api/workflows/archive",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          path: preview.path,
+          confirmationToken: preview.confirmationToken,
+        }),
+      },
+    ),
+  archives: () => jsonRequest<{ archives: ArchivedWorkflow[] }>("/api/workflows/archives"),
+  restoreArchive: (archivePath: string) =>
+    jsonRequest<{ restored: true; path: string }>("/api/workflows/archives/restore", {
+      method: "POST",
+      body: JSON.stringify({ archivePath }),
+    }),
 };

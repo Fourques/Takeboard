@@ -27,7 +27,7 @@ function decimalPlaces(value: number) {
   return text.includes(".") ? (text.split(".")[1]?.length ?? 0) : 0;
 }
 
-function normalizeNumber(value: number, min?: number, max?: number, step?: number) {
+export function normalizeNumber(value: number, min?: number, max?: number, step?: number) {
   let next = value;
   if (min !== undefined) next = Math.max(min, next);
   if (max !== undefined) next = Math.min(max, next);

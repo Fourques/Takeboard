@@ -22,6 +22,7 @@ export type WorkflowParameterKey =
   | "negative_prompt"
   | "seed"
   | "steps"
+  | "denoise"
   | "width"
   | "height"
   | "duration"
@@ -61,7 +62,7 @@ export type WorkflowBindingCandidates = {
   media: Record<WorkflowMediaKey, WorkflowBindingCandidate[]>;
 };
 
-type WorkflowDocument = UiWorkflow | ComfyPrompt;
+export type WorkflowDocument = UiWorkflow | ComfyPrompt;
 
 function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
@@ -176,6 +177,7 @@ const parameterKeys: WorkflowParameterKey[] = [
   "negative_prompt",
   "seed",
   "steps",
+  "denoise",
   "width",
   "height",
   "duration",
@@ -188,6 +190,7 @@ function emptyCandidates(): WorkflowBindingCandidates {
       negative_prompt: [],
       seed: [],
       steps: [],
+      denoise: [],
       width: [],
       height: [],
       duration: [],
@@ -210,10 +213,6 @@ function classifyValue(value: unknown): WorkflowBindingCandidate["valueType"] {
   return "unknown";
 }
 
-function includesAny(value: string, patterns: RegExp[]) {
-  return patterns.some((pattern) => pattern.test(value));
-}
-
 export function discoverBindingCandidates(prompt: ComfyPrompt): WorkflowBindingCandidates {
   const candidates = emptyCandidates();
   for (const [nodeId, node] of Object.entries(prompt)) {
@@ -229,19 +228,60 @@ export function discoverBindingCandidates(prompt: ComfyPrompt): WorkflowBindingC
         valueType: classifyValue(value),
       };
       if (typeof value === "string") {
-        if (/negative|反向|负面/.test(haystack))
+        const inputName = input.toLowerCase();
+        const nodeHaystack = `${title} ${node.class_type}`.toLowerCase();
+        const loaderLike =
+          /(?:loader|checkpoint|model loader|加载模型|模型加载)/.test(nodeHaystack) ||
+          /(?:^|_)(?:name|path|model)(?:$|_)/.test(inputName);
+        const promptInput = /^(?:text|prompt|positive|positive_prompt|caption|description)$/.test(
+          inputName,
+        );
+        const promptNode = /prompt|positive|提示词|文本/.test(nodeHaystack);
+        if (/negative|反向|负向|负面/.test(haystack))
           candidates.parameters.negative_prompt.push(candidate);
-        else if (includesAny(haystack, [/prompt/, /positive/, /text/, /提示词/, /文本/])) {
+        else if (!loaderLike && (promptInput || (promptNode && /text|prompt/.test(inputName)))) {
           candidates.parameters.prompt.push(candidate);
         }
       }
       if (typeof value === "number") {
-        if (/noise_seed|\bseed\b|种子/.test(haystack)) candidates.parameters.seed.push(candidate);
-        if (/\bsteps?\b|步数/.test(haystack)) candidates.parameters.steps.push(candidate);
-        if (/\bwidth\b|宽度/.test(haystack)) candidates.parameters.width.push(candidate);
-        if (/\bheight\b|高度/.test(haystack)) candidates.parameters.height.push(candidate);
-        if (/duration|seconds?|时长/.test(haystack)) candidates.parameters.duration.push(candidate);
-        if (/\bfps\b|frame.?rate|帧率/.test(haystack)) candidates.parameters.fps.push(candidate);
+        const inputName = input.toLowerCase();
+        const genericNumericInput = /^(?:value|number|integer|int|float)$/.test(inputName);
+        const titleHaystack = `${title} ${node.class_type}`.toLowerCase();
+        if (
+          /(?:^|_)noise_seed$|(?:^|_)seed(?:$|_)/.test(inputName) ||
+          (genericNumericInput && /\bseed\b|种子/.test(titleHaystack))
+        )
+          candidates.parameters.seed.push(candidate);
+        if (
+          /(?:^|_)steps?(?:$|_)/.test(inputName) ||
+          (genericNumericInput && /\bsteps?\b|步数/.test(titleHaystack))
+        )
+          candidates.parameters.steps.push(candidate);
+        if (
+          /(?:^|_)denois(?:e|ing)(?:$|_)/.test(inputName) ||
+          (genericNumericInput && /denoise|denoising|重绘强度|降噪/.test(titleHaystack))
+        )
+          candidates.parameters.denoise.push(candidate);
+        if (
+          /(?:^|_)width(?:$|_)/.test(inputName) ||
+          (genericNumericInput && /\bwidth\b|宽度/.test(titleHaystack))
+        )
+          candidates.parameters.width.push(candidate);
+        if (
+          /(?:^|_)height(?:$|_)/.test(inputName) ||
+          (genericNumericInput && /\bheight\b|高度/.test(titleHaystack))
+        )
+          candidates.parameters.height.push(candidate);
+        if (
+          /duration|seconds?/.test(inputName) ||
+          (genericNumericInput && /duration|seconds?|时长/.test(titleHaystack))
+        )
+          candidates.parameters.duration.push(candidate);
+        if (
+          /(?:^|_)fps(?:$|_)|frame.?rate/.test(inputName) ||
+          (genericNumericInput && /\bfps\b|frame.?rate|帧率/.test(titleHaystack))
+        )
+          candidates.parameters.fps.push(candidate);
       }
       if (typeof value !== "string") continue;
       if (/loadimage|load image|加载图/.test(haystack)) {
@@ -282,6 +322,7 @@ export function suggestedBinding(
       negative_prompt: one(candidates.parameters.negative_prompt),
       seed: all(candidates.parameters.seed),
       steps: all(candidates.parameters.steps),
+      denoise: all(candidates.parameters.denoise),
       width: all(candidates.parameters.width),
       height: all(candidates.parameters.height),
       duration: all(candidates.parameters.duration),
@@ -344,7 +385,15 @@ export async function inspectWorkflowForBinding(comfyUrl: string, path: string) 
   const workflow = await fetchWorkflowDocument(comfyUrl, path);
   const hash = workflowHash(workflow);
   const objectInfo = await fetchComfyObjectInfo(comfyUrl);
-  const prompt = convertUiWorkflowToPrompt(workflow, objectInfo);
+  return inspectWorkflowDocument(workflow, objectInfo, hash);
+}
+
+export function inspectWorkflowDocument(
+  workflow: unknown,
+  objectInfo: ComfyObjectInfo,
+  hash = workflowHash(workflow),
+) {
+  const prompt = convertUiWorkflowToPrompt(workflow as WorkflowDocument, objectInfo);
   const candidates = discoverBindingCandidates(prompt);
   return { workflow, workflowHash: hash, prompt, candidates, objectInfo };
 }

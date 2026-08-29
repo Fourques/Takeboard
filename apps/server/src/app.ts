@@ -5,10 +5,14 @@ import fastifyStatic from "@fastify/static";
 import Fastify, { type FastifyInstance } from "fastify";
 import { registerDemoRoutes } from "./demo/routes.js";
 import { registerGenerationRoutes } from "./generation-routes.js";
+import { registerProjectCommandRoutes } from "./project-command-routes.js";
 import { registerProjectRequestLock } from "./project-request-lock.js";
 import { registerProjectRoutes } from "./project-routes.js";
+import { type RequestSecurityOptions, registerRequestSecurity } from "./request-security.js";
 import { registerWorkerRoutes, type WorkerRouteOptions } from "./worker-routes.js";
 import { registerWorkflowRoutes } from "./workflow-routes.js";
+
+export const takeBoardVersion = "0.1.0";
 
 export type AppOptions = {
   demoDirectory?: string;
@@ -19,6 +23,7 @@ export type AppOptions = {
   comfyOutputRoot?: string | null;
   workerOptions?: WorkerRouteOptions;
   webRoot?: string | null;
+  requestSecurity?: RequestSecurityOptions;
 };
 
 export function buildApp(options: AppOptions = {}): FastifyInstance {
@@ -29,11 +34,12 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   void app.register(fastifyMultipart, {
     limits: { fileSize: 100 * 1024 * 1024, files: 1 },
   });
+  registerRequestSecurity(app, options.requestSecurity);
 
   app.get("/api/health", async () => ({
     service: "takeboard-server",
     status: "ok",
-    version: "0.0.0",
+    version: takeBoardVersion,
     instanceId: process.env.TAKEBOARD_INSTANCE_ID ?? null,
   }));
 
@@ -54,6 +60,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     comfyInputRoot,
     comfyOutputRoot,
   });
+  registerProjectCommandRoutes(app, projectsRoot);
   registerWorkerRoutes(app, comfyUrl, options.workerOptions);
   registerGenerationRoutes(app, projectsRoot, comfyUrl, {
     inputRoot: comfyInputRoot,
@@ -63,6 +70,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     app,
     comfyUrl,
     options.comfyEditorUrl ?? process.env.COMFY_EDITOR_URL ?? "http://127.0.0.1:48188",
+    projectsRoot,
   );
 
   const webRoot = options.webRoot ?? process.env.TAKEBOARD_WEB_ROOT ?? null;

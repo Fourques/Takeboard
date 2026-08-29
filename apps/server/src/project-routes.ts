@@ -1,11 +1,18 @@
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { createWriteStream, existsSync } from "node:fs";
 import { mkdir, readdir, rename, rm, stat, unlink } from "node:fs/promises";
 import { basename, join, resolve, sep } from "node:path";
+import { pipeline } from "node:stream/promises";
 import type { AspectRatio, ProjectSnapshot } from "@takeboard/contracts";
 import { approveTake, createTakeBoardId, toIsoTimestamp } from "@takeboard/domain";
 import { ComfyClient } from "@takeboard/executor-comfy";
 import type { FastifyInstance } from "fastify";
+import {
+  createProjectArchive,
+  findActiveProjectById,
+  importProjectArchive,
+  ProjectArchiveError,
+} from "./project-archive.js";
 import { ProjectService } from "./project-service.js";
 import { ProjectStore } from "./storage/project-store.js";
 
@@ -91,6 +98,31 @@ type ProjectRouteOptions = {
 };
 
 const terminalProjectRunStatuses = new Set(["completed", "failed", "cancelled"]);
+const projectPackageUploadLimit = (() => {
+  const configured = Number.parseInt(process.env.TAKEBOARD_PROJECT_PACKAGE_MAX_BYTES ?? "", 10);
+  return Number.isSafeInteger(configured) && configured > 0
+    ? configured
+    : 1024 * 1024 * 1024 * 1024;
+})();
+
+function refreshProjectShotStatus(snapshot: ProjectSnapshot, shotId: string, timestamp: string) {
+  const shot = snapshot.shots.find((item) => item.id === shotId);
+  if (!shot) return;
+  const hasActiveRun = snapshot.runs.some(
+    (run) => run.shotId === shotId && !terminalProjectRunStatuses.has(run.status),
+  );
+  const hasReviewableTake = snapshot.takes.some(
+    (take) => take.shotId === shotId && (take.status === "candidate" || take.status === "approved"),
+  );
+  shot.status = hasActiveRun
+    ? "generating"
+    : shot.approvedTakeId
+      ? "approved"
+      : hasReviewableTake
+        ? "review"
+        : "draft";
+  shot.updatedAt = timestamp;
+}
 
 function safeChild(root: string, relativePath: string) {
   const normalizedRoot = resolve(root);
@@ -170,10 +202,20 @@ export function registerProjectRoutes(
       const store = ProjectStore.openExisting(source);
       if (!store) return await reply.code(404).send({ error: "回收区项目不存在" });
       let title = "恢复的项目";
+      let projectId = "";
       try {
         const current = store.loadCurrent();
         if (!current) return await reply.code(404).send({ error: "回收区项目无法读取" });
         title = current.snapshot.project.title;
+        projectId = current.snapshot.project.id;
+        const duplicateKey = await findActiveProjectById(root, projectId);
+        if (duplicateKey) {
+          return await reply.code(409).send({
+            error: `同一项目已经以“${duplicateKey}”存在；请保留当前项目，或先删除它再恢复回收区版本`,
+            duplicateKey,
+            projectId,
+          });
+        }
         const timestamp = toIsoTimestamp();
         current.snapshot.project.updatedAt = timestamp;
         current.snapshot.exportedAt = timestamp;
@@ -258,6 +300,39 @@ export function registerProjectRoutes(
     };
   });
 
+  app.post("/api/projects/import", async (request, reply) => {
+    await mkdir(join(root, ".imports"), { recursive: true, mode: 0o700 });
+    const uploadPath = join(root, ".imports", `upload-${randomUUID()}.tgz`);
+    try {
+      const part = await request.file({
+        limits: { fileSize: projectPackageUploadLimit, files: 1 },
+      });
+      if (!part) return await reply.code(400).send({ error: "请选择 TakeBoard 项目包" });
+      await pipeline(part.file, createWriteStream(uploadPath, { flags: "wx", mode: 0o600 }));
+      if (part.file.truncated) {
+        return await reply.code(413).send({ error: "项目包超过当前服务允许的容量上限" });
+      }
+      const imported = await importProjectArchive(root, uploadPath);
+      return await reply.code(201).send({
+        imported: true as const,
+        key: imported.key,
+        title: imported.title,
+        projectId: imported.projectId,
+        revision: imported.revision,
+      });
+    } catch (error) {
+      if (error instanceof ProjectArchiveError) {
+        return await reply.code(error.statusCode).send({ error: error.message });
+      }
+      request.log.warn({ error }, "project package import failed");
+      return await reply.code(400).send({
+        error: error instanceof Error ? `项目包导入失败：${error.message}` : "项目包导入失败",
+      });
+    } finally {
+      await rm(uploadPath, { force: true });
+    }
+  });
+
   app.post("/api/projects", async (request, reply) => {
     const body =
       typeof request.body === "object" && request.body !== null
@@ -288,6 +363,46 @@ export function registerProjectRoutes(
         : {}),
     });
     return await reply.code(201).send({ key, ...created });
+  });
+
+  app.get<{ Params: { key: string } }>("/api/projects/:key/export", async (request, reply) => {
+    const key = projectKey(request.params.key);
+    if (!key) return await reply.code(400).send({ error: "项目标识无效" });
+    const directory = join(root, key);
+    const store = ProjectStore.openExisting(directory);
+    if (!store) return await reply.code(404).send({ error: "项目不存在" });
+    let current: ReturnType<ProjectStore["loadCurrent"]>;
+    try {
+      current = store.loadCurrent();
+      if (!current) return await reply.code(404).send({ error: "项目不存在" });
+      const activeRuns = current.snapshot.runs.filter(
+        (run) => !terminalProjectRunStatuses.has(run.status),
+      );
+      if (activeRuns.length > 0) {
+        return await reply.code(409).send({
+          error: `项目仍有 ${activeRuns.length} 个生成任务未结束，请停止或等待完成后再导出`,
+          activeRunIds: activeRuns.map((run) => run.id),
+        });
+      }
+    } finally {
+      store.close();
+    }
+    if (!current) return await reply.code(404).send({ error: "项目不存在" });
+    const archive = await createProjectArchive(directory, {
+      sourceKey: key,
+      projectId: current.snapshot.project.id,
+      title: current.snapshot.project.title,
+      revision: current.revision,
+    });
+    const filename = `${current.snapshot.project.title || "TakeBoard-project"}.takeboard.tgz`;
+    return await reply
+      .header("content-type", "application/gzip")
+      .header("cache-control", "no-store")
+      .header(
+        "content-disposition",
+        `attachment; filename="takeboard-project.tgz"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+      )
+      .send(archive);
   });
 
   app.post<{ Params: { key: string } }>("/api/projects/:key/shots", async (request, reply) => {
@@ -561,6 +676,9 @@ export function registerProjectRoutes(
         ? null
         : result.error || "执行端没有确认任务已停止，项目仍保留";
       result.run.updatedAt = timestamp;
+    }
+    for (const shotId of new Set(activeRuns.map((run) => run.shotId))) {
+      refreshProjectShotStatus(current.snapshot, shotId, timestamp);
     }
     if (activeRuns.length > 0) {
       current.snapshot.project.updatedAt = timestamp;

@@ -208,9 +208,13 @@ function AssetNode({ data }: NodeProps<BoardNode>) {
 function ShotNode({ data }: NodeProps<BoardNode>) {
   const [titleDraft, setTitleDraft] = useState(data.title);
   const [failedMediaUrl, setFailedMediaUrl] = useState<string | null>(null);
+  const [loadedMediaUrl, setLoadedMediaUrl] = useState<string | null>(null);
   const quickSettingsId = useId();
   useEffect(() => setTitleDraft(data.title), [data.title]);
   const mediaFailed = Boolean(data.mediaUrl && failedMediaUrl === data.mediaUrl);
+  const mediaLoading = Boolean(
+    data.mediaType === "video" && data.mediaUrl && loadedMediaUrl !== data.mediaUrl && !mediaFailed,
+  );
   const [settingsDraft, setSettingsDraft] = useState(() => ({
     prompt: data.inlineControls?.prompt ?? "",
     width: data.inlineControls?.width ?? 1024,
@@ -342,13 +346,27 @@ function ShotNode({ data }: NodeProps<BoardNode>) {
                 preload="metadata"
                 aria-label={`${data.title} 生成视频`}
                 onError={() => setFailedMediaUrl(data.mediaUrl ?? null)}
-                onLoadedData={() => setFailedMediaUrl(null)}
+                onLoadedData={() => {
+                  setFailedMediaUrl(null);
+                  setLoadedMediaUrl(data.mediaUrl ?? null);
+                }}
                 onPointerDown={(event) => event.stopPropagation()}
                 onClick={(event) => event.stopPropagation()}
               />
             ) : (
               <img src={data.mediaUrl} alt={`${data.title} 生成画面`} />
             )}
+            {mediaLoading ? (
+              <div className="shot-video-loading" role="status">
+                <span aria-hidden="true">
+                  <i />
+                  <i />
+                  <i />
+                </span>
+                <strong>正在读取视频预览</strong>
+                <small>原文件已安全保留</small>
+              </div>
+            ) : null}
             {mediaFailed ? (
               <div className="shot-video-fallback">
                 <strong>浏览器无法直接播放这个视频</strong>

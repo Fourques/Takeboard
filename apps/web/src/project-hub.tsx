@@ -5,12 +5,17 @@ import type {
   TrashedProjectItem,
   WorkerStatus,
 } from "./api";
-import { DisplaySettings } from "./display-settings";
+import { DisplaySettings, type SceneQuality } from "./display-settings";
 import { ThemeSwitcher } from "./theme-switcher";
 
-const StudioUniverse = lazy(() =>
-  import("./studio-universe").then((module) => ({ default: module.StudioUniverse })),
-);
+const loadStudioUniverse = () =>
+  import("./studio-universe").then((module) => ({ default: module.StudioUniverse }));
+const StudioUniverse = lazy(loadStudioUniverse);
+
+function savedSceneQuality(): SceneQuality {
+  const value = window.localStorage.getItem("takeboard.scene-quality");
+  return value === "full" || value === "lite" ? value : "auto";
+}
 
 const roomToneBars = Array.from({ length: 13 }, (_, index) => `room-tone-${index + 1}`);
 const filmSprockets = Array.from({ length: 8 }, (_, index) => `film-sprocket-${index + 1}`);
@@ -45,10 +50,16 @@ function formatUpdatedAt(value: string) {
   return `${prefix} ${date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })} 更新`;
 }
 
+function projectChapterTop(shell: HTMLElement, section: HTMLElement) {
+  const header = shell.querySelector<HTMLElement>(".hub-header");
+  const headerHeight = header?.offsetHeight ?? 72;
+  return Math.max(0, section.offsetTop - headerHeight);
+}
+
 function projectScrollLimit(shell: HTMLElement, section: HTMLElement) {
   const header = shell.querySelector<HTMLElement>(".hub-header");
   const headerHeight = header?.offsetHeight ?? 72;
-  const chapterTop = Math.max(0, section.offsetTop - headerHeight);
+  const chapterTop = projectChapterTop(shell, section);
   const chapterViewportHeight = Math.max(0, shell.clientHeight - headerHeight);
   const contentBottom = Array.from(section.children).reduce((bottom, child) => {
     if (!(child instanceof HTMLElement)) return bottom;
@@ -63,7 +74,7 @@ type NewProjectInput = {
   title: string;
 };
 
-function ActionIcon({ name }: { name: "open" | "rename" | "delete" }) {
+function ActionIcon({ name }: { name: "open" | "rename" | "delete" | "export" }) {
   if (name === "rename") {
     return (
       <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -76,6 +87,14 @@ function ActionIcon({ name }: { name: "open" | "rename" | "delete" }) {
     return (
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5" />
+      </svg>
+    );
+  }
+  if (name === "export") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 3v11m-4-4 4 4 4-4" />
+        <path d="M5 16v4h14v-4" />
       </svg>
     );
   }
@@ -231,6 +250,25 @@ function ProjectCard({
           <button type="button" onClick={onRename} aria-label={`重命名 ${project.title}`}>
             <ActionIcon name="rename" />
           </button>
+          {project.activeRunCount === 0 ? (
+            <a
+              href={`/api/projects/${encodeURIComponent(project.key)}/export`}
+              download
+              aria-label={`导出 ${project.title}`}
+              title="导出完整项目包"
+            >
+              <ActionIcon name="export" />
+            </a>
+          ) : (
+            <button
+              type="button"
+              disabled
+              aria-label={`${project.title} 正在生成，暂时不能导出`}
+              title="等待生成任务结束后再导出"
+            >
+              <ActionIcon name="export" />
+            </button>
+          )}
           <button
             className="project-card-delete-button"
             type="button"
@@ -249,8 +287,10 @@ function ProjectCard({
 export function ProjectHub({
   busy,
   error,
+  notice,
   onCreate,
   onDelete,
+  onImport,
   onOpen,
   onRefreshWorker,
   onRename,
@@ -263,8 +303,10 @@ export function ProjectHub({
 }: {
   busy: boolean;
   error: string | null;
+  notice: string | null;
   onCreate: (input: NewProjectInput) => Promise<void>;
   onDelete: (key: string) => Promise<void>;
+  onImport: (file: File) => Promise<void>;
   onOpen: (key: string) => Promise<void>;
   onRefreshWorker: () => Promise<void>;
   onRename: (key: string, title: string) => Promise<void>;
@@ -290,10 +332,13 @@ export function ProjectHub({
   const [tempoMode, setTempoMode] = useState(1);
   const [frameMode, setFrameMode] = useState(0);
   const [axisCrossed, setAxisCrossed] = useState(false);
+  const [sceneQuality, setSceneQuality] = useState<SceneQuality>(savedSceneQuality);
+  const [enhancedScene, setEnhancedScene] = useState(() => savedSceneQuality() === "full");
   const [companionMoment, setCompanionMoment] = useState<keyof typeof companionMessages | null>(
     null,
   );
   const titleInput = useRef<HTMLInputElement>(null);
+  const importInput = useRef<HTMLInputElement>(null);
   const renameInput = useRef<HTMLInputElement>(null);
   const shellRef = useRef<HTMLElement>(null);
   const projectsRef = useRef<HTMLElement>(null);
@@ -364,6 +409,79 @@ export function ProjectHub({
     [],
   );
 
+  useEffect(() => {
+    const changeQuality = (event: Event) => {
+      const quality = (event as CustomEvent<SceneQuality>).detail;
+      setSceneQuality(quality);
+      setEnhancedScene(quality === "full");
+    };
+    window.addEventListener("takeboard:scene-quality", changeQuality);
+    return () => window.removeEventListener("takeboard:scene-quality", changeQuality);
+  }, []);
+
+  useEffect(() => {
+    if (sceneQuality !== "auto") return;
+    const connection = (
+      navigator as Navigator & {
+        connection?: { saveData?: boolean; effectiveType?: string };
+      }
+    ).connection;
+    if (connection?.saveData || ["slow-2g", "2g"].includes(connection?.effectiveType ?? "")) return;
+    let cancelled = false;
+    const preload = () => {
+      if (!cancelled) void loadStudioUniverse();
+    };
+    const idleWindow = window as Window & {
+      requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+      cancelIdleCallback?: (handle: number) => void;
+    };
+    const handle = idleWindow.requestIdleCallback
+      ? idleWindow.requestIdleCallback(preload, { timeout: 2_500 })
+      : window.setTimeout(preload, 1_500);
+    return () => {
+      cancelled = true;
+      if (idleWindow.cancelIdleCallback) idleWindow.cancelIdleCallback(handle);
+      else window.clearTimeout(handle);
+    };
+  }, [sceneQuality]);
+
+  useEffect(() => {
+    const shell = shellRef.current;
+    if (!shell) return;
+    const handleWheel = (event: WheelEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element) || target.closest(".worker-panel, .modal-backdrop")) return;
+      if (event.deltaY === 0) return;
+      const section = projectsRef.current;
+      if (!section) return;
+      const deltaUnit =
+        event.deltaMode === WheelEvent.DOM_DELTA_LINE
+          ? 16
+          : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+            ? shell.clientHeight
+            : 1;
+      const maxTop = projectScrollLimit(shell, section);
+      const chapterTop = projectChapterTop(shell, section);
+      const requestedTop = Math.max(
+        0,
+        Math.min(maxTop, shell.scrollTop + event.deltaY * deltaUnit),
+      );
+      // A single large gesture reveals the project shelf without flying past
+      // its heading. A later gesture can continue only when the shelf itself
+      // is taller than the available viewport.
+      const nextTop =
+        event.deltaY > 0 && shell.scrollTop < chapterTop && requestedTop > chapterTop
+          ? chapterTop
+          : event.deltaY < 0 && shell.scrollTop > chapterTop && requestedTop < chapterTop
+            ? chapterTop
+            : requestedTop;
+      event.preventDefault();
+      if (shell.scrollTop !== nextTop) shell.scrollTop = nextTop;
+    };
+    shell.addEventListener("wheel", handleWheel, { capture: true, passive: false });
+    return () => shell.removeEventListener("wheel", handleWheel, true);
+  }, []);
+
   const revealCompanionMoment = (moment: keyof typeof companionMessages) => {
     if (companionTimer.current !== null) window.clearTimeout(companionTimer.current);
     setCompanionMoment(moment);
@@ -377,21 +495,6 @@ export function ProjectHub({
     <main
       ref={shellRef}
       className={`hub-shell ${projectStageActive ? "project-stage-active" : ""}`}
-      onWheelCapture={(event) => {
-        const target = event.target;
-        if (!(target instanceof Element) || target.closest(".worker-panel, .modal-backdrop"))
-          return;
-        if (event.deltaY === 0) return;
-        const shell = event.currentTarget;
-        const section = projectsRef.current;
-        if (!section) return;
-        const deltaUnit =
-          event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? shell.clientHeight : 1;
-        const maxTop = projectScrollLimit(shell, section);
-        const nextTop = Math.max(0, Math.min(maxTop, shell.scrollTop + event.deltaY * deltaUnit));
-        event.preventDefault();
-        if (shell.scrollTop !== nextTop) shell.scrollTop = nextTop;
-      }}
       onScroll={(event) => {
         const shell = event.currentTarget;
         const section = projectsRef.current;
@@ -521,6 +624,27 @@ export function ProjectHub({
                 </aside>
               ) : null}
             </div>
+            <input
+              ref={importInput}
+              className="visually-hidden"
+              type="file"
+              accept=".tgz,.gz,application/gzip,application/x-gzip"
+              aria-label="选择 TakeBoard 项目包"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (file) void onImport(file).catch(() => undefined);
+              }}
+            />
+            <button
+              className="hub-header-import"
+              type="button"
+              disabled={busy}
+              aria-label="导入项目包"
+              onClick={() => importInput.current?.click()}
+            >
+              <span>⇩</span> 导入
+            </button>
             <button
               className="hub-header-create"
               type="button"
@@ -569,24 +693,54 @@ export function ProjectHub({
             </span>
           </div>
         </div>
-        <Suspense
-          fallback={
-            <div className="studio-universe">
-              <div className="universe-fallback" aria-hidden="true">
-                <i />
-                <i />
-                <i />
-                <span />
+        {enhancedScene ? (
+          <Suspense
+            fallback={
+              <div className="studio-universe">
+                <div className="universe-fallback" aria-hidden="true">
+                  <i />
+                  <i />
+                  <i />
+                  <span />
+                </div>
               </div>
-            </div>
-          }
-        >
-          <StudioUniverse
-            workerReady={worker?.status === "ready"}
-            projectCount={projects.length}
-            recentProjectTitle={recentProject?.title ?? null}
-          />
-        </Suspense>
+            }
+          >
+            <StudioUniverse
+              quality={sceneQuality === "full" ? "full" : "balanced"}
+              workerReady={worker?.status === "ready"}
+              projectCount={projects.length}
+              recentProjectTitle={recentProject?.title ?? null}
+            />
+          </Suspense>
+        ) : sceneQuality === "lite" ? (
+          <div
+            className="studio-universe artifact-universe universe-lite-mode"
+            role="img"
+            aria-label="TakeBoard 导演板静态封面；可在显示设置中启用三维效果"
+          >
+            <span className="universe-fallback artifact-fallback" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+              <span />
+            </span>
+          </div>
+        ) : (
+          <button
+            className="studio-universe artifact-universe universe-lite-mode"
+            type="button"
+            aria-label="启用可旋转的三维导演板"
+            onClick={() => setEnhancedScene(true)}
+          >
+            <span className="universe-fallback artifact-fallback" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+              <span />
+            </span>
+          </button>
+        )}
       </div>
 
       <section className="hub-hero hub-object-hero">
@@ -916,6 +1070,11 @@ export function ProjectHub({
               回收区不会自动清空，项目可在确认备份后由文件系统管理员清理。
             </small>
           </section>
+        </div>
+      ) : null}
+      {notice ? (
+        <div className="toast success" role="status">
+          ✓ {notice}
         </div>
       ) : null}
 

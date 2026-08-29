@@ -1,14 +1,172 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
+import { discoverBindingCandidates } from "../src/workflow-bindings.js";
 
 const apps: ReturnType<typeof buildApp>[] = [];
+const directories: string[] = [];
 
 afterEach(async () => {
   vi.unstubAllGlobals();
   await Promise.all(apps.splice(0).map((app) => app.close()));
+  await Promise.all(
+    directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
+  );
 });
 
 describe("ComfyUI workflow detection", () => {
+  it("blocks referenced workflows, then archives and restores unreferenced imports", async () => {
+    const root = await mkdtemp(join(tmpdir(), "takeboard-workflow-archive-"));
+    directories.push(root);
+    let paths = ["TakeBoard/custom-t2i.json"];
+    const workflow = {
+      nodes: [{ id: 1, type: "SaveImage", widgets_values: ["output"] }],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = decodeURIComponent(String(input));
+        if (url.includes("/userdata?dir=workflows")) return Response.json(paths);
+        if (url.endsWith("/object_info")) return Response.json({ SaveImage: {} });
+        if (url.includes("/move/")) {
+          expect(init?.method).toBe("POST");
+          const [, source = "", destination = ""] =
+            /\/userdata\/workflows\/(.+)\/move\/workflows\/(.+)\?overwrite=false/.exec(url) ?? [];
+          paths = paths.filter((path) => path !== source);
+          paths.push(destination);
+          return Response.json({});
+        }
+        if (url.includes("takeboard/bindings/")) return new Response("missing", { status: 404 });
+        return Response.json(workflow);
+      }),
+    );
+    const app = buildApp({ projectsRoot: root, comfyUrl: "http://comfy.test", webRoot: null });
+    apps.push(app);
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: { title: "引用检查" },
+    });
+    const key = created.json().key as string;
+    const shot = await app.inject({
+      method: "POST",
+      url: `/api/projects/${key}/commands`,
+      payload: {
+        command: { type: "canvas.create_shot", label: "引用镜头" },
+        requestId: "test:workflow-archive-shot:1",
+      },
+    });
+    await app.inject({
+      method: "POST",
+      url: `/api/projects/${key}/commands`,
+      payload: {
+        command: {
+          type: "canvas.edit_item",
+          itemId: shot.json().itemId,
+          workflowPath: "TakeBoard/custom-t2i.json",
+        },
+        requestId: "test:workflow-archive-bind:1",
+      },
+    });
+    const blockedPreview = await app.inject({
+      method: "GET",
+      url: "/api/workflows/archive-preview?path=TakeBoard%2Fcustom-t2i.json",
+    });
+    expect(blockedPreview.statusCode, blockedPreview.body).toBe(200);
+    expect(blockedPreview.json()).toMatchObject({
+      blocked: true,
+      references: [expect.objectContaining({ projectTitle: "引用检查", shotLabels: ["引用镜头"] })],
+    });
+    const blockedArchive = await app.inject({
+      method: "POST",
+      url: "/api/workflows/archive",
+      payload: {
+        path: "TakeBoard/custom-t2i.json",
+        confirmationToken: blockedPreview.json().confirmationToken,
+      },
+    });
+    expect(blockedArchive.statusCode).toBe(409);
+
+    await app.inject({
+      method: "POST",
+      url: `/api/projects/${key}/commands`,
+      payload: {
+        command: {
+          type: "canvas.edit_item",
+          itemId: shot.json().itemId,
+          workflowPath: "TakeBoard/replacement.json",
+        },
+        requestId: "test:workflow-archive-unbind:1",
+      },
+    });
+    const safePreview = await app.inject({
+      method: "GET",
+      url: "/api/workflows/archive-preview?path=TakeBoard%2Fcustom-t2i.json",
+    });
+    expect(safePreview.json()).toMatchObject({ blocked: false, references: [] });
+    const archived = await app.inject({
+      method: "POST",
+      url: "/api/workflows/archive",
+      payload: {
+        path: "TakeBoard/custom-t2i.json",
+        confirmationToken: safePreview.json().confirmationToken,
+      },
+    });
+    expect(archived.statusCode, archived.body).toBe(200);
+    const archivePath = archived.json().archivePath as string;
+    expect(archivePath).toContain("TakeBoard/.archive/");
+    const listed = await app.inject({ method: "GET", url: "/api/workflows" });
+    expect(listed.json().workflows).toEqual([]);
+    const archives = await app.inject({ method: "GET", url: "/api/workflows/archives" });
+    expect(archives.json().archives).toEqual([
+      expect.objectContaining({ archivePath, originalPath: "TakeBoard/custom-t2i.json" }),
+    ]);
+    const restored = await app.inject({
+      method: "POST",
+      url: "/api/workflows/archives/restore",
+      payload: { archivePath },
+    });
+    expect(restored.statusCode, restored.body).toBe(200);
+    expect(restored.json()).toMatchObject({ restored: true, path: "TakeBoard/custom-t2i.json" });
+  });
+
+  it("does not mistake model loader filenames for prompts and discovers denoise", () => {
+    const candidates = discoverBindingCandidates({
+      "2": {
+        class_type: "CLIPLoader",
+        inputs: { clip_name: "qwen_encoder.safetensors", type: "qwen_image" },
+        _meta: { title: "Qwen Text Encoder" },
+      },
+      "5": {
+        class_type: "CLIPTextEncode",
+        inputs: { text: "cinematic daylight" },
+        _meta: { title: "正向提示词" },
+      },
+      "6": {
+        class_type: "CLIPTextEncode",
+        inputs: { text: "watermark" },
+        _meta: { title: "负向提示词" },
+      },
+      "10": {
+        class_type: "KSampler",
+        inputs: { seed: 42, steps: 4, denoise: 0.65 },
+        _meta: { title: "生成（Denoise 控制重绘强度）" },
+      },
+    });
+
+    expect(candidates.parameters.prompt).toEqual([
+      expect.objectContaining({ nodeId: "5", input: "text" }),
+    ]);
+    expect(candidates.parameters.negative_prompt).toEqual([
+      expect.objectContaining({ nodeId: "6", input: "text" }),
+    ]);
+    expect(candidates.parameters.denoise).toEqual([
+      expect.objectContaining({ nodeId: "10", input: "denoise" }),
+    ]);
+  });
+
   it("requires an explicit, hash-bound mapping before a custom workflow becomes executable", async () => {
     const workflow = {
       nodes: [
@@ -92,6 +250,27 @@ describe("ComfyUI workflow detection", () => {
     expect(inspect.statusCode, inspect.body).toBe(200);
     const draft = inspect.json().suggested;
     expect(draft.parameters.prompt).toEqual([{ nodeId: "1", input: "text" }]);
+    expect(inspect.json().diagnostic).toMatchObject({
+      health: "blocked",
+      executable: false,
+      bindingStatus: "needs_binding",
+      missingNodeTypes: [],
+      checks: expect.arrayContaining([
+        expect.objectContaining({ code: "WORKFLOW_PROMPT_CONVERTED", status: "pass" }),
+        expect.objectContaining({ code: "TAKEBOARD_BINDING_REQUIRED", status: "blocked" }),
+        expect.objectContaining({ code: "WORKFLOW_OUTPUT_DETECTED", status: "pass" }),
+      ]),
+    });
+
+    const structuredInspect = await app.inject({
+      method: "GET",
+      url: "/api/workflows/inspect?path=TakeBoard%2Fcustom-t2i.json",
+    });
+    expect(structuredInspect.statusCode, structuredInspect.body).toBe(200);
+    expect(structuredInspect.json()).toMatchObject({
+      status: "needs_binding",
+      diagnostic: { path: "TakeBoard/custom-t2i.json" },
+    });
 
     const enabled = await app.inject({
       method: "PUT",
@@ -103,6 +282,7 @@ describe("ComfyUI workflow detection", () => {
     expect(after.json().workflows[0]).toMatchObject({
       execution: "bound",
       bindingStatus: "ready",
+      diagnostic: { executable: true },
     });
 
     const promptNode = workflow.nodes.find((node) => node.type === "PromptNode");

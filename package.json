@@ -1,6 +1,6 @@
 {
   "name": "takeboard",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.15.1",
@@ -21,10 +21,11 @@
     "lint": "biome check .",
     "format": "biome format --write .",
     "test": "pnpm -r --if-present test",
-    "test:e2e": "playwright test",
+    "test:e2e": "pnpm build && playwright test",
     "verify": "pnpm lint && pnpm typecheck && pnpm build && pnpm test"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.11.1",
     "@biomejs/biome": "2.5.8",
     "@playwright/test": "1.62.1",
     "@types/node": "24.13.3",

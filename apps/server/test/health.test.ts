@@ -18,7 +18,7 @@ describe("GET /api/health", () => {
     expect(response.json()).toEqual({
       service: "takeboard-server",
       status: "ok",
-      version: "0.0.0",
+      version: "0.1.0",
       instanceId: null,
     });
   });

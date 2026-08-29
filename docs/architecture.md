@@ -1,7 +1,7 @@
 # TakeBoard 技术架构
 
-状态：M0 建议方案，Gate 后再冻结长期架构
-更新时间：2026-08-13
+状态：持续演进的实现边界
+更新时间：2026-08-29
 
 ## 1. 技术选型结论
 
@@ -111,6 +111,30 @@ CanvasEdge {
 
 删除 CanvasItem 只是移出画布；如果 Asset/Take 已被 Run 或 Approval 引用，不得级联物理删除。
 
+### 4.3 画布命令边界
+
+浏览器的结构化画布写操作统一提交到 `POST /api/projects/:key/commands`，不直接拼装项目快照。共享契约定义在 `packages/contracts/src/command.ts`，服务端规则集中在 `apps/server/src/project-command-service.ts`。
+
+```text
+UI intent
+  → POST /commands/preview       # 纯预览，不写项目
+  → 用户确认影响范围
+  → POST /commands              # requestId 幂等 + expectedRevision 冲突保护
+  → SQLite snapshot + event_log + command_log 同一事务
+  → GET /audit                  # 面向用户的操作记录
+  → POST /commands/:id/undo     # 校验后应用逆操作
+```
+
+当前命令包括创建镜头/笔记、放置/复制/编辑节点、连接/断开输入、移动/移除节点、按连线整理场景和删除镜头。画布整理只写节点坐标，执行前给出影响预览，并用批量位置逆操作完整撤销。会替换、批量移动或移除内容的命令必须携带由同一项目版本预览得到的确认令牌。撤销不是不加判断地覆盖旧快照：若目标在原操作后已经编辑、连接、移动或被生成任务引用，服务端返回 `409` 并保留现状。
+
+边界约束：
+
+- 项目命令只修改 Project aggregate，不启动、停止或模拟 ComfyUI 任务；
+- Run 的提交、进度、取消和输出回收仍由 generation routes / orchestrator 管理；
+- React 选择状态、面板开关、缩放与临时表单只存在于 UI，不写入项目快照；
+- `requestId` 防止网络重试重复执行，`expectedRevision` 防止基于旧画面覆盖新状态；
+- `event_log` 用于领域调试，`command_log` 保存用户可读摘要、影响、逆操作和撤销状态，两者职责不同。
+
 ## 5. 最小数据库对象
 
 实施顺序：`TB-004` 先用一个经过完整 Zod 校验的 project aggregate 行、revision 和 event log
@@ -128,6 +152,7 @@ CanvasEdge {
 | takes | run_id、asset_id、状态、淘汰原因 |
 | approvals | shot_id、take_id、操作者、时间、原因、撤销事件 |
 | event_log | 领域事件，用于调试和恢复，不承担通用 event sourcing |
+| command_log | 用户修改命令、幂等键、影响预览、逆操作与撤销状态 |
 
 所有 ID 使用 UUIDv7 或等价的可排序随机 ID。用户可读镜号如 `S017` 是 label，不是主键。
 
@@ -145,7 +170,7 @@ my-film.takeboard/
 └── logs/
 ```
 
-SQLite 是运行时事务源；`project.takeboard.json` 在领域事务成功后异步原子更新，并可从菜单强制刷新。M0 必须测试数据库与快照的 schema version。API Key、Cookie、Comfy 账户 Token、远程密码和绝对路径不得进入快照。
+SQLite 是运行时事务源；每次保存会完整校验 Project Snapshot，并在同一保存边界内更新 SQLite revision、事件/命令日志和可移植的 `project.takeboard.json`。任一数据库写入或快照原子发布失败都会回滚并按 SQLite 当前值协调开放快照。API Key、Cookie、Comfy 账户 Token、远程密码和绝对路径不得进入快照。
 
 ## 7. Recipe Contract
 
@@ -181,6 +206,17 @@ requirements:
 6. Workflow hash 与 Recipe version 保存到每个 Run。
 
 不要把自动识别结果直接当作执行权限。导入向导只生成候选绑定，最终由用户确认能力、输出类型、每个 node/field 映射以及对第三方节点的信任。绑定记录 Workflow 内容哈希；任何节点图修改都会使旧绑定失效。
+
+用户导入的 Workflow 不做不可恢复删除。归档前服务端扫描使用中的项目与回收区项目中的镜头绑定和 Run 参数；存在引用时返回结构化引用列表并阻止移动。无引用且确认令牌仍匹配时，文件移动到 ComfyUI 用户目录的 `TakeBoard/.archive/`，恢复时回到原路径，绑定文件保持不变。
+
+`GET /api/workflows/inspect?path=...` 返回结构化 `WorkflowDiagnostic`，而不是让 UI 解析自然语言。每个检查项包含稳定 `id` / `code`、类别、`pass | warning | blocked | unknown` 状态、关联节点、说明和修复建议。总体结果明确给出：
+
+- Workflow 内容哈希、能力、输出媒体类型和可执行节点数；
+- 文档转换、节点类型、必需输入、模型、参数绑定和输出节点六类检查；
+- `missingNodeTypes`、`missingModels`、`bindingStatus`、`health` 与 `executable`；
+- UI 可展示详细检查，自动化客户端也能依赖稳定 code 做决策，不需要匹配中文提示。
+
+生成分辨率由 `packages/contracts/src/generation.ts` 统一解析。Web 在提交前展示请求尺寸与执行尺寸的差异，原生执行器和服务端记录使用同一策略，避免 UI 预览、Prompt 与 Run 快照产生三套数值。
 
 ## 8. ComfyUI 执行状态机
 

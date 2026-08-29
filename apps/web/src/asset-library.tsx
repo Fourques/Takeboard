@@ -32,6 +32,15 @@ function formatDate(value: string) {
   }).format(date);
 }
 
+function formatDuration(value: number | null | undefined) {
+  if (!value || !Number.isFinite(value)) return null;
+  const minutes = Math.floor(value / 60);
+  const seconds = value - minutes * 60;
+  return minutes > 0
+    ? `${minutes}:${seconds.toFixed(seconds < 10 ? 1 : 0).padStart(4, "0")}`
+    : `${seconds.toFixed(seconds < 10 ? 1 : 0)} 秒`;
+}
+
 function assetStem(name: string) {
   return name.replace(/\.[^.]+$/, "") || name;
 }
@@ -150,6 +159,7 @@ export function AssetLibrary({
   entities,
   onAddToCanvas,
   onClose,
+  onInspectMetadata,
   onPickFrame,
   onUpdateAsset,
   onUpload,
@@ -170,6 +180,12 @@ export function AssetLibrary({
   entities: Entity[];
   onAddToCanvas: (assetId: string) => Promise<{ ok: boolean; error?: string }>;
   onClose: () => void;
+  onInspectMetadata: () => Promise<{
+    ok: boolean;
+    error?: string;
+    updated?: number;
+    warnings?: number;
+  }>;
   onPickFrame: (assetId: string, slot: AssetSlot) => void;
   onUpdateAsset: (
     assetId: string,
@@ -268,6 +284,12 @@ export function AssetLibrary({
   const availableAssets = useMemo(
     () => assets.filter((asset) => asset.mediaType === "image" || asset.mediaType === "video"),
     [assets],
+  );
+  const videosMissingMetadata = useMemo(
+    () =>
+      availableAssets.filter((asset) => asset.mediaType === "video" && !asset.metadataInspectedAt)
+        .length,
+    [availableAssets],
   );
 
   const tags = useMemo(() => {
@@ -608,6 +630,33 @@ export function AssetLibrary({
               </fieldset>
             </div>
 
+            {videosMissingMetadata > 0 ? (
+              <div className="asset-metadata-banner" role="status">
+                <div>
+                  <VaultIcon name="video" />
+                  <span>
+                    <strong>{videosMissingMetadata} 段历史视频缺少尺寸或时长</strong>
+                    <small>从原文件补全信息，不转码、不修改视频内容。</small>
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() =>
+                    void onInspectMetadata().then((result) => {
+                      setActionStatus(
+                        result.ok
+                          ? `已补全 ${result.updated ?? 0} 段视频${result.warnings ? `，${result.warnings} 个暂无法识别` : ""}`
+                          : (result.error ?? "识别失败"),
+                      );
+                    })
+                  }
+                >
+                  {busy ? "正在识别…" : "补全信息"}
+                </button>
+              </div>
+            ) : null}
+
             {importOpen ? (
               // biome-ignore lint/a11y/noStaticElementInteractions: Native file dragging requires events on the complete import surface; its button remains keyboard-accessible.
               <div
@@ -776,7 +825,11 @@ export function AssetLibrary({
                             ? `${asset.width} × ${asset.height}`
                             : asset.mimeType.split("/")[1]?.toUpperCase()}
                         </span>
-                        <span>{formatBytes(asset.byteSize)}</span>
+                        <span>
+                          {asset.mediaType === "video" && formatDuration(asset.durationSeconds)
+                            ? formatDuration(asset.durationSeconds)
+                            : formatBytes(asset.byteSize)}
+                        </span>
                       </div>
                       {slots.length || asset.customTags.length ? (
                         <div className="asset-card-tags">
@@ -957,6 +1010,32 @@ export function AssetLibrary({
                         <dt>大小</dt>
                         <dd>{formatBytes(selectedAsset.byteSize)}</dd>
                       </div>
+                      {selectedAsset.mediaType === "video" ? (
+                        <>
+                          <div>
+                            <dt>时长</dt>
+                            <dd>{formatDuration(selectedAsset.durationSeconds) ?? "—"}</dd>
+                          </div>
+                          <div>
+                            <dt>帧率</dt>
+                            <dd>
+                              {selectedAsset.frameRate
+                                ? `${selectedAsset.frameRate.toFixed(2).replace(/\.00$/, "")} fps`
+                                : "—"}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>识别</dt>
+                            <dd title={selectedAsset.metadataInspectionError ?? undefined}>
+                              {selectedAsset.metadataInspectionError
+                                ? "原文件已保留 · 部分信息不可读"
+                                : selectedAsset.metadataInspectedAt
+                                  ? "已从原文件读取"
+                                  : "等待识别"}
+                            </dd>
+                          </div>
+                        </>
+                      ) : null}
                       <div>
                         <dt>导入</dt>
                         <dd>{formatDate(selectedAsset.createdAt)}</dd>

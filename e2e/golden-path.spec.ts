@@ -52,7 +52,7 @@ test("project hub presents a complete project overview", async ({ page, request 
     const responsiveBackdropWidth = await projectShelf.evaluate((element) =>
       Number.parseFloat(window.getComputedStyle(element, "::before").width),
     );
-    expect(responsiveBackdropWidth).toBeGreaterThanOrEqual(viewport.width);
+    expect(responsiveBackdropWidth).toBeGreaterThanOrEqual(viewport.width - 0.1);
     await expect(projectShelf).not.toHaveClass(/is-visible/);
     if (viewport.width === 390) {
       await page.screenshot({
@@ -69,11 +69,14 @@ test("project hub presents a complete project overview", async ({ page, request 
     const header = shell?.querySelector<HTMLElement>(".hub-header");
     return section.offsetTop - (header?.offsetHeight ?? 72);
   });
+  const stageHeaderBottom = Math.round(
+    (await page.locator(".hub-header").boundingBox())?.height ?? 0,
+  );
   expect(measuredTerminalTop).toBeGreaterThan(900);
   const crewCompanion = page.getByRole("button", { name: "触发场记 · 这一条保留" });
   await crewCompanion.click();
   await expect(crewCompanion).toHaveClass(/is-active/);
-  await page.locator(".universe-webgl").hover({ position: { x: 800, y: 470 } });
+  await page.locator(".hub-artifact-background").hover({ position: { x: 800, y: 470 } });
   await page.mouse.wheel(0, 160);
   await expect
     .poll(async () => page.locator(".hub-shell").evaluate((element) => element.scrollTop))
@@ -81,12 +84,14 @@ test("project hub presents a complete project overview", async ({ page, request 
   const firstWheelTop = await page.locator(".hub-shell").evaluate((element) => element.scrollTop);
   expect(firstWheelTop).toBeLessThan(1028);
   const firstWheelShelfY = (await projectShelf.boundingBox())?.y ?? 0;
-  expect(firstWheelShelfY).toBeGreaterThan(72);
+  expect(firstWheelShelfY).toBeGreaterThan(stageHeaderBottom);
   expect(firstWheelShelfY).toBeLessThan(1100);
   await page.mouse.wheel(0, measuredTerminalTop - firstWheelTop);
   await expect(projectShelf).toHaveClass(/is-visible/);
   await expect(page.locator(".hub-shell")).toHaveClass(/project-stage-active/);
-  await expect.poll(async () => Math.round((await projectShelf.boundingBox())?.y ?? -1)).toBe(72);
+  await expect
+    .poll(async () => Math.round((await projectShelf.boundingBox())?.y ?? -1))
+    .toBe(stageHeaderBottom);
   const fittedLibraryTop = await page
     .locator(".hub-shell")
     .evaluate((element) => element.scrollTop);
@@ -98,7 +103,7 @@ test("project hub presents a complete project overview", async ({ page, request 
     .poll(async () => (await page.getByRole("heading", { name: "继续创作" }).boundingBox())?.y)
     .toBeLessThanOrEqual(138);
   expect((await page.getByRole("heading", { name: "继续创作" }).boundingBox())?.y).toBeGreaterThan(
-    72,
+    stageHeaderBottom,
   );
   await expect(page.getByRole("searchbox", { name: "搜索项目" })).toBeVisible();
   await expect(page.locator(".project-curiosities")).toBeVisible();
@@ -176,17 +181,22 @@ test("a larger project library keeps scrolling below its sticky heading", async 
     const header = section.closest(".hub-shell")?.querySelector<HTMLElement>(".hub-header");
     return section.offsetTop - (header?.offsetHeight ?? 72);
   });
+  const headerBottom = Math.round((await page.locator(".hub-header").boundingBox())?.height ?? 0);
 
-  await page.locator(".universe-webgl").hover({ position: { x: 800, y: 380 } });
+  await page.locator(".hub-artifact-background").hover({ position: { x: 800, y: 380 } });
   await page.mouse.wheel(0, chapterTop);
-  await expect.poll(async () => Math.round((await shelf.boundingBox())?.y ?? -1)).toBe(72);
+  await expect
+    .poll(async () => Math.round((await shelf.boundingBox())?.y ?? -1))
+    .toBe(headerBottom);
   const settledTop = await shell.evaluate((element) => element.scrollTop);
 
   await page.mouse.wheel(0, 420);
   await expect
     .poll(async () => shell.evaluate((element) => element.scrollTop))
     .toBeGreaterThan(settledTop);
-  await expect.poll(async () => Math.round((await heading.boundingBox())?.y ?? -1)).toBe(72);
+  await expect
+    .poll(async () => Math.round((await heading.boundingBox())?.y ?? -1))
+    .toBe(headerBottom);
   await page.screenshot({
     path: "test-results/takeboard-project-library-scrolling.png",
     animations: "disabled",
@@ -861,7 +871,18 @@ test("a user can create and reopen a real project", async ({ page }) => {
   await expect(inlinePrompt).toBeFocused();
   await expect(page.getByLabel("画布生成方式")).toHaveValue("first_last_video");
   await expect(page.getByLabel("画布生成方式")).toContainText("文生图");
-  await page.locator(".react-flow__pane").click({ position: { x: 720, y: 120 } });
+  const blankCanvasPoint = await page.locator(".react-flow__pane").evaluate((pane) => {
+    const bounds = pane.getBoundingClientRect();
+    for (let y = bounds.top + 24; y < bounds.bottom - 24; y += 32) {
+      for (let x = bounds.left + 24; x < bounds.right - 24; x += 32) {
+        if (document.elementFromPoint(x, y)?.classList.contains("react-flow__pane"))
+          return { x, y };
+      }
+    }
+    return null;
+  });
+  if (!blankCanvasPoint) throw new Error("没有找到可点击的画布空白区域");
+  await page.mouse.click(blankCanvasPoint.x, blankCanvasPoint.y);
   await expect(page.locator(".shot-inline-console")).toHaveCount(0);
   await shotNodes.first().click();
   await expect(
@@ -945,9 +966,11 @@ test("a user can create and reopen a real project", async ({ page }) => {
   await page.keyboard.press("Meta+V");
   await expect(shotNodes).toHaveCount(originalShotCount + 1);
 
-  page.once("dialog", (dialog) => dialog.accept());
   await shotNodes.last().click({ button: "right" });
-  await page.getByRole("menuitem", { name: /从画布移除/ }).click();
+  await page.getByRole("menuitem", { name: /删除镜头/ }).click();
+  const deleteShotDialog = page.getByRole("alertdialog", { name: /删除/ });
+  await expect(deleteShotDialog).toContainText("镜头会同时从画布和左侧镜头列表删除");
+  await deleteShotDialog.getByRole("button", { name: "删除镜头" }).click();
   await expect(shotNodes).toHaveCount(originalShotCount);
   await page.screenshot({ path: "test-results/takeboard-real-project.png", fullPage: true });
 

@@ -108,7 +108,7 @@ pnpm verify
 
 ## 备份
 
-备份时复制完整的 `TAKEBOARD_DATA_ROOT`。如果要求严格一致，应先避免新的写入或短暂停止服务：
+单项目迁移可以直接在首页项目卡下载带完整性清单的 `.takeboard.tgz`，再通过首页“导入”恢复。整机备份则复制完整的 `TAKEBOARD_DATA_ROOT`。如果要求严格一致，应先避免新的写入或短暂停止服务：
 
 ```bash
 ./scripts/takeboard stop
@@ -125,3 +125,5 @@ rsync -a ~/TakeBoardData/ /path/to/backup/TakeBoardData/
 - `~/.config/takeboard/env` 可能包含私有路径或令牌，应保持 `0600`；
 - `COMFY_INPUT_ROOT` 与 `COMFY_OUTPUT_ROOT` 必须精确指向对应目录，避免扩大清理范围；
 - 上线更新前先检查推理队列，避免中断正在运行的生成任务。
+
+服务会拒绝非回环监听。只有在已配置身份认证的反向代理后，才可显式设置 `TAKEBOARD_ALLOW_NON_LOOPBACK=1`，并用 `TAKEBOARD_ALLOWED_HOSTS`、`TAKEBOARD_ALLOWED_ORIGINS` 限定入口。这个开关本身不提供账号、会话或权限控制；个人远程使用仍推荐 SSH 隧道。

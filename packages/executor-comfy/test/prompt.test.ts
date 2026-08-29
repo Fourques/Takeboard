@@ -42,6 +42,46 @@ describe("generic ComfyUI workflow conversion", () => {
     expect(prompt["2"]?.inputs.width).toBe(768);
   });
 
+  it("skips ComfyUI's serialized seed control when aligning numeric widgets", () => {
+    const prompt = convertUiWorkflowToPrompt({
+      nodes: [
+        {
+          id: 10,
+          type: "KSampler",
+          inputs: [
+            { name: "seed", type: "INT", link: null, widget: { name: "seed" } },
+            { name: "steps", type: "INT", link: null, widget: { name: "steps" } },
+            { name: "cfg", type: "FLOAT", link: null, widget: { name: "cfg" } },
+            {
+              name: "sampler_name",
+              type: "COMBO",
+              link: null,
+              widget: { name: "sampler_name" },
+            },
+            {
+              name: "scheduler",
+              type: "COMBO",
+              link: null,
+              widget: { name: "scheduler" },
+            },
+            { name: "denoise", type: "FLOAT", link: null, widget: { name: "denoise" } },
+          ],
+          widgets_values: [2512, "randomize", 50, 4, "euler", "simple", 0.65],
+        },
+      ],
+      links: [],
+    });
+
+    expect(prompt["10"]?.inputs).toMatchObject({
+      seed: 2512,
+      steps: 50,
+      cfg: 4,
+      sampler_name: "euler",
+      scheduler: "simple",
+      denoise: 0.65,
+    });
+  });
+
   it("recursively expands multiple connected subgraphs", () => {
     const prompt = convertUiWorkflowToPrompt(
       {

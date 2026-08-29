@@ -12,9 +12,21 @@ import {
   type ReactFlowInstance,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import type { Asset, CanvasItem, ProjectSnapshot, Run, Shot, Take } from "@takeboard/contracts";
 import {
+  type Asset,
+  type CanvasItem,
+  type CommandAuditEntry,
+  type ProjectCommandPreview,
+  type ProjectSnapshot,
+  type Run,
+  resolveGenerationResolution,
+  type Shot,
+  type Take,
+} from "@takeboard/contracts";
+import {
+  lazy,
   type MouseEvent as ReactMouseEvent,
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -30,7 +42,6 @@ import {
   type WorkflowSummary,
   workflowApi,
 } from "./api";
-import { AssetLibrary } from "./asset-library";
 import { type BoardNode, boardNodeTypes } from "./board-nodes";
 import { DisplaySettings } from "./display-settings";
 import {
@@ -42,8 +53,17 @@ import {
 } from "./model-profiles";
 import { NumericInput } from "./numeric-input";
 import { ProjectHub } from "./project-hub";
-import { RecipeStudio } from "./recipe-studio";
 import { ThemeSwitcher } from "./theme-switcher";
+
+const AssetLibrary = lazy(() =>
+  import("./asset-library").then((module) => ({ default: module.AssetLibrary })),
+);
+const CommandHistory = lazy(() =>
+  import("./command-history").then((module) => ({ default: module.CommandHistory })),
+);
+const RecipeStudio = lazy(() =>
+  import("./recipe-studio").then((module) => ({ default: module.RecipeStudio })),
+);
 
 const rejectionReasons = ["角色漂移", "运动方向错误", "构图不稳定", "细节异常"];
 const canvasSnapGrid: [number, number] = [12, 12];
@@ -1217,6 +1237,21 @@ function Inspector({
         : workflowDetected
           ? "Workflow 已检测，模型清单待确认"
           : "本地参考配置";
+  const resolutionPolicy =
+    workflow?.execution !== "native"
+      ? "exact"
+      : profile.family === "qwen_image"
+        ? "qwen_image_2512"
+        : profile.family === "minimax_h3"
+          ? "minimax_h3"
+          : profile.family === "ltx23"
+            ? "multiple_32"
+            : "exact";
+  const resolvedResolution = resolveGenerationResolution(
+    resolutionPolicy,
+    settings.width,
+    settings.height,
+  );
 
   return (
     <aside className="inspector" aria-label="镜头候选检查器">
@@ -1504,6 +1539,18 @@ function Inspector({
                     </div>
                   </label>
                 ) : null}
+              </div>
+            ) : null}
+            {workflow?.inputs.includes("resolution") && resolvedResolution.changed ? (
+              <div className="effective-resolution" role="status">
+                <span>实际输出</span>
+                <strong>
+                  {resolvedResolution.effective.width} × {resolvedResolution.effective.height}
+                </strong>
+                <small>
+                  输入 {resolvedResolution.requested.width} × {resolvedResolution.requested.height}
+                  ；{resolvedResolution.reason}
+                </small>
               </div>
             ) : null}
             {workflow?.inputs.includes("seed") ? (
@@ -1805,6 +1852,11 @@ type NodeEditDraft = {
   aspectRatio: Shot["aspectRatio"] | null;
 };
 
+type PendingCanvasRemoval = {
+  itemId: string;
+  preview: ProjectCommandPreview;
+};
+
 export function App() {
   const [snapshot, setSnapshot] = useState<ProjectSnapshot | null>(null);
   const [revision, setRevision] = useState(0);
@@ -1814,9 +1866,22 @@ export function App() {
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [canvasContextMenu, setCanvasContextMenu] = useState<CanvasContextMenuState | null>(null);
   const [canvasGuideOpen, setCanvasGuideOpen] = useState(false);
+  const [commandHistoryOpen, setCommandHistoryOpen] = useState(false);
+  const [commandHistory, setCommandHistory] = useState<CommandAuditEntry[]>([]);
+  const [commandHistoryBusy, setCommandHistoryBusy] = useState(false);
+  const [commandHistoryError, setCommandHistoryError] = useState<string | null>(null);
   const [blankCanvasGuideOpen, setBlankCanvasGuideOpen] = useState(false);
   const [canvasClipboard, setCanvasClipboard] = useState<CanvasClipboardState | null>(null);
   const [deletingShotItemId, setDeletingShotItemId] = useState<string | null>(null);
+  const [deletingShotPreview, setDeletingShotPreview] = useState<ProjectCommandPreview | null>(
+    null,
+  );
+  const [pendingCanvasRemoval, setPendingCanvasRemoval] = useState<PendingCanvasRemoval | null>(
+    null,
+  );
+  const [pendingCanvasArrange, setPendingCanvasArrange] = useState<ProjectCommandPreview | null>(
+    null,
+  );
   const [nodeEditDraft, setNodeEditDraft] = useState<NodeEditDraft | null>(null);
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<BoardNode> | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1855,6 +1920,7 @@ export function App() {
   const pendingAssetPosition = useRef<{ x: number; y: number } | null>(null);
   const generationScopeRef = useRef("");
   const generationTokenRef = useRef(0);
+  const projectCatalogRequestRef = useRef(0);
   const acceptedProjectIdRef = useRef<string | null>(null);
   const acceptedRevisionRef = useRef(0);
   const selectedEdgeIdentityRef = useRef<CanvasEdgeIdentity | null>(null);
@@ -1898,21 +1964,74 @@ export function App() {
     [],
   );
 
+  const refreshCommandHistory = useCallback(async () => {
+    if (!projectKey || projectMode !== "project") return;
+    setCommandHistoryBusy(true);
+    setCommandHistoryError(null);
+    try {
+      const payload = await projectApi.audit(projectKey);
+      setCommandHistory(payload.entries);
+    } catch (cause) {
+      setCommandHistoryError(cause instanceof Error ? cause.message : "无法读取操作记录");
+    } finally {
+      setCommandHistoryBusy(false);
+    }
+  }, [projectKey, projectMode]);
+
+  const openCommandHistory = useCallback(() => {
+    setCanvasGuideOpen(false);
+    setCommandHistoryOpen(true);
+    void refreshCommandHistory();
+  }, [refreshCommandHistory]);
+
+  const undoProjectCommand = useCallback(
+    async (commandId: string) => {
+      if (!projectKey || projectMode !== "project") return;
+      setCommandHistoryBusy(true);
+      setCommandHistoryError(null);
+      try {
+        const payload = await projectApi.undo(projectKey, commandId);
+        acceptPayload(payload);
+        const audit = await projectApi.audit(projectKey);
+        setCommandHistory(audit.entries);
+        setNotice("操作已撤销");
+      } catch (cause) {
+        setCommandHistoryError(cause instanceof Error ? cause.message : "撤销失败");
+      } finally {
+        setCommandHistoryBusy(false);
+      }
+    },
+    [acceptPayload, projectKey, projectMode],
+  );
+
   useEffect(() => {
+    const catalogRequestId = ++projectCatalogRequestRef.current;
     void Promise.allSettled([
       projectApi.list(),
       projectApi.trash(),
       projectApi.worker(),
       workflowApi.list(),
     ]).then(([catalog, trash, status, detected]) => {
-      if (catalog.status === "fulfilled") setProjects(catalog.value.projects);
-      else setError(catalog.reason instanceof Error ? catalog.reason.message : "无法载入项目列表");
-      if (trash.status === "fulfilled") setTrashedProjects(trash.value.projects);
+      if (catalog.status === "fulfilled") {
+        if (projectCatalogRequestRef.current === catalogRequestId) {
+          setProjects(catalog.value.projects);
+        }
+      } else {
+        setError(catalog.reason instanceof Error ? catalog.reason.message : "无法载入项目列表");
+      }
+      if (trash.status === "fulfilled" && projectCatalogRequestRef.current === catalogRequestId) {
+        setTrashedProjects(trash.value.projects);
+      }
       if (status.status === "fulfilled") setWorker(status.value);
       else setWorker({ status: "offline", engine: "ComfyUI" });
       if (detected.status === "fulfilled") {
         setWorkflows(detected.value.workflows);
-        setWorkflowWarnings(detected.value.warnings ?? []);
+        setWorkflowWarnings([
+          ...(detected.value.warnings ?? []),
+          ...(detected.value.diagnostics ?? []).map(
+            (item) => `${item.code} · ${item.path}：${item.message}`,
+          ),
+        ]);
         setComfyEditorUrl(detected.value.editorUrl);
       }
     });
@@ -2259,7 +2378,7 @@ export function App() {
     if (selectedWorkflow.inputs.includes("first_frame") && !firstFrameAvailable) {
       return "请从资产库选择一张起始帧";
     }
-    if (selectedWorkflow.inputs.includes("last_frame") && !lastFrameAvailable) {
+    if (selectedWorkflow.capability === "first_last_video" && !lastFrameAvailable) {
       return "首尾帧模式还需要一张结束帧";
     }
     if (
@@ -2478,7 +2597,7 @@ export function App() {
   );
 
   const removeCanvasItem = useCallback(
-    async (itemId: string) => {
+    async (itemId: string, preview: ProjectCommandPreview) => {
       if (!projectKey || projectMode !== "project") {
         setNotice("功能示例不会删除节点");
         return;
@@ -2488,11 +2607,16 @@ export function App() {
       setBusy(true);
       setError(null);
       try {
-        const payload = await projectApi.deleteCanvasItem(projectKey, itemId);
+        const payload = (await projectApi.executeCommand(
+          projectKey,
+          { type: "canvas.remove_item", itemId },
+          preview,
+        )) as Awaited<ReturnType<typeof projectApi.deleteCanvasItem>>;
         acceptPayload(payload);
         setSelectedCanvasItemId((current) => (current === itemId ? null : current));
         setCanvasClipboard((current) => (current?.itemId === itemId ? null : current));
         setCanvasContextMenu(null);
+        setPendingCanvasRemoval(null);
         setNotice("已从画布移除；底层项目数据与原始文件仍然保留");
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "节点删除失败");
@@ -2503,6 +2627,54 @@ export function App() {
     [acceptPayload, projectKey, projectMode, snapshot?.canvasItems],
   );
 
+  const previewCanvasArrange = useCallback(async () => {
+    if (!projectKey || projectMode !== "project" || !activeScene) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const { preview } = await projectApi.previewCommand(projectKey, {
+        type: "canvas.arrange_scene",
+        sceneId: activeScene.id,
+      });
+      setPendingCanvasArrange(preview);
+    } catch (cause) {
+      setNotice(cause instanceof Error ? cause.message : "当前画布无法自动整理");
+    } finally {
+      setBusy(false);
+    }
+  }, [activeScene, projectKey, projectMode]);
+
+  const confirmCanvasArrange = useCallback(async () => {
+    if (!projectKey || projectMode !== "project" || !activeScene || !pendingCanvasArrange) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const payload = await projectApi.executeCommand(
+        projectKey,
+        { type: "canvas.arrange_scene", sceneId: activeScene.id },
+        pendingCanvasArrange,
+      );
+      acceptPayload(payload, selectedShotId ?? undefined);
+      setPendingCanvasArrange(null);
+      setNotice("画布已按连线方向整理，可在“记录”中撤销");
+      window.requestAnimationFrame(
+        () => void flowInstance?.fitView({ padding: 0.16, duration: 420 }),
+      );
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "画布整理失败");
+    } finally {
+      setBusy(false);
+    }
+  }, [
+    acceptPayload,
+    activeScene,
+    flowInstance,
+    pendingCanvasArrange,
+    projectKey,
+    projectMode,
+    selectedShotId,
+  ]);
+
   const deleteCanvasItem = useCallback(
     (itemId: string) => {
       const item = snapshot?.canvasItems.find((candidate) => candidate.id === itemId);
@@ -2510,12 +2682,35 @@ export function App() {
       setCanvasContextMenu(null);
       if (item.refType === "shot") {
         setError(null);
+        setDeletingShotPreview(null);
         setDeletingShotItemId(item.id);
+        const shot = snapshot?.shots.find((candidate) => candidate.id === item.refId);
+        const hasRuns = snapshot?.runs.some((run) => run.shotId === shot?.id);
+        if (projectKey && projectMode === "project" && shot && !hasRuns) {
+          void projectApi
+            .previewCommand(projectKey, { type: "shot.delete", shotId: shot.id })
+            .then(({ preview }) => setDeletingShotPreview(preview))
+            .catch((cause: unknown) =>
+              setError(cause instanceof Error ? cause.message : "无法预览删除影响"),
+            );
+        }
         return;
       }
-      void removeCanvasItem(item.id);
+      if (!projectKey || projectMode !== "project") {
+        setNotice("功能示例不会删除节点");
+        return;
+      }
+      setBusy(true);
+      setError(null);
+      void projectApi
+        .previewCommand(projectKey, { type: "canvas.remove_item", itemId: item.id })
+        .then(({ preview }) => setPendingCanvasRemoval({ itemId: item.id, preview }))
+        .catch((cause: unknown) =>
+          setError(cause instanceof Error ? cause.message : "无法预览移除影响"),
+        )
+        .finally(() => setBusy(false));
     },
-    [removeCanvasItem, snapshot?.canvasItems],
+    [projectKey, projectMode, snapshot],
   );
 
   const confirmDeleteShot = useCallback(async () => {
@@ -2523,7 +2718,11 @@ export function App() {
     setBusy(true);
     setError(null);
     try {
-      const payload = await projectApi.deleteShot(projectKey, deletingShot.id);
+      const payload = (await projectApi.executeCommand(
+        projectKey,
+        { type: "shot.delete", shotId: deletingShot.id },
+        deletingShotPreview ?? undefined,
+      )) as Awaited<ReturnType<typeof projectApi.deleteShot>>;
       acceptPayload(payload);
       setSelectedCanvasItemId((current) =>
         payload.removedItemIds.includes(current ?? "") ? null : current,
@@ -2532,6 +2731,7 @@ export function App() {
         current && payload.removedItemIds.includes(current.itemId) ? null : current,
       );
       setDeletingShotItemId(null);
+      setDeletingShotPreview(null);
       setInspectorOpen(false);
       setNotice(`镜头“${deletingShot.label}”已删除，镜头列表与画布已同步`);
     } catch (cause) {
@@ -2539,7 +2739,7 @@ export function App() {
     } finally {
       setBusy(false);
     }
-  }, [acceptPayload, deletingShot, deletingShotItem, projectKey, projectMode]);
+  }, [acceptPayload, deletingShot, deletingShotItem, deletingShotPreview, projectKey, projectMode]);
 
   const deleteCanvasEdge = useCallback(
     async (edgeId: string, requestedIdentity?: CanvasEdgeIdentity) => {
@@ -2561,9 +2761,8 @@ export function App() {
       setBusy(true);
       setError(null);
       try {
-        const payload = identity
-          ? await projectApi.disconnectMatching(projectKey, identity)
-          : await projectApi.disconnect(projectKey, edgeId);
+        if (!edge) throw new Error("连线已经不存在，请刷新画布后重试");
+        const payload = await projectApi.disconnect(projectKey, edge.id);
         acceptPayload(payload);
         setSelectedEdgeId(null);
         setCanvasContextMenu(null);
@@ -2610,7 +2809,11 @@ export function App() {
         acceptPayload(payload);
         setSelectedCanvasItemId(payload.itemId);
         setCanvasContextMenu(null);
-        setNotice("已创建节点副本；底层素材不会重复占用空间");
+        setNotice(
+          payload.copyMode === "independent"
+            ? "已创建可独立编辑的副本；素材文件不会重复占用空间"
+            : "已创建引用副本；底层素材文件不会重复占用空间",
+        );
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "节点复制失败");
       } finally {
@@ -2665,6 +2868,9 @@ export function App() {
         const overlayOpen = Boolean(
           canvasContextMenu ||
             canvasGuideOpen ||
+            commandHistoryOpen ||
+            pendingCanvasRemoval ||
+            pendingCanvasArrange ||
             deletingShotItemId ||
             nodeEditDraft ||
             recipeOpen ||
@@ -2673,7 +2879,11 @@ export function App() {
         );
         setCanvasContextMenu(null);
         setCanvasGuideOpen(false);
+        setCommandHistoryOpen(false);
+        setPendingCanvasRemoval(null);
+        setPendingCanvasArrange(null);
         setDeletingShotItemId(null);
+        setDeletingShotPreview(null);
         setNodeEditDraft(null);
         setRecipeOpen(false);
         setAssetLibraryOpen(false);
@@ -2733,6 +2943,9 @@ export function App() {
     canvasClipboard,
     canvasContextMenu,
     canvasGuideOpen,
+    commandHistoryOpen,
+    pendingCanvasRemoval,
+    pendingCanvasArrange,
     deletingShotItemId,
     copyCanvasItem,
     deleteCanvasEdge,
@@ -3053,6 +3266,33 @@ export function App() {
     [acceptPayload, projectKey, projectMode],
   );
 
+  const inspectHistoricalAssetMetadata = useCallback(async () => {
+    if (!projectKey || projectMode !== "project") {
+      return { ok: false, error: "示例项目不会修改资产信息" };
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const payload = await projectApi.inspectAssetMetadata(projectKey);
+      acceptPayload(payload);
+      const warning = payload.warnings.length
+        ? `；${payload.warnings.length} 个文件暂时无法识别`
+        : "";
+      setNotice(`已补全 ${payload.updatedAssetIds.length} 段视频的信息${warning}`);
+      return {
+        ok: true,
+        updated: payload.updatedAssetIds.length,
+        warnings: payload.warnings.length,
+      };
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : "视频信息识别失败";
+      setError(message);
+      return { ok: false, error: message };
+    } finally {
+      setBusy(false);
+    }
+  }, [acceptPayload, projectKey, projectMode]);
+
   const setAssetCustomTags = useCallback(
     async (assetId: string, customTags: string[]) => {
       const asset = snapshot?.assets.find((candidate) => candidate.id === assetId);
@@ -3104,6 +3344,7 @@ export function App() {
 
   const createProject = useCallback(
     async (input: Parameters<typeof projectApi.create>[0]) => {
+      const catalogRequestId = ++projectCatalogRequestRef.current;
       generationTokenRef.current += 1;
       setGenerationBusy(false);
       setGenerationProgress(null);
@@ -3125,7 +3366,7 @@ export function App() {
         acceptPayload(payload);
         setShowHub(false);
         const catalog = await projectApi.list();
-        setProjects(catalog.projects);
+        if (projectCatalogRequestRef.current === catalogRequestId) setProjects(catalog.projects);
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "项目创建失败");
       } finally {
@@ -3135,15 +3376,33 @@ export function App() {
     [acceptPayload],
   );
 
+  const importProject = useCallback(async (file: File) => {
+    const catalogRequestId = ++projectCatalogRequestRef.current;
+    setBusy(true);
+    setError(null);
+    try {
+      const imported = await projectApi.importPackage(file);
+      const catalog = await projectApi.list();
+      if (projectCatalogRequestRef.current === catalogRequestId) setProjects(catalog.projects);
+      setNotice(`“${imported.title}”已完成校验并导入`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "项目包导入失败");
+      throw cause;
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
   const renameProject = useCallback(
     async (key: string, title: string) => {
+      const catalogRequestId = ++projectCatalogRequestRef.current;
       setBusy(true);
       setError(null);
       try {
         const payload = await projectApi.rename(key, title);
         if (projectKey === key) acceptPayload(payload);
         const catalog = await projectApi.list();
-        setProjects(catalog.projects);
+        if (projectCatalogRequestRef.current === catalogRequestId) setProjects(catalog.projects);
         setNotice("项目名称已更新");
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "项目重命名失败");
@@ -3157,15 +3416,18 @@ export function App() {
 
   const deleteProject = useCallback(
     async (key: string) => {
+      const catalogRequestId = ++projectCatalogRequestRef.current;
       setBusy(true);
       setError(null);
       try {
         await projectApi.delete(key);
         if (projectKey === key) setProjectKey(null);
         const catalog = await projectApi.list();
-        setProjects(catalog.projects);
+        if (projectCatalogRequestRef.current === catalogRequestId) setProjects(catalog.projects);
         const trash = await projectApi.trash();
-        setTrashedProjects(trash.projects);
+        if (projectCatalogRequestRef.current === catalogRequestId) {
+          setTrashedProjects(trash.projects);
+        }
         setNotice("项目已移到回收区");
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "项目删除失败");
@@ -3178,13 +3440,16 @@ export function App() {
   );
 
   const restoreProject = useCallback(async (trashKey: string) => {
+    const catalogRequestId = ++projectCatalogRequestRef.current;
     setBusy(true);
     setError(null);
     try {
       const restored = await projectApi.restore(trashKey);
       const [catalog, trash] = await Promise.all([projectApi.list(), projectApi.trash()]);
-      setProjects(catalog.projects);
-      setTrashedProjects(trash.projects);
+      if (projectCatalogRequestRef.current === catalogRequestId) {
+        setProjects(catalog.projects);
+        setTrashedProjects(trash.projects);
+      }
       setNotice(`“${restored.title}”已恢复`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "项目恢复失败");
@@ -3346,7 +3611,12 @@ export function App() {
     try {
       const detected = await workflowApi.list();
       setWorkflows(detected.workflows);
-      setWorkflowWarnings(detected.warnings ?? []);
+      setWorkflowWarnings([
+        ...(detected.warnings ?? []),
+        ...(detected.diagnostics ?? []).map(
+          (item) => `${item.code} · ${item.path}：${item.message}`,
+        ),
+      ]);
       setComfyEditorUrl(detected.editorUrl);
       setNotice(`已检测 ${detected.workflows.length} 个 ComfyUI Workflow`);
     } catch (cause) {
@@ -3729,8 +3999,10 @@ export function App() {
       <ProjectHub
         busy={busy}
         error={error}
+        notice={notice}
         onCreate={createProject}
         onDelete={deleteProject}
+        onImport={importProject}
         onOpen={openProject}
         onRefreshWorker={refreshWorker}
         onRename={renameProject}
@@ -3866,7 +4138,20 @@ export function App() {
         </div>
         <div className="shot-list-heading">
           <span className="section-kicker">SHOTS</span>
-          <span>{snapshot.shots.length}</span>
+          <div className="shot-list-heading-actions">
+            <span>{snapshot.shots.length}</span>
+            {projectMode === "project" ? (
+              <button
+                type="button"
+                aria-label="添加镜头"
+                title="添加镜头"
+                disabled={busy}
+                onClick={() => void createShot()}
+              >
+                ＋
+              </button>
+            ) : null}
+          </div>
         </div>
         <div className="shot-navigator-tools">
           <label>
@@ -4066,6 +4351,36 @@ export function App() {
             >
               ?
             </button>
+            {projectMode === "project" ? (
+              <button
+                className="canvas-arrange-toggle"
+                type="button"
+                disabled={
+                  busy ||
+                  (snapshot?.canvasItems.filter((item) => item.sceneId === activeScene?.id)
+                    .length ?? 0) < 2
+                }
+                aria-label="按连线方向整理当前画布"
+                title="预览后整理节点位置，可撤销"
+                onClick={() => void previewCanvasArrange()}
+              >
+                ⤢ <span>整理</span>
+              </button>
+            ) : null}
+            {projectMode === "project" ? (
+              <button
+                className={`canvas-history-toggle ${commandHistoryOpen ? "active" : ""}`}
+                type="button"
+                aria-label="查看项目操作记录"
+                aria-expanded={commandHistoryOpen}
+                onClick={() => {
+                  if (commandHistoryOpen) setCommandHistoryOpen(false);
+                  else openCommandHistory();
+                }}
+              >
+                ↶ <span>记录</span>
+              </button>
+            ) : null}
             {canvasGuideOpen ? (
               <aside className="canvas-guide" aria-label="画布操作说明">
                 <header>
@@ -4516,53 +4831,159 @@ export function App() {
         />
       ) : null}
 
-      <RecipeStudio
-        busy={busy}
-        editorUrl={comfyEditorUrl}
-        onClose={() => setRecipeOpen(false)}
-        onImport={importWorkflow}
-        onRefresh={refreshWorkflows}
-        onSelect={(workflow) => void bindWorkflowToSelectedShot(workflow)}
-        open={recipeOpen}
-        selectedPath={generationSettings.recipePath}
-        selectionLocked={workflowLocked}
-        warnings={workflowWarnings}
-        workflows={workflows}
-      />
-      {projectKey ? (
-        <AssetLibrary
-          assets={snapshot.assets}
-          busy={busy}
-          canvasItems={snapshot.canvasItems}
-          entities={snapshot.entities}
-          onAddToCanvas={addAssetToCanvasFromLibrary}
-          onClose={() => setAssetLibraryOpen(false)}
-          onPickFrame={(assetId, slot) => void connectAssetFromLibrary(assetId, slot)}
-          onUpdateAsset={updateAssetMetadata}
-          onUpload={async (file, metadata) =>
-            await uploadAsset(file, { ...metadata, addToCanvas: false })
-          }
-          open={assetLibraryOpen}
-          projectKey={projectKey}
-          selectedShotLabel={selectedShot?.label ?? null}
-          selectedFirstFrameId={generationSettings.firstFrameAssetId}
-          selectedLastFrameId={generationSettings.lastFrameAssetId}
-          selectedReferenceId={generationSettings.referenceAssetId}
-          selectedReferenceImageIds={selectedReferenceImageIds}
-          selectedReferenceVideoIds={selectedReferenceVideoIds}
-          selectedReferenceAudioIds={selectedReferenceAudioIds}
-          allowedSlots={{
-            first: selectedModelProfile.slots.some((slot) => slot.id === "first_frame"),
-            last: selectedModelProfile.slots.some((slot) => slot.id === "last_frame"),
-            reference: selectedModelProfile.slots.some((slot) => slot.id === "reference"),
-            referenceVideo: selectedModelProfile.slots.some(
-              (slot) => slot.id === "reference_video",
-            ),
-            referenceAudio: selectedModelProfile.slots.some(
-              (slot) => slot.id === "reference_audio",
-            ),
-          }}
-        />
+      <Suspense
+        fallback={
+          <div className="studio-backdrop studio-loading-backdrop" role="status">
+            <span>正在打开工作区工具…</span>
+          </div>
+        }
+      >
+        {recipeOpen ? (
+          <RecipeStudio
+            busy={busy}
+            editorUrl={comfyEditorUrl}
+            onClose={() => setRecipeOpen(false)}
+            onImport={importWorkflow}
+            onRefresh={refreshWorkflows}
+            onSelect={(workflow) => void bindWorkflowToSelectedShot(workflow)}
+            open
+            selectedPath={generationSettings.recipePath}
+            selectionLocked={workflowLocked}
+            warnings={workflowWarnings}
+            workflows={workflows}
+          />
+        ) : null}
+        {commandHistoryOpen ? (
+          <CommandHistory
+            busy={commandHistoryBusy}
+            entries={commandHistory}
+            error={commandHistoryError}
+            onClose={() => setCommandHistoryOpen(false)}
+            onRefresh={() => void refreshCommandHistory()}
+            onUndo={(commandId) => void undoProjectCommand(commandId)}
+            open
+          />
+        ) : null}
+        {projectKey && assetLibraryOpen ? (
+          <AssetLibrary
+            assets={snapshot.assets}
+            busy={busy}
+            canvasItems={snapshot.canvasItems}
+            entities={snapshot.entities}
+            onAddToCanvas={addAssetToCanvasFromLibrary}
+            onClose={() => setAssetLibraryOpen(false)}
+            onPickFrame={(assetId, slot) => void connectAssetFromLibrary(assetId, slot)}
+            onInspectMetadata={inspectHistoricalAssetMetadata}
+            onUpdateAsset={updateAssetMetadata}
+            onUpload={async (file, metadata) =>
+              await uploadAsset(file, { ...metadata, addToCanvas: false })
+            }
+            open
+            projectKey={projectKey}
+            selectedShotLabel={selectedShot?.label ?? null}
+            selectedFirstFrameId={generationSettings.firstFrameAssetId}
+            selectedLastFrameId={generationSettings.lastFrameAssetId}
+            selectedReferenceId={generationSettings.referenceAssetId}
+            selectedReferenceImageIds={selectedReferenceImageIds}
+            selectedReferenceVideoIds={selectedReferenceVideoIds}
+            selectedReferenceAudioIds={selectedReferenceAudioIds}
+            allowedSlots={{
+              first: selectedModelProfile.slots.some((slot) => slot.id === "first_frame"),
+              last: selectedModelProfile.slots.some((slot) => slot.id === "last_frame"),
+              reference: selectedModelProfile.slots.some((slot) => slot.id === "reference"),
+              referenceVideo: selectedModelProfile.slots.some(
+                (slot) => slot.id === "reference_video",
+              ),
+              referenceAudio: selectedModelProfile.slots.some(
+                (slot) => slot.id === "reference_audio",
+              ),
+            }}
+          />
+        ) : null}
+      </Suspense>
+
+      {pendingCanvasRemoval ? (
+        <div className="modal-backdrop shot-delete-backdrop">
+          <section
+            className="shot-delete-modal"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="canvas-remove-title"
+          >
+            <span className="section-kicker">CANVAS CHANGE</span>
+            <h2 id="canvas-remove-title">{pendingCanvasRemoval.preview.summary}？</h2>
+            <p>只移除画布上的呈现；资产、人物或文本本体仍保留在项目中。</p>
+            <div className="shot-delete-preview">
+              <span>影响预览</span>
+              <ul>
+                {pendingCanvasRemoval.preview.effects.map((item) => (
+                  <li key={`${item.action}:${item.entityId ?? item.label}`}>
+                    {item.label}
+                    {item.detail ? <small>{item.detail}</small> : null}
+                  </li>
+                ))}
+              </ul>
+              <small>确认后可以从“记录”撤销；不会静默覆盖后续修改。</small>
+            </div>
+            {error ? <p className="form-error">{error}</p> : null}
+            <div className="shot-delete-actions">
+              <button type="button" disabled={busy} onClick={() => setPendingCanvasRemoval(null)}>
+                取消
+              </button>
+              <button
+                className="confirm-shot-delete"
+                type="button"
+                disabled={busy}
+                onClick={() =>
+                  void removeCanvasItem(pendingCanvasRemoval.itemId, pendingCanvasRemoval.preview)
+                }
+              >
+                {busy ? "正在移除…" : "从画布移除"}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {pendingCanvasArrange ? (
+        <div className="modal-backdrop shot-delete-backdrop">
+          <section
+            className="shot-delete-modal canvas-arrange-modal"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="canvas-arrange-title"
+          >
+            <span className="section-kicker">CANVAS ARRANGE</span>
+            <h2 id="canvas-arrange-title">整理当前画布？</h2>
+            <p>系统会沿连线从左到右分层，并保留每一列原有的上下顺序。</p>
+            <div className="shot-delete-preview">
+              <span>位置预览</span>
+              <ul>
+                {pendingCanvasArrange.effects.slice(0, 8).map((item) => (
+                  <li key={item.entityId ?? item.label}>
+                    {item.label}
+                    {item.detail ? <small>{item.detail}</small> : null}
+                  </li>
+                ))}
+              </ul>
+              {pendingCanvasArrange.effects.length > 8 ? (
+                <small>以及另外 {pendingCanvasArrange.effects.length - 8} 个节点</small>
+              ) : null}
+              {pendingCanvasArrange.warnings.map((warning) => (
+                <small key={warning}>{warning}</small>
+              ))}
+            </div>
+            {error ? <p className="form-error">{error}</p> : null}
+            <div className="shot-delete-actions">
+              <button type="button" disabled={busy} onClick={() => setPendingCanvasArrange(null)}>
+                保持现状
+              </button>
+              <button type="button" disabled={busy} onClick={() => void confirmCanvasArrange()}>
+                {busy ? "正在整理…" : "整理并适配视野"}
+              </button>
+            </div>
+          </section>
+        </div>
       ) : null}
 
       {deletingShotItem && deletingShot ? (
@@ -4581,18 +5002,43 @@ export function App() {
                 条生成记录。为了保留成片、参数和工作流溯源，目前不能直接删除。
               </p>
             ) : (
-              <p>镜头会同时从画布和左侧镜头列表删除；项目里的原始素材不会受到影响。</p>
+              <>
+                <p>镜头会同时从画布和左侧镜头列表删除；项目里的原始素材不会受到影响。</p>
+                {deletingShotPreview ? (
+                  <div className="shot-delete-preview">
+                    <span>本次操作</span>
+                    <ul>
+                      {deletingShotPreview.effects.map((item) => (
+                        <li key={`${item.action}:${item.entityId ?? item.label}`}>
+                          {item.label}
+                          {item.detail ? <small>{item.detail}</small> : null}
+                        </li>
+                      ))}
+                    </ul>
+                    <small>删除后可在“记录”中撤销；若已有后续修改，系统会停止并提示冲突。</small>
+                  </div>
+                ) : (
+                  <div className="shot-delete-preview loading">正在核对删除范围…</div>
+                )}
+              </>
             )}
             {error ? <p className="form-error">{error}</p> : null}
             <div className="shot-delete-actions">
-              <button type="button" disabled={busy} onClick={() => setDeletingShotItemId(null)}>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setDeletingShotItemId(null);
+                  setDeletingShotPreview(null);
+                }}
+              >
                 {deletingShotRunCount > 0 ? "知道了" : "取消"}
               </button>
               {deletingShotRunCount === 0 ? (
                 <button
                   className="confirm-shot-delete"
                   type="button"
-                  disabled={busy}
+                  disabled={busy || !deletingShotPreview}
                   onClick={() => void confirmDeleteShot()}
                 >
                   {busy ? "正在删除…" : "删除镜头"}

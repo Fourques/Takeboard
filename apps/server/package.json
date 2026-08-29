@@ -1,6 +1,6 @@
 {
   "name": "@takeboard/server",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -18,7 +18,8 @@
     "better-sqlite3": "13.0.3",
     "drizzle-orm": "0.45.2",
     "fastify": "5.11.3",
-    "sharp": "0.35.3"
+    "sharp": "0.35.3",
+    "tar-stream": "3.2.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "9.6.0"

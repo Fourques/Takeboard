@@ -26,7 +26,8 @@ function lockedProjectKey(request: FastifyRequest) {
   const match = /^\/api\/projects\/([^/]+)(?:\/(.+))?$/.exec(pathname);
   if (!match) return null;
   const [, encodedKey, remainder] = match;
-  const writesProject = request.method !== "GET" || remainder?.startsWith("runs/");
+  const writesProject =
+    request.method !== "GET" || remainder?.startsWith("runs/") || remainder === "export";
   if (!writesProject || !encodedKey) return null;
   try {
     return decodeURIComponent(encodedKey);

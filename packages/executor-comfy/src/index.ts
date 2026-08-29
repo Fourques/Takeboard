@@ -1,3 +1,4 @@
+import { resolveGenerationResolution } from "@takeboard/contracts";
 import { ComfyProgressTracker } from "./progress.js";
 
 export type { ComfyExecutionProgress } from "./progress.js";
@@ -26,17 +27,7 @@ const qwenImageNegative =
   "低分辨率，低画质，肢体畸形，手指畸形，画面过饱和，蜡像感，人脸无细节，过度光滑，AI感，构图混乱，文字模糊，扭曲，水印";
 
 export function qwenImage2512Resolution(width: number, height: number) {
-  const safeWidth = Math.max(512, width);
-  const safeHeight = Math.max(512, height);
-  const scale = Math.min(
-    1,
-    1664 / Math.max(safeWidth, safeHeight),
-    Math.sqrt(1_800_000 / (safeWidth * safeHeight)),
-  );
-  return {
-    width: Math.max(512, Math.round((safeWidth * scale) / 32) * 32),
-    height: Math.max(512, Math.round((safeHeight * scale) / 32) * 32),
-  };
+  return resolveGenerationResolution("qwen_image_2512", width, height).effective;
 }
 
 export function buildQwenImage2512Prompt(input: QwenImage2512Input): ComfyPrompt {
@@ -346,17 +337,7 @@ export function miniMaxH3FrameCount(durationSeconds: number, _fps = 24) {
 }
 
 export function miniMaxH3Resolution(width: number, height: number) {
-  const safeWidth = Math.max(256, width);
-  const safeHeight = Math.max(256, height);
-  const scale = Math.min(
-    1,
-    768 / Math.min(safeWidth, safeHeight),
-    1344 / Math.max(safeWidth, safeHeight),
-  );
-  return {
-    width: Math.max(256, Math.round((safeWidth * scale) / 32) * 32),
-    height: Math.max(256, Math.round((safeHeight * scale) / 32) * 32),
-  };
+  return resolveGenerationResolution("minimax_h3", width, height).effective;
 }
 
 export function buildMiniMaxH3Prompt(input: MiniMaxH3Input): ComfyPrompt {
@@ -590,7 +571,12 @@ type UiWorkflowNode = {
   type: string;
   title?: string;
   mode?: number;
-  inputs?: Array<{ name: string; link?: number | null; widget?: { name: string } }>;
+  inputs?: Array<{
+    name: string;
+    type?: string | string[];
+    link?: number | null;
+    widget?: { name: string };
+  }>;
   widgets_values?: unknown[] | Record<string, unknown> | null;
 };
 
@@ -647,6 +633,21 @@ function normalizedLinks(
 function widgetValues(node: UiWorkflowNode) {
   if (Array.isArray(node.widgets_values)) return node.widgets_values;
   return node.widgets_values ? Object.values(node.widgets_values) : [];
+}
+
+const widgetControlValues = new Set(["fixed", "increment", "decrement", "randomize"]);
+
+function nextWidgetValue(values: unknown[], start: number, inputType?: string | string[]) {
+  let index = start;
+  const numeric = ["INT", "FLOAT", "NUMBER"].includes(String(inputType).toUpperCase());
+  while (
+    numeric &&
+    typeof values[index] === "string" &&
+    widgetControlValues.has(String(values[index]).toLowerCase())
+  ) {
+    index += 1;
+  }
+  return { value: values[index], nextIndex: index + 1 };
 }
 
 function isApiPrompt(value: unknown): value is ComfyPrompt {
@@ -719,7 +720,11 @@ function expandSubgraphWorkflow(workflow: UiWorkflow, objectInfo: ComfyObjectInf
         : schemaWidgetNames(objectInfo[node.type]);
       let widgetIndex = 0;
       for (const input of node.inputs ?? []) {
-        const widgetValue = input.widget ? values[widgetIndex++] : undefined;
+        const widget = input.widget
+          ? nextWidgetValue(values, widgetIndex, input.type)
+          : { value: undefined, nextIndex: widgetIndex };
+        const widgetValue = widget.value;
+        if (input.widget) widgetIndex = widget.nextIndex;
         const link =
           input.link == null ? null : graphLinks.find((candidate) => candidate.id === input.link);
         const origin = link ? resolveOrigin(link) : null;
@@ -843,7 +848,11 @@ export function convertUiWorkflowToPrompt(
     let widgetIndex = 0;
 
     for (const input of node.inputs ?? []) {
-      const widgetValue = input.widget ? values[widgetIndex++] : undefined;
+      const widget = input.widget
+        ? nextWidgetValue(values, widgetIndex, input.type)
+        : { value: undefined, nextIndex: widgetIndex };
+      const widgetValue = widget.value;
+      if (input.widget) widgetIndex = widget.nextIndex;
       const link =
         input.link == null ? null : links.find((candidate) => candidate.id === input.link);
       const origin = link ? resolveOrigin(link) : null;
@@ -926,7 +935,11 @@ export function expandSingleSubgraphWorkflow(
       : schemaWidgetNames(objectInfo[node.type]);
     let widgetIndex = 0;
     for (const input of node.inputs ?? []) {
-      const widgetValue = input.widget ? values[widgetIndex++] : undefined;
+      const widget = input.widget
+        ? nextWidgetValue(values, widgetIndex, input.type)
+        : { value: undefined, nextIndex: widgetIndex };
+      const widgetValue = widget.value;
+      if (input.widget) widgetIndex = widget.nextIndex;
       const link =
         input.link == null ? null : links.find((candidate) => candidate.id === input.link);
       const origin = link ? resolve(link) : null;
@@ -976,8 +989,9 @@ export function buildLtx23I2VPrompt(workflow: UiWorkflow, input: Ltx23I2VInput) 
     node.inputs[field] = value;
   };
   setByTitle("Prompt", "value", input.positivePrompt);
-  setByTitle("Width", "value", Math.round(input.width / 32) * 32);
-  setByTitle("Height", "value", Math.round(input.height / 32) * 32);
+  const size = resolveGenerationResolution("multiple_32", input.width, input.height).effective;
+  setByTitle("Width", "value", size.width);
+  setByTitle("Height", "value", size.height);
   setByTitle("Duration", "value", Math.round(input.durationSeconds));
   setByTitle("Frame Rate", "value", Math.round(input.fps));
   const load = Object.values(prompt).find((node) => node.class_type === "LoadImage");

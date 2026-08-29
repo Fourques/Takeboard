@@ -1,5 +1,12 @@
+import { createHash } from "node:crypto";
+import { readdir } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import type { ComfyPrompt } from "@takeboard/executor-comfy";
 import type { FastifyInstance } from "fastify";
+import { ProjectStore } from "./storage/project-store.js";
 import {
+  fetchComfyObjectInfo,
+  inspectWorkflowDocument,
   inspectWorkflowForBinding,
   isWorkflowPath,
   preflightPromptAgainstObjectInfo,
@@ -13,6 +20,7 @@ import {
   workflowHash,
   writeWorkflowBinding,
 } from "./workflow-bindings.js";
+import { buildWorkflowDiagnostic } from "./workflow-diagnostics.js";
 
 type WorkflowNode = {
   type?: string;
@@ -312,28 +320,228 @@ async function fetchWorkflow(comfyUrl: string, path: string) {
   return (await response.json()) as WorkflowJson;
 }
 
-export function registerWorkflowRoutes(app: FastifyInstance, comfyUrl: string, editorUrl: string) {
+function detectedOutputMediaType(
+  capability: Capability,
+  prompt: ComfyPrompt,
+  binding?: WorkflowBinding | null,
+): WorkflowOutputMediaType {
+  if (binding?.outputMediaType) return binding.outputMediaType;
+  if (["text_to_image", "image_to_image"].includes(capability)) return "image";
+  if (
+    ["text_to_video", "image_to_video", "first_last_video", "reference_video"].includes(capability)
+  ) {
+    return "video";
+  }
+  return Object.values(prompt).some((node) => /save.*image|previewimage/i.test(node.class_type))
+    ? "image"
+    : "video";
+}
+
+type WorkflowReference = {
+  projectKey: string;
+  projectTitle: string;
+  location: "active" | "trash";
+  shotIds: string[];
+  shotLabels: string[];
+  runCount: number;
+};
+
+function importedWorkflowPath(path: unknown): path is string {
+  return (
+    typeof path === "string" &&
+    isWorkflowPath(path) &&
+    path.startsWith("TakeBoard/") &&
+    !path.startsWith("TakeBoard/.archive/")
+  );
+}
+
+function workflowArchivePath(path: string) {
+  return `TakeBoard/.archive/${Date.now()}-${Buffer.from(path).toString("base64url")}.json`;
+}
+
+function archivedWorkflow(path: string) {
+  const match = /^TakeBoard\/\.archive\/(\d+)-([A-Za-z0-9_-]+)\.json$/.exec(path);
+  if (!match) return null;
+  try {
+    const timestamp = Number(match[1]);
+    if (!Number.isSafeInteger(timestamp) || timestamp < 0) return null;
+    const archivedAt = new Date(timestamp);
+    if (Number.isNaN(archivedAt.getTime())) return null;
+    const originalPath = Buffer.from(match[2] ?? "", "base64url").toString("utf8");
+    if (!importedWorkflowPath(originalPath)) return null;
+    return {
+      archivePath: path,
+      originalPath,
+      name: displayName(originalPath),
+      archivedAt: archivedAt.toISOString(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function listComfyWorkflowPaths(comfyUrl: string) {
+  const response = await fetch(`${comfyUrl}/api/userdata?dir=workflows&recurse=true`, {
+    signal: AbortSignal.timeout(5_000),
+  });
+  if (!response.ok) throw new Error(`ComfyUI returned ${response.status}`);
+  const listed = await response.json();
+  if (!Array.isArray(listed)) throw new Error("ComfyUI 工作流目录响应无效");
+  return listed.filter(isWorkflowPath);
+}
+
+async function moveComfyWorkflow(comfyUrl: string, source: string, destination: string) {
+  const response = await fetch(
+    `${comfyUrl}/api/userdata/${encodeURIComponent(`workflows/${source}`)}/move/${encodeURIComponent(`workflows/${destination}`)}?overwrite=false`,
+    { method: "POST", signal: AbortSignal.timeout(5_000) },
+  );
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`ComfyUI 移动工作流失败（${response.status}）${detail ? `：${detail}` : ""}`);
+  }
+}
+
+async function workflowReferences(projectsRoot: string, path: string) {
+  const root = resolve(projectsRoot);
+  const locations: Array<{ directory: string; location: "active" | "trash" }> = [
+    { directory: root, location: "active" },
+    { directory: join(root, ".trash"), location: "trash" },
+  ];
+  const references: WorkflowReference[] = [];
+  for (const source of locations) {
+    const entries = await readdir(source.directory, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (
+        !entry.isDirectory() ||
+        (source.location === "active" && !entry.name.endsWith(".takeboard"))
+      ) {
+        continue;
+      }
+      const store = ProjectStore.openExisting(join(source.directory, entry.name));
+      if (!store) continue;
+      try {
+        const current = store.loadCurrent();
+        if (!current) continue;
+        const shots = current.snapshot.shots.filter((shot) => shot.workflowPath === path);
+        const runs = current.snapshot.runs.filter((run) => run.parameters.recipePath === path);
+        const shotIds = [
+          ...new Set([...shots.map((shot) => shot.id), ...runs.map((run) => run.shotId)]),
+        ];
+        if (shotIds.length === 0 && runs.length === 0) continue;
+        references.push({
+          projectKey: entry.name,
+          projectTitle: current.snapshot.project.title,
+          location: source.location,
+          shotIds,
+          shotLabels: shotIds.map(
+            (shotId) => current.snapshot.shots.find((shot) => shot.id === shotId)?.label ?? shotId,
+          ),
+          runCount: runs.length,
+        });
+      } finally {
+        store.close();
+      }
+    }
+  }
+  return references;
+}
+
+function workflowArchiveToken(path: string, hash: string, references: WorkflowReference[]) {
+  return createHash("sha256")
+    .update(JSON.stringify({ purpose: "takeboard-workflow-archive-v1", path, hash, references }))
+    .digest("hex");
+}
+
+export function registerWorkflowRoutes(
+  app: FastifyInstance,
+  comfyUrl: string,
+  editorUrl: string,
+  projectsRoot: string,
+) {
+  const inspectPath = async (path: string) => {
+    const [workflow, current, objectInfo] = await Promise.all([
+      fetchWorkflow(comfyUrl, path),
+      readWorkflowBinding(comfyUrl, path),
+      fetchComfyObjectInfo(comfyUrl),
+    ]);
+    const inventory = installedModels(objectInfo);
+    const summary = workflowSummary(path, workflow, editorUrl, inventory, current);
+    const inspected = inspectWorkflowDocument(workflow, objectInfo, summary.workflowHash);
+    const outputMediaType = detectedOutputMediaType(summary.capability, inspected.prompt, current);
+    const suggested = suggestedBinding(
+      path,
+      inspected.workflowHash,
+      summary.capability,
+      outputMediaType,
+      inspected.candidates,
+    );
+    const diagnostic = buildWorkflowDiagnostic({
+      path,
+      workflowHash: inspected.workflowHash,
+      prompt: inspected.prompt,
+      objectInfo,
+      capability: summary.capability,
+      outputMediaType,
+      bindingStatus: summary.bindingStatus,
+      binding: current,
+      models: summary.models,
+      inventory,
+    });
+    return {
+      ...summary,
+      status: summary.bindingStatus,
+      diagnostic,
+      candidates: inspected.candidates,
+      binding: current ?? suggested,
+      suggested,
+      conversionIssues: preflightPromptAgainstObjectInfo(inspected.prompt, objectInfo),
+      warning:
+        summary.bindingStatus === "built_in"
+          ? undefined
+          : "启用后会在当前 ComfyUI 执行此工作流及其中的第三方节点；请只信任你了解来源的工作流。",
+    };
+  };
+
   app.get("/api/workflows", async (_request, reply) => {
     try {
-      const response = await fetch(`${comfyUrl}/api/userdata?dir=workflows&recurse=true`, {
-        signal: AbortSignal.timeout(5_000),
+      const paths = (await listComfyWorkflowPaths(comfyUrl)).filter(
+        (path) => !path.startsWith("TakeBoard/.archive/"),
+      );
+      let objectInfoError: string | null = null;
+      const objectInfo = await fetchComfyObjectInfo(comfyUrl).catch((error: unknown) => {
+        objectInfoError = error instanceof Error ? error.message : "ComfyUI 节点目录不可用";
+        return null;
       });
-      if (!response.ok) throw new Error(`ComfyUI returned ${response.status}`);
-      const listed = await response.json();
-      if (!Array.isArray(listed)) throw new Error("ComfyUI 工作流目录响应无效");
-      const paths = listed.filter(isWorkflowPath);
-      const inventory = await fetch(`${comfyUrl}/object_info`, {
-        signal: AbortSignal.timeout(5_000),
-      })
-        .then(async (result) => (result.ok ? installedModels(await result.json()) : null))
-        .catch(() => null);
+      const inventory = objectInfo ? installedModels(objectInfo) : null;
       const detected = await Promise.allSettled(
         paths.map(async (path) => {
           const [workflow, binding] = await Promise.all([
             fetchWorkflow(comfyUrl, path),
             readWorkflowBinding(comfyUrl, path),
           ]);
-          return workflowSummary(path, workflow, editorUrl, inventory, binding);
+          const summary = workflowSummary(path, workflow, editorUrl, inventory, binding);
+          if (!objectInfo) return summary;
+          const inspected = inspectWorkflowDocument(workflow, objectInfo, summary.workflowHash);
+          const outputMediaType = detectedOutputMediaType(
+            summary.capability,
+            inspected.prompt,
+            binding,
+          );
+          return {
+            ...summary,
+            diagnostic: buildWorkflowDiagnostic({
+              path,
+              workflowHash: inspected.workflowHash,
+              prompt: inspected.prompt,
+              objectInfo,
+              capability: summary.capability,
+              outputMediaType,
+              bindingStatus: summary.bindingStatus,
+              binding,
+              models: summary.models,
+              inventory,
+            }),
+          };
         }),
       );
       const workflows = detected.flatMap((result) =>
@@ -346,12 +554,54 @@ export function registerWorkflowRoutes(app: FastifyInstance, comfyUrl: string, e
             ]
           : [],
       );
-      return { editorUrl, workflows, warnings };
+      const diagnostics = [
+        ...(objectInfoError
+          ? [
+              {
+                path: "*",
+                status: "unknown" as const,
+                code: "COMFY_OBJECT_INFO_UNAVAILABLE",
+                message: objectInfoError,
+              },
+            ]
+          : []),
+        ...detected.flatMap((result, index) =>
+          result.status === "rejected"
+            ? [
+                {
+                  path: paths[index],
+                  status: "blocked" as const,
+                  code: "WORKFLOW_INSPECTION_FAILED",
+                  message: result.reason instanceof Error ? result.reason.message : "解析失败",
+                },
+              ]
+            : [],
+        ),
+      ];
+      return { editorUrl, workflows, warnings, diagnostics };
     } catch (error) {
       return await reply.code(503).send({
         editorUrl,
         workflows: [],
         error: error instanceof Error ? error.message : "无法检测 ComfyUI 工作流",
+      });
+    }
+  });
+
+  app.get<{ Querystring: { path?: string } }>("/api/workflows/inspect", async (request, reply) => {
+    const path = request.query.path;
+    if (!isWorkflowPath(path)) return await reply.code(400).send({ error: "工作流路径无效" });
+    try {
+      return await inspectPath(path);
+    } catch (error) {
+      return await reply.code(422).send({
+        error: error instanceof Error ? error.message : "无法检查该工作流",
+        diagnostic: {
+          path,
+          status: "blocked",
+          code: "WORKFLOW_INSPECTION_FAILED",
+          message: error instanceof Error ? error.message : "无法转换工作流",
+        },
       });
     }
   });
@@ -373,45 +623,22 @@ export function registerWorkflowRoutes(app: FastifyInstance, comfyUrl: string, e
   app.get<{ Querystring: { path?: string } }>("/api/workflows/binding", async (request, reply) => {
     const path = request.query.path;
     if (!isWorkflowPath(path)) return await reply.code(400).send({ error: "工作流路径无效" });
-    if (isNativeWorkflow(path)) {
-      return { path, status: "built_in", message: "该工作流由 TakeBoard 内置适配器执行" };
-    }
     try {
-      const inspected = await inspectWorkflowForBinding(comfyUrl, path);
-      const workflow = inspected.workflow as WorkflowJson;
-      const nodes = allNodes(workflow);
-      const capability = detectCapability(path, nodes);
-      const hasImageOutput = Object.values(inspected.prompt).some((node) =>
-        /save.*image|previewimage/i.test(node.class_type),
-      );
-      const outputMediaType: WorkflowOutputMediaType = hasImageOutput ? "image" : "video";
-      const current = await readWorkflowBinding(comfyUrl, path);
-      const suggested = suggestedBinding(
-        path,
-        inspected.workflowHash,
-        capability,
-        outputMediaType,
-        inspected.candidates,
-      );
-      const conversionIssues = preflightPromptAgainstObjectInfo(
-        inspected.prompt,
-        inspected.objectInfo,
-      );
+      const inspected = await inspectPath(path);
       return {
         path,
-        status: current
-          ? current.workflowHash === inspected.workflowHash
-            ? "ready"
-            : "stale"
-          : "needs_binding",
+        status: inspected.bindingStatus,
         workflowHash: inspected.workflowHash,
-        nodeCount: Object.keys(inspected.prompt).length,
+        nodeCount: inspected.nodeCount,
         candidates: inspected.candidates,
-        binding: current ?? suggested,
-        suggested,
-        conversionIssues,
-        warning:
-          "启用后会在当前 ComfyUI 执行此工作流及其中的第三方节点；请只信任你了解来源的工作流。",
+        binding: inspected.binding,
+        suggested: inspected.suggested,
+        conversionIssues: inspected.conversionIssues,
+        warning: inspected.warning,
+        diagnostic: inspected.diagnostic,
+        ...(inspected.bindingStatus === "built_in"
+          ? { message: "该工作流由 TakeBoard 内置适配器执行" }
+          : {}),
       };
     } catch (error) {
       return await reply.code(422).send({
@@ -480,6 +707,7 @@ export function registerWorkflowRoutes(app: FastifyInstance, comfyUrl: string, e
           ["negative_prompt", targets(parameterInput.negative_prompt)],
           ["seed", targets(parameterInput.seed)],
           ["steps", targets(parameterInput.steps)],
+          ["denoise", targets(parameterInput.denoise)],
           ["width", targets(parameterInput.width)],
           ["height", targets(parameterInput.height)],
           ["duration", targets(parameterInput.duration)],
@@ -555,5 +783,102 @@ export function registerWorkflowRoutes(app: FastifyInstance, comfyUrl: string, e
     return await reply
       .code(201)
       .send(workflowSummary(relativePath, workflow, editorUrl, null, null));
+  });
+
+  app.get<{ Querystring: { path?: string } }>(
+    "/api/workflows/archive-preview",
+    async (request, reply) => {
+      const path = request.query.path;
+      if (!importedWorkflowPath(path)) {
+        return await reply.code(400).send({ error: "只能归档从 TakeBoard 导入的工作流" });
+      }
+      try {
+        const workflow = await fetchWorkflow(comfyUrl, path);
+        const hash = workflowHash(workflow);
+        const references = await workflowReferences(projectsRoot, path);
+        return {
+          path,
+          name: displayName(path),
+          workflowHash: hash,
+          references,
+          blocked: references.length > 0,
+          confirmationToken: workflowArchiveToken(path, hash, references),
+        };
+      } catch (error) {
+        return await reply.code(404).send({
+          error: error instanceof Error ? error.message : "工作流不存在",
+        });
+      }
+    },
+  );
+
+  app.post("/api/workflows/archive", async (request, reply) => {
+    const body =
+      request.body && typeof request.body === "object"
+        ? (request.body as { path?: unknown; confirmationToken?: unknown })
+        : {};
+    if (!importedWorkflowPath(body.path) || typeof body.confirmationToken !== "string") {
+      return await reply.code(400).send({ error: "归档请求无效" });
+    }
+    try {
+      const workflow = await fetchWorkflow(comfyUrl, body.path);
+      const hash = workflowHash(workflow);
+      const references = await workflowReferences(projectsRoot, body.path);
+      if (references.length > 0) {
+        return await reply.code(409).send({
+          error: "该工作流仍被项目引用，不能归档",
+          references,
+        });
+      }
+      if (body.confirmationToken !== workflowArchiveToken(body.path, hash, references)) {
+        return await reply.code(409).send({ error: "工作流或项目引用已经变化，请重新检查" });
+      }
+      const archivePath = workflowArchivePath(body.path);
+      await moveComfyWorkflow(comfyUrl, body.path, archivePath);
+      return { archived: true as const, archivePath, originalPath: body.path };
+    } catch (error) {
+      return await reply.code(502).send({
+        error: error instanceof Error ? error.message : "工作流归档失败",
+      });
+    }
+  });
+
+  app.get("/api/workflows/archives", async (_request, reply) => {
+    try {
+      const archives = (await listComfyWorkflowPaths(comfyUrl))
+        .flatMap((path) => archivedWorkflow(path) ?? [])
+        .sort((left, right) => right.archivedAt.localeCompare(left.archivedAt));
+      return { archives };
+    } catch (error) {
+      return await reply.code(503).send({
+        archives: [],
+        error: error instanceof Error ? error.message : "无法读取工作流归档",
+      });
+    }
+  });
+
+  app.post("/api/workflows/archives/restore", async (request, reply) => {
+    const body =
+      request.body && typeof request.body === "object"
+        ? (request.body as { archivePath?: unknown })
+        : {};
+    const archived =
+      typeof body.archivePath === "string" ? archivedWorkflow(body.archivePath) : null;
+    if (!archived) return await reply.code(400).send({ error: "归档路径无效" });
+    try {
+      const paths = await listComfyWorkflowPaths(comfyUrl);
+      if (!paths.includes(archived.archivePath)) {
+        return await reply.code(404).send({ error: "归档不存在" });
+      }
+      if (paths.includes(archived.originalPath)) {
+        return await reply.code(409).send({ error: "原位置已有同名工作流，请先处理名称冲突" });
+      }
+      await moveComfyWorkflow(comfyUrl, archived.archivePath, archived.originalPath);
+      return { restored: true as const, path: archived.originalPath };
+    } catch (error) {
+      return await reply.code(502).send({
+        error: error instanceof Error ? error.message : "工作流恢复失败",
+      });
+    }
   });
 }

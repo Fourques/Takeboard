@@ -1,7 +1,8 @@
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { schemaVersion } from "@takeboard/contracts";
+import BetterSqlite3 from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 import { ProjectService } from "../src/project-service.js";
 import { ProjectStore } from "../src/storage/project-store.js";
@@ -67,6 +68,7 @@ describe("ProjectStore", () => {
     expect((await readdir(projectDirectory)).sort()).toEqual(
       [
         "assets",
+        "backups",
         "exports",
         "logs",
         "project.takeboard.json",
@@ -91,6 +93,142 @@ describe("ProjectStore", () => {
     const exported = await readFile(join(projectDirectory, "project.takeboard.json"), "utf8");
     expect(exported).not.toContain("should-never-be-exported");
     expect(exported).not.toContain(projectDirectory);
+  });
+
+  it("upgrades an existing project database with command history without rebuilding it", async () => {
+    const root = await mkdtemp(join(tmpdir(), "takeboard-project-migration-"));
+    temporaryDirectories.push(root);
+    const projectDirectory = join(root, "existing.takeboard");
+    await mkdir(projectDirectory, { recursive: true });
+    const client = new BetterSqlite3(join(projectDirectory, "takeboard.db"));
+    client.exec(`
+      CREATE TABLE schema_migrations (
+        id TEXT PRIMARY KEY NOT NULL,
+        applied_at TEXT NOT NULL
+      );
+      INSERT INTO schema_migrations (id, applied_at) VALUES ('001_project_state', '${now}');
+      CREATE TABLE project_state (
+        project_id TEXT PRIMARY KEY NOT NULL,
+        schema_version TEXT NOT NULL,
+        snapshot_json TEXT NOT NULL,
+        revision INTEGER NOT NULL CHECK (revision > 0),
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE event_log (
+        sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX event_log_project_sequence_idx ON event_log(project_id, sequence);
+    `);
+    client
+      .prepare(
+        "INSERT INTO project_state (project_id, schema_version, snapshot_json, revision, updated_at) VALUES (?, ?, ?, ?, ?)",
+      )
+      .run(projectId, schemaVersion, `${JSON.stringify(snapshot())}\n`, 7, now);
+    client.close();
+
+    const store = ProjectStore.openExisting(projectDirectory);
+    expect(store).not.toBeNull();
+    expect(store?.loadCurrent()).toMatchObject({ revision: 7 });
+    expect(store?.listCommands(projectId)).toEqual([]);
+    store?.close();
+
+    const migrated = new BetterSqlite3(join(projectDirectory, "takeboard.db"));
+    expect(
+      migrated.prepare("SELECT 1 FROM schema_migrations WHERE id = '002_command_log'").get(),
+    ).toBeTruthy();
+    expect(
+      migrated
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'command_log'")
+        .get(),
+    ).toBeTruthy();
+    migrated.close();
+
+    const migrationBackups = await readdir(join(projectDirectory, "backups", "migrations"));
+    expect(migrationBackups).toHaveLength(1);
+    const backupName = migrationBackups[0];
+    if (!backupName) throw new Error("Migration backup was not created");
+    const backupDirectory = join(projectDirectory, "backups", "migrations", backupName);
+    const backupMetadata = JSON.parse(
+      await readFile(join(backupDirectory, "migration-backup.json"), "utf8"),
+    );
+    expect(backupMetadata).toMatchObject({
+      format: "takeboard.migration-backup",
+      version: 1,
+      pendingMigrations: ["002_command_log"],
+    });
+    const backupDatabase = new BetterSqlite3(join(backupDirectory, "takeboard.db"), {
+      readonly: true,
+    });
+    expect(
+      backupDatabase
+        .prepare("SELECT revision FROM project_state WHERE project_id = ?")
+        .pluck()
+        .get(projectId),
+    ).toBe(7);
+    expect(
+      backupDatabase
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'command_log'")
+        .get(),
+    ).toBeUndefined();
+    backupDatabase.close();
+  });
+
+  it("restores the pre-upgrade database when a migration cannot be applied", async () => {
+    const root = await mkdtemp(join(tmpdir(), "takeboard-project-migration-rollback-"));
+    temporaryDirectories.push(root);
+    const projectDirectory = join(root, "broken-upgrade.takeboard");
+    await mkdir(projectDirectory, { recursive: true });
+    const client = new BetterSqlite3(join(projectDirectory, "takeboard.db"));
+    client.exec(`
+      CREATE TABLE schema_migrations (
+        id TEXT PRIMARY KEY NOT NULL,
+        applied_at TEXT NOT NULL
+      );
+      INSERT INTO schema_migrations (id, applied_at) VALUES ('001_project_state', '${now}');
+      CREATE TABLE project_state (
+        project_id TEXT PRIMARY KEY NOT NULL,
+        schema_version TEXT NOT NULL,
+        snapshot_json TEXT NOT NULL,
+        revision INTEGER NOT NULL CHECK (revision > 0),
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE event_log (
+        sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE command_log (legacy_collision TEXT);
+    `);
+    client
+      .prepare(
+        "INSERT INTO project_state (project_id, schema_version, snapshot_json, revision, updated_at) VALUES (?, ?, ?, ?, ?)",
+      )
+      .run(projectId, schemaVersion, `${JSON.stringify(snapshot())}\n`, 11, now);
+    client.close();
+
+    expect(() => ProjectStore.openExisting(projectDirectory)).toThrow(/已从.+自动恢复/);
+
+    const restored = new BetterSqlite3(join(projectDirectory, "takeboard.db"), { readonly: true });
+    expect(
+      restored
+        .prepare("SELECT revision FROM project_state WHERE project_id = ?")
+        .pluck()
+        .get(projectId),
+    ).toBe(11);
+    expect(
+      restored.prepare("SELECT 1 FROM schema_migrations WHERE id = '002_command_log'").get(),
+    ).toBeUndefined();
+    expect(restored.prepare("PRAGMA table_info(command_log)").all()).toEqual([
+      expect.objectContaining({ name: "legacy_collision" }),
+    ]);
+    restored.close();
+    expect(await readdir(join(projectDirectory, "backups", "migrations"))).toHaveLength(1);
   });
 });
 

@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   aspectRatioSchema,
   idSchema,
+  isoTimestampSchema,
   relativeStoragePathSchema,
   schemaVersionSchema,
   sha256Schema,
@@ -61,6 +62,10 @@ export const assetSchema = timestampsSchema.extend({
   proxyPath: relativeStoragePathSchema.nullable().default(null),
   width: z.number().int().positive().nullable().default(null),
   height: z.number().int().positive().nullable().default(null),
+  durationSeconds: z.number().positive().nullable().optional(),
+  frameRate: z.number().positive().nullable().optional(),
+  metadataInspectedAt: isoTimestampSchema.nullable().optional(),
+  metadataInspectionError: z.string().max(500).nullable().optional(),
   libraryKind: z.enum(["character", "location", "prop"]).nullable().optional(),
   customTags: z.array(z.string().trim().min(1).max(40)).max(24).default([]),
 });

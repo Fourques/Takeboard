@@ -41,6 +41,18 @@ function videoUpload() {
   };
 }
 
+function projectPackageUpload(bytes: Buffer) {
+  const boundary = "----takeboard-project-package-boundary";
+  const prefix = Buffer.from(
+    `--${boundary}\r\nContent-Disposition: form-data; name="projectPackage"; filename="project.takeboard.tgz"\r\nContent-Type: application/gzip\r\n\r\n`,
+  );
+  const suffix = Buffer.from(`\r\n--${boundary}--\r\n`);
+  return {
+    payload: Buffer.concat([prefix, bytes, suffix]),
+    headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+  };
+}
+
 afterEach(async () => {
   vi.unstubAllGlobals();
   await Promise.all(cleanup.splice(0).map((close) => close()));
@@ -70,6 +82,9 @@ describe("TakeBoard project API", () => {
     if (!store || !current) throw new Error("Project fixture could not be opened");
     const timestamp = toIsoTimestamp();
     const shotId = shotResponse.json().shotId as string;
+    const shot = current.snapshot.shots.find((item) => item.id === shotId);
+    if (!shot) throw new Error("Shot fixture could not be found");
+    shot.status = "generating";
     current.snapshot.runs.push({
       id: createTakeBoardId("run"),
       shotId,
@@ -100,6 +115,12 @@ describe("TakeBoard project API", () => {
 
     const catalog = await app.inject({ method: "GET", url: "/api/projects" });
     expect(catalog.json().projects[0].activeRunCount).toBe(1);
+    const blockedExport = await app.inject({
+      method: "GET",
+      url: `/api/projects/${key}/export`,
+    });
+    expect(blockedExport.statusCode, blockedExport.body).toBe(409);
+    expect(blockedExport.json().activeRunIds).toHaveLength(1);
     const deleted = await app.inject({ method: "DELETE", url: `/api/projects/${key}` });
 
     expect(deleted.statusCode, deleted.body).toBe(200);
@@ -109,6 +130,18 @@ describe("TakeBoard project API", () => {
       expect.objectContaining({ method: "POST" }),
     );
     expect(await readdir(join(root, ".trash"))).toHaveLength(1);
+    const trash = await app.inject({ method: "GET", url: "/api/projects/trash" });
+    const trashKey = trash.json().projects[0].trashKey as string;
+    const restored = await app.inject({
+      method: "POST",
+      url: `/api/projects/trash/${trashKey}/restore`,
+    });
+    expect(restored.statusCode, restored.body).toBe(200);
+    const reopened = ProjectStore.openExisting(join(root, key));
+    const restoredSnapshot = reopened?.loadCurrent()?.snapshot;
+    reopened?.close();
+    expect(restoredSnapshot?.runs[0]?.status).toBe("cancelled");
+    expect(restoredSnapshot?.shots.find((item) => item.id === shotId)?.status).toBe("draft");
   });
 
   it("keeps a project when ComfyUI cannot confirm cancellation", async () => {
@@ -728,5 +761,79 @@ describe("TakeBoard project API", () => {
     expect(first.statusCode, first.body).toBe(201);
     expect(second.statusCode, second.body).toBe(201);
     expect(first.json().key).not.toBe(second.json().key);
+  });
+
+  it("exports and imports a verified project package through the public API", async () => {
+    const sourceRoot = await mkdtemp(join(tmpdir(), "takeboard-project-export-route-"));
+    const destinationRoot = await mkdtemp(join(tmpdir(), "takeboard-project-import-route-"));
+    cleanup.push(() => rm(sourceRoot, { recursive: true, force: true }));
+    cleanup.push(() => rm(destinationRoot, { recursive: true, force: true }));
+    const sourceApp = buildApp({ projectsRoot: sourceRoot, webRoot: null });
+    const destinationApp = buildApp({ projectsRoot: destinationRoot, webRoot: null });
+    cleanup.push(() => sourceApp.close());
+    cleanup.push(() => destinationApp.close());
+
+    const created = await sourceApp.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: { title: "可迁移项目", aspectRatio: "16:9", firstShotIntent: "穿过雾港" },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const key = created.json().key as string;
+    const exported = await sourceApp.inject({
+      method: "GET",
+      url: `/api/projects/${key}/export`,
+    });
+    expect(exported.statusCode, exported.body).toBe(200);
+    expect(exported.headers["content-type"]).toContain("application/gzip");
+    expect(exported.headers["content-disposition"]).toContain("takeboard-project.tgz");
+
+    const imported = await destinationApp.inject({
+      method: "POST",
+      url: "/api/projects/import",
+      ...projectPackageUpload(exported.rawPayload),
+    });
+    expect(imported.statusCode, imported.body).toBe(201);
+    expect(imported.json()).toMatchObject({ imported: true, title: "可迁移项目" });
+    const reopened = await destinationApp.inject({
+      method: "GET",
+      url: `/api/projects/${imported.json().key}`,
+    });
+    expect(reopened.statusCode, reopened.body).toBe(200);
+    expect(reopened.json().snapshot).toMatchObject({
+      project: { id: created.json().snapshot.project.id, title: "可迁移项目" },
+      shots: [{ intent: "穿过雾港" }],
+    });
+
+    const duplicate = await destinationApp.inject({
+      method: "POST",
+      url: "/api/projects/import",
+      ...projectPackageUpload(exported.rawPayload),
+    });
+    expect(duplicate.statusCode, duplicate.body).toBe(409);
+    expect(duplicate.json().error).toContain("已经存在");
+
+    const deletedSource = await sourceApp.inject({
+      method: "DELETE",
+      url: `/api/projects/${key}`,
+    });
+    expect(deletedSource.statusCode, deletedSource.body).toBe(200);
+    const reimportedSource = await sourceApp.inject({
+      method: "POST",
+      url: "/api/projects/import",
+      ...projectPackageUpload(exported.rawPayload),
+    });
+    expect(reimportedSource.statusCode, reimportedSource.body).toBe(201);
+    const trashKey = (await sourceApp.inject({ method: "GET", url: "/api/projects/trash" })).json()
+      .projects[0].trashKey as string;
+    const ambiguousRestore = await sourceApp.inject({
+      method: "POST",
+      url: `/api/projects/trash/${trashKey}/restore`,
+    });
+    expect(ambiguousRestore.statusCode, ambiguousRestore.body).toBe(409);
+    expect(ambiguousRestore.json()).toMatchObject({
+      duplicateKey: reimportedSource.json().key,
+      projectId: created.json().snapshot.project.id,
+    });
   });
 });

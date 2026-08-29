@@ -1,16 +1,114 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, renameSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { type ProjectSnapshot, projectSnapshotSchema } from "@takeboard/contracts";
+import {
+  type CommandAuditEntry,
+  type CommandEffect,
+  type ProjectSnapshot,
+  projectSnapshotSchema,
+} from "@takeboard/contracts";
 import BetterSqlite3 from "better-sqlite3";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import { migrateDatabase } from "./migrations.js";
-import { eventLogTable, projectStateTable } from "./schema.js";
+import { migrateDatabase, pendingDatabaseMigrations } from "./migrations.js";
+import { commandLogTable, eventLogTable, projectStateTable } from "./schema.js";
 
 const databaseFileName = "takeboard.db";
 const snapshotFileName = "project.takeboard.json";
+
+type MigrationBackup = {
+  directory: string;
+  databasePath: string;
+};
+
+function migrationBackup(
+  client: BetterSqlite3.Database,
+  projectDirectory: string,
+  pendingMigrations: string[],
+): MigrationBackup {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const directory = join(
+    projectDirectory,
+    "backups",
+    "migrations",
+    `${timestamp}-${pendingMigrations.join("_")}`,
+  );
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  const backupDatabasePath = join(directory, databaseFileName);
+  client.prepare("VACUUM INTO ?").run(backupDatabasePath);
+  const snapshotPath = join(projectDirectory, snapshotFileName);
+  if (existsSync(snapshotPath)) copyFileSync(snapshotPath, join(directory, snapshotFileName));
+  writeFileSync(
+    join(directory, "migration-backup.json"),
+    `${JSON.stringify(
+      {
+        format: "takeboard.migration-backup",
+        version: 1,
+        createdAt: new Date().toISOString(),
+        pendingMigrations,
+        databaseFile: databaseFileName,
+        snapshotFile: existsSync(snapshotPath) ? snapshotFileName : null,
+      },
+      null,
+      2,
+    )}\n`,
+    { encoding: "utf8", mode: 0o600 },
+  );
+  return { directory, databasePath: backupDatabasePath };
+}
+
+function restoreMigrationBackup(backup: MigrationBackup, databasePath: string) {
+  for (const suffix of ["-wal", "-shm", "-journal"]) {
+    try {
+      unlinkSync(`${databasePath}${suffix}`);
+    } catch {
+      // A journal is optional and normally absent after the database closes.
+    }
+  }
+  copyFileSync(backup.databasePath, databasePath);
+}
+
+export type StoredProjectCommand = {
+  id: string;
+  projectId: string;
+  commandType: string;
+  requestId: string | null;
+  request: unknown;
+  inverse: unknown | null;
+  result: Record<string, unknown>;
+  effects: CommandEffect[];
+  summary: string;
+  status: "applied" | "undone";
+  appliedRevision: number;
+  createdAt: string;
+  undoneAt: string | null;
+  undoCommandId: string | null;
+};
+
+type ProjectStoreEvent = {
+  type: string;
+  payload?: Record<string, unknown>;
+  command?: {
+    id: string;
+    commandType: string;
+    requestId: string | null;
+    request: unknown;
+    inverse: unknown | null;
+    result: Record<string, unknown>;
+    effects: CommandEffect[];
+    summary: string;
+  };
+  undoesCommandId?: string;
+};
 
 export class ProjectStore {
   readonly projectDirectory: string;
@@ -19,8 +117,31 @@ export class ProjectStore {
 
   private constructor(projectDirectory: string) {
     this.projectDirectory = resolve(projectDirectory);
-    this.client = new BetterSqlite3(join(this.projectDirectory, databaseFileName));
-    migrateDatabase(this.client);
+    const databasePath = join(this.projectDirectory, databaseFileName);
+    const existingDatabase = existsSync(databasePath) && statSync(databasePath).size > 0;
+    const client = new BetterSqlite3(databasePath);
+    const pendingMigrations = existingDatabase ? pendingDatabaseMigrations(client) : [];
+    const backup = pendingMigrations.length
+      ? migrationBackup(client, this.projectDirectory, pendingMigrations)
+      : null;
+    try {
+      migrateDatabase(client);
+    } catch (error) {
+      client.close();
+      if (backup) {
+        try {
+          restoreMigrationBackup(backup, databasePath);
+        } catch (restoreError) {
+          throw new AggregateError(
+            [error, restoreError],
+            `数据库升级失败，且无法从 ${backup.directory} 自动恢复`,
+          );
+        }
+        throw new Error(`数据库升级失败，已从 ${backup.directory} 自动恢复`, { cause: error });
+      }
+      throw error;
+    }
+    this.client = client;
     this.database = drizzle(this.client);
   }
 
@@ -36,6 +157,7 @@ export class ProjectStore {
         join(resolvedDirectory, "recipes"),
         join(resolvedDirectory, "logs"),
         join(resolvedDirectory, "exports"),
+        join(resolvedDirectory, "backups"),
         join(resolvedDirectory, "trash"),
       ].map((directory) => mkdir(directory, { recursive: true })),
     );
@@ -48,10 +170,7 @@ export class ProjectStore {
     return new ProjectStore(resolvedDirectory);
   }
 
-  async save(
-    untrustedSnapshot: unknown,
-    event: { type: string; payload?: Record<string, unknown> } = { type: "project.saved" },
-  ) {
+  async save(untrustedSnapshot: unknown, event: ProjectStoreEvent = { type: "project.saved" }) {
     const snapshot = projectSnapshotSchema.parse(untrustedSnapshot);
     const snapshotJson = `${JSON.stringify(snapshot, null, 2)}\n`;
 
@@ -104,6 +223,48 @@ export class ProjectStore {
             createdAt: snapshot.project.updatedAt,
           })
           .run();
+
+        if (event.command) {
+          transaction
+            .insert(commandLogTable)
+            .values({
+              id: event.command.id,
+              projectId: snapshot.project.id,
+              commandType: event.command.commandType,
+              requestId: event.command.requestId,
+              requestJson: JSON.stringify(event.command.request),
+              inverseJson:
+                event.command.inverse === null ? null : JSON.stringify(event.command.inverse),
+              resultJson: JSON.stringify(event.command.result),
+              effectsJson: JSON.stringify(event.command.effects),
+              summary: event.command.summary,
+              status: "applied",
+              appliedRevision: nextRevision,
+              createdAt: snapshot.project.updatedAt,
+              undoneAt: null,
+              undoCommandId: null,
+            })
+            .run();
+        }
+
+        if (event.undoesCommandId) {
+          const changed = transaction
+            .update(commandLogTable)
+            .set({
+              status: "undone",
+              undoneAt: snapshot.project.updatedAt,
+              undoCommandId: event.command?.id ?? null,
+            })
+            .where(
+              and(
+                eq(commandLogTable.projectId, snapshot.project.id),
+                eq(commandLogTable.id, event.undoesCommandId),
+                eq(commandLogTable.status, "applied"),
+              ),
+            )
+            .run();
+          if (changed.changes !== 1) throw new Error("Command is no longer available to undo");
+        }
 
         // Publish the portable snapshot before SQLite commits. A rename failure now
         // aborts and rolls back the database transaction instead of leaving SQLite
@@ -174,6 +335,51 @@ export class ProjectStore {
       .all().length;
   }
 
+  findCommandByRequestId(projectId: string, requestId: string) {
+    const row = this.database
+      .select()
+      .from(commandLogTable)
+      .where(
+        and(eq(commandLogTable.projectId, projectId), eq(commandLogTable.requestId, requestId)),
+      )
+      .get();
+    return row ? this.parseCommandRow(row) : null;
+  }
+
+  loadCommand(projectId: string, commandId: string) {
+    const row = this.database
+      .select()
+      .from(commandLogTable)
+      .where(and(eq(commandLogTable.projectId, projectId), eq(commandLogTable.id, commandId)))
+      .get();
+    return row ? this.parseCommandRow(row) : null;
+  }
+
+  listCommands(projectId: string, limit = 50): CommandAuditEntry[] {
+    return this.database
+      .select()
+      .from(commandLogTable)
+      .where(eq(commandLogTable.projectId, projectId))
+      .orderBy(desc(commandLogTable.appliedRevision))
+      .limit(Math.max(1, Math.min(200, limit)))
+      .all()
+      .map((row) => {
+        const command = this.parseCommandRow(row);
+        return {
+          id: command.id,
+          commandType: command.commandType,
+          requestId: command.requestId,
+          summary: command.summary,
+          status: command.status,
+          appliedRevision: command.appliedRevision,
+          createdAt: command.createdAt,
+          undoneAt: command.undoneAt,
+          undoable: command.inverse !== null,
+          effects: command.effects,
+        };
+      });
+  }
+
   async readOpenSnapshot() {
     const contents = await readFile(join(this.projectDirectory, snapshotFileName), "utf8");
     return projectSnapshotSchema.parse(JSON.parse(contents));
@@ -211,5 +417,24 @@ export class ProjectStore {
     } finally {
       await unlink(recoverySnapshot).catch(() => undefined);
     }
+  }
+
+  private parseCommandRow(row: typeof commandLogTable.$inferSelect): StoredProjectCommand {
+    return {
+      id: row.id,
+      projectId: row.projectId,
+      commandType: row.commandType,
+      requestId: row.requestId,
+      request: JSON.parse(row.requestJson) as unknown,
+      inverse: row.inverseJson === null ? null : (JSON.parse(row.inverseJson) as unknown),
+      result: JSON.parse(row.resultJson) as Record<string, unknown>,
+      effects: JSON.parse(row.effectsJson) as CommandEffect[],
+      summary: row.summary,
+      status: row.status === "undone" ? "undone" : "applied",
+      appliedRevision: row.appliedRevision,
+      createdAt: row.createdAt,
+      undoneAt: row.undoneAt,
+      undoCommandId: row.undoCommandId,
+    };
   }
 }

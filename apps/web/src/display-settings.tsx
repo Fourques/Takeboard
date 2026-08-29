@@ -1,22 +1,21 @@
 import { useEffect, useRef, useState } from "react";
+import { type DisplayScale, displayScales, resolveDisplayScale } from "./display-scale";
 
-type DisplayScale = 0.9 | 1 | 1.12 | 1.24 | 1.4;
-
-const scales: Array<{ value: DisplayScale; label: string; hint: string }> = [
-  { value: 0.9, label: "紧凑", hint: "适合高分辨率大屏" },
-  { value: 1, label: "标准", hint: "默认显示大小" },
-  { value: 1.12, label: "清晰", hint: "字体与控件放大 12%" },
-  { value: 1.24, label: "大字", hint: "低分辨率或远程桌面" },
-  { value: 1.4, label: "特大", hint: "小屏或高缩放系统" },
-];
+export { resolveDisplayScale } from "./display-scale";
+export type SceneQuality = "auto" | "full" | "lite";
 
 function savedScale(): DisplayScale {
-  const value = Number(window.localStorage.getItem("takeboard.display-scale"));
-  return scales.some((item) => item.value === value) ? (value as DisplayScale) : 1;
+  return resolveDisplayScale(window.localStorage.getItem("takeboard.display-scale"));
+}
+
+function savedSceneQuality(): SceneQuality {
+  const value = window.localStorage.getItem("takeboard.scene-quality");
+  return value === "full" || value === "lite" ? value : "auto";
 }
 
 export function DisplaySettings({ compact = false }: { compact?: boolean }) {
   const [scale, setScale] = useState<DisplayScale>(savedScale);
+  const [sceneQuality, setSceneQuality] = useState<SceneQuality>(savedSceneQuality);
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -28,6 +27,13 @@ export function DisplaySettings({ compact = false }: { compact?: boolean }) {
     window.dispatchEvent(new CustomEvent("takeboard:display-scale", { detail: scale }));
     window.requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
   }, [scale]);
+
+  useEffect(() => {
+    window.localStorage.setItem("takeboard.scene-quality", sceneQuality);
+    window.dispatchEvent(
+      new CustomEvent<SceneQuality>("takeboard:scene-quality", { detail: sceneQuality }),
+    );
+  }, [sceneQuality]);
 
   useEffect(() => {
     if (!open) return;
@@ -46,7 +52,8 @@ export function DisplaySettings({ compact = false }: { compact?: boolean }) {
         aria-expanded={open}
         aria-haspopup="dialog"
         onClick={() => setOpen((current) => !current)}
-        title="调整字体与控件大小"
+        title="调整界面文字大小"
+        aria-label={`显示大小：${displayScales.find((item) => item.value === scale)?.label ?? "清晰"}`}
       >
         <span aria-hidden="true">Aa</span>
         {compact ? null : "显示"}
@@ -54,11 +61,11 @@ export function DisplaySettings({ compact = false }: { compact?: boolean }) {
       {open ? (
         <div className="display-settings-popover" role="dialog" aria-label="显示大小">
           <header>
-            <strong>字体与控件</strong>
+            <strong>界面文字</strong>
             <small>只影响当前浏览器，不改变项目与生成分辨率</small>
           </header>
-          <div>
-            {scales.map((item) => (
+          <div className="display-setting-options">
+            {displayScales.map((item) => (
               <button
                 type="button"
                 key={item.value}
@@ -77,7 +84,32 @@ export function DisplaySettings({ compact = false }: { compact?: boolean }) {
               </button>
             ))}
           </div>
-          <p>浏览器自身缩放仍可使用；TakeBoard 会根据剩余空间自动收起两侧面板。</p>
+          <section className="scene-quality-setting">
+            <div>
+              <strong>首页三维效果</strong>
+              <small>不会影响项目画布与生成质量</small>
+            </div>
+            <div className="scene-quality-options">
+              {(
+                [
+                  ["auto", "自动", "先显示轻量封面，空闲时预载"],
+                  ["full", "完整", "打开首页即启用可旋转 3D"],
+                  ["lite", "节能", "始终使用清晰静态封面"],
+                ] as const
+              ).map(([value, label, hint]) => (
+                <button
+                  type="button"
+                  key={value}
+                  className={sceneQuality === value ? "active" : ""}
+                  onClick={() => setSceneQuality(value)}
+                >
+                  <span>{label}</span>
+                  <small>{hint}</small>
+                </button>
+              ))}
+            </div>
+          </section>
+          <p>画布坐标与生成分辨率保持不变；窄屏时 TakeBoard 会自动收起两侧面板。</p>
         </div>
       ) : null}
     </div>

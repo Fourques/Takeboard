@@ -6,6 +6,7 @@ import {
   healthResponseSchema,
   projectSnapshotJsonSchema,
   projectSnapshotSchema,
+  resolveGenerationResolution,
   runSchema,
   schemaVersion,
 } from "../src/index.js";
@@ -40,6 +41,25 @@ describe("healthResponseSchema", () => {
         version: schemaVersion,
       }),
     ).toEqual({ service: "takeboard-server", status: "ok", version: schemaVersion });
+  });
+});
+
+describe("generation resolution protocol", () => {
+  it("reports the effective dimensions used by native executors", () => {
+    expect(resolveGenerationResolution("multiple_32", 1001, 563)).toMatchObject({
+      requested: { width: 1001, height: 563 },
+      effective: { width: 992, height: 576 },
+      changed: true,
+    });
+    expect(resolveGenerationResolution("minimax_h3", 1920, 1080)).toMatchObject({
+      effective: { width: 1344, height: 768 },
+      changed: true,
+    });
+    expect(resolveGenerationResolution("exact", 1920, 1080)).toMatchObject({
+      effective: { width: 1920, height: 1080 },
+      changed: false,
+      reason: null,
+    });
   });
 });
 

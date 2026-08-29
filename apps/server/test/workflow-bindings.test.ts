@@ -15,6 +15,7 @@ const binding: WorkflowBinding = {
   parameters: {
     prompt: [{ nodeId: "text", input: "value" }],
     seed: [{ nodeId: "sampler", input: "seed" }],
+    denoise: [{ nodeId: "sampler", input: "denoise" }],
     duration: [{ nodeId: "video", input: "duration" }],
   },
   media: { first_frame: [{ nodeId: "image", input: "image" }] },
@@ -27,13 +28,14 @@ describe("workflow binding execution", () => {
     const source = {
       text: { class_type: "TextNode", inputs: { value: "old" } },
       image: { class_type: "LoadImage", inputs: { image: "old.png" } },
-      sampler: { class_type: "Sampler", inputs: { seed: 1 } },
+      sampler: { class_type: "Sampler", inputs: { seed: 1, denoise: 1 } },
       video: { class_type: "VideoNode", inputs: { duration: 3 } },
       save: { class_type: "SaveVideo", inputs: { filename_prefix: "unsafe/default" } },
     };
     const result = applyWorkflowBinding(source, binding, {
       prompt: "new prompt",
       seed: 42,
+      denoise: 0.55,
       duration: 7,
       firstFrame: "takeboard/input.png",
       filenamePrefix: "takeboard/project/shot/run/result",
@@ -41,6 +43,7 @@ describe("workflow binding execution", () => {
     expect(result.text?.inputs.value).toBe("new prompt");
     expect(result.image?.inputs.image).toBe("takeboard/input.png");
     expect(result.sampler?.inputs.seed).toBe(42);
+    expect(result.sampler?.inputs.denoise).toBe(0.55);
     expect(result.video?.inputs.duration).toBe(7);
     expect(result.save?.inputs.filename_prefix).toBe("takeboard/project/shot/run/result");
     expect(source.text.inputs.value).toBe("old");

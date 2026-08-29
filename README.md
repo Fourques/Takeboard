@@ -9,7 +9,7 @@
   <a href="https://github.com/Fourques/Takeboard/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Fourques/Takeboard/actions/workflows/ci.yml/badge.svg" /></a>
   <a href="LICENSE"><img alt="Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-315EFB.svg" /></a>
   <img alt="Node.js 22.12+" src="https://img.shields.io/badge/Node.js-22.12%2B-171717?logo=nodedotjs" />
-  <img alt="Early preview" src="https://img.shields.io/badge/status-early_preview-D99A46" />
+  <img alt="Public preview 0.1.0" src="https://img.shields.io/badge/status-public_preview_0.1.0-D99A46" />
 </p>
 
 ![TakeBoard 项目主页](docs/assets/takeboard-home.webp)
@@ -31,6 +31,7 @@ TakeBoard 不重做 ComfyUI 的节点系统。它在现有 Workflow 和算力之
 - 检测和导入 ComfyUI Workflow，以显式、带哈希的参数绑定运行可信自定义工作流；
 - 执行文生图、图生图、图生视频和首尾帧视频任务；
 - 跟踪 ComfyUI 真实节点进度、取消任务、回收结果，并保存可复现的参数快照；
+- 从首页流式导出、校验并重新导入完整 `.takeboard.tgz` 项目包；
 - 以独立 `.takeboard` 目录保存项目，方便备份、迁移和版本归档。
 
 ```text
@@ -165,10 +166,11 @@ TAKEBOARD_DATA_ROOT/
     ├── runs/
     ├── recipes/
     ├── logs/
-    └── exports/
+    ├── exports/
+    └── backups/migrations/  # 升级数据库前自动创建的一致性备份
 ```
 
-每个项目都是完整、可独立备份的目录。迁移时应复制整个 `.takeboard` 目录，而不是只复制数据库。详见[数据目录规范](docs/data-layout.md)。
+每个项目都是完整、可独立备份的目录。首页项目卡的下载操作会生成带版本清单、文件大小与 SHA-256 校验的流式项目包；首页“导入”会先在隔离目录验签并打开数据库，成功后才进入项目库。生成任务运行中不会导出不一致快照。迁移时也可以复制整个 `.takeboard` 目录，但不要只复制数据库。详见[数据目录规范](docs/data-layout.md)。
 
 ## 架构
 
@@ -230,7 +232,8 @@ pnpm format       # 格式化代码
 - [ ] 社区 Recipe 示例与可移植 Binding 包
 - [ ] 分镜墙、整片覆盖率和只读粗剪
 - [ ] 多 Worker、远程算力与可解释的执行策略
-- [ ] 完整项目导入导出、成本统计与跨镜头审批
+- [x] 完整项目包导入导出与升级前自动备份
+- [ ] 成本统计与跨镜头审批
 
 ## License
 

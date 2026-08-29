@@ -1,4 +1,4 @@
-import { Canvas, type ThreeEvent, useFrame, useThree } from "@react-three/fiber";
+import { Canvas, type ThreeEvent, useThree } from "@react-three/fiber";
 import {
   Component,
   type ErrorInfo,
@@ -340,19 +340,6 @@ function usePageTheme() {
   return theme;
 }
 
-function useReducedMotion() {
-  const [reduced, setReduced] = useState(
-    () => window.matchMedia("(prefers-reduced-motion: reduce)").matches,
-  );
-  useEffect(() => {
-    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const update = () => setReduced(media.matches);
-    media.addEventListener("change", update);
-    return () => media.removeEventListener("change", update);
-  }, []);
-  return reduced;
-}
-
 function EnvironmentController({ theme }: { theme: ThemeName }) {
   const { gl, scene } = useThree();
   useEffect(() => {
@@ -369,8 +356,7 @@ function EnvironmentController({ theme }: { theme: ThemeName }) {
   return null;
 }
 
-function Dust({ color, reducedMotion }: { color: string; reducedMotion: boolean }) {
-  const points = useRef<THREE.Points>(null);
+function Dust({ color }: { color: string }) {
   const positions = useMemo(() => {
     const values = new Float32Array(210);
     for (let index = 0; index < values.length; index += 3) {
@@ -380,11 +366,8 @@ function Dust({ color, reducedMotion }: { color: string; reducedMotion: boolean 
     }
     return values;
   }, []);
-  useFrame(({ clock }) => {
-    if (points.current && !reducedMotion) points.current.rotation.y = clock.elapsedTime * 0.01;
-  });
   return (
-    <points ref={points}>
+    <points>
       <bufferGeometry>
         <bufferAttribute attach="attributes-position" args={[positions, 3]} />
       </bufferGeometry>
@@ -486,17 +469,16 @@ function Clapper({ palette }: { palette: (typeof palettes)[ThemeName] }) {
 function BoardArtifact({
   palette,
   ready,
-  reducedMotion,
   projectCount,
   recentProjectTitle,
 }: {
   palette: (typeof palettes)[ThemeName];
   ready: boolean;
-  reducedMotion: boolean;
   projectCount: number;
   recentProjectTitle: string | null;
 }) {
   const artifact = useRef<THREE.Group>(null);
+  const invalidate = useThree((state) => state.invalidate);
   const target = useRef({ x: -0.06, y: -0.12 });
   const drag = useRef({ active: false, x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
@@ -508,26 +490,10 @@ function BoardArtifact({
     };
   }, [dragging]);
 
-  useFrame(({ clock }, delta) => {
-    if (!artifact.current) return;
-    if (!drag.current.active && !reducedMotion) target.current.y += delta * 0.055;
-    artifact.current.rotation.x = THREE.MathUtils.damp(
-      artifact.current.rotation.x,
-      target.current.x,
-      7,
-      delta,
-    );
-    artifact.current.rotation.y = THREE.MathUtils.damp(
-      artifact.current.rotation.y,
-      target.current.y,
-      7,
-      delta,
-    );
-    artifact.current.position.y = reducedMotion ? 0 : Math.sin(clock.elapsedTime * 0.55) * 0.035;
-  });
-
   const resetView = () => {
     target.current = { x: -0.06, y: -0.12 };
+    artifact.current?.rotation.set(-0.06, -0.12, 0);
+    invalidate();
   };
   const beginDrag = (event: ThreeEvent<PointerEvent>) => {
     event.stopPropagation();
@@ -545,6 +511,8 @@ function BoardArtifact({
     target.current.x = THREE.MathUtils.clamp(target.current.x + deltaY * 0.006, -0.72, 0.72);
     drag.current.x = event.clientX;
     drag.current.y = event.clientY;
+    artifact.current?.rotation.set(target.current.x, target.current.y, 0);
+    invalidate();
   };
   const endDrag = (event: ThreeEvent<PointerEvent>) => {
     event.stopPropagation();
@@ -619,13 +587,11 @@ function BoardArtifact({
 function ArtifactScene({
   theme,
   workerReady,
-  reducedMotion,
   projectCount,
   recentProjectTitle,
 }: {
   theme: ThemeName;
   workerReady: boolean;
-  reducedMotion: boolean;
   projectCount: number;
   recentProjectTitle: string | null;
 }) {
@@ -647,12 +613,11 @@ function ArtifactScene({
         <BoardArtifact
           palette={palette}
           ready={workerReady}
-          reducedMotion={reducedMotion}
           projectCount={projectCount}
           recentProjectTitle={recentProjectTitle}
         />
       </group>
-      <Dust color={palette.dust} reducedMotion={reducedMotion} />
+      <Dust color={palette.dust} />
     </>
   );
 }
@@ -685,16 +650,17 @@ function SceneFallback() {
 }
 
 export function StudioUniverse({
+  quality,
   workerReady,
   projectCount,
   recentProjectTitle,
 }: {
+  quality: "balanced" | "full";
   workerReady: boolean;
   projectCount: number;
   recentProjectTitle: string | null;
 }) {
   const theme = usePageTheme();
-  const reducedMotion = useReducedMotion();
   return (
     <div
       className="studio-universe artifact-universe"
@@ -704,9 +670,14 @@ export function StudioUniverse({
       <SceneBoundary fallback={<SceneFallback />}>
         <Canvas
           className="universe-webgl"
-          dpr={[1, 1.5]}
+          dpr={[1, quality === "full" ? 1.5 : 1.25]}
+          frameloop="demand"
           camera={{ position: [0, 0.08, 6.5], fov: 32, near: 0.1, far: 40 }}
-          gl={{ alpha: true, antialias: true, powerPreference: "high-performance" }}
+          gl={{
+            alpha: true,
+            antialias: quality === "full",
+            powerPreference: "high-performance",
+          }}
           onCreated={({ gl, scene }) => {
             gl.toneMapping = THREE.ACESFilmicToneMapping;
             gl.outputColorSpace = THREE.SRGBColorSpace;
@@ -718,7 +689,6 @@ export function StudioUniverse({
           <ArtifactScene
             theme={theme}
             workerReady={workerReady}
-            reducedMotion={reducedMotion}
             projectCount={projectCount}
             recentProjectTitle={recentProjectTitle}
           />
