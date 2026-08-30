@@ -6,7 +6,7 @@
 
 | 日期 | GPU / 显存 | 系统 | Workflow | 参数 | 耗时 | 证据等级 |
 | --- | --- | --- | --- | --- | --- | --- |
-| — | — | — | — | — | — | 尚无已提交的 v2 证据 |
+| 2026-08-30 | NVIDIA GeForce RTX 4090 · 23.5 GiB | linux/x64 | Kino_MinimaxH3_T2V.json | 480×848 · 5s · 20 steps | 101s | 自动完整性 |
 
 机器可读版本见 [compatibility-matrix.json](./compatibility-matrix.json)，原始脱敏证据见 [compatibility/evidence](./compatibility/evidence/README.md)。每一行只证明该次 Workflow 内容哈希、模型、ComfyUI 版本与硬件组合成功，不外推到同系列其他组合。
 

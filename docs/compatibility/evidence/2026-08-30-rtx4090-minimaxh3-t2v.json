@@ -1,0 +1,63 @@
+{
+  "format": "takeboard.gpu-release-gate",
+  "version": 2,
+  "evidenceId": "01c53c4e-ee2e-46d9-b3ec-674116157784",
+  "evidenceKind": "real_gpu_end_to_end",
+  "passed": true,
+  "startedAt": "2026-08-30T01:43:39.244Z",
+  "completedAt": "2026-08-30T01:45:19.850Z",
+  "elapsedSeconds": 101,
+  "takeboardVersion": "0.2.0-beta.1",
+  "source": {
+    "commit": "c9aaf5b59416a02a0217a711e5d935dca822608e",
+    "dirty": false
+  },
+  "environment": {
+    "platform": "linux",
+    "architecture": "x64",
+    "nodeVersion": "v22.23.1"
+  },
+  "worker": {
+    "engine": "ComfyUI",
+    "version": "0.31.0",
+    "device": "cuda:0 NVIDIA GeForce RTX 4090 : cudaMallocAsync",
+    "vramTotal": 25241190400,
+    "vramFreeAtStart": 24544018432
+  },
+  "workflow": {
+    "path": "Kino/Kino_MinimaxH3_T2V.json",
+    "execution": "native",
+    "workflowHash": "4935b6999ca3088e511e5796137f2b8088e8e1c4d7b842c82f76d4d2df1d4cd7",
+    "executionPromptSha256": "10ca7ad54c45fba811228663f51ed3322e67e50933b3e5cbef1057e8fd4e1ede",
+    "models": [
+      "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+      "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+      "minimax_h3_video_vae_fp16.safetensors",
+      "minimax_h3_audio_vae_fp32.safetensors"
+    ]
+  },
+  "generation": {
+    "width": 480,
+    "height": 848,
+    "durationSeconds": 5,
+    "fps": 24,
+    "steps": 20,
+    "seed": 20260830
+  },
+  "output": {
+    "mediaType": "video",
+    "contentType": "video/mp4",
+    "byteSize": 814937,
+    "sha256": "479e1144a0fbc5057c9ef9f3ec0dd02f7110c7bd979965c8b67ac5b53f9059f1",
+    "width": 480,
+    "height": 864,
+    "durationSeconds": 5.167,
+    "frameRate": 24,
+    "probeBytes": 64
+  },
+  "review": {
+    "automatedIntegrity": "passed",
+    "visualQuality": "not_reviewed"
+  },
+  "privacy": "不包含账号、密码、Cookie、Token、项目名称、提示词、素材内容、绝对路径或运行标识。"
+}

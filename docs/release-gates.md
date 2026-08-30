@@ -57,10 +57,10 @@ pnpm compatibility:matrix -- --check
 | --- | --- |
 | 40 Run 重启恢复 | 40/40 completed，40/40 Take 与视频 Asset 正确关联 |
 | 500 节点画布 | Chrome 实际渲染 500 节点并保持点击响应，满足 8s / 100ms p95 阈值 |
-| 真实 GPU | ComfyUI 0.31.0，RTX 4090，MiniMax H3 T2V native，100 秒完成并回收 `video/mp4` |
+| 真实 GPU | ComfyUI 0.31.0，RTX 4090，MiniMax H3 T2V native，101 秒完成并回收 `video/mp4` |
 | Workflow 内容哈希 | `4935b6999ca3088e511e5796137f2b8088e8e1c4d7b842c82f76d4d2df1d4cd7` |
 
-这条 2026-08-30 记录发生在 v2 证据协议之前，因此只作为历史基线，不计入机器可读矩阵的 `verifiedRunCount`。真实 GPU 报告始终是单次环境证据，不等于不同驱动、模型或 Custom Node 组合都已认证；更换运行环境或 Workflow 内容哈希后应重跑。
+当前真实 GPU 结果已形成 v2 脱敏证据：绑定干净 Commit `c9aaf5b`、实际执行 Prompt 哈希和输出视频哈希，计入机器可读矩阵的 `verifiedRunCount`。自动完整性已通过，但没有完整人工审片，因此 `visualQuality` 保持 `not_reviewed`。同日较早的 100 秒结果仍只作为 pre-v2 历史记录。任何单次报告都不等于不同驱动、模型或 Custom Node 组合已认证；更换运行环境或 Workflow 内容哈希后应重跑。
 
 ## 便携包门槛
 

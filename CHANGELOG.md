@@ -25,6 +25,8 @@ Resilience and distribution preview.
   deterministic Demo generation instead of presenting it as model-quality evidence.
 - GPU Gate v2 and a machine-readable compatibility matrix that only accepts real end-to-end
   evidence bound to a clean Commit, source Workflow, executed Prompt and output-video hashes.
+- The first publishable v2 compatibility record: MiniMax H3 T2V on an RTX 4090 and ComfyUI 0.31.0,
+  with automated integrity passed and visual quality explicitly left unreviewed.
 
 ### Changed
 
@@ -33,8 +35,8 @@ Resilience and distribution preview.
 - Source and portable launchers keep a stable per-data-root identity, refuse ambiguous process
   ownership and reuse an already-running matching instance instead of spawning duplicates.
 - Automated backups keep two recent local snapshots by default; manual snapshots still retain five.
-- The RTX 4090 / MiniMax H3 record is now labeled as a pre-v2 historical baseline rather than a
-  general compatibility claim.
+- The earlier RTX 4090 / MiniMax H3 run remains labeled as a pre-v2 historical baseline; only the
+  new privacy-checked v2 record contributes to the verified matrix.
 
 ### Fixed
 

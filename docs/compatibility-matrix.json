@@ -2,6 +2,50 @@
   "format": "takeboard.compatibility-matrix",
   "version": 1,
   "evidenceSchema": "takeboard.gpu-release-gate@2",
-  "verifiedRunCount": 0,
-  "entries": []
+  "verifiedRunCount": 1,
+  "entries": [
+    {
+      "evidenceId": "01c53c4e-ee2e-46d9-b3ec-674116157784",
+      "evidenceFile": "docs/compatibility/evidence/2026-08-30-rtx4090-minimaxh3-t2v.json",
+      "verifiedAt": "2026-08-30T01:45:19.850Z",
+      "takeboardVersion": "0.2.0-beta.1",
+      "commit": "c9aaf5b59416a02a0217a711e5d935dca822608e",
+      "platform": "linux",
+      "architecture": "x64",
+      "engine": "ComfyUI",
+      "engineVersion": "0.31.0",
+      "device": "NVIDIA GeForce RTX 4090",
+      "vramGiB": 23.5,
+      "workflow": "Kino_MinimaxH3_T2V.json",
+      "workflowHash": "4935b6999ca3088e511e5796137f2b8088e8e1c4d7b842c82f76d4d2df1d4cd7",
+      "executionPromptSha256": "10ca7ad54c45fba811228663f51ed3322e67e50933b3e5cbef1057e8fd4e1ede",
+      "models": [
+        "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+        "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+        "minimax_h3_video_vae_fp16.safetensors",
+        "minimax_h3_audio_vae_fp32.safetensors"
+      ],
+      "generation": {
+        "width": 480,
+        "height": 848,
+        "durationSeconds": 5,
+        "fps": 24,
+        "steps": 20,
+        "seed": 20260830
+      },
+      "elapsedSeconds": 101,
+      "output": {
+        "mediaType": "video",
+        "contentType": "video/mp4",
+        "byteSize": 814937,
+        "sha256": "479e1144a0fbc5057c9ef9f3ec0dd02f7110c7bd979965c8b67ac5b53f9059f1",
+        "width": 480,
+        "height": 864,
+        "durationSeconds": 5.167,
+        "frameRate": 24,
+        "probeBytes": 64
+      },
+      "visualQuality": "not_reviewed"
+    }
+  ]
 }
