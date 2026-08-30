@@ -8,7 +8,7 @@ import { createRequire } from "node:module";
 import net from "node:net";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const bundleRoot = dirname(fileURLToPath(import.meta.url));
 const serverRoot = join(bundleRoot, "app");
@@ -83,10 +83,12 @@ async function doctor() {
     throw new Error("BUILD.json 缺少应用版本");
   }
   const requireFromServer = createRequire(join(serverRoot, "package.json"));
-  const sqliteModule = await import(requireFromServer.resolve("better-sqlite3"));
+  const sqliteModule = await import(
+    pathToFileURL(requireFromServer.resolve("better-sqlite3")).href
+  );
   const database = new sqliteModule.default(":memory:");
   database.close();
-  await import(requireFromServer.resolve("sharp"));
+  await import(pathToFileURL(requireFromServer.resolve("sharp")).href);
   console.log("TakeBoard 启动检查通过");
   console.log(`系统：${process.platform} ${process.arch}`);
   console.log(`运行时：Node.js ${process.versions.node}`);

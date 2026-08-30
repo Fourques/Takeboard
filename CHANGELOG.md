@@ -47,6 +47,8 @@ Resilience and distribution preview.
   path-length failures while keeping the external recovery point read-only during validation.
 - Portable builds now use pnpm's injected-workspace deployment path and a Windows command-shell
   invocation, avoiding uncached legacy metadata and `.cmd` process-launch failures on clean runners.
+- Portable startup converts resolved native dependency paths to standards-compliant `file:` URLs,
+  so Windows drive-letter paths load correctly through Node.js's ESM loader.
 - Numeric inputs now commit the latest typed draft even when blur and React rendering occur in the
   same frame, preventing cleared duration or dimension fields from reverting to stale values.
 
