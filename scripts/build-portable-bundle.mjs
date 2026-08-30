@@ -231,7 +231,14 @@ async function main() {
     await rm(stagingRoot, { recursive: true, force: true });
     await mkdir(bundleRoot, { recursive: true });
     if (!skipBuild) runPnpm(["build"]);
-    runPnpm(["--filter", "@takeboard/server", "deploy", "--prod", serverRoot]);
+    runPnpm([
+      "--config.node-linker=hoisted",
+      "--filter",
+      "@takeboard/server",
+      "deploy",
+      "--prod",
+      serverRoot,
+    ]);
     await Promise.all([
       cp(join(repositoryRoot, "apps", "web", "dist"), join(bundleRoot, "web"), {
         recursive: true,

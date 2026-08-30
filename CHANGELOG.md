@@ -31,7 +31,8 @@ Resilience and distribution preview.
 
 ### Changed
 
-- Production package deployment excludes TakeBoard workspace source/tests and validates native
+- Production package deployment excludes TakeBoard workspace source/tests, emits a self-contained
+  hoisted dependency tree that does not rely on runtime package links, and validates native
   SQLite/image dependencies from the extracted release archive.
 - Source and portable launchers keep a stable per-data-root identity, refuse ambiguous process
   ownership and reuse an already-running matching instance instead of spawning duplicates.
@@ -49,6 +50,8 @@ Resilience and distribution preview.
   invocation, avoiding uncached legacy metadata and `.cmd` process-launch failures on clean runners.
 - Portable startup converts resolved native dependency paths to standards-compliant `file:` URLs,
   so Windows drive-letter paths load correctly through Node.js's ESM loader.
+- Portable production runtime modules use real hoisted package directories rather than pnpm package
+  links, preserving transitive native-loader dependencies when Windows archives are extracted.
 - Numeric inputs now commit the latest typed draft even when blur and React rendering occur in the
   same frame, preventing cleared duration or dimension fields from reverting to stale values.
 
