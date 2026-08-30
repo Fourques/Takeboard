@@ -139,8 +139,33 @@ function waitForExit(child, timeout) {
   });
 }
 
-async function stopOwnedProcess(child) {
+function sendControlMessage(child, message) {
+  if (!child.connected) return Promise.resolve(false);
+  return new Promise((resolveSend) => {
+    try {
+      child.send(message, (error) => resolveSend(!error));
+    } catch {
+      resolveSend(false);
+    }
+  });
+}
+
+async function stopPortableLauncher(child) {
   if (child.exitCode !== null || child.signalCode !== null) return;
+  if (
+    (await sendControlMessage(child, { type: "takeboard.launcher.shutdown" })) &&
+    (await waitForExit(child, 15_000))
+  ) {
+    return;
+  }
+  if (process.platform === "win32" && child.pid) {
+    spawnSync("taskkill.exe", ["/pid", String(child.pid), "/t", "/f"], {
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    if (await waitForExit(child, 5_000)) return;
+    throw new Error("便携包自检进程树无法停止");
+  }
   child.kill("SIGTERM");
   if (await waitForExit(child, 5_000)) return;
   child.kill("SIGKILL");
@@ -158,7 +183,7 @@ async function smokePortableServer(runtimeExecutable, extracted, dataRoot, appli
       TAKEBOARD_DATA_ROOT: dataRoot,
       TAKEBOARD_PORT: String(port),
     },
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["ignore", "pipe", "pipe", "ipc"],
     windowsHide: true,
   });
   const collect = (chunk) => {
@@ -200,7 +225,7 @@ async function smokePortableServer(runtimeExecutable, extracted, dataRoot, appli
     }
     throw new Error(`便携服务未在 30 秒内就绪\n${output.join("")}`);
   } finally {
-    await stopOwnedProcess(child);
+    await stopPortableLauncher(child);
   }
 }
 

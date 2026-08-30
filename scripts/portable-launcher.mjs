@@ -189,8 +189,25 @@ function waitForExit(child, timeout) {
   });
 }
 
+function sendControlMessage(child, message) {
+  if (!child.connected) return Promise.resolve(false);
+  return new Promise((resolveSend) => {
+    try {
+      child.send(message, (error) => resolveSend(!error));
+    } catch {
+      resolveSend(false);
+    }
+  });
+}
+
 async function stopOwnedServer(child) {
   if (child.exitCode !== null || child.signalCode !== null) return;
+  if (
+    (await sendControlMessage(child, { type: "takeboard.server.shutdown" })) &&
+    (await waitForExit(child, 10_000))
+  ) {
+    return;
+  }
   child.kill("SIGTERM");
   if (await waitForExit(child, 10_000)) return;
   child.kill("SIGKILL");
@@ -219,7 +236,7 @@ async function start() {
       TAKEBOARD_PORT: String(selected.port),
       TAKEBOARD_WEB_ROOT: webRoot,
     },
-    stdio: "inherit",
+    stdio: ["inherit", "inherit", "inherit", "ipc"],
     windowsHide: false,
   });
   let stopPromise = null;
@@ -227,8 +244,12 @@ async function start() {
     stopPromise ??= stopOwnedServer(child);
     void stopPromise.catch(() => undefined);
   };
+  const onControlMessage = (message) => {
+    if (message?.type === "takeboard.launcher.shutdown") terminate();
+  };
   process.once("SIGINT", terminate);
   process.once("SIGTERM", terminate);
+  process.on("message", onControlMessage);
   try {
     await waitForServer(child, selected.port, instanceId);
     console.log(`\nTakeBoard 已启动：${url}`);
@@ -244,6 +265,8 @@ async function start() {
     if (stopPromise) await stopPromise;
     process.removeListener("SIGINT", terminate);
     process.removeListener("SIGTERM", terminate);
+    process.removeListener("message", onControlMessage);
+    if (process.connected) process.disconnect();
   }
 }
 

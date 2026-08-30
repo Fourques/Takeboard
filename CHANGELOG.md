@@ -52,6 +52,9 @@ Resilience and distribution preview.
   so Windows drive-letter paths load correctly through Node.js's ESM loader.
 - Portable production runtime modules use real hoisted package directories rather than pnpm package
   links, preserving transitive native-loader dependencies when Windows archives are extracted.
+- Portable shutdown uses a private parent-child control channel so Windows closes the Fastify server
+  and its database hooks before the launcher exits, with process-tree termination only as a bounded
+  build-smoke fallback.
 - Numeric inputs now commit the latest typed draft even when blur and React rendering occur in the
   same frame, preventing cleared duration or dimension fields from reverting to stale values.
 
