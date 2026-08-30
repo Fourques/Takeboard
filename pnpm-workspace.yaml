@@ -4,6 +4,10 @@ packages:
 
 sharedWorkspaceLockfile: true
 strictPeerDependencies: true
+injectWorkspacePackages: true
+
+syncInjectedDepsAfterScripts:
+  - build
 
 onlyBuiltDependencies:
   - better-sqlite3

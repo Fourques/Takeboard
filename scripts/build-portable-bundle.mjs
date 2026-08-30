@@ -23,10 +23,23 @@ function run(command, arguments_, options = {}) {
     stdio: options.capture ? "pipe" : "inherit",
   });
   if (result.status !== 0) {
-    const detail = options.capture ? `\n${result.stderr || result.stdout}` : "";
-    throw new Error(`${command} ${arguments_.join(" ")} 失败${detail}`);
+    const detail = [result.error?.message, options.capture ? result.stderr || result.stdout : null]
+      .filter(Boolean)
+      .join("\n");
+    throw new Error(`${command} ${arguments_.join(" ")} 失败${detail ? `\n${detail}` : ""}`);
   }
   return String(result.stdout ?? "").trim();
+}
+
+function runPnpm(arguments_, options = {}) {
+  if (process.platform === "win32") {
+    return run(
+      process.env.ComSpec || "cmd.exe",
+      ["/d", "/s", "/c", "pnpm.cmd", ...arguments_],
+      options,
+    );
+  }
+  return run("pnpm", arguments_, options);
 }
 
 async function sha256File(path) {
@@ -192,7 +205,6 @@ async function smokePortableServer(runtimeExecutable, extracted, dataRoot, appli
 }
 
 async function main() {
-  const packageManager = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
   const rootPackage = JSON.parse(await readFile(join(repositoryRoot, "package.json"), "utf8"));
   const platform =
     process.platform === "darwin"
@@ -218,16 +230,8 @@ async function main() {
     ]);
     await rm(stagingRoot, { recursive: true, force: true });
     await mkdir(bundleRoot, { recursive: true });
-    if (!skipBuild) run(packageManager, ["build"]);
-    run(packageManager, [
-      "--filter",
-      "@takeboard/server",
-      "deploy",
-      "--prod",
-      "--legacy",
-      "--offline",
-      serverRoot,
-    ]);
+    if (!skipBuild) runPnpm(["build"]);
+    runPnpm(["--filter", "@takeboard/server", "deploy", "--prod", serverRoot]);
     await Promise.all([
       cp(join(repositoryRoot, "apps", "web", "dist"), join(bundleRoot, "web"), {
         recursive: true,

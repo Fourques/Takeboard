@@ -45,6 +45,8 @@ Resilience and distribution preview.
   can flush archives, metadata, restore reports and scheduler state instead of aborting publication.
 - Restore drills no longer create deeply nested scratch data on the backup volume, avoiding Windows
   path-length failures while keeping the external recovery point read-only during validation.
+- Portable builds now use pnpm's injected-workspace deployment path and a Windows command-shell
+  invocation, avoiding uncached legacy metadata and `.cmd` process-launch failures on clean runners.
 - Numeric inputs now commit the latest typed draft even when blur and React rendering occur in the
   same frame, preventing cleared duration or dimension fields from reverting to stale values.
 
