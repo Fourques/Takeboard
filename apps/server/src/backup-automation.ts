@@ -250,7 +250,10 @@ async function sha256File(path: string) {
 }
 
 async function syncFile(path: string) {
-  const handle = await open(path, "r");
+  // Windows FlushFileBuffers requires a write-capable handle. Opening the
+  // freshly written file read-only works on POSIX, but fails with EACCES on
+  // Windows and used to abort every external backup before publication.
+  const handle = await open(path, "r+");
   try {
     await handle.sync();
   } finally {
@@ -682,6 +685,7 @@ export class BackupAutomation {
         flag: "wx",
         mode: 0o600,
       });
+      await syncFile(temporary);
       await rename(temporary, this.statePath);
       await syncDirectory(directory);
     } finally {

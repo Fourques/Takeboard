@@ -40,6 +40,8 @@ Resilience and distribution preview.
 
 ### Fixed
 
+- External backup durability now opens files with write-capable handles before `fsync`, so Windows
+  can flush archives, metadata, restore reports and scheduler state instead of aborting publication.
 - Numeric inputs now commit the latest typed draft even when blur and React rendering occur in the
   same frame, preventing cleared duration or dimension fields from reverting to stale values.
 
