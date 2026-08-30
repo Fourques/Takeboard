@@ -19,7 +19,13 @@ import {
   useMemo,
   useState,
 } from "react";
-import { authApi, type InstanceBackup, type StagedRestore, setApiCsrfToken } from "./api";
+import {
+  authApi,
+  type BackupAutomationStatus,
+  type InstanceBackup,
+  type StagedRestore,
+  setApiCsrfToken,
+} from "./api";
 
 type CenterContext = {
   projectKey?: string | undefined;
@@ -978,6 +984,12 @@ const auditActionLabels: Record<string, string> = {
   "invitation.revoked": "撤销团队邀请",
   "project.member_set": "更新项目成员",
   "project.member_removed": "移除项目成员",
+  "backup.external_created": "建立外部实例副本",
+  "backup.external_failed": "外部实例副本失败",
+  "backup.external_scheduled": "自动建立外部实例副本",
+  "backup.external_scheduled_failed": "自动外部备份失败",
+  "backup.restore_drill_passed": "恢复演练通过",
+  "backup.restore_drill_failed": "恢复演练失败",
 };
 
 function AuditPanel() {
@@ -1025,17 +1037,32 @@ function formatBytes(value: number) {
 
 function BackupPanel() {
   const [backups, setBackups] = useState<InstanceBackup[]>([]);
+  const [automation, setAutomation] = useState<BackupAutomationStatus | null>(null);
   const [restore, setRestore] = useState<StagedRestore | null>(null);
   const [busy, setBusy] = useState(false);
+  const [automationBusy, setAutomationBusy] = useState<"backup" | "drill" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [result, setResult] = useState<string | null>(null);
-  const load = useCallback(() => authApi.backups().then((value) => setBackups(value.backups)), []);
+  const load = useCallback(
+    () =>
+      Promise.all([authApi.backups(), authApi.backupAutomation()]).then(
+        ([backupResult, automationResult]) => {
+          setBackups(backupResult.backups);
+          setAutomation(automationResult.status);
+        },
+      ),
+    [],
+  );
   useEffect(() => {
     void load().catch((cause) =>
       setError(cause instanceof Error ? cause.message : "无法读取备份状态"),
     );
+    const polling = window.setInterval(() => {
+      void load().catch(() => undefined);
+    }, 30_000);
+    return () => window.clearInterval(polling);
   }, [load]);
   const discard = async () => {
     if (restore) await authApi.discardRestore(restore.restoreId).catch(() => undefined);
@@ -1043,8 +1070,162 @@ function BackupPanel() {
     setPassword("");
     setConfirmation("");
   };
+  const runAutomation = async (operation: "backup" | "drill") => {
+    setAutomationBusy(operation);
+    setError(null);
+    setResult(null);
+    try {
+      if (operation === "backup") {
+        const value = await authApi.runExternalBackup();
+        setResult(
+          value.drill
+            ? "外部副本已完成校验，隔离恢复演练也已通过。"
+            : value.drillError
+              ? "外部副本已安全保存，但恢复演练未通过；请查看下方状态后重试。"
+              : "外部副本已完成校验并安全保存。",
+        );
+      } else {
+        await authApi.runRestoreDrill();
+        setResult("隔离恢复演练通过：身份数据库与全部项目均可读取。");
+      }
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "备份运维操作失败");
+      await load().catch(() => undefined);
+    } finally {
+      setAutomationBusy(null);
+    }
+  };
+  const automationHealthy = Boolean(
+    automation?.enabled &&
+      automation.destinationReady === true &&
+      automation.separateDevice === true &&
+      automation.externalBackupCount > 0 &&
+      automation.damagedExternalBackupCount === 0 &&
+      automation.lastRestoreDrillPassed === true &&
+      automation.lastSuccessAt &&
+      Date.now() - Date.parse(automation.lastSuccessAt) <=
+        automation.intervalHours * 2 * 60 * 60 * 1_000,
+  );
+  const automationTone = !automation
+    ? "neutral"
+    : automation.configurationError || automation.destinationReady === false
+      ? "blocked"
+      : automationHealthy
+        ? "healthy"
+        : "attention";
   return (
     <div className="backup-panel">
+      <section className="backup-automation-card">
+        <header>
+          <div>
+            <span>AUTOMATED RECOVERY</span>
+            <h3>外部副本与恢复演练</h3>
+          </div>
+          <i className={`backup-health ${automationTone}`}>
+            {!automation
+              ? "读取中"
+              : automationTone === "healthy"
+                ? "保护正常"
+                : automationTone === "blocked"
+                  ? "需要修复"
+                  : automation.enabled
+                    ? "等待验证"
+                    : "尚未配置"}
+          </i>
+        </header>
+        {automation?.enabled ? (
+          <>
+            <div className="backup-automation-metrics">
+              <div>
+                <span>外部副本</span>
+                <strong>{automation.externalBackupCount} 份</strong>
+                <small>{automation.destinationLabel ?? "已配置位置"}</small>
+              </div>
+              <div>
+                <span>存储隔离</span>
+                <strong>
+                  {automation.separateDevice === true
+                    ? "不同文件系统"
+                    : automation.separateDevice === false
+                      ? "同一文件系统"
+                      : "待确认"}
+                </strong>
+                <small>
+                  {automation.separateDevice ? "具备设备级隔离" : "建议改用外部磁盘或 NAS"}
+                </small>
+              </div>
+              <div>
+                <span>恢复演练</span>
+                <strong>
+                  {automation.lastRestoreDrillPassed === true
+                    ? "最近通过"
+                    : automation.lastRestoreDrillPassed === false
+                      ? "最近失败"
+                      : "尚未执行"}
+                </strong>
+                <small>
+                  {automation.lastRestoreDrillAt
+                    ? new Date(automation.lastRestoreDrillAt).toLocaleString("zh-CN")
+                    : `每 ${automation.restoreDrillIntervalDays} 天自动验证`}
+                </small>
+              </div>
+            </div>
+            <p>
+              每 {automation.intervalHours} 小时建立副本；保留每日 {automation.retention.daily}
+              、每周 {automation.retention.weekly}、每月 {automation.retention.monthly} 个恢复点。
+              本机只保留最近 {automation.localCopies} 份完整快照。
+              {automation.lastError || automation.lastRestoreDrillError
+                ? " 最近一次运维操作需要查看服务日志并重试。"
+                : automation.damagedExternalBackupCount > 0
+                  ? ` 检测到 ${automation.damagedExternalBackupCount} 份副本或元数据异常，请立即重新备份并演练。`
+                  : " 复制后核对 SHA-256，并在隔离目录真实打开身份库与每个项目。"}
+            </p>
+            {automation.lastError || automation.lastRestoreDrillError ? (
+              <small className="backup-automation-error" role="alert">
+                最近异常：{automation.lastRestoreDrillError ?? automation.lastError}
+              </small>
+            ) : null}
+            <footer>
+              <button
+                className="auth-primary"
+                disabled={Boolean(automationBusy) || automation.running}
+                type="button"
+                onClick={() => void runAutomation("backup")}
+              >
+                {automationBusy === "backup"
+                  ? "正在复制并校验…"
+                  : automation.running
+                    ? "备份或演练进行中…"
+                    : "立即建立外部副本"}
+              </button>
+              <button
+                className="account-secondary"
+                disabled={
+                  Boolean(automationBusy) ||
+                  automation.running ||
+                  automation.externalBackupCount === 0
+                }
+                type="button"
+                onClick={() => void runAutomation("drill")}
+              >
+                {automationBusy === "drill" ? "正在隔离恢复…" : "运行恢复演练"}
+              </button>
+            </footer>
+          </>
+        ) : (
+          <div className="backup-automation-empty">
+            <p>
+              手动下载仍然可用。若要让系统按计划复制并定期验证恢复，请把
+              <code>TAKEBOARD_BACKUP_DESTINATION</code>
+              指向项目数据目录之外的外部磁盘、NAS 或已挂载备份卷，然后重启服务。
+            </p>
+            {automation?.configurationError ? (
+              <small role="alert">配置需要修复：{automation.configurationError}</small>
+            ) : null}
+          </div>
+        )}
+      </section>
       <section className="backup-summary account-form compact">
         <div>
           <span>最近可用备份</span>
@@ -1076,7 +1257,8 @@ function BackupPanel() {
       </section>
       <p className="backup-explanation">
         备份包含全部项目、原始素材、生成结果以及身份数据库，并为每个文件记录
-        SHA-256。生成任务运行时会拒绝备份，最多保留最近 5 份。
+        SHA-256。生成任务运行时会拒绝快照；手动操作默认保留最近 5
+        份，自动保护按上方策略收敛本机副本。请至少将一份放到不同存储设备。
       </p>
       <div className="backup-list account-list">
         {backups.map((backup) => (

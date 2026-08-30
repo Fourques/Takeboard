@@ -9,6 +9,7 @@ import type {
 import type { FastifyInstance } from "fastify";
 import { authContext } from "./auth-routes.js";
 import type { AuthService } from "./auth-service.js";
+import type { BackupAutomation } from "./backup-automation.js";
 import { listInstanceBackups } from "./instance-backup.js";
 import { projectKey } from "./project-routes.js";
 import { ProjectStore } from "./storage/project-store.js";
@@ -114,7 +115,12 @@ export function registerOperationsRoutes(
   app: FastifyInstance,
   projectsRoot: string,
   auth: AuthService,
-  options: { version: string; comfyUrl: string; webRoot: string | null },
+  options: {
+    version: string;
+    comfyUrl: string;
+    webRoot: string | null;
+    backupAutomation: BackupAutomation | null;
+  },
 ) {
   const root = resolve(projectsRoot);
 
@@ -379,6 +385,15 @@ export function registerOperationsRoutes(
 
     const canInspectBackups = !context || context.user.instanceRole === "admin";
     const backups = canInspectBackups ? await listInstanceBackups(root) : null;
+    let backupAutomationSummary: {
+      enabled: boolean;
+      externalBackupCount: number;
+      damagedExternalBackupCount: number;
+      lastSuccessAt: string | null;
+      lastRestoreDrillAt: string | null;
+      lastRestoreDrillPassed: boolean | null;
+      separateDevice: boolean | null;
+    } | null = null;
     if (backups) {
       const latest = backups[0] ?? null;
       const backupAge = latest
@@ -395,6 +410,75 @@ export function registerOperationsRoutes(
           : "项目包可以单独导出，但账号和全部项目还没有统一恢复点。",
         action: recent ? null : "由实例管理员在账号设置中创建备份，并下载到另一块磁盘。",
       });
+
+      if (options.backupAutomation) {
+        const automation = await options.backupAutomation.status();
+        backupAutomationSummary = {
+          enabled: automation.enabled,
+          externalBackupCount: automation.externalBackupCount,
+          damagedExternalBackupCount: automation.damagedExternalBackupCount,
+          lastSuccessAt: automation.lastSuccessAt,
+          lastRestoreDrillAt: automation.lastRestoreDrillAt,
+          lastRestoreDrillPassed: automation.lastRestoreDrillPassed,
+          separateDevice: automation.separateDevice,
+        };
+        const staleAfter = automation.intervalHours * 2 * 60 * 60 * 1_000;
+        const lastSuccessAge = automation.lastSuccessAt
+          ? Date.now() - Date.parse(automation.lastSuccessAt)
+          : Number.POSITIVE_INFINITY;
+        const healthy =
+          automation.enabled &&
+          automation.destinationReady === true &&
+          automation.externalBackupCount > 0 &&
+          automation.damagedExternalBackupCount === 0 &&
+          automation.separateDevice === true &&
+          lastSuccessAge <= staleAfter &&
+          automation.lastRestoreDrillPassed === true;
+        const blocked =
+          Boolean(automation.configurationError) || automation.destinationReady === false;
+        addCheck({
+          id: "backup.automation",
+          category: "backup",
+          status: healthy ? "pass" : blocked ? "blocked" : "warning",
+          title: healthy
+            ? "异地备份与恢复演练正常"
+            : automation.configurationError
+              ? "异地备份配置无效"
+              : !automation.enabled
+                ? "异地备份尚未配置"
+                : automation.destinationReady === false
+                  ? "异地备份位置不可用"
+                  : automation.externalBackupCount === 0
+                    ? "还没有异地备份"
+                    : automation.damagedExternalBackupCount > 0
+                      ? "外部副本完整性异常"
+                      : automation.lastRestoreDrillPassed === false
+                        ? "最近一次恢复演练失败"
+                        : "异地备份需要更新或演练",
+          detail: automation.enabled
+            ? `外部保留 ${automation.externalBackupCount} 份；副本${
+                automation.separateDevice === true
+                  ? "位于不同文件系统"
+                  : automation.separateDevice === false
+                    ? "仍与项目位于同一文件系统"
+                    : "所在文件系统未知"
+              }。`
+            : "自动化关闭时仍可手动创建和下载实例备份。",
+          action: healthy
+            ? null
+            : automation.configurationError
+              ? "修正 TAKEBOARD_BACKUP_* 环境变量并重启服务。"
+              : !automation.enabled
+                ? "将 TAKEBOARD_BACKUP_DESTINATION 指向数据目录之外的已挂载位置。"
+                : automation.destinationReady === false
+                  ? "检查外部磁盘或网络存储是否已挂载且可写。"
+                  : automation.damagedExternalBackupCount > 0
+                    ? "保留其他恢复点，立即重新建立副本并运行恢复演练。"
+                    : automation.lastRestoreDrillPassed === false
+                      ? "在账号设置中重新运行恢复演练；通过前不要删除其他可用副本。"
+                      : "在账号设置中立即创建异地副本并运行恢复演练。",
+        });
+      }
     }
 
     return {
@@ -411,7 +495,11 @@ export function registerOperationsRoutes(
       },
       workload: { visibleProjects, activeRuns, failedRuns },
       backup: backups
-        ? { count: backups.length, latestCreatedAt: backups[0]?.createdAt ?? null }
+        ? {
+            count: backups.length,
+            latestCreatedAt: backups[0]?.createdAt ?? null,
+            automation: backupAutomationSummary,
+          }
         : null,
       checks,
       privacy:

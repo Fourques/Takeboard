@@ -24,7 +24,8 @@ TAKEBOARD_DATA_ROOT/
 │   └── trash/                   # 项目内部的可恢复编辑预留区
 ├── .trash/
     └── my-film.takeboard.<id>/  # 首页删除的完整项目，可从回收区恢复
-├── .system/backups/             # 最近 5 份可下载实例备份
+├── .system/backups/             # 手动最多 5 份；自动任务默认保留最近 2 份本机快照
+├── .system/backup-automation.json # 自动备份计划、实例所有权与最近演练状态
 └── .system/offline-restore-rollbacks/ # 离线恢复前的可回滚副本
 ```
 
@@ -55,3 +56,5 @@ TAKEBOARD_DATA_ROOT/
 同一项目 ID 不会被重复导入或从回收区重复恢复；这避免两个目录继续编辑同一项目身份而破坏生成和引用关系。
 
 实例备份使用 `takeboard.instance-backup` v1 清单，内部包含身份数据库一致性副本与逐项目 `.takeboard.tgz`；导入时会逐层校验路径、长度、SHA-256、SQLite 完整性、项目 ID 和 revision。在线向导只补回缺失项目；离线恢复工具才会替换身份与同 ID 项目，并保留恢复前数据。
+
+可选的外部备份目录不属于 `TAKEBOARD_DATA_ROOT`，因此不会被再次打入项目包。每个 `.takeboard-instance.tgz` 旁边有 `takeboard.external-instance-backup` 元数据，记录来源实例、大小、SHA-256、项目/账号数量和存储设备隔离判断；`restore-drills/` 只保存通过的演练报告。来源实例标识绑定到当前数据根目录，因此多套 TakeBoard 可以共用一个 NAS 备份目录，但只会统计、演练和清理自己的副本。恢复演练的展开目录位于外部卷的 `.restore-drill-work/` 并在结束后删除，避免用活动项目盘再复制一整份媒体。

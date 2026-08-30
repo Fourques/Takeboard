@@ -115,6 +115,54 @@ export type InstanceBackup = {
   userCount: number;
 };
 
+export type ExternalBackupRecord = InstanceBackup & {
+  format: "takeboard.external-instance-backup";
+  version: 1;
+  sourceInstanceId: string;
+  copiedAt: string;
+  archiveSha256: string;
+  separateDevice: boolean | null;
+};
+
+export type RestoreDrillReport = {
+  format: "takeboard.restore-drill";
+  version: 1;
+  id: string;
+  backupId: string;
+  backupSha256: string;
+  startedAt: string;
+  completedAt: string;
+  elapsedSeconds: number;
+  projectCount: number;
+  userCount: number;
+  passed: true;
+  platform: string;
+  architecture: string;
+};
+
+export type BackupAutomationStatus = {
+  enabled: boolean;
+  configurationError: string | null;
+  destinationLabel: string | null;
+  destinationReady: boolean | null;
+  separateDevice: boolean | null;
+  intervalHours: number;
+  localCopies: number;
+  retention: { daily: number; weekly: number; monthly: number };
+  restoreDrillIntervalDays: number;
+  running: boolean;
+  lastAttemptAt: string | null;
+  lastSuccessAt: string | null;
+  nextRunAt: string | null;
+  lastError: string | null;
+  externalBackupCount: number;
+  damagedExternalBackupCount: number;
+  latestExternalBackup: ExternalBackupRecord | null;
+  lastRestoreDrillAt: string | null;
+  lastRestoreDrillPassed: boolean | null;
+  lastRestoreDrillError: string | null;
+};
+
 export type StagedRestore = {
   restoreId: string;
   createdAt: string;
@@ -828,6 +876,18 @@ export const authApi = {
   audit: (limit = 100) =>
     jsonRequest<{ entries: AuthAuditEntry[] }>(`/api/admin/audit?limit=${limit}`),
   backups: () => jsonRequest<{ backups: InstanceBackup[] }>("/api/admin/backups"),
+  backupAutomation: () =>
+    jsonRequest<{ status: BackupAutomationStatus }>("/api/admin/backups/automation"),
+  runExternalBackup: () =>
+    jsonRequest<{
+      backup: ExternalBackupRecord;
+      drill: RestoreDrillReport | null;
+      drillError: string | null;
+    }>("/api/admin/backups/automation/run", { method: "POST" }),
+  runRestoreDrill: () =>
+    jsonRequest<{ report: RestoreDrillReport }>("/api/admin/backups/automation/drill", {
+      method: "POST",
+    }),
   createBackup: () =>
     jsonRequest<{ backup: InstanceBackup }>("/api/admin/backups", { method: "POST" }),
   backupDownloadUrl: (backupId: string) =>

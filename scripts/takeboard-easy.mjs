@@ -19,6 +19,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repoDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const applicationVersion = JSON.parse(readFileSync(join(repoDir, "package.json"), "utf8")).version;
 const stateDir =
   platform() === "win32"
     ? join(process.env.LOCALAPPDATA || homedir(), "TakeBoard")
@@ -30,6 +31,7 @@ const defaultDataRoot = join(homedir(), "TakeBoardData");
 const nodeExecutable = process.execPath;
 const serverBuild = join(repoDir, "apps", "server", "dist", "index.js");
 const webBuild = join(repoDir, "apps", "web", "dist", "index.html");
+if (platform() !== "win32") process.umask(0o077);
 
 function readUserConfiguration() {
   const configFile =
@@ -58,7 +60,34 @@ const userConfiguration = readUserConfiguration();
 const runtimeEnvironment = { ...userConfiguration, ...process.env };
 
 function dataRoot() {
-  return runtimeEnvironment.TAKEBOARD_DATA_ROOT || defaultDataRoot;
+  const configured = runtimeEnvironment.TAKEBOARD_DATA_ROOT || defaultDataRoot;
+  if (configured === "~") return homedir();
+  if (configured.startsWith("~/") || configured.startsWith("~\\")) {
+    return resolve(homedir(), configured.slice(2));
+  }
+  return resolve(configured);
+}
+
+function persistentInstanceId() {
+  const path = join(dataRoot(), ".takeboard-instance-id");
+  const read = () => readFileSync(path, "utf8").trim();
+  let value;
+  try {
+    value = read();
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+    value = randomUUID();
+    try {
+      writeFileSync(path, `${value}\n`, { flag: "wx", mode: 0o600 });
+    } catch (writeError) {
+      if (writeError?.code !== "EEXIST") throw writeError;
+      value = read();
+    }
+  }
+  if (!/^[A-Za-z0-9-]{10,100}$/.test(value)) {
+    throw new Error(`项目目录中的实例标识无效：${path}`);
+  }
+  return value;
 }
 
 async function dataRootWritable() {
@@ -160,20 +189,23 @@ async function portAvailable(port) {
   });
 }
 
-async function health(port, timeout = 1_500, expectedInstanceId = null) {
+async function healthPayload(port, timeout = 1_500) {
   try {
     const response = await fetch(`http://127.0.0.1:${port}/api/health`, {
       signal: AbortSignal.timeout(timeout),
     });
-    if (!response.ok) return false;
-    const payload = await response.json();
-    return (
-      payload?.service === "takeboard-server" &&
-      (!expectedInstanceId || payload?.instanceId === expectedInstanceId)
-    );
+    return response.ok ? await response.json() : null;
   } catch {
-    return false;
+    return null;
   }
+}
+
+async function health(port, timeout = 1_500, expectedInstanceId = null) {
+  const payload = await healthPayload(port, timeout);
+  return (
+    payload?.service === "takeboard-server" &&
+    (!expectedInstanceId || payload?.instanceId === expectedInstanceId)
+  );
 }
 
 async function comfyHealth() {
@@ -214,9 +246,9 @@ async function waitForHealth(port, attempts = 40) {
   return false;
 }
 
-async function findTakeBoard(ports) {
+async function findTakeBoard(ports, expectedInstanceId) {
   for (const port of ports) {
-    if (await health(port, 500)) return port;
+    if (await health(port, 500, expectedInstanceId)) return port;
   }
   return null;
 }
@@ -254,15 +286,39 @@ async function setup(lockHeld = false) {
 }
 
 async function startUnlocked() {
+  if (!(await dataRootWritable())) {
+    throw new Error(`项目目录不可写：${dataRoot()}。请检查目录权限或修改 TAKEBOARD_DATA_ROOT`);
+  }
+  const instanceId = persistentInstanceId();
   const existing = readState();
+  const existingHealth =
+    existing?.instanceId && processAlive(existing.pid)
+      ? await healthPayload(existing.port, 1_500)
+      : null;
   const ownedInstanceRunning = Boolean(
     existing?.instanceId &&
-      processAlive(existing.pid) &&
-      (await health(existing.port, 1_500, existing.instanceId)),
+      existingHealth?.service === "takeboard-server" &&
+      existingHealth.instanceId === existing.instanceId,
   );
+  if (existing && processAlive(existing.pid) && !ownedInstanceRunning) {
+    throw new Error(
+      `启动记录中的进程 ${existing.pid} 仍存在，但无法确认它属于 TakeBoard。请先运行 npm run easy:doctor，避免覆盖进程所有权记录。`,
+    );
+  }
+  if (ownedInstanceRunning && existing?.instanceId !== instanceId) {
+    throw new Error(
+      "简易启动器正在管理另一个项目目录。请先运行 npm run easy:stop，再切换 TAKEBOARD_DATA_ROOT。",
+    );
+  }
   const needsInstall = installOutdated();
   const needsBuild = buildOutdated();
-  if (ownedInstanceRunning && !needsInstall && !needsBuild) {
+  if (
+    ownedInstanceRunning &&
+    existing?.instanceId === instanceId &&
+    existingHealth?.version === applicationVersion &&
+    !needsInstall &&
+    !needsBuild
+  ) {
     const url = `http://127.0.0.1:${existing.port}`;
     console.log(`TakeBoard 已在运行：${url}`);
     openBrowser(url);
@@ -302,7 +358,13 @@ async function startUnlocked() {
       port = candidate;
       break;
     }
-    if (await health(candidate)) {
+    const running = await healthPayload(candidate);
+    if (running?.service === "takeboard-server" && running?.instanceId === instanceId) {
+      if (running.version !== applicationVersion) {
+        throw new Error(
+          `同一项目目录已有 TakeBoard ${running.version ?? "未知版本"} 在 ${candidate} 端口运行；请先从原启动方式停止，再启动 ${applicationVersion}`,
+        );
+      }
       const url = `http://127.0.0.1:${candidate}`;
       console.log(`TakeBoard 已在运行：${url}`);
       openBrowser(url);
@@ -316,9 +378,6 @@ async function startUnlocked() {
         : "48120–48139 都被占用，请关闭占用端口的软件后重试。",
     );
   }
-  if (!(await dataRootWritable())) {
-    throw new Error(`项目目录不可写：${dataRoot()}。请检查目录权限或修改 TAKEBOARD_DATA_ROOT`);
-  }
   await mkdir(stateDir, { recursive: true });
   if (existsSync(logFile) && statSync(logFile).size > 10 * 1024 * 1024) {
     const previousLog = `${logFile}.previous`;
@@ -326,7 +385,6 @@ async function startUnlocked() {
     renameSync(logFile, previousLog);
   }
   const log = openSync(logFile, "a", 0o600);
-  const instanceId = randomUUID();
   const child = spawn(nodeExecutable, [serverBuild], {
     cwd: repoDir,
     detached: true,
@@ -432,9 +490,11 @@ async function doctor() {
     "检查目录权限，或在配置中修改 TAKEBOARD_DATA_ROOT",
   ]);
   const state = readState();
+  const instanceId = persistentInstanceId();
   const defaultPorts = Array.from({ length: 20 }, (_, index) => 48120 + index);
   const discoveredPort = await findTakeBoard(
     runtimeEnvironment.TAKEBOARD_PORT ? [Number(runtimeEnvironment.TAKEBOARD_PORT)] : defaultPorts,
+    instanceId,
   );
   checks.push([
     Boolean(

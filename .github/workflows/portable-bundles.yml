@@ -1,0 +1,123 @@
+name: Portable bundles
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+jobs:
+  build:
+    name: Bundle (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux-x64
+          - os: ubuntu-24.04-arm
+            platform: linux-arm64
+          - os: macos-15-intel
+            platform: macos-x64
+          - os: macos-15
+            platform: macos-arm64
+          - os: windows-latest
+            platform: windows-x64
+          - os: windows-11-arm
+            platform: windows-arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.15.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm bundle:portable
+        env:
+          TAKEBOARD_BUNDLE_TARGET: ${{ matrix.platform }}
+      - name: Verify checksum
+        run: pnpm bundle:verify
+      - name: Attest portable bundle
+        uses: actions/attest@v4
+        with:
+          subject-path: "release/*.tar.gz"
+      - name: Upload bundle
+        uses: actions/upload-artifact@v7
+        with:
+          path: "release/*.tar.gz"
+          archive: false
+      - name: Upload checksum
+        uses: actions/upload-artifact@v7
+        with:
+          path: "release/*.sha256"
+          archive: false
+
+  publish:
+    name: Attach to GitHub release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build, demo]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: "takeboard-*"
+          path: release
+          merge-multiple: true
+      - name: Publish verified assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            extra=""
+            case "${GITHUB_REF_NAME}" in *-*) extra="--prerelease";; esac
+            gh release create "${GITHUB_REF_NAME}" --verify-tag --generate-notes ${extra}
+          fi
+          gh release upload "${GITHUB_REF_NAME}" release/* --clobber
+
+  demo:
+    name: Deterministic product walkthrough
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.15.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm demo:capture
+      - name: Attest demo media
+        uses: actions/attest@v4
+        with:
+          subject-path: "test-results/demo/*"
+      - name: Upload demo video
+        uses: actions/upload-artifact@v7
+        with:
+          path: "test-results/demo/takeboard-product-walkthrough.webm"
+          archive: false
+      - name: Upload demo cover
+        uses: actions/upload-artifact@v7
+        with:
+          path: "test-results/demo/takeboard-demo-cover.png"
+          archive: false
+      - name: Upload demo manifest
+        uses: actions/upload-artifact@v7
+        with:
+          path: "test-results/demo/takeboard-demo-manifest.json"
+          archive: false

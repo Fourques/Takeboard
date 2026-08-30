@@ -60,7 +60,11 @@ describe("operationsDiagnosticsSchema", () => {
         authMode: "required",
       },
       workload: { visibleProjects: 2, activeRuns: 1, failedRuns: 0 },
-      backup: { count: 1, latestCreatedAt: "2026-08-29T00:00:00.000Z" },
+      backup: {
+        count: 1,
+        latestCreatedAt: "2026-08-29T00:00:00.000Z",
+        automation: null,
+      },
       checks: [
         {
           id: "data.writable",

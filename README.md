@@ -38,6 +38,7 @@ TakeBoard 不重做 ComfyUI 的节点系统。它在现有 Workflow 和算力之
 - 从首页流式导出、校验并重新导入完整 `.takeboard.tgz` 项目包；
 - 以独立 `.takeboard` 目录保存项目，方便备份、迁移和版本归档。
 - 一次性团队邀请、离线恢复码、可验证实例备份与保留旧数据的离线恢复。
+- 可选的跨存储定时实例备份、日/周/月保留策略、损坏检测与隔离恢复演练。
 - 在分镜墙中按真实镜头顺序播放只读粗剪；未采用镜头显示为计划空镜，不伪装成成片。
 
 ```text
@@ -52,9 +53,23 @@ Project → Scene → Shot → Run → Take → Approved Take
 
 ## 快速开始
 
-环境要求：Node.js `>= 22.12 < 27`，以及可选的 ComfyUI。普通使用不需要先理解 pnpm、端口或环境变量。
+最省事的方式是在 [Releases](https://github.com/Fourques/Takeboard/releases) 下载与你系统和 CPU
+对应的 `takeboard-*.tar.gz` 便携预览包。它内置匹配的 Node.js 运行时，不需要安装 pnpm：
 
-下载项目后，可以直接使用根目录里的启动入口：
+| 系统 | 解压后打开 |
+| --- | --- |
+| macOS | 右键打开 `START-TAKEBOARD.command` |
+| Windows | 双击 `START-TAKEBOARD.cmd` |
+| Linux | 运行 `./start-takeboard.sh` |
+
+便携包会在 `48120–48139` 选择空闲回环端口，项目默认保存在 `~/TakeBoardData`。当前预览包具有
+SHA-256 和 GitHub Actions 构建来源证明，但还没有 Apple notarization / Windows 代码签名；下载页会明确标注这一边界。可以用 GitHub CLI 验证构建来源：
+
+```bash
+gh attestation verify takeboard-*.tar.gz --repo Fourques/Takeboard
+```
+
+从源码运行时要求 Node.js `>= 22.12 < 27`，以及可选的 ComfyUI。下载或克隆项目后，也可以继续使用根目录里的启动入口：
 
 | 系统 | 首次与日常打开 |
 | --- | --- |
@@ -62,7 +77,7 @@ Project → Scene → Shot → Run → Take → Approved Take
 | Windows | 双击 `START-TAKEBOARD.cmd` |
 | Linux | 运行 `npm run easy:setup`；之后运行 `npm run easy` |
 
-简易启动器会自动安装依赖、检查并重建更新后的代码、避开已占用端口、后台启动服务并打开浏览器。它会预检项目目录是否可写、避免重复启动，并轮换超过 10 MB 的旧日志。项目默认保存在 `~/TakeBoardData`；关闭服务不会删除数据。打不开时运行：
+源码简易启动器会自动安装依赖、检查并重建更新后的代码、避开已占用端口、后台启动服务并打开浏览器。它会预检项目目录是否可写、避免重复启动，并轮换超过 10 MB 的旧日志。项目默认保存在 `~/TakeBoardData`；关闭服务不会删除数据。打不开时运行：
 
 ```bash
 npm run easy:doctor

@@ -110,7 +110,7 @@ describe("production operations center", () => {
       format: "takeboard.support-report",
       reportVersion: 1,
       application: {
-        version: "0.1.0",
+        version: "0.2.0-beta.1",
         nodeVersion: expect.stringMatching(/^v/),
         platform: expect.any(String),
         architecture: expect.any(String),

@@ -49,6 +49,7 @@ export default defineConfig({
           TAKEBOARD_DATA_ROOT: e2eDataRoot,
           TAKEBOARD_AUTH_DATABASE: resolve(e2eDataRoot, "system", "auth.db"),
           TAKEBOARD_AUTH_MODE: "required",
+          TAKEBOARD_BACKUP_DESTINATION: "",
           TAKEBOARD_DEMO_DIRECTORY: e2eDemoDirectory,
           TAKEBOARD_WEB_ROOT: resolve("apps/web/dist"),
           TAKEBOARD_PORT: e2eServerPort,

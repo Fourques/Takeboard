@@ -1,6 +1,6 @@
 {
   "name": "takeboard",
-  "version": "0.1.0",
+  "version": "0.2.0-beta.1",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.15.1",
@@ -21,11 +21,15 @@
     "typecheck": "pnpm -r --if-present typecheck",
     "lint": "biome check .",
     "format": "biome format --write .",
-    "test": "pnpm -r --if-present test",
+    "test": "pnpm -r --if-present test && node --test scripts/*.test.mjs",
     "test:e2e": "pnpm build && playwright test",
     "gate:release": "pnpm verify && pnpm test:e2e",
     "gate:gpu": "node scripts/gpu-release-gate.mjs",
-    "verify": "pnpm lint && pnpm typecheck && pnpm build && pnpm test"
+    "compatibility:matrix": "node scripts/build-compatibility-matrix.mjs",
+    "demo:capture": "pnpm build && node scripts/capture-product-demo.mjs",
+    "bundle:portable": "node scripts/build-portable-bundle.mjs",
+    "bundle:verify": "node scripts/verify-release-checksums.mjs release",
+    "verify": "pnpm lint && pnpm typecheck && pnpm build && pnpm test && pnpm compatibility:matrix -- --check"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.11.1",

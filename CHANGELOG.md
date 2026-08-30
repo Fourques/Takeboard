@@ -4,6 +4,52 @@ TakeBoard follows [Semantic Versioning](https://semver.org/) from the first publ
 1.0, project packages and database migrations remain forward-oriented: always keep a verified backup
 before moving production work to a newer minor version.
 
+## 0.2.0-beta.1 — 2026-08-30
+
+Resilience and distribution preview.
+
+### Added
+
+- Opt-in scheduled full-instance backups to an out-of-data-root volume, with atomic publication,
+  source/destination SHA-256 verification, daily/weekly/monthly retention and local-copy limits.
+- Real isolated restore drills that restore the identity database and every project on the backup
+  volume, run SQLite integrity checks, reopen project snapshots and retain an auditable report.
+- Administrator backup health and actions, including storage-device isolation, damaged-copy status,
+  scheduling, restore-drill results, security activity and redacted operations diagnostics.
+- Stable per-data-root backup ownership, so multiple TakeBoard instances can safely share one mounted
+  backup volume without counting, restoring or pruning one another's recovery points.
+- Native portable bundles for Linux, macOS and Windows on x64/arm64, with embedded Node.js,
+  post-archive extraction and real HTTP startup smoke tests, checksums and GitHub artifact
+  attestations.
+- A reproducible production-browser walkthrough, cover image and manifest that explicitly identifies
+  deterministic Demo generation instead of presenting it as model-quality evidence.
+- GPU Gate v2 and a machine-readable compatibility matrix that only accepts real end-to-end
+  evidence bound to a clean Commit, source Workflow, executed Prompt and output-video hashes.
+
+### Changed
+
+- Production package deployment excludes TakeBoard workspace source/tests and validates native
+  SQLite/image dependencies from the extracted release archive.
+- Source and portable launchers keep a stable per-data-root identity, refuse ambiguous process
+  ownership and reuse an already-running matching instance instead of spawning duplicates.
+- Automated backups keep two recent local snapshots by default; manual snapshots still retain five.
+- The RTX 4090 / MiniMax H3 record is now labeled as a pre-v2 historical baseline rather than a
+  general compatibility claim.
+
+### Fixed
+
+- Numeric inputs now commit the latest typed draft even when blur and React rendering occur in the
+  same frame, preventing cleared duration or dimension fields from reverting to stale values.
+
+### Release boundary
+
+- Portable archives are unsigned previews. Apple notarization, Windows code signing and automatic
+  updates remain future gates.
+- Scheduled backups are full snapshots, not incremental or deduplicated storage. Operators must
+  provision and encrypt the external volume appropriately.
+- The compatibility matrix is intentionally sparse until more real hardware/Workflow reports are
+  reviewed and committed.
+
 ## 0.1.0 — 2026-08-30
 
 First self-hosted public preview.

@@ -92,6 +92,17 @@ export const operationsDiagnosticsSchema = z.object({
     .object({
       count: z.number().int().nonnegative(),
       latestCreatedAt: z.string().datetime().nullable(),
+      automation: z
+        .object({
+          enabled: z.boolean(),
+          externalBackupCount: z.number().int().nonnegative(),
+          damagedExternalBackupCount: z.number().int().nonnegative(),
+          lastSuccessAt: z.string().datetime().nullable(),
+          lastRestoreDrillAt: z.string().datetime().nullable(),
+          lastRestoreDrillPassed: z.boolean().nullable(),
+          separateDevice: z.boolean().nullable(),
+        })
+        .nullable(),
     })
     .nullable(),
   checks: z.array(operationsDiagnosticCheckSchema),

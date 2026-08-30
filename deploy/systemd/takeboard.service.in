@@ -9,12 +9,14 @@ WorkingDirectory=@REPO_DIR@
 ExecStart="@NODE_BIN@" "@REPO_DIR@/apps/server/dist/index.js"
 Restart=on-failure
 RestartSec=3
+UMask=0077
+EnvironmentFile=-@CONFIG_DIR@/env
 Environment=NODE_ENV=production
 Environment=TAKEBOARD_HOST=127.0.0.1
 Environment=TAKEBOARD_PORT=48120
 Environment="TAKEBOARD_WEB_ROOT=@REPO_DIR@/apps/web/dist"
 Environment="TAKEBOARD_DATA_ROOT=@DATA_ROOT@"
-EnvironmentFile=-@CONFIG_DIR@/env
+Environment="TAKEBOARD_INSTANCE_ID=@INSTANCE_ID@"
 
 [Install]
 WantedBy=default.target

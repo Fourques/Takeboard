@@ -21,6 +21,26 @@ afterEach(async () => {
 });
 
 describe("TakeBoard instance backups", () => {
+  it("honors the requested local recovery-point limit", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "takeboard-instance-retention-"));
+    roots.push(dataRoot);
+    const auth = new AuthService(join(dataRoot, ".system", "auth.db"), "required");
+    auth.createBootstrap(
+      {
+        name: "Retention owner",
+        email: "retention@example.com",
+        password: "retention owner has a secure passphrase",
+      },
+      [],
+    );
+    await createInstanceBackup(dataRoot, auth, 2);
+    await createInstanceBackup(dataRoot, auth, 2);
+    await createInstanceBackup(dataRoot, auth, 2);
+    expect(await listInstanceBackups(dataRoot)).toHaveLength(2);
+    await expect(createInstanceBackup(dataRoot, auth, 1.5)).rejects.toThrow(/integer/);
+    auth.close();
+  });
+
   it("creates a consistent verified backup and restores only missing projects online", async () => {
     const dataRoot = await mkdtemp(join(tmpdir(), "takeboard-instance-backup-"));
     roots.push(dataRoot);

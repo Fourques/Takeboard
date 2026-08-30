@@ -101,7 +101,14 @@ async function projectKeys(root: string) {
     .sort();
 }
 
-export async function createInstanceBackup(projectsRoot: string, auth: AuthService) {
+export async function createInstanceBackup(
+  projectsRoot: string,
+  auth: AuthService,
+  retainedCopies = 5,
+) {
+  if (!Number.isInteger(retainedCopies) || retainedCopies < 1 || retainedCopies > 100) {
+    throw new TypeError("retainedCopies must be an integer from 1 to 100");
+  }
   const root = resolve(projectsRoot);
   const releaseCatalog = await acquireProjectLock("__catalog__");
   const keys = await projectKeys(root);
@@ -215,7 +222,7 @@ export async function createInstanceBackup(projectsRoot: string, auth: AuthServi
     await rename(`${destination}.partial`, destination);
     const info = await stat(destination);
     await writeFileMetadata(destination, manifest, info.size);
-    await pruneBackups(backupsRoot);
+    await pruneBackups(backupsRoot, retainedCopies);
     return storedBackupFromManifest(destination, manifest, info.size);
   } finally {
     releaseProjects();
@@ -249,13 +256,13 @@ function storedBackupFromManifest(
   };
 }
 
-async function pruneBackups(root: string) {
+async function pruneBackups(root: string, retainedCopies: number) {
   const files = (await readdir(root, { withFileTypes: true }).catch(() => []))
     .filter((entry) => entry.isFile() && entry.name.endsWith(".takeboard-instance.tgz"))
     .map((entry) => entry.name)
     .sort()
     .reverse();
-  for (const stale of files.slice(5)) {
+  for (const stale of files.slice(retainedCopies)) {
     await rm(join(root, stale), { force: true });
     await rm(join(root, `${stale}.json`), { force: true });
   }

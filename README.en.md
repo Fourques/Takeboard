@@ -32,11 +32,23 @@ Models, workflows, media and project files stay on infrastructure you control.
 - Recoverable project deletion, integrity-checked project import/export and pre-migration backups.
 - Accounts, device sessions, instance admins and project Owner/Editor/Viewer roles.
 - Cross-project task/storage center and a redacted downloadable support report.
+- Optional scheduled off-volume instance backups with retention and isolated restore drills.
 - User-selectable type scaling without changing canvas coordinates or generation resolution.
 
 ## Quick start
 
-Requirements: Node.js `>=22.12 <27`; ComfyUI is optional until you want real generation.
+For the lowest-friction preview, download the `takeboard-*.tar.gz` matching your OS and CPU from
+[Releases](https://github.com/Fourques/Takeboard/releases). Portable bundles include a matching
+Node.js runtime: extract, then open `START-TAKEBOARD.command` on macOS,
+`START-TAKEBOARD.cmd` on Windows, or `./start-takeboard.sh` on Linux. They include SHA-256 checksums
+and GitHub build-provenance attestations, but are not yet Apple-notarized or Windows code-signed.
+
+```bash
+gh attestation verify takeboard-*.tar.gz --repo Fourques/Takeboard
+```
+
+The source launcher requires Node.js `>=22.12 <27`; ComfyUI is optional until you want real
+generation.
 
 | Platform | First and daily start |
 | --- | --- |
@@ -94,8 +106,13 @@ Each project is a self-contained `.takeboard` directory containing SQLite state,
 renders, runs, Recipes, logs and backups. Full project archives are streamed with file sizes and
 SHA-256 integrity checks.
 
+Administrators can optionally schedule full-instance copies to a mounted external disk or NAS.
+TakeBoard verifies each copy, applies daily/weekly/monthly retention, and periodically performs a
+real isolated restore that opens the identity database and every project. Automation is disabled
+until an out-of-data-root destination is explicitly configured.
+
 Authentication is required by default and the server listens on `127.0.0.1`. Trusted teams can deploy
-behind an HTTPS reverse proxy with strict Host/Origin configuration. The 0.1.x preview is not a managed
+behind an HTTPS reverse proxy with strict Host/Origin configuration. The 0.x preview is not a managed
 multi-tenant SaaS identity platform: MFA, SSO/SCIM, email recovery, quotas and managed security
 operations are out of scope. Never expose the ComfyUI port publicly. See [security](SECURITY.md) and
 [self-hosting](docs/self-hosting.md).

@@ -19,6 +19,105 @@ test("unauthenticated visitors see the login boundary and can sign in", async ({
   }
 });
 
+test("administrator can understand and operate external backup protection", async ({ page }) => {
+  const timestamp = new Date().toISOString();
+  const status = {
+    enabled: true,
+    configurationError: null,
+    destinationLabel: "studio-backups",
+    destinationReady: true,
+    separateDevice: true,
+    intervalHours: 24,
+    localCopies: 2,
+    retention: { daily: 7, weekly: 4, monthly: 6 },
+    restoreDrillIntervalDays: 30,
+    running: false,
+    lastAttemptAt: timestamp,
+    lastSuccessAt: timestamp,
+    nextRunAt: timestamp,
+    lastError: null,
+    externalBackupCount: 3,
+    damagedExternalBackupCount: 0,
+    latestExternalBackup: null,
+    lastRestoreDrillAt: timestamp,
+    lastRestoreDrillPassed: true,
+    lastRestoreDrillError: null,
+  };
+  await page.route("**/api/admin/backups/automation", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ status }),
+    });
+  });
+  await page.route("**/api/admin/backups/automation/run", async (route) => {
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({
+        backup: {
+          format: "takeboard.external-instance-backup",
+          version: 1,
+          sourceInstanceId: "11111111-1111-4111-8111-111111111111",
+          id: "backup-ui-evidence",
+          filename: "backup-ui-evidence.takeboard-instance.tgz",
+          createdAt: timestamp,
+          copiedAt: timestamp,
+          size: 1,
+          archiveSha256: "a".repeat(64),
+          projectCount: 1,
+          userCount: 1,
+          separateDevice: true,
+        },
+        drill: null,
+        drillError: null,
+      }),
+    });
+  });
+  await page.route("**/api/admin/backups/automation/drill", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        report: {
+          format: "takeboard.restore-drill",
+          version: 1,
+          id: "drill-ui-evidence",
+          backupId: "backup-ui-evidence",
+          backupSha256: "a".repeat(64),
+          startedAt: timestamp,
+          completedAt: timestamp,
+          elapsedSeconds: 1,
+          projectCount: 1,
+          userCount: 1,
+          passed: true,
+          platform: "linux",
+          architecture: "x64",
+        },
+      }),
+    });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: /TakeBoard E2E/ }).click();
+  await page.getByRole("button", { name: "备份与恢复" }).click();
+  const account = page.getByRole("dialog", { name: /TakeBoard E2E/ });
+  await expect(account.getByRole("heading", { name: "外部副本与恢复演练" })).toBeVisible();
+  await expect(account.getByText("保护正常")).toBeVisible();
+  await expect(account.getByText("3 份")).toBeVisible();
+  await expect(account.getByText("不同文件系统")).toBeVisible();
+  await expect(account.getByText("最近通过")).toBeVisible();
+
+  await account.getByRole("button", { name: "立即建立外部副本" }).click();
+  await expect(account.getByText("外部副本已完成校验并安全保存。")).toBeVisible();
+  await account.getByRole("button", { name: "运行恢复演练" }).click();
+  await expect(account.getByText("隔离恢复演练通过：身份数据库与全部项目均可读取。")).toBeVisible();
+  await page.screenshot({
+    path: "test-results/takeboard-backup-automation.png",
+    animations: "disabled",
+  });
+});
+
 test("viewer and editor see coherent project actions for their roles", async ({
   browser,
   baseURL,

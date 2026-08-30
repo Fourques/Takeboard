@@ -83,6 +83,7 @@ export function NumericInput({
       ? (pendingDrafts.get(draftKey) ?? "")
       : formatNumber(value),
   );
+  const draftRef = useRef(draft);
 
   const updateDraft = (next: string) => {
     if (draftKey) {
@@ -91,6 +92,7 @@ export function NumericInput({
       const oldestDraft = pendingDrafts.keys().next().value as string | undefined;
       if (pendingDrafts.size > 500 && oldestDraft) pendingDrafts.delete(oldestDraft);
     }
+    draftRef.current = next;
     setDraft(next);
   };
 
@@ -101,13 +103,16 @@ export function NumericInput({
   useEffect(() => {
     if (focused.current) return;
     if (draftKey && pendingDrafts.has(draftKey)) {
-      setDraft(pendingDrafts.get(draftKey) ?? "");
+      const pending = pendingDrafts.get(draftKey) ?? "";
+      draftRef.current = pending;
+      setDraft(pending);
       return;
     }
-    setDraft(formatNumber(value));
+    const formatted = formatNumber(value);
+    draftRef.current = formatted;
+    setDraft(formatted);
   }, [draftKey, value]);
 
-  const parsed = draft.trim() === "" ? Number.NaN : Number(draft);
   const draftIsValid = isNumberDraftValid(draft, min, max);
   const invalid =
     (preserveEmptyOnBlur && draft.trim() === "") || (draft.trim() !== "" && !draftIsValid);
@@ -117,18 +122,26 @@ export function NumericInput({
   }, [draftIsValid]);
 
   const commit = () => {
-    if (!Number.isFinite(parsed)) {
+    // Read the ref written synchronously by onChange. Under a concurrent parent
+    // render, blur can arrive before React commits the latest draft state.
+    const latestDraft = draftRef.current;
+    const latestParsed = latestDraft.trim() === "" ? Number.NaN : Number(latestDraft);
+    if (!Number.isFinite(latestParsed)) {
       if (preserveEmptyOnBlur) {
-        updateDraft(draft);
+        updateDraft(latestDraft);
         return;
       }
       clearPendingDraft();
-      setDraft(formatNumber(value));
+      const formatted = formatNumber(value);
+      draftRef.current = formatted;
+      setDraft(formatted);
       return;
     }
-    const next = normalizeNumber(parsed, min, max, step);
+    const next = normalizeNumber(latestParsed, min, max, step);
     clearPendingDraft();
-    setDraft(formatNumber(next));
+    const formatted = formatNumber(next);
+    draftRef.current = formatted;
+    setDraft(formatted);
     if (next !== value) onValueChange(next);
   };
 
@@ -137,7 +150,9 @@ export function NumericInput({
     if (restoreOnBlur.current) {
       restoreOnBlur.current = false;
       clearPendingDraft();
-      setDraft(formatNumber(value));
+      const formatted = formatNumber(value);
+      draftRef.current = formatted;
+      setDraft(formatted);
     } else {
       commit();
     }
@@ -152,7 +167,9 @@ export function NumericInput({
       event.preventDefault();
       restoreOnBlur.current = true;
       clearPendingDraft();
-      setDraft(formatNumber(value));
+      const formatted = formatNumber(value);
+      draftRef.current = formatted;
+      setDraft(formatted);
       event.currentTarget.blur();
     }
     onKeyDown?.(event);

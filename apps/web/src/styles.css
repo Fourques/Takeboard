@@ -14,6 +14,8 @@
   --gold: #d8ab60;
   --green: #74c594;
   --red: #d87f76;
+  --success: var(--green);
+  --warning: var(--gold);
   --app-bg: #0e1110;
   --glass: rgb(17 21 19 / 92%);
   --accent: #d8ab60;
@@ -1248,6 +1250,122 @@ body {
   gap: 16px;
 }
 
+.backup-automation-card {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
+  border-radius: 18px;
+  background:
+    radial-gradient(
+      circle at 92% 4%,
+      color-mix(in srgb, var(--accent) 11%, transparent),
+      transparent 42%
+    ),
+    color-mix(in srgb, var(--surface-2) 82%, transparent);
+}
+
+.backup-automation-card > header,
+.backup-automation-card > footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.backup-automation-card > header > div {
+  display: grid;
+  gap: 3px;
+}
+
+.backup-automation-card > header span,
+.backup-automation-metrics span {
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+.backup-automation-card h3,
+.backup-automation-card p {
+  margin: 0;
+}
+
+.backup-automation-card h3 {
+  font-size: 17px;
+}
+
+.backup-health {
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--text-2);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 750;
+}
+
+.backup-health.healthy {
+  border-color: color-mix(in srgb, var(--success) 42%, var(--line));
+  color: var(--success);
+}
+
+.backup-health.attention,
+.backup-health.blocked {
+  border-color: color-mix(in srgb, var(--warning) 42%, var(--line));
+  color: var(--warning);
+}
+
+.backup-automation-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.backup-automation-metrics > div {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-root) 62%, transparent);
+}
+
+.backup-automation-metrics strong,
+.backup-automation-metrics small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.backup-automation-card > footer {
+  justify-content: flex-start;
+}
+
+.backup-automation-card > footer button {
+  min-height: 38px;
+}
+
+.backup-automation-empty {
+  display: grid;
+  gap: 8px;
+  color: var(--text-2);
+}
+
+.backup-automation-empty code {
+  margin: 0 4px;
+}
+
+.backup-automation-empty small {
+  color: var(--warning);
+}
+
+.backup-automation-error {
+  color: var(--warning);
+  line-height: 1.55;
+}
+
 .backup-summary > div,
 .restore-review header > div {
   display: grid;
@@ -1272,6 +1390,17 @@ body {
   width: 1px;
   height: 1px;
   opacity: 0;
+}
+
+@media (max-width: 720px) {
+  .backup-automation-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .backup-automation-card > footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
 }
 
 .restore-review > header {

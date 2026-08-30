@@ -59,6 +59,11 @@ TAKEBOARD_DATA_ROOT=/srv/takeboard-data ./scripts/takeboard install
 | `TAKEBOARD_DATA_ROOT` | `~/TakeBoardData` | 所有 `.takeboard` 项目的父目录 |
 | `TAKEBOARD_AUTH_MODE` | `required` | `required` 启用账号；`off` / `trusted_local` 仅允许隔离的回环环境 |
 | `TAKEBOARD_AUTH_DATABASE` | 数据目录内的 `.system/auth.db` | 账号、会话、项目成员关系和安全审计数据库 |
+| `TAKEBOARD_BACKUP_DESTINATION` | 空（自动备份关闭） | 数据目录之外的外部磁盘、NAS 或已挂载备份卷 |
+| `TAKEBOARD_BACKUP_INTERVAL_HOURS` | `24` | 完整实例副本的计划间隔 |
+| `TAKEBOARD_BACKUP_KEEP_LOCAL` | `2` | 自动备份后在本机保留的最近完整快照数（1–5） |
+| `TAKEBOARD_BACKUP_KEEP_DAILY/WEEKLY/MONTHLY` | `7 / 4 / 6` | 外部恢复点保留窗口 |
+| `TAKEBOARD_BACKUP_DRILL_INTERVAL_DAYS` | `30` | 隔离恢复演练间隔 |
 | `COMFY_URL` | `http://127.0.0.1:8188` | TakeBoard 服务端调用的 ComfyUI API |
 | `COMFY_EDITOR_URL` | `http://127.0.0.1:48188` | 浏览器打开 ComfyUI 编辑器的地址 |
 | `COMFY_INPUT_ROOT` | 空 | 允许清理本次 Run 创建的输入临时文件 |
@@ -127,6 +132,22 @@ npm run easy
 ```
 
 恢复前数据会保留在数据根目录的 `.system/offline-restore-rollbacks/`，确认恢复无误后再由文件系统管理员处理。
+
+长期运行建议把自动副本指向数据目录之外的已挂载位置：
+
+```dotenv
+TAKEBOARD_BACKUP_DESTINATION=/mnt/studio-backups/takeboard
+TAKEBOARD_BACKUP_INTERVAL_HOURS=24
+TAKEBOARD_BACKUP_KEEP_LOCAL=2
+TAKEBOARD_BACKUP_KEEP_DAILY=7
+TAKEBOARD_BACKUP_KEEP_WEEKLY=4
+TAKEBOARD_BACKUP_KEEP_MONTHLY=6
+TAKEBOARD_BACKUP_DRILL_INTERVAL_DAYS=30
+```
+
+重启后，管理员可在“账号 → 备份与恢复”查看下一次计划、存储是否位于不同文件系统、损坏副本数和最近演练状态，也可立即运行。每份副本先写入临时文件，再核对源/目标 SHA-256 后发布；演练会在备份卷的临时隔离目录完整恢复身份库与项目，执行 SQLite `quick_check` 并逐个打开项目，最后删除演练数据但保留报告。目标经过符号链接解析后仍落在 `TAKEBOARD_DATA_ROOT` 内会被拒绝。每个数据根目录拥有独立来源标识；共用 NAS 目录时，保留策略和演练只处理当前实例的副本，不会删除其他实例的恢复点。
+
+当前策略是完整快照而不是增量/去重备份，请按项目媒体总量规划外部容量。相同文件系统只提供目录隔离，运行诊断会持续警告；真正的设备故障保护应使用另一块磁盘或独立存储系统。备份含密码摘要和全部私有媒体，外部设备仍应加密并限制访问。
 
 项目内部结构与迁移要求见[数据目录规范](./data-layout.md)。
 

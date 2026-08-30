@@ -1,51 +1,59 @@
-# TakeBoard 完整 Demo
+# TakeBoard 产品演示
 
-更新时间：2026-08-13
+更新时间：2026-08-30
 
-## 启动
-
-需要 Node.js 24 LTS 和 `package.json` 中声明的 pnpm 版本。
+## 一键录制
 
 ```bash
-pnpm install
-pnpm dev
+pnpm exec playwright install --with-deps chromium
+pnpm demo:capture
 ```
 
-打开 <http://127.0.0.1:48110>。Web 和 API 都只监听本机回环地址；Demo 数据保存在本地
-`.takeboard-data/demo.takeboard/`，不会调用 GPU 或付费 API。
+命令会先建立生产构建，再启动一个使用临时数据目录和独立回环端口的实例，初始化临时管理员，并用 1440×900 Chromium 完成以下路径：
 
-## 推荐演示路径
+1. 打开“雾港来信”示例项目并重置到确定状态；
+2. 检查一个来源素材节点，再回到镜头；
+3. 生成四个 Demo 候选并选择其中一个；
+4. 批准候选，确认镜头完成度和来源状态变化；
+5. 打开分镜墙和只读粗剪；
+6. 关闭浏览器、服务并删除临时项目数据。
 
-1. 从左侧选择 `S001`，观察剧本、角色、场景素材到镜头的引用连线；
-2. 点击右侧“生成 4 个”，Fake ComfyUI 会创建 4 条独立 Run、Asset 和 Take；
-3. 选择 Take 01，选择“角色漂移”并淘汰；
-4. 选择 Take 02，点击“批准此 Take”；
-5. 观察左侧完成度变为 `1/3`，镜头与 Take Stack 显示已批准；
-6. 刷新页面，淘汰、批准、来源边和候选仍然存在；
-7. 拖动画布节点并刷新，布局会从 SQLite 恢复；
-8. 点击两次“重置 Demo”可回到初始状态。
+产物位于被 Git 忽略的 `test-results/demo/`：
 
-## Demo 已真实实现的能力
+- `takeboard-product-walkthrough.webm`：可直接发布的无声产品路径；
+- `takeboard-demo-cover.png`：采用候选后的画布封面；
+- `takeboard-demo-manifest.json`：源码 commit、工作树状态、画面尺寸、动作序列、文件 SHA-256 与生成性质声明。
 
-- 内容级无限画布：Script、Character、Location、Shot、Take Stack；
-- 来源引用与生成来源两类连线；
-- 3 个镜头的项目导航和完成度；
-- 4 次独立假生成及 seed、Recipe、Worker、Run 来源记录；
-- 候选比较、结构化淘汰原因、批准与旧批准撤销历史；
-- SQLite revision/event log、开放 JSON 快照、刷新和重启恢复；
-- 本地模式、无积分、无外部模型费用。
+发布 Workflow 会在 Linux 的干净 Commit 上重新录制，为三个文件生成 GitHub 构建来源证明，并在版本 Tag 发布时作为 Release Asset 上传。CI 会拒绝来源不明确或工作树有修改的录制；录制失败不会留下后台服务或临时数据目录。
 
-## 有意未伪装成完成的能力
+## 诚实边界
 
-Demo 的候选画面是视觉占位，不是真实模型输出；`TB-008`—`TB-010` 才会接本地 ComfyUI 的
-健康检查、Workflow Recipe、队列、WebSocket 和输出回收。当前 Demo 的目的，是先验证 TakeBoard
-区别于 ComfyUI 的项目管理和选片闭环。
+Demo Worker 不调用 GPU 或付费 API。候选卡是稳定的产品交互样片，用来展示项目、画布、生成状态、选片和粗剪闭环；界面与清单均将其标记为 `deterministic_demo` / `realGpu: false`。它不证明 MiniMax H3、其他模型或某个自定义 Workflow 的画质。
+
+真实生成证据必须通过：
+
+```bash
+pnpm gate:gpu
+```
+
+并进入[真实生成兼容性矩阵](./compatibility-matrix.md)。自动技术完整性也不能冒充人工审片；只有完整观看对应输出后，证据才可标记为视觉通过。
+
+## 手工演示建议
+
+自动视频只有约 15 秒，适合 README、Issue 或 Release 预览。对外讲解建议录制 60–90 秒真人旁白版本：
+
+- 先说清 TakeBoard 是 ComfyUI 之上的项目与选片层，不替代节点编辑器；
+- 展示原始素材、镜头输入、真实/不确定进度和批准结果；
+- 展示 Workflow Binding 与内容哈希的信任边界；
+- 明确无 ComfyUI 时仍可管理项目，但不能提交真实生成；
+- 结尾邀请用户携带自己的 Workflow 报告兼容性，而不是声称任意 JSON 都能运行。
 
 ## 验证
 
 ```bash
 pnpm verify
 pnpm test:e2e
+pnpm demo:capture
 ```
 
-E2E 会自动启动本地服务，并在 Chromium 中执行“重置 → 生成 → 淘汰 → 批准 → 刷新恢复”。
+浏览器测试会独立覆盖 Demo 的重置、候选生成、淘汰、批准、刷新恢复，以及管理员外部备份卡片的操作状态。

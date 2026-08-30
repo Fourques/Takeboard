@@ -1,0 +1,7 @@
+{
+  "format": "takeboard.compatibility-matrix",
+  "version": 1,
+  "evidenceSchema": "takeboard.gpu-release-gate@2",
+  "verifiedRunCount": 0,
+  "entries": []
+}

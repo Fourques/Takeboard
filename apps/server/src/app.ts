@@ -5,6 +5,7 @@ import fastifyStatic from "@fastify/static";
 import Fastify, { type FastifyInstance } from "fastify";
 import { type AuthOptions, registerAuth } from "./auth-routes.js";
 import type { AuthMode } from "./auth-service.js";
+import { type BackupAutomationConfig, registerBackupAutomation } from "./backup-automation.js";
 import { registerDemoRoutes } from "./demo/routes.js";
 import { registerGenerationRoutes } from "./generation-routes.js";
 import { registerOperationsRoutes } from "./operations-routes.js";
@@ -15,7 +16,7 @@ import { type RequestSecurityOptions, registerRequestSecurity } from "./request-
 import { registerWorkerRoutes, type WorkerRouteOptions } from "./worker-routes.js";
 import { registerWorkflowRoutes } from "./workflow-routes.js";
 
-export const takeBoardVersion = "0.1.0";
+export const takeBoardVersion = "0.2.0-beta.1";
 
 export type AppOptions = {
   demoDirectory?: string;
@@ -28,6 +29,7 @@ export type AppOptions = {
   webRoot?: string | null;
   requestSecurity?: RequestSecurityOptions;
   auth?: Partial<AuthOptions> & { mode?: AuthMode };
+  backupAutomation?: BackupAutomationConfig | false;
 };
 
 export function authModeFromEnvironment(): AuthMode {
@@ -68,6 +70,12 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     instanceId: process.env.TAKEBOARD_INSTANCE_ID ?? null,
   }));
 
+  const backupAutomation =
+    options.backupAutomation === false ||
+    (options.backupAutomation === undefined && process.env.NODE_ENV === "test")
+      ? null
+      : registerBackupAutomation(app, projectsRoot, auth, options.backupAutomation);
+
   registerProjectRequestLock(app, projectsRoot);
 
   registerDemoRoutes(
@@ -89,6 +97,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     version: takeBoardVersion,
     comfyUrl,
     webRoot,
+    backupAutomation,
   });
   registerProjectCommandRoutes(app, projectsRoot);
   registerWorkerRoutes(app, comfyUrl, options.workerOptions);
