@@ -148,6 +148,7 @@ describe("scheduled external backups", () => {
       drill: { passed: true, projectCount: 1, userCount: 1 },
       drillError: null,
     });
+    expect(await readdir(destination)).not.toContain(".restore-drill-work");
     const backup = created.json().backup as ExternalBackupRecord;
 
     const status = await app.inject({

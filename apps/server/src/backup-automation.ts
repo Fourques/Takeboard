@@ -4,6 +4,7 @@ import {
   access,
   lstat,
   mkdir,
+  mkdtemp,
   open,
   readdir,
   readFile,
@@ -13,6 +14,7 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { pipeline } from "node:stream/promises";
 import BetterSqlite3 from "better-sqlite3";
@@ -545,7 +547,10 @@ async function executeRestoreDrill(destination: string, record: ExternalBackupRe
   }
   const id = randomUUID();
   const startedAt = new Date();
-  const drillRoot = join(destination, ".restore-drill-work", id);
+  // Restore into an isolated local workspace. Nesting the restore tree under a
+  // user-selected backup path can exceed SQLite's usable path length on
+  // Windows, and it needlessly writes a second full copy to the backup volume.
+  const drillRoot = await mkdtemp(join(tmpdir(), "takeboard-restore-drill-"));
   const restoredRoot = join(drillRoot, "data");
   const authPath = join(restoredRoot, ".system", "auth.db");
   try {

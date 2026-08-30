@@ -12,8 +12,9 @@ Resilience and distribution preview.
 
 - Opt-in scheduled full-instance backups to an out-of-data-root volume, with atomic publication,
   source/destination SHA-256 verification, daily/weekly/monthly retention and local-copy limits.
-- Real isolated restore drills that restore the identity database and every project on the backup
-  volume, run SQLite integrity checks, reopen project snapshots and retain an auditable report.
+- Real isolated restore drills that read an external copy into a temporary workspace, restore the
+  identity database and every project, run SQLite integrity checks, reopen project snapshots and
+  retain an auditable report.
 - Administrator backup health and actions, including storage-device isolation, damaged-copy status,
   scheduling, restore-drill results, security activity and redacted operations diagnostics.
 - Stable per-data-root backup ownership, so multiple TakeBoard instances can safely share one mounted
@@ -42,6 +43,8 @@ Resilience and distribution preview.
 
 - External backup durability now opens files with write-capable handles before `fsync`, so Windows
   can flush archives, metadata, restore reports and scheduler state instead of aborting publication.
+- Restore drills no longer create deeply nested scratch data on the backup volume, avoiding Windows
+  path-length failures while keeping the external recovery point read-only during validation.
 - Numeric inputs now commit the latest typed draft even when blur and React rendering occur in the
   same frame, preventing cleared duration or dimension fields from reverting to stale values.
 
