@@ -70,19 +70,21 @@ function useBoardFaceTexture(
   recentProjectTitle: string | null,
 ) {
   const texture = useMemo(() => {
+    const textureScale = 1.5;
+    const width = 1440;
+    const height = 656;
     const canvas = document.createElement("canvas");
-    canvas.width = 1440;
-    canvas.height = 656;
+    canvas.width = width * textureScale;
+    canvas.height = height * textureScale;
     const context = canvas.getContext("2d");
     if (!context) return new THREE.CanvasTexture(canvas);
+    context.scale(textureScale, textureScale);
 
-    const width = canvas.width;
-    const height = canvas.height;
     const paper = face === "front" ? palette.screen : palette.raised;
     const safeTitle = (recentProjectTitle?.trim() || "未命名项目").slice(0, 18);
 
     context.fillStyle = paper;
-    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.fillRect(0, 0, width, height);
 
     const wash = context.createRadialGradient(1030, 170, 40, 1030, 170, 620);
     wash.addColorStop(0, `${face === "front" ? palette.signal : palette.violet}2a`);
@@ -313,7 +315,7 @@ function useBoardFaceTexture(
 
     const result = new THREE.CanvasTexture(canvas);
     result.colorSpace = THREE.SRGBColorSpace;
-    result.anisotropy = 4;
+    result.anisotropy = 8;
     result.needsUpdate = true;
     return result;
   }, [face, palette, projectCount, ready, recentProjectTitle]);
@@ -670,12 +672,12 @@ export function StudioUniverse({
       <SceneBoundary fallback={<SceneFallback />}>
         <Canvas
           className="universe-webgl"
-          dpr={[1, quality === "full" ? 1.5 : 1.25]}
+          dpr={quality === "full" ? [1.5, 2] : [1.25, 1.75]}
           frameloop="demand"
           camera={{ position: [0, 0.08, 6.5], fov: 32, near: 0.1, far: 40 }}
           gl={{
             alpha: true,
-            antialias: quality === "full",
+            antialias: true,
             powerPreference: "high-performance",
           }}
           onCreated={({ gl, scene }) => {

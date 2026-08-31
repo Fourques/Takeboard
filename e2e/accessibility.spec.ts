@@ -17,6 +17,7 @@ test("homepage has no serious WCAG A/AA violations", async ({ page }) => {
 test("display scale is clear by default and remains a user choice", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("html")).toHaveAttribute("data-display-scale", "1-12");
+  await page.getByRole("button", { name: "打开工作区选项" }).click();
   await page.getByRole("button", { name: "显示大小：清晰" }).click();
   await page.getByRole("button", { name: /大字/ }).click();
   await expect(page.locator("html")).toHaveAttribute("data-display-scale", "1-24");
@@ -64,9 +65,7 @@ test("workspace, operations and storyboard have no serious WCAG A/AA violations"
     ).toEqual([]);
 
     await page.getByRole("button", { name: "打开生成任务、存储与诊断中心" }).click();
-    await expect(
-      page.getByRole("complementary", { name: "生成任务、存储与诊断中心" }),
-    ).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "生成任务、存储与诊断中心" })).toBeVisible();
     const operationsResults = await new AxeBuilder({ page })
       .include(".operations-panel")
       .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])

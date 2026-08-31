@@ -92,8 +92,8 @@ export function DisplaySettings({ compact = false }: { compact?: boolean }) {
             <div className="scene-quality-options">
               {(
                 [
-                  ["auto", "自动", "先显示轻量封面，空闲时预载"],
-                  ["full", "完整", "打开首页即启用可旋转 3D"],
+                  ["auto", "自动", "直接显示三维场景，并平衡设备负载"],
+                  ["full", "完整", "使用更完整的三维细节"],
                   ["lite", "节能", "始终使用清晰静态封面"],
                 ] as const
               ).map(([value, label, hint]) => (

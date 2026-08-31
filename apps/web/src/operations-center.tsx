@@ -31,6 +31,24 @@ const operationsCss = `.operations-control {
   gap: 9px;
 }
 
+.operations-control.is-compact .operations-pill {
+  width: auto;
+  min-width: 108px;
+  justify-content: center;
+  padding: 0 12px;
+  border-radius: 11px;
+}
+
+.operations-control.is-compact .operations-pill > div {
+  display: none;
+}
+
+.operations-compact-label {
+  font-size: calc(11px * var(--ui-scale));
+  font-weight: 590;
+  letter-spacing: 0.01em;
+}
+
 .operations-pill:hover,
 .operations-pill[aria-expanded="true"] {
   border-color: var(--accent);
@@ -61,16 +79,38 @@ const operationsCss = `.operations-control {
   font-size: calc(10px * var(--ui-scale));
 }
 
-.operations-pulse {
-  width: 8px;
-  height: 8px;
+.operations-mark {
+  position: relative;
+  display: grid;
+  width: 17px;
+  height: 17px;
+  place-items: center;
   flex: none;
-  border: 1px solid var(--text-2);
+}
+
+.operations-mark svg {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.45;
+}
+
+.operations-pulse {
+  position: absolute;
+  right: -2px;
+  bottom: -1px;
+  width: 5px;
+  height: 5px;
+  border: 1px solid var(--surface-2);
   border-radius: 50%;
+  background: var(--text-2);
 }
 
 .operations-pill.has-active .operations-pulse {
-  border: 0;
+  border-color: var(--surface-2);
   background: var(--green);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--green) 15%, transparent);
   animation: operations-pulse 1.8s ease-in-out infinite;
@@ -84,11 +124,12 @@ const operationsCss = `.operations-control {
 
 .operations-panel {
   position: absolute;
-  top: calc(100% + 12px);
+  top: calc(100% + 10px);
   right: 0;
-  display: grid;
+  display: flex;
+  flex-direction: column;
   width: min(460px, calc(100vw - 28px));
-  max-height: min(720px, calc(100vh - 90px));
+  max-height: calc(100dvh - 88px);
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -96,7 +137,6 @@ const operationsCss = `.operations-control {
   background: color-mix(in srgb, var(--surface-1) 97%, transparent);
   box-shadow: 0 30px 100px rgb(0 0 0 / 42%);
   backdrop-filter: blur(24px);
-  grid-template-rows: auto auto auto minmax(0, 1fr);
 }
 
 .operations-panel > header,
@@ -111,6 +151,7 @@ const operationsCss = `.operations-control {
 }
 
 .operations-panel > header {
+  flex: none;
   padding: 16px 18px 12px;
 }
 
@@ -132,6 +173,7 @@ const operationsCss = `.operations-control {
 }
 
 .operations-tabs {
+  flex: none;
   justify-content: flex-start;
   padding: 0 18px;
   border-bottom: 1px solid var(--line);
@@ -158,6 +200,7 @@ const operationsCss = `.operations-control {
 }
 
 .operations-error {
+  flex: none;
   margin: 10px 18px 0;
   padding: 8px;
   border: 1px solid var(--red);
@@ -169,6 +212,7 @@ const operationsCss = `.operations-control {
 .operations-task-view,
 .operations-storage-view,
 .operations-diagnostic-view {
+  flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
   padding: 12px 18px 18px;
@@ -454,12 +498,35 @@ const operationsCss = `.operations-control {
   }
 
   .operations-panel {
-    position: fixed;
-    top: 68px;
-    right: 10px;
-    left: 10px;
-    width: auto;
-    max-height: calc(100dvh - 78px);
+    top: calc(100% + 8px);
+    right: 0;
+    left: auto;
+    width: min(460px, calc(100vw - 16px));
+    max-height: calc(100dvh - 74px);
+  }
+}
+
+@media (max-height: 620px) {
+  .operations-panel {
+    max-height: calc(100dvh - 72px);
+  }
+
+  .operations-panel > header {
+    padding: 10px 14px 8px;
+  }
+
+  .operations-panel > header strong {
+    font-size: calc(15px * var(--ui-scale));
+  }
+
+  .operations-tabs {
+    padding-inline: 14px;
+  }
+
+  .operations-task-view,
+  .operations-storage-view,
+  .operations-diagnostic-view {
+    padding: 9px 14px 14px;
   }
 }
 `;
@@ -549,8 +616,10 @@ function notifyFinishedTasks(
 
 export function OperationsCenter({
   onOpenProject,
+  compact = false,
 }: {
   onOpenProject: (key: string) => Promise<void>;
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"tasks" | "storage" | "diagnostics">("tasks");
@@ -745,25 +814,39 @@ export function OperationsCenter({
   };
 
   return (
-    <div className="operations-control" ref={shell}>
+    <div className={`operations-control ${compact ? "is-compact" : ""}`} ref={shell}>
       <style>{operationsCss}</style>
       <button
         className={`operations-pill ${center?.activeCount ? "has-active" : ""}`}
         type="button"
         aria-expanded={open}
+        aria-haspopup="dialog"
         aria-label="打开生成任务、存储与诊断中心"
         onClick={() => setOpen((current) => !current)}
       >
-        <span className="operations-pulse" aria-hidden="true" />
-        <div>
-          <strong>{center?.activeCount ? `${center.activeCount} 个任务运行中` : "任务中心"}</strong>
-          <small>
-            {center?.failedCount ? `${center.failedCount} 项需要检查` : "生成 · 存储 · 诊断"}
-          </small>
-        </div>
+        <span className="operations-mark" aria-hidden="true">
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M4 5.5h1.5M8 5.5h8M4 10h1.5M8 10h8M4 14.5h1.5M8 14.5h5" />
+          </svg>
+          <i className="operations-pulse" />
+        </span>
+        {compact ? (
+          <strong className="operations-compact-label">
+            {center?.activeCount ? `${center.activeCount} 项进行中` : "制作进度"}
+          </strong>
+        ) : (
+          <div>
+            <strong>
+              {center?.activeCount ? `${center.activeCount} 个任务运行中` : "任务中心"}
+            </strong>
+            <small>
+              {center?.failedCount ? `${center.failedCount} 项需要检查` : "生成 · 存储 · 诊断"}
+            </small>
+          </div>
+        )}
       </button>
       {open ? (
-        <aside className="operations-panel" aria-label="生成任务、存储与诊断中心">
+        <aside className="operations-panel" role="dialog" aria-label="生成任务、存储与诊断中心">
           <header>
             <div>
               <span>PRODUCTION STATUS</span>
