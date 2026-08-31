@@ -16,6 +16,7 @@ import {
   type Asset,
   type CanvasItem,
   type CommandAuditEntry,
+  type ExecutionPolicy,
   type ProjectCommandPreview,
   type ProjectSnapshot,
   type Run,
@@ -67,6 +68,9 @@ const RecipeStudio = lazy(() =>
 const Storyboard = lazy(() =>
   import("./storyboard").then((module) => ({ default: module.Storyboard })),
 );
+const ExtensionLibrary = lazy(() =>
+  import("./extension-library").then((module) => ({ default: module.ExtensionLibrary })),
+);
 const OperationsCenter = lazy(() =>
   import("./operations-center").then((module) => ({ default: module.OperationsCenter })),
 );
@@ -77,6 +81,89 @@ const ProjectHub = lazy(() =>
 const rejectionReasons = ["角色漂移", "运动方向错误", "构图不稳定", "细节异常"];
 const canvasSnapGrid: [number, number] = [12, 12];
 const alignmentThreshold = 7;
+
+const executionProvenanceCss = `.execution-provenance {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--surface-2) 66%, transparent);
+}
+
+.execution-provenance summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-2);
+  cursor: pointer;
+  gap: 12px;
+  font-size: calc(9px * var(--ui-scale));
+}
+
+.execution-provenance summary strong {
+  overflow: hidden;
+  color: var(--text-1);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.execution-provenance > p {
+  margin: 10px 0;
+  color: var(--text-2);
+  font-size: calc(9px * var(--ui-scale));
+  line-height: 1.55;
+}
+
+.execution-provenance dl {
+  display: grid;
+  margin: 0;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.execution-provenance dl > div,
+.execution-provenance li {
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.execution-provenance dt,
+.execution-provenance dd {
+  margin: 0;
+  font-size: calc(8px * var(--ui-scale));
+}
+
+.execution-provenance dt {
+  color: var(--faint);
+}
+
+.execution-provenance dd {
+  margin-top: 2px;
+  color: var(--text-1);
+}
+
+.execution-provenance ul {
+  display: grid;
+  margin: 7px 0 0;
+  padding: 0;
+  list-style: none;
+  gap: 4px;
+}
+
+.execution-provenance li {
+  display: grid;
+  gap: 2px;
+}
+
+.execution-provenance li strong,
+.execution-provenance li span {
+  font-size: calc(8px * var(--ui-scale));
+}
+
+.execution-provenance li span {
+  color: var(--faint);
+}`;
 
 type GenerationSettings = {
   recipePath: string;
@@ -93,6 +180,9 @@ type GenerationSettings = {
   seed: number;
   steps: number;
   denoise: number;
+  executionPolicy: ExecutionPolicy;
+  budgetCap: number;
+  budgetCurrency: string;
 };
 
 type PromptMention = {
@@ -133,6 +223,9 @@ const defaultGenerationSettings: GenerationSettings = {
   seed: 26081301,
   steps: 20,
   denoise: 0.65,
+  executionPolicy: "balanced",
+  budgetCap: 10,
+  budgetCurrency: "CNY",
 };
 
 const nativeWorkflowFallbacks: WorkflowSummary[] = [
@@ -1275,6 +1368,7 @@ function Inspector({
     setSelectedTakeId(approved?.id ?? candidate?.id ?? takes[0]?.id ?? null);
   }, [takes]);
   const selectedTake = takes.find((take) => take.id === selectedTakeId);
+  const selectedTakeRun = runs.find((run) => run.id === selectedTake?.runId);
   const mediaSource = (assetId: string) => {
     const asset = assets.find((candidate) => candidate.id === assetId);
     return projectKey && asset ? projectApi.assetUrl(projectKey, asset.id) : undefined;
@@ -1712,6 +1806,42 @@ function Inspector({
                   <small>0.35 保守 · 0.65 平衡 · 1.0 重构</small>
                 </label>
               ) : null}
+              <label className="seed-field" htmlFor="generation-execution-policy">
+                <span>执行策略</span>
+                <select
+                  id="generation-execution-policy"
+                  value={settings.executionPolicy}
+                  onChange={(event) =>
+                    onSettingsChange({
+                      ...settings,
+                      executionPolicy: event.target.value as ExecutionPolicy,
+                    })
+                  }
+                >
+                  <option value="balanced">均衡 · 自动选择</option>
+                  <option value="local_only">仅本机</option>
+                  <option value="private">隐私 · 仅已授权节点</option>
+                  <option value="fastest">最快完成</option>
+                  <option value="economical">成本优先</option>
+                  <option value="best_quality">质量优先</option>
+                  <option value="budget_cap">单次预算上限</option>
+                </select>
+                <small>提交时会保存所有候选执行端、排除原因和最终选择依据。</small>
+              </label>
+              {settings.executionPolicy === "budget_cap" ? (
+                <label className="seed-field" htmlFor="generation-budget-cap">
+                  <span>单次预算上限</span>
+                  <NumericInput
+                    id="generation-budget-cap"
+                    min={0}
+                    max={1_000_000}
+                    step={0.1}
+                    value={settings.budgetCap}
+                    onValueChange={(budgetCap) => onSettingsChange({ ...settings, budgetCap })}
+                  />
+                  <small>{settings.budgetCurrency} · 无法可靠估算的执行端不会越过预算门槛。</small>
+                </label>
+              ) : null}
             </details>
             {workflow?.execution === "comfy_only" ? (
               <div className="comfy-only-note">这个 JSON 目前从 ComfyUI 打开运行。</div>
@@ -1801,7 +1931,13 @@ function Inspector({
                   <span>{String(index).padStart(2, "0")}</span>
                   <div>
                     <strong>{statusLabel}</strong>
-                    <small>seed {String(run.parameters.seed ?? "—")}</small>
+                    <small>
+                      seed {String(run.parameters.seed ?? "—")}
+                      {run.execution ? ` · ${run.execution.workerName}` : ""}
+                    </small>
+                    {run.execution ? (
+                      <em title={run.execution.selectionReason}>调度依据可追溯</em>
+                    ) : null}
                   </div>
                   {retryable && !readOnly ? (
                     <button type="button" disabled={busy} onClick={() => onRetryRun(run)}>
@@ -1956,6 +2092,41 @@ function Inspector({
               </button>
             </div>
           ) : null}
+          {selectedTakeRun?.execution ? (
+            <details className="execution-provenance">
+              <summary>
+                <span>执行与成本依据</span>
+                <strong>{selectedTakeRun.execution.workerName}</strong>
+              </summary>
+              <p>{selectedTakeRun.execution.selectionReason}</p>
+              <dl>
+                <div>
+                  <dt>策略</dt>
+                  <dd>{selectedTakeRun.execution.policy}</dd>
+                </div>
+                <div>
+                  <dt>成本</dt>
+                  <dd>
+                    {selectedTakeRun.actualCost.amount ??
+                      selectedTakeRun.estimatedCost.amount ??
+                      "未知"}
+                    {selectedTakeRun.actualCost.amount !== null ||
+                    selectedTakeRun.estimatedCost.amount !== null
+                      ? ` ${selectedTakeRun.actualCost.currency}`
+                      : ""}
+                  </dd>
+                </div>
+              </dl>
+              <ul>
+                {selectedTakeRun.execution.candidates.map((candidate) => (
+                  <li key={candidate.workerId}>
+                    <strong>{candidate.workerName}</strong>
+                    <span>{candidate.reason}</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
         </>
       )}
     </aside>
@@ -2046,6 +2217,7 @@ export function App() {
   const [recipeOpen, setRecipeOpen] = useState(false);
   const [assetLibraryOpen, setAssetLibraryOpen] = useState(false);
   const [storyboardOpen, setStoryboardOpen] = useState(false);
+  const [extensionLibraryOpen, setExtensionLibraryOpen] = useState(false);
   const [syncStatus, setSyncStatus] = useState<"current" | "updated" | "pending" | "offline">(
     "current",
   );
@@ -4288,6 +4460,7 @@ export function App() {
           steps: numberParameter("steps", generationSettings.steps),
           denoise: numberParameter("denoise", generationSettings.denoise),
           referenceImageSize: run.parameters.referenceImageSize === "max" ? "max" : "match",
+          executionPolicy: run.execution?.policy ?? generationSettings.executionPolicy,
         },
         {
           candidateCount: typeof storedCandidateCount === "number" ? storedCandidateCount : 1,
@@ -4537,6 +4710,7 @@ export function App() {
     <main
       className={`app-shell ${sidebarOpen ? "sidebar-open" : "sidebar-collapsed"} ${inspectorVisible ? "inspector-open" : "inspector-collapsed"} ${comfortableDensity ? "density-comfortable" : "density-compact"}`}
     >
+      <style>{executionProvenanceCss}</style>
       <header className="topbar">
         <div className="brand">
           <span className="brand-mark">T</span>
@@ -4593,6 +4767,15 @@ export function App() {
           <Suspense fallback={null}>
             <OperationsCenter onOpenProject={openProject} />
           </Suspense>
+          <button
+            className="density-button"
+            type="button"
+            onClick={() => setExtensionLibraryOpen(true)}
+            title="打开扩展库与项目质检"
+          >
+            <span aria-hidden="true">◇</span>
+            扩展
+          </button>
           <ThemeSwitcher compact />
           <DisplaySettings compact />
           <button
@@ -5361,7 +5544,7 @@ export function App() {
           workerLabel={
             projectMode === "demo"
               ? "Fake Wan I2V"
-              : `${selectedWorkflow?.name ?? "ComfyUI"} · 本地执行`
+              : `${selectedWorkflow?.name ?? "ComfyUI"} · ${worker?.fleet?.workers.filter((entry) => entry.status === "ready").length ?? 0} 个执行端在线`
           }
           onGenerate={() => void requestShotGeneration(selectedShot)}
           onCancel={() => void cancelGeneration()}
@@ -5426,6 +5609,19 @@ export function App() {
                 return false;
               }
             }}
+            onSnapshotChange={(payload) => {
+              if (acceptPayload(payload)) {
+                if (projectKey) projectApi.markRevision(projectKey, payload.revision);
+                setNotice("跨镜头审批已原子保存，成本台账已更新");
+              }
+            }}
+          />
+        ) : null}
+        {extensionLibraryOpen ? (
+          <ExtensionLibrary
+            projectKey={projectMode === "project" ? projectKey : null}
+            canManage={!authUser || authUser.instanceRole === "admin"}
+            onClose={() => setExtensionLibraryOpen(false)}
           />
         ) : null}
         {recipeOpen ? (

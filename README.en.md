@@ -29,6 +29,11 @@ Models, workflows, media and project files stay on infrastructure you control.
 - Real ComfyUI node progress when available, honest indeterminate states otherwise, cancellation,
   reconnect reconciliation and output provenance.
 - Run/Take review, rejection and approval, storyboard coverage and ordered rough-cut playback.
+- Local, SSH-tunnel and HTTPS ComfyUI workers with explainable privacy, speed, cost, quality and
+  per-run budget policies.
+- Honest exact/estimated/unknown cost summaries and atomic approval previews across multiple shots.
+- A declarative extension library for team QC rules and external tool links; third-party code is not
+  executed.
 - Recoverable project deletion, integrity-checked project import/export and pre-migration backups.
 - Accounts, device sessions, instance admins and project Owner/Editor/Viewer roles.
 - Cross-project task/storage center and a redacted downloadable support report.
@@ -99,6 +104,23 @@ before a generation is queued.
 
 This is intentional: third-party Custom Nodes can execute arbitrary Python and workflows may perform
 file or network operations. TakeBoard never auto-installs them.
+
+## Workers, costs and extensions
+
+Instance administrators can add remote ComfyUI workers from the home-page compute panel. Plain HTTP
+is accepted only through a loopback SSH tunnel; direct remote connections require HTTPS. New workers
+cannot receive image, video or audio inputs until an administrator explicitly grants that permission.
+The standard ComfyUI API has no portable endpoint for deleting uploaded inputs, so remote workers
+should use an isolated input directory with their own retention and cleanup policy. Every
+run records the selected worker, all considered candidates and the reason for each inclusion or
+rejection. A configured hourly rate produces an estimate; missing rates remain unknown rather than
+being reported as zero, and currencies are never silently combined.
+
+The storyboard's approval-and-cost view previews replacements before applying one revision-checked,
+atomic approval batch across shots. The extension library currently accepts only validated,
+content-hash-confirmed declarative manifests for QC rules and HTTP(S) links. Imported extensions are
+disabled by default and cannot run JavaScript, Python or shell commands. See
+[extension development and trust](docs/extensions.md).
 
 ## Data and security boundary
 

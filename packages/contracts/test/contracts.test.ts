@@ -3,6 +3,7 @@ import {
   approvalSchema,
   assetSchema,
   canvasEdgeSchema,
+  extensionManifestSchema,
   healthResponseSchema,
   operationsDiagnosticsSchema,
   projectSnapshotJsonSchema,
@@ -10,6 +11,7 @@ import {
   resolveGenerationResolution,
   runSchema,
   schemaVersion,
+  workerDefinitionSchema,
 } from "../src/index.js";
 
 const ids = {
@@ -156,6 +158,105 @@ describe("runSchema", () => {
 
     expect(run.inputs[0]?.assetSha256).toBe(hash);
     expect(run.parameters).toEqual({ seed: 42, preserveIdentity: true });
+    expect(run.actualCost).toMatchObject({ amount: null, accuracy: "unknown" });
+    expect(run.execution).toBeNull();
+  });
+});
+
+describe("workerDefinitionSchema", () => {
+  const baseWorker = {
+    id: ids.worker,
+    name: "Remote 4090",
+    endpoint: "https://worker.example.com",
+    kind: "remote" as const,
+    transport: "https" as const,
+    enabled: true,
+    allowSensitiveInputs: false,
+    qualityTier: "final" as const,
+    priority: 80,
+    hourlyRate: 6.5,
+    currency: "CNY",
+    estimatedJobSeconds: 240,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  it("accepts HTTPS and loopback SSH tunnel workers", () => {
+    expect(workerDefinitionSchema.parse(baseWorker).transport).toBe("https");
+    expect(
+      workerDefinitionSchema.parse({
+        ...baseWorker,
+        endpoint: "http://127.0.0.1:8190",
+        transport: "ssh_tunnel",
+      }).transport,
+    ).toBe("ssh_tunnel");
+  });
+
+  it("rejects credentials and transport mismatches", () => {
+    expect(() =>
+      workerDefinitionSchema.parse({
+        ...baseWorker,
+        endpoint: "https://user:secret@worker.example.com",
+      }),
+    ).toThrow(/credentials/);
+    expect(() =>
+      workerDefinitionSchema.parse({
+        ...baseWorker,
+        endpoint: "http://worker.example.com",
+      }),
+    ).toThrow(/HTTPS/);
+    expect(() =>
+      workerDefinitionSchema.parse({
+        ...baseWorker,
+        kind: "local",
+        transport: "https",
+      }),
+    ).toThrow(/Local workers/);
+    expect(() =>
+      workerDefinitionSchema.parse({
+        ...baseWorker,
+        endpoint: "http://127.0.0.1:8189",
+        transport: "loopback",
+      }),
+    ).toThrow(/SSH tunnel/);
+  });
+});
+
+describe("extensionManifestSchema", () => {
+  it("requires explicit permissions for declarative contributions", () => {
+    expect(() =>
+      extensionManifestSchema.parse({
+        format: "takeboard.extension",
+        manifestVersion: 1,
+        id: "studio.example.links",
+        name: "Links",
+        version: "1.0.0",
+        description: "External tools",
+        author: "Studio",
+        permissions: [],
+        contributions: {
+          links: [{ id: "tool", title: "Tool", url: "https://example.com" }],
+        },
+      }),
+    ).toThrow(/network.open/);
+  });
+
+  it("never accepts executable URL schemes", () => {
+    expect(() =>
+      extensionManifestSchema.parse({
+        format: "takeboard.extension",
+        manifestVersion: 1,
+        id: "studio.example.unsafe",
+        name: "Unsafe",
+        version: "1.0.0",
+        description: "Unsafe link",
+        author: "Studio",
+        permissions: ["network.open"],
+        contributions: {
+          links: [{ id: "tool", title: "Tool", url: "javascript:alert(1)" }],
+        },
+      }),
+    ).toThrow(/HTTP/);
   });
 });
 

@@ -4,18 +4,28 @@ import type {
   AccountSession,
   AuthAuditEntry,
   AuthStatus,
+  BatchApprovalDecision,
+  BatchApprovalPreview,
   CommandAuditEntry,
+  ExecutionPolicy,
+  ExtensionManifest,
+  ExtensionQcIssue,
+  InstalledExtension,
   InstanceRole,
   OperationsDiagnostics,
   OperationsStorage,
   OperationsTaskCenter,
   ProjectCommand,
   ProjectCommandPreview,
+  ProjectCostSummary,
   ProjectMember,
   ProjectRole,
   ProjectSnapshot,
   PublicInvitation,
   RecoveryCodeStatus,
+  RunCost,
+  WorkerDefinition,
+  WorkerHealth,
   WorkflowDiagnostic,
 } from "@takeboard/contracts";
 
@@ -215,6 +225,11 @@ export type WorkerStatus = {
       status: "pass" | "blocked";
       detail: string;
     }>;
+  };
+  fleet?: {
+    defaultWorkerId: string;
+    policies: ExecutionPolicy[];
+    workers: WorkerHealth[];
   };
 };
 
@@ -688,6 +703,10 @@ export const projectApi = {
       candidateIndex?: number;
       candidateCount?: number;
       retryOfRunId?: string;
+      executionPolicy?: ExecutionPolicy;
+      workerId?: string | null;
+      budgetCap?: number | null;
+      budgetCurrency?: string | null;
     },
   ) =>
     jsonRequest<
@@ -789,9 +808,40 @@ export const projectApi = {
       `/api/projects/${encodeURIComponent(key)}/takes/${encodeURIComponent(takeId)}/approve`,
       { method: "POST", body: JSON.stringify({ reason }) },
     ),
+  costs: (key: string) =>
+    jsonRequest<{ key: string; revision: number; summary: ProjectCostSummary }>(
+      `/api/projects/${encodeURIComponent(key)}/costs`,
+    ),
+  previewBatchApprovals: (key: string, decisions: BatchApprovalDecision[]) =>
+    jsonRequest<{ key: string; preview: BatchApprovalPreview }>(
+      `/api/projects/${encodeURIComponent(key)}/approvals/batch/preview`,
+      { method: "POST", body: JSON.stringify({ decisions }) },
+    ),
+  applyBatchApprovals: (
+    key: string,
+    decisions: BatchApprovalDecision[],
+    preview: BatchApprovalPreview,
+  ) =>
+    jsonRequest<DemoPayload & { key: string; approvedCount: number; replacementCount: number }>(
+      `/api/projects/${encodeURIComponent(key)}/approvals/batch`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          decisions,
+          revision: preview.revision,
+          confirmationToken: preview.confirmationToken,
+        }),
+      },
+    ),
   assetUrl: (key: string, assetId: string, proxy = false) =>
     `/api/projects/${encodeURIComponent(key)}/assets/${encodeURIComponent(assetId)}/content${proxy ? "?proxy=1" : ""}`,
-  worker: () => jsonRequest<WorkerStatus>("/api/workers/comfy"),
+  worker: async () => {
+    const [worker, fleet] = await Promise.all([
+      jsonRequest<WorkerStatus>("/api/workers/comfy"),
+      jsonRequest<NonNullable<WorkerStatus["fleet"]>>("/api/workers"),
+    ]);
+    return { ...worker, fleet } satisfies WorkerStatus;
+  },
   startWorker: async () => {
     const response = await apiFetch("/api/workers/comfy/start", {
       method: "POST",
@@ -802,10 +852,88 @@ export const projectApi = {
       error?: string;
     };
     if (payload.status === "ready" || payload.status === "offline") {
-      return payload as WorkerStatus;
+      const fleet = await jsonRequest<NonNullable<WorkerStatus["fleet"]>>("/api/workers").catch(
+        () => undefined,
+      );
+      return { ...payload, ...(fleet ? { fleet } : {}) } as WorkerStatus;
     }
     throw new Error(payload.error ?? `ComfyUI 启动请求失败（${response.status}）`);
   },
+};
+
+export const workerApi = {
+  fleet: () => jsonRequest<NonNullable<WorkerStatus["fleet"]>>("/api/workers"),
+  previewSelection: (input: {
+    policy: ExecutionPolicy;
+    workerId?: string | null;
+    containsSensitiveInputs?: boolean;
+    budgetCap?: number | null;
+    budgetCurrency?: string | null;
+    estimatedJobSeconds?: number | null;
+  }) =>
+    jsonRequest<{
+      worker: WorkerDefinition;
+      health: WorkerHealth;
+      reason: string;
+      estimatedCost: RunCost;
+      candidates: Array<{
+        workerId: string;
+        workerName: string;
+        eligible: boolean;
+        score: number | null;
+        queueDepth: number;
+        reason: string;
+      }>;
+    }>("/api/workers/selection/preview", { method: "POST", body: JSON.stringify(input) }),
+  add: (input: Omit<WorkerDefinition, "id" | "retiredAt" | "createdAt" | "updatedAt">) =>
+    jsonRequest<{ worker: WorkerDefinition }>("/api/admin/workers", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  update: (workerId: string, input: Partial<WorkerDefinition>) =>
+    jsonRequest<{ worker: WorkerDefinition }>(
+      `/api/admin/workers/${encodeURIComponent(workerId)}`,
+      { method: "PATCH", body: JSON.stringify(input) },
+    ),
+  remove: (workerId: string) =>
+    jsonRequest<{ removed: true }>(`/api/admin/workers/${encodeURIComponent(workerId)}`, {
+      method: "DELETE",
+    }),
+};
+
+export const extensionApi = {
+  list: () =>
+    jsonRequest<{
+      runtime: "declarative-v1";
+      codeExecutionAllowed: false;
+      extensions: InstalledExtension[];
+    }>("/api/extensions"),
+  inspect: (manifest: unknown) =>
+    jsonRequest<{
+      manifest: ExtensionManifest;
+      contentSha256: string;
+      confirmationToken: string;
+      permissions: string[];
+      warnings: string[];
+    }>("/api/extensions/inspect", { method: "POST", body: JSON.stringify({ manifest }) }),
+  install: (manifest: ExtensionManifest, confirmationToken: string) =>
+    jsonRequest<{ extension: InstalledExtension }>("/api/admin/extensions", {
+      method: "POST",
+      body: JSON.stringify({ manifest, confirmationToken }),
+    }),
+  setEnabled: (extensionId: string, enabled: boolean) =>
+    jsonRequest<{ extension: InstalledExtension }>(
+      `/api/admin/extensions/${encodeURIComponent(extensionId)}`,
+      { method: "PATCH", body: JSON.stringify({ enabled }) },
+    ),
+  remove: (extensionId: string) =>
+    jsonRequest<{ removed: true }>(`/api/admin/extensions/${encodeURIComponent(extensionId)}`, {
+      method: "DELETE",
+    }),
+  qc: (key: string) =>
+    jsonRequest<{ key: string; revision: number; checks: ExtensionQcIssue[] }>(
+      `/api/projects/${encodeURIComponent(key)}/extensions/qc`,
+    ),
 };
 
 export const authApi = {

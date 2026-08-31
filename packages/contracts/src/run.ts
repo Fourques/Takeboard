@@ -1,9 +1,9 @@
 import { z } from "zod";
 import { idSchema, jsonValueSchema, sha256Schema, timestampsSchema } from "./common.js";
+import { runCostSchema, runExecutionSchema, workerIdSchema } from "./execution.js";
 import { assetIdSchema, shotIdSchema, takeIdSchema } from "./project.js";
 
 export const recipeIdSchema = idSchema("recipe");
-export const workerIdSchema = idSchema("worker");
 export const runIdSchema = idSchema("run");
 export const approvalIdSchema = idSchema("approval");
 
@@ -39,6 +39,31 @@ export const runSchema = timestampsSchema.extend({
   status: runStatusSchema,
   inputs: z.array(runInputSnapshotSchema).default([]),
   parameters: z.record(z.string(), jsonValueSchema),
+  execution: runExecutionSchema.nullable().default(null),
+  estimatedCost: runCostSchema.default(
+    () =>
+      ({
+        amount: null,
+        currency: "CNY",
+        accuracy: "unknown",
+        source: "unavailable",
+        computeSeconds: null,
+        unitRatePerHour: null,
+        recordedAt: null,
+      }) as const,
+  ),
+  actualCost: runCostSchema.default(
+    () =>
+      ({
+        amount: null,
+        currency: "CNY",
+        accuracy: "unknown",
+        source: "unavailable",
+        computeSeconds: null,
+        unitRatePerHour: null,
+        recordedAt: null,
+      }) as const,
+  ),
   errorCode: z.string().max(200).nullable().default(null),
   errorMessage: z.string().max(20_000).nullable().default(null),
 });
@@ -59,6 +84,8 @@ export const approvalSchema = z
     takeId: takeIdSchema,
     status: z.enum(["active", "revoked"]),
     reason: z.string().trim().max(2_000).nullable().default(null),
+    actorUserId: z.string().max(500).nullable().default(null),
+    actorName: z.string().trim().max(200).nullable().default(null),
     createdAt: timestampsSchema.shape.createdAt,
     revokedAt: timestampsSchema.shape.updatedAt.nullable().default(null),
   })

@@ -1,12 +1,14 @@
 import { execFile as execFileCallback } from "node:child_process";
 import { arch, freemem } from "node:os";
 import { promisify } from "node:util";
+import { executionPolicySchema, workerDefinitionSchema } from "@takeboard/contracts";
 import type { FastifyInstance } from "fastify";
 import {
   type ComfyLauncher,
   createComfyLauncher,
   launcherConfigFromEnvironment,
 } from "./comfy-launcher.js";
+import { WorkerPool, WorkerSelectionError } from "./worker-pool.js";
 
 const execFile = promisify(execFileCallback);
 const GIBIBYTE = 1024 * 1024 * 1024;
@@ -278,6 +280,11 @@ export function registerWorkerRoutes(
   app: FastifyInstance,
   comfyUrl: string,
   routeOptions: WorkerRouteOptions = {},
+  workerPool = new WorkerPool(
+    ".takeboard-data/.system/workers.json",
+    comfyUrl,
+    routeOptions.runtime?.fetch,
+  ),
 ) {
   const runtime: WorkerRuntime = { ...defaultRuntime, ...routeOptions.runtime };
   const launcher = routeOptions.launcher ?? createComfyLauncher(launcherConfigFromEnvironment());
@@ -302,6 +309,130 @@ export function registerWorkerRoutes(
     startupTimeoutMs: routeOptions.startupTimeoutMs ?? 30_000,
   };
   let starting = false;
+
+  app.get("/api/workers", async () => ({
+    defaultWorkerId: workerPool.defaultWorkerId,
+    policies: executionPolicySchema.options,
+    workers: await workerPool.fleet(),
+  }));
+
+  app.post("/api/workers/selection/preview", async (request, reply) => {
+    const body =
+      typeof request.body === "object" && request.body !== null
+        ? (request.body as Record<string, unknown>)
+        : {};
+    const policy = executionPolicySchema.safeParse(body.policy ?? "balanced");
+    if (!policy.success) return await reply.code(400).send({ error: "执行策略无效" });
+    try {
+      return await workerPool.select({
+        policy: policy.data,
+        requestedWorkerId: typeof body.workerId === "string" ? body.workerId : null,
+        containsSensitiveInputs: body.containsSensitiveInputs === true,
+        budgetCap: typeof body.budgetCap === "number" ? body.budgetCap : null,
+        budgetCurrency: typeof body.budgetCurrency === "string" ? body.budgetCurrency : null,
+        estimatedJobSeconds:
+          typeof body.estimatedJobSeconds === "number" ? body.estimatedJobSeconds : null,
+      });
+    } catch (error) {
+      if (error instanceof WorkerSelectionError) {
+        return await reply.code(409).send({ error: error.message, candidates: error.candidates });
+      }
+      throw error;
+    }
+  });
+
+  app.post("/api/admin/workers", async (request, reply) => {
+    const body =
+      typeof request.body === "object" && request.body !== null
+        ? (request.body as Record<string, unknown>)
+        : {};
+    const now = new Date().toISOString();
+    const candidate = workerDefinitionSchema.safeParse({
+      ...body,
+      id: "worker_00000000-0000-0000-8000-000000000000",
+      createdAt: now,
+      updatedAt: now,
+    });
+    if (!candidate.success) {
+      return await reply.code(400).send({
+        error: candidate.error.issues[0]?.message ?? "执行端配置无效",
+      });
+    }
+    if (
+      candidate.data.transport === "direct_http" &&
+      process.env.TAKEBOARD_ALLOW_INSECURE_REMOTE_WORKER !== "1"
+    ) {
+      return await reply.code(400).send({
+        error: "远程执行端必须使用 HTTPS；普通 HTTP 请先通过 SSH 映射到本机回环地址",
+      });
+    }
+    const {
+      id: _id,
+      retiredAt: _retiredAt,
+      createdAt: _createdAt,
+      updatedAt: _updatedAt,
+      ...input
+    } = candidate.data;
+    try {
+      const worker = await workerPool.add(input);
+      return await reply.code(201).send({ worker });
+    } catch (error) {
+      return await reply
+        .code(409)
+        .send({ error: error instanceof Error ? error.message : "无法添加执行端" });
+    }
+  });
+
+  app.patch<{ Params: { workerId: string } }>(
+    "/api/admin/workers/:workerId",
+    async (request, reply) => {
+      const body =
+        typeof request.body === "object" && request.body !== null
+          ? (request.body as Record<string, unknown>)
+          : {};
+      if (
+        body.id !== undefined ||
+        body.retiredAt !== undefined ||
+        body.createdAt !== undefined ||
+        body.updatedAt !== undefined
+      ) {
+        return await reply.code(400).send({ error: "执行端身份字段不能修改" });
+      }
+      const current = workerPool.definition(request.params.workerId);
+      const resultingTransport = body.transport ?? current?.transport;
+      if (
+        (body.endpoint !== undefined || body.transport !== undefined) &&
+        resultingTransport === "direct_http" &&
+        process.env.TAKEBOARD_ALLOW_INSECURE_REMOTE_WORKER !== "1"
+      ) {
+        return await reply.code(400).send({
+          error: "远程执行端必须使用 HTTPS；普通 HTTP 请先通过 SSH 映射到本机回环地址",
+        });
+      }
+      try {
+        const worker = await workerPool.update(request.params.workerId, body);
+        return { worker };
+      } catch (error) {
+        return await reply
+          .code(400)
+          .send({ error: error instanceof Error ? error.message : "无法更新执行端" });
+      }
+    },
+  );
+
+  app.delete<{ Params: { workerId: string } }>(
+    "/api/admin/workers/:workerId",
+    async (request, reply) => {
+      try {
+        const removed = await workerPool.remove(request.params.workerId);
+        return removed ? { removed: true } : await reply.code(404).send({ error: "执行端不存在" });
+      } catch (error) {
+        return await reply
+          .code(409)
+          .send({ error: error instanceof Error ? error.message : "无法删除执行端" });
+      }
+    },
+  );
 
   app.get("/api/workers/comfy", async () => {
     const worker = await probeWorker(runtime, comfyUrl, platform, launcher);

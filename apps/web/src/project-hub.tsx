@@ -5,6 +5,7 @@ import type {
   TrashedProjectItem,
   WorkerStatus,
 } from "./api";
+import { workerApi } from "./api";
 import { AccountButton, useAuth } from "./auth-ui";
 import { DisplaySettings, type SceneQuality } from "./display-settings";
 import { ThemeSwitcher } from "./theme-switcher";
@@ -15,6 +16,152 @@ const StudioUniverse = lazy(loadStudioUniverse);
 const OperationsCenter = lazy(() =>
   import("./operations-center").then((module) => ({ default: module.OperationsCenter })),
 );
+
+const workerFleetCss = `.worker-fleet-list {
+  display: grid;
+  max-height: 260px;
+  overflow: auto;
+  padding-right: 2px;
+  gap: 7px;
+}
+
+.worker-fleet-card {
+  display: grid;
+  align-items: start;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-2) 76%, transparent);
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  gap: 9px;
+}
+
+.worker-fleet-card > i {
+  width: 7px;
+  height: 7px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+
+.worker-fleet-card.status-ready > i {
+  background: var(--green);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--green) 60%, transparent);
+}
+
+.worker-fleet-card > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.worker-fleet-card :is(strong, span, small) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.worker-fleet-card strong {
+  font-size: calc(11px * var(--ui-scale));
+}
+
+.worker-fleet-card span,
+.worker-fleet-card small {
+  color: var(--text-2);
+  font-size: calc(9px * var(--ui-scale));
+}
+
+.worker-fleet-card small {
+  color: var(--faint);
+}
+
+.worker-fleet-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 150px;
+  gap: 4px;
+}
+
+.worker-fleet-card-actions > button {
+  min-height: 26px;
+  padding: 0 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text-2);
+  background: transparent;
+  cursor: pointer;
+  font-size: calc(9px * var(--ui-scale));
+}
+
+.worker-fleet-card-actions > button.danger,
+.worker-action-error {
+  color: var(--red);
+}
+
+.worker-action-error {
+  margin: 0;
+  padding: 7px 8px;
+  border: 1px solid color-mix(in srgb, var(--red) 28%, var(--line));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--red) 5%, transparent);
+  font-size: calc(9px * var(--ui-scale));
+  line-height: 1.45;
+}
+
+.worker-add-form {
+  display: grid;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-root) 58%, transparent);
+  gap: 9px;
+}
+
+.worker-add-form label {
+  display: grid;
+  color: var(--faint);
+  font-size: calc(9px * var(--ui-scale));
+  gap: 4px;
+}
+
+.worker-add-form :is(input, select) {
+  min-width: 0;
+  height: 32px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--text-1);
+  background: var(--surface-2);
+  outline: none;
+  font-size: calc(10px * var(--ui-scale));
+}
+
+.worker-add-form :is(input, select):focus {
+  border-color: var(--accent);
+}
+
+.worker-add-form p,
+.worker-add-form [role="alert"] {
+  margin: 0;
+  color: var(--faint);
+  font-size: calc(9px * var(--ui-scale));
+  line-height: 1.5;
+}
+
+.worker-add-form [role="alert"] {
+  color: var(--red);
+}
+
+.worker-add-form > button {
+  min-height: 34px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--surface-root);
+  background: var(--accent-strong);
+  cursor: pointer;
+  font-weight: 700;
+}`;
 
 function savedSceneQuality(): SceneQuality {
   const value = window.localStorage.getItem("takeboard.scene-quality");
@@ -354,6 +501,15 @@ export function ProjectHub({
   const [projectsVisible, setProjectsVisible] = useState(false);
   const [projectStageActive, setProjectStageActive] = useState(false);
   const [workerPanelOpen, setWorkerPanelOpen] = useState(false);
+  const [workerFormOpen, setWorkerFormOpen] = useState(false);
+  const [workerName, setWorkerName] = useState("");
+  const [workerEndpoint, setWorkerEndpoint] = useState("");
+  const [workerHourlyRate, setWorkerHourlyRate] = useState("");
+  const [workerQuality, setWorkerQuality] = useState<"draft" | "balanced" | "final">("balanced");
+  const [workerActionBusy, setWorkerActionBusy] = useState(false);
+  const [workerActionError, setWorkerActionError] = useState<string | null>(null);
+  const [workerTrustArmed, setWorkerTrustArmed] = useState<string | null>(null);
+  const [workerRemoveArmed, setWorkerRemoveArmed] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const [recycleOpen, setRecycleOpen] = useState(false);
   const [tempoMode, setTempoMode] = useState(1);
@@ -387,6 +543,49 @@ export function ProjectHub({
           : Date.parse(right.updatedAt) - Date.parse(left.updatedAt),
       );
   }, [projectQuery, projectSort, projects]);
+  const fleetWorkers = worker?.fleet?.workers ?? [];
+  const readyWorkerCount = fleetWorkers.filter((entry) => entry.status === "ready").length;
+  const addWorker = async () => {
+    const endpoint = workerEndpoint.trim().replace(/\/+$/, "");
+    const name = workerName.trim();
+    if (!name || !endpoint) {
+      setWorkerActionError("请填写执行端名称和地址");
+      return;
+    }
+    const hourlyRate = workerHourlyRate.trim() ? Number(workerHourlyRate) : null;
+    if (hourlyRate !== null && (!Number.isFinite(hourlyRate) || hourlyRate < 0)) {
+      setWorkerActionError("每小时成本应为大于或等于 0 的数字，或留空表示未知");
+      return;
+    }
+    const isTunnel = /^http:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/i.test(endpoint);
+    setWorkerActionBusy(true);
+    setWorkerActionError(null);
+    try {
+      await workerApi.add({
+        name,
+        endpoint,
+        kind: "remote",
+        transport: isTunnel ? "ssh_tunnel" : "https",
+        enabled: true,
+        allowSensitiveInputs: false,
+        qualityTier: workerQuality,
+        priority: 50,
+        hourlyRate,
+        currency: "CNY",
+        estimatedJobSeconds: 300,
+      });
+      setWorkerName("");
+      setWorkerEndpoint("");
+      setWorkerHourlyRate("");
+      setWorkerQuality("balanced");
+      setWorkerFormOpen(false);
+      await onRefreshWorker();
+    } catch (cause) {
+      setWorkerActionError(cause instanceof Error ? cause.message : "无法添加执行端");
+    } finally {
+      setWorkerActionBusy(false);
+    }
+  };
   const activeTempo = tempoModes[tempoMode] ?? tempoModes[0];
   const activeFrame = frameModes[frameMode] ?? frameModes[0];
 
@@ -535,6 +734,7 @@ export function ProjectHub({
         );
       }}
     >
+      <style>{workerFleetCss}</style>
       <div className="hub-ambient ambient-one" />
       <div className="hub-ambient ambient-two" />
       <header className="hub-header">
@@ -578,13 +778,17 @@ export function ProjectHub({
                   <strong>
                     {workerBusy
                       ? "正在检查 ComfyUI"
-                      : worker?.status === "ready"
-                        ? "ComfyUI 可用"
+                      : readyWorkerCount > 0
+                        ? `${readyWorkerCount} 个执行端可用`
                         : worker?.status === "offline"
                           ? "ComfyUI 未连接"
                           : "正在连接 ComfyUI"}
                   </strong>
-                  <span>{worker?.device ?? worker?.engine ?? "本地执行节点"}</span>
+                  <span>
+                    {fleetWorkers.length > 1
+                      ? `${fleetWorkers.length} 个已配置 · 自动调度`
+                      : (worker?.device ?? worker?.engine ?? "本地执行节点")}
+                  </span>
                 </div>
                 <b aria-hidden="true">⌄</b>
               </button>
@@ -592,9 +796,11 @@ export function ProjectHub({
                 <aside className="worker-panel" aria-label="ComfyUI 连接与安全启动面板">
                   <div className="worker-panel-heading">
                     <div>
-                      <span>COMPUTE NODE</span>
+                      <span>COMPUTE FLEET</span>
                       <strong>
-                        {worker?.status === "ready" ? "执行端已连接" : "执行端未连接"}
+                        {readyWorkerCount > 0
+                          ? `${readyWorkerCount} / ${fleetWorkers.length || 1} 在线`
+                          : "执行端未连接"}
                       </strong>
                     </div>
                     <button
@@ -605,6 +811,145 @@ export function ProjectHub({
                       ×
                     </button>
                   </div>
+                  {fleetWorkers.length > 0 ? (
+                    <div className="worker-fleet-list">
+                      {fleetWorkers.map((entry) => (
+                        <article
+                          className={`worker-fleet-card status-${entry.status}`}
+                          key={entry.worker.id}
+                        >
+                          <i />
+                          <div>
+                            <strong>{entry.worker.name}</strong>
+                            <span>
+                              {entry.status === "ready"
+                                ? `${entry.device ?? "ComfyUI"} · 队列 ${entry.queueRunning + entry.queuePending}`
+                                : entry.status === "disabled"
+                                  ? "已停用，不参与调度"
+                                  : (entry.error ?? "当前离线")}
+                            </span>
+                            <small>
+                              {entry.worker.kind === "local" ? "本机" : "远程"} ·{" "}
+                              {entry.worker.qualityTier} ·{" "}
+                              {entry.worker.hourlyRate === null
+                                ? "成本未知"
+                                : `${entry.worker.hourlyRate} ${entry.worker.currency}/小时`}
+                            </small>
+                          </div>
+                          {user?.instanceRole === "admin" ? (
+                            <div className="worker-fleet-card-actions">
+                              <button
+                                type="button"
+                                disabled={workerActionBusy}
+                                title={
+                                  entry.worker.allowSensitiveInputs
+                                    ? "撤销素材发送权限"
+                                    : "明确授权后，图片和视频才可发往此节点"
+                                }
+                                onClick={() => {
+                                  if (
+                                    !entry.worker.allowSensitiveInputs &&
+                                    workerTrustArmed !== entry.worker.id
+                                  ) {
+                                    setWorkerTrustArmed(entry.worker.id);
+                                    setWorkerActionError(
+                                      `再次点击“确认素材权限”，才会允许 ${entry.worker.name} 接收图片、视频和音频。`,
+                                    );
+                                    return;
+                                  }
+                                  void (async () => {
+                                    setWorkerActionBusy(true);
+                                    setWorkerActionError(null);
+                                    try {
+                                      await workerApi.update(entry.worker.id, {
+                                        allowSensitiveInputs: !entry.worker.allowSensitiveInputs,
+                                      });
+                                      setWorkerTrustArmed(null);
+                                      await onRefreshWorker();
+                                    } catch (cause) {
+                                      setWorkerActionError(
+                                        cause instanceof Error ? cause.message : "无法更新素材权限",
+                                      );
+                                    } finally {
+                                      setWorkerActionBusy(false);
+                                    }
+                                  })();
+                                }}
+                              >
+                                {entry.worker.allowSensitiveInputs
+                                  ? "撤销素材权限"
+                                  : workerTrustArmed === entry.worker.id
+                                    ? "确认素材权限"
+                                    : "允许素材"}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={workerActionBusy}
+                                onClick={() => {
+                                  void (async () => {
+                                    setWorkerActionBusy(true);
+                                    setWorkerActionError(null);
+                                    try {
+                                      await workerApi.update(entry.worker.id, {
+                                        enabled: !entry.worker.enabled,
+                                      });
+                                      await onRefreshWorker();
+                                    } catch (cause) {
+                                      setWorkerActionError(
+                                        cause instanceof Error ? cause.message : "无法更新执行端",
+                                      );
+                                    } finally {
+                                      setWorkerActionBusy(false);
+                                    }
+                                  })();
+                                }}
+                              >
+                                {entry.worker.enabled ? "停用" : "启用"}
+                              </button>
+                              {entry.worker.id !== worker?.fleet?.defaultWorkerId ? (
+                                <button
+                                  type="button"
+                                  className="danger"
+                                  disabled={workerActionBusy}
+                                  onClick={() => {
+                                    if (workerRemoveArmed !== entry.worker.id) {
+                                      setWorkerRemoveArmed(entry.worker.id);
+                                      setWorkerActionError(
+                                        `再次点击“确认移除”将删除 ${entry.worker.name} 的调度配置；运行历史不会删除。`,
+                                      );
+                                      return;
+                                    }
+                                    void (async () => {
+                                      setWorkerActionBusy(true);
+                                      setWorkerActionError(null);
+                                      try {
+                                        await workerApi.remove(entry.worker.id);
+                                        setWorkerRemoveArmed(null);
+                                        await onRefreshWorker();
+                                      } catch (cause) {
+                                        setWorkerActionError(
+                                          cause instanceof Error ? cause.message : "无法移除执行端",
+                                        );
+                                      } finally {
+                                        setWorkerActionBusy(false);
+                                      }
+                                    })();
+                                  }}
+                                >
+                                  {workerRemoveArmed === entry.worker.id ? "确认移除" : "移除"}
+                                </button>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </article>
+                      ))}
+                    </div>
+                  ) : null}
+                  {workerActionError ? (
+                    <p className="worker-action-error" role="status">
+                      {workerActionError}
+                    </p>
+                  ) : null}
                   {worker?.status === "ready" ? (
                     <div className="worker-ready-detail">
                       <span>
@@ -648,7 +993,69 @@ export function ProjectHub({
                         {workerBusy ? "正在启动…" : "安全启动"}
                       </button>
                     ) : null}
+                    {user?.instanceRole === "admin" ? (
+                      <button
+                        type="button"
+                        onClick={() => setWorkerFormOpen((current) => !current)}
+                      >
+                        {workerFormOpen ? "收起" : "添加远程算力"}
+                      </button>
+                    ) : null}
                   </div>
+                  {workerFormOpen && user?.instanceRole === "admin" ? (
+                    <div className="worker-add-form">
+                      <label>
+                        <span>名称</span>
+                        <input
+                          value={workerName}
+                          onChange={(event) => setWorkerName(event.target.value)}
+                          placeholder="例如：剪辑室 4090"
+                        />
+                      </label>
+                      <label>
+                        <span>安全地址</span>
+                        <input
+                          value={workerEndpoint}
+                          onChange={(event) => setWorkerEndpoint(event.target.value)}
+                          placeholder="https://worker.example.com 或 http://127.0.0.1:8189"
+                        />
+                      </label>
+                      <label>
+                        <span>每小时估算成本</span>
+                        <input
+                          inputMode="decimal"
+                          value={workerHourlyRate}
+                          onChange={(event) => setWorkerHourlyRate(event.target.value)}
+                          placeholder="可留空 · CNY"
+                        />
+                      </label>
+                      <label>
+                        <span>质量定位</span>
+                        <select
+                          value={workerQuality}
+                          onChange={(event) =>
+                            setWorkerQuality(event.target.value as typeof workerQuality)
+                          }
+                        >
+                          <option value="draft">预览 · 更适合快速试错</option>
+                          <option value="balanced">均衡 · 日常生成</option>
+                          <option value="final">终稿 · 优先最终质量</option>
+                        </select>
+                      </label>
+                      <p>
+                        普通 HTTP 仅允许 SSH
+                        映射后的本机回环地址；图片、视频和音频默认不会发送到新节点。
+                      </p>
+                      {workerActionError ? <div role="alert">{workerActionError}</div> : null}
+                      <button
+                        type="button"
+                        disabled={workerActionBusy}
+                        onClick={() => void addWorker()}
+                      >
+                        {workerActionBusy ? "验证并保存…" : "添加执行端"}
+                      </button>
+                    </div>
+                  ) : null}
                   <small className="worker-safety-note">
                     {user && user.instanceRole !== "admin"
                       ? "ComfyUI 的启动由工作室管理员负责。"

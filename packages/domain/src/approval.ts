@@ -9,6 +9,8 @@ export type ApproveTakeInput = {
   approvalId: string;
   at: string;
   reason?: string | null;
+  actorUserId?: string | null;
+  actorName?: string | null;
 };
 
 export type ApprovalResult = {
@@ -44,6 +46,8 @@ export function approveTake(input: ApproveTakeInput): ApprovalResult {
     takeId: target.id,
     status: "active",
     reason: input.reason ?? null,
+    actorUserId: input.actorUserId ?? null,
+    actorName: input.actorName ?? null,
     createdAt: input.at,
     revokedAt: null,
   });

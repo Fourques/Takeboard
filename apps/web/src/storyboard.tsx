@@ -1,4 +1,12 @@
-import type { Asset, ProjectSnapshot, Shot, Take } from "@takeboard/contracts";
+import type {
+  Asset,
+  BatchApprovalDecision,
+  BatchApprovalPreview,
+  ProjectCostSummary,
+  ProjectSnapshot,
+  Shot,
+  Take,
+} from "@takeboard/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { projectApi } from "./api";
 
@@ -6,12 +14,389 @@ const roughCutCss = `.rough-cut-player{display:grid;min-height:0;padding:clamp(1
 
 const storyboardControlCss = `.storyboard-view-switch{display:flex;padding:3px;border:1px solid var(--line);border-radius:9px;background:color-mix(in srgb,var(--surface-root) 48%,transparent)}.storyboard-view-switch button{min-height:28px;padding:0 10px;border:0;border-radius:6px;color:var(--text-2);background:transparent;cursor:pointer;font-size:calc(11px * var(--ui-scale))}.storyboard-view-switch button[aria-selected="true"]{color:var(--text-1);background:var(--surface-2);box-shadow:0 3px 12px var(--shadow)}@media(max-width:680px){.storyboard-view-switch button{padding-inline:7px}}`;
 
+const approvalCss = `.approval-workbench {
+  position: relative;
+  display: grid;
+  min-height: 0;
+  overflow: hidden;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-root) 58%, transparent);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.approval-summary {
+  display: grid;
+  align-items: end;
+  padding: 16px clamp(18px, 2.5vw, 34px);
+  border-bottom: 1px solid var(--line);
+  grid-template-columns: minmax(220px, 0.7fr) minmax(0, 1.3fr);
+  gap: 20px;
+}
+
+.approval-summary > div:first-child > span,
+.approval-confirmation > div > span {
+  color: var(--accent-strong);
+  font-size: calc(8px * var(--ui-scale));
+  font-weight: 900;
+  letter-spacing: 0.14em;
+}
+
+.approval-summary h3,
+.approval-confirmation h3 {
+  margin: 4px 0;
+  font-size: calc(19px * var(--ui-scale));
+  font-weight: 620;
+}
+
+.approval-summary p,
+.approval-confirmation p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: calc(10px * var(--ui-scale));
+  line-height: 1.5;
+}
+
+.approval-cost-cards {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 7px;
+}
+
+.approval-cost-cards article {
+  display: grid;
+  min-width: 0;
+  padding: 10px 11px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--surface-2) 74%, transparent);
+  gap: 3px;
+}
+
+.approval-cost-cards span,
+.approval-cost-cards small,
+.approval-shot-cost span,
+.approval-shot-cost small {
+  overflow: hidden;
+  color: var(--faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: calc(8px * var(--ui-scale));
+}
+
+.approval-cost-cards strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: calc(14px * var(--ui-scale));
+}
+
+.approval-shot-list {
+  min-height: 0;
+  overflow: auto;
+  padding: 8px clamp(18px, 2.5vw, 34px) 18px;
+}
+
+.approval-shot-row {
+  display: grid;
+  align-items: center;
+  min-height: 106px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  grid-template-columns: minmax(130px, 0.62fr) minmax(260px, 2fr) minmax(120px, 0.58fr);
+  gap: 14px;
+}
+
+.approval-shot-identity {
+  display: grid;
+  align-items: center;
+  min-width: 0;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.approval-shot-identity > span {
+  color: var(--accent-strong);
+  font:
+    calc(11px * var(--ui-scale)) ui-monospace,
+    monospace;
+}
+
+.approval-shot-identity > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.approval-shot-identity strong,
+.approval-shot-identity small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.approval-shot-identity strong {
+  font-size: calc(12px * var(--ui-scale));
+}
+
+.approval-shot-identity small {
+  color: var(--faint);
+  font-size: calc(9px * var(--ui-scale));
+}
+
+.approval-take-strip {
+  display: flex;
+  min-width: 0;
+  overflow-x: auto;
+  padding: 2px;
+  gap: 7px;
+}
+
+.approval-take-strip > button {
+  position: relative;
+  flex: 0 0 108px;
+  height: 76px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #070908;
+  cursor: pointer;
+}
+
+.approval-take-strip > button:disabled {
+  cursor: default;
+}
+
+.approval-take-strip > button.selected {
+  border-color: var(--accent-strong);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.approval-take-strip > button.approved:not(.selected) {
+  border-color: color-mix(in srgb, var(--green) 55%, var(--line));
+}
+
+.approval-take-strip :is(img, video) {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.approval-take-strip > button > span {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  color: rgb(255 255 255 / 35%);
+  font-size: calc(8px * var(--ui-scale));
+  letter-spacing: 0.12em;
+}
+
+.approval-take-strip > button > i {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  left: 4px;
+  overflow: hidden;
+  padding: 3px 5px;
+  border-radius: 4px;
+  color: #fff;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: rgb(0 0 0 / 62%);
+  font-size: calc(8px * var(--ui-scale));
+  font-style: normal;
+  text-align: left;
+}
+
+.approval-take-strip > button > b {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--surface-root);
+  background: var(--accent-strong);
+  font-size: calc(11px * var(--ui-scale));
+}
+
+.approval-take-strip > p {
+  align-self: center;
+  margin: 0;
+  color: var(--faint);
+  font-size: calc(10px * var(--ui-scale));
+}
+
+.approval-shot-cost {
+  display: grid;
+  min-width: 0;
+  justify-items: end;
+  text-align: right;
+  gap: 3px;
+}
+
+.approval-shot-cost strong {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: calc(11px * var(--ui-scale));
+}
+
+.approval-action-bar {
+  display: grid;
+  align-items: center;
+  padding: 12px clamp(18px, 2.5vw, 34px);
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-1) 88%, transparent);
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 14px;
+}
+
+.approval-action-bar > div {
+  display: grid;
+  gap: 2px;
+}
+
+.approval-action-bar strong {
+  font-size: calc(11px * var(--ui-scale));
+}
+
+.approval-action-bar span,
+.approval-action-bar p {
+  margin: 0;
+  color: var(--faint);
+  font-size: calc(9px * var(--ui-scale));
+}
+
+.approval-action-bar p {
+  color: var(--red);
+}
+
+.approval-action-bar > button,
+.approval-confirmation button {
+  min-height: 34px;
+  padding: 0 13px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text-1);
+  background: var(--surface-2);
+  cursor: pointer;
+  font-size: calc(10px * var(--ui-scale));
+}
+
+.approval-action-bar > button {
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--line));
+  color: var(--surface-root);
+  background: var(--accent-strong);
+  font-weight: 720;
+}
+
+.approval-action-bar button:disabled,
+.approval-confirmation button:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
+.approval-confirmation {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  display: grid;
+  padding: 20px;
+  place-items: center;
+  background: color-mix(in srgb, var(--surface-root) 76%, transparent);
+  backdrop-filter: blur(16px);
+}
+
+.approval-confirmation > div {
+  display: grid;
+  width: min(520px, 100%);
+  max-height: 90%;
+  overflow: auto;
+  padding: 24px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
+  border-radius: 14px;
+  background: var(--surface-1);
+  box-shadow: 0 30px 80px rgb(0 0 0 / 42%);
+  gap: 10px;
+}
+
+.approval-confirmation ul {
+  display: grid;
+  max-height: 260px;
+  overflow: auto;
+  margin: 4px 0;
+  padding: 0;
+  list-style: none;
+  gap: 5px;
+}
+
+.approval-confirmation li {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  gap: 12px;
+}
+
+.approval-confirmation li :is(strong, span) {
+  font-size: calc(10px * var(--ui-scale));
+}
+
+.approval-confirmation li span {
+  color: var(--faint);
+}
+
+.approval-confirmation > div > div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.approval-confirmation > div > div button:last-child {
+  border-color: var(--accent-strong);
+  color: var(--surface-root);
+  background: var(--accent-strong);
+}
+
+@media (max-width: 820px) {
+  .approval-summary {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+
+  .approval-shot-row {
+    align-items: start;
+    grid-template-columns: minmax(110px, 0.5fr) minmax(230px, 1fr);
+  }
+
+  .approval-shot-cost {
+    display: none;
+  }
+
+  .approval-action-bar {
+    grid-template-columns: 1fr auto;
+  }
+
+  .approval-action-bar p {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}`;
+
 type StoryboardProps = {
   snapshot: ProjectSnapshot;
   projectKey: string | null;
   readOnly: boolean;
   onOpenShot: (shotId: string) => void;
   onReorderShot: (shotId: string, toIndex: number) => Promise<boolean>;
+  onSnapshotChange: (payload: { revision: number; snapshot: ProjectSnapshot }) => void;
   onClose: () => void;
 };
 
@@ -41,6 +426,20 @@ function statusLabel(status: Shot["status"]) {
 function formatTime(seconds: number) {
   const safe = Math.max(0, Math.floor(seconds));
   return `${Math.floor(safe / 60)}:${String(safe % 60).padStart(2, "0")}`;
+}
+
+function formatMoney(amount: number, currency: string) {
+  return new Intl.NumberFormat("zh-CN", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: amount < 10 ? 3 : 2,
+  }).format(amount);
+}
+
+function accuracyLabel(accuracy: "exact" | "estimated" | "unknown") {
+  if (accuracy === "exact") return "精确";
+  if (accuracy === "estimated") return "估算";
+  return "仍有未知项";
 }
 
 function StoryboardMedia({
@@ -89,6 +488,7 @@ export function Storyboard({
   readOnly,
   onOpenShot,
   onReorderShot,
+  onSnapshotChange,
   onClose,
 }: StoryboardProps) {
   const orderedScenes = useMemo(
@@ -117,12 +517,18 @@ export function Storyboard({
   );
   const firstShot = orderedShots[0] ?? null;
   const [selectedShotId, setSelectedShotId] = useState<string | null>(firstShot?.id ?? null);
-  const [view, setView] = useState<"wall" | "rough-cut">("wall");
+  const [view, setView] = useState<"wall" | "rough-cut" | "approval">("wall");
   const [playing, setPlaying] = useState(false);
   const [elapsedInShot, setElapsedInShot] = useState(0);
   const [draggedShotId, setDraggedShotId] = useState<string | null>(null);
   const [movingShotId, setMovingShotId] = useState<string | null>(null);
   const [reorderError, setReorderError] = useState<string | null>(null);
+  const [costSummary, setCostSummary] = useState<ProjectCostSummary | null>(null);
+  const [costError, setCostError] = useState<string | null>(null);
+  const [approvalChoices, setApprovalChoices] = useState<Record<string, string>>({});
+  const [approvalPreview, setApprovalPreview] = useState<BatchApprovalPreview | null>(null);
+  const [approvalBusy, setApprovalBusy] = useState(false);
+  const [approvalError, setApprovalError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
   const onCloseRef = useRef(onClose);
@@ -149,6 +555,66 @@ export function Storyboard({
     .slice(0, selectedPlayerIndex)
     .reduce((sum, entry) => sum + entry.shot.durationSeconds, 0);
   const roughCutElapsed = Math.min(totalDuration, elapsedBeforeSelected + elapsedInShot);
+  const approvalDecisions = useMemo<BatchApprovalDecision[]>(
+    () =>
+      Object.entries(approvalChoices).map(([shotId, takeId]) => ({
+        shotId,
+        takeId,
+        reason: "跨镜头审批",
+      })),
+    [approvalChoices],
+  );
+
+  const refreshCosts = useCallback(async () => {
+    if (!projectKey) return;
+    try {
+      const payload = await projectApi.costs(projectKey);
+      setCostSummary(payload.summary);
+      setCostError(null);
+    } catch (cause) {
+      setCostError(cause instanceof Error ? cause.message : "暂时无法读取成本账本");
+    }
+  }, [projectKey]);
+
+  useEffect(() => {
+    if (snapshot.exportedAt) void refreshCosts();
+  }, [refreshCosts, snapshot.exportedAt]);
+
+  const previewApprovals = async () => {
+    if (!projectKey || approvalDecisions.length === 0) return;
+    setApprovalBusy(true);
+    setApprovalError(null);
+    try {
+      const payload = await projectApi.previewBatchApprovals(projectKey, approvalDecisions);
+      setApprovalPreview(payload.preview);
+    } catch (cause) {
+      setApprovalError(cause instanceof Error ? cause.message : "无法预览审批变更");
+    } finally {
+      setApprovalBusy(false);
+    }
+  };
+
+  const applyApprovals = async () => {
+    if (!projectKey || !approvalPreview) return;
+    setApprovalBusy(true);
+    setApprovalError(null);
+    try {
+      const payload = await projectApi.applyBatchApprovals(
+        projectKey,
+        approvalDecisions,
+        approvalPreview,
+      );
+      onSnapshotChange(payload);
+      setApprovalChoices({});
+      setApprovalPreview(null);
+      await refreshCosts();
+    } catch (cause) {
+      setApprovalPreview(null);
+      setApprovalError(cause instanceof Error ? cause.message : "审批没有提交，请重新预览后再试");
+    } finally {
+      setApprovalBusy(false);
+    }
+  };
 
   const selectPlayerEntry = useCallback(
     (index: number) => {
@@ -287,6 +753,7 @@ export function Storyboard({
     >
       <style>{roughCutCss}</style>
       <style>{storyboardControlCss}</style>
+      <style>{approvalCss}</style>
       <section
         className="storyboard-shell"
         role="dialog"
@@ -314,8 +781,16 @@ export function Storyboard({
               onKeyDown={(event) => {
                 if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
                 event.preventDefault();
-                const nextView =
-                  event.key === "ArrowLeft" || event.key === "Home" ? "wall" : "rough-cut";
+                const views = ["wall", "rough-cut", "approval"] as const;
+                const currentIndex = views.indexOf(view);
+                const nextIndex =
+                  event.key === "Home"
+                    ? 0
+                    : event.key === "End"
+                      ? views.length - 1
+                      : (currentIndex + (event.key === "ArrowRight" ? 1 : -1) + views.length) %
+                        views.length;
+                const nextView = views[nextIndex] ?? "wall";
                 setPlaying(false);
                 if (nextView === "rough-cut") setElapsedInShot(0);
                 setView(nextView);
@@ -352,6 +827,20 @@ export function Storyboard({
                 }}
               >
                 粗剪预览
+              </button>
+              <button
+                type="button"
+                role="tab"
+                id="storyboard-tab-approval"
+                aria-controls="storyboard-panel-approval"
+                aria-selected={view === "approval"}
+                tabIndex={view === "approval" ? 0 : -1}
+                onClick={() => {
+                  setPlaying(false);
+                  setView("approval");
+                }}
+              >
+                审批与成本
               </button>
             </div>
             {readOnly ? <span>VIEW ONLY</span> : null}
@@ -553,7 +1042,7 @@ export function Storyboard({
               )}
             </aside>
           </div>
-        ) : (
+        ) : view === "rough-cut" ? (
           <section
             className="rough-cut-player"
             id="storyboard-panel-rough-cut"
@@ -697,6 +1186,216 @@ export function Storyboard({
               <span>实心段为已采用画面，虚线段为计划空镜。</span>
               <small>这是只读节奏预览，不裁切或改写原始图片与视频。</small>
             </footer>
+          </section>
+        ) : (
+          <section
+            className="approval-workbench"
+            id="storyboard-panel-approval"
+            role="tabpanel"
+            aria-label="跨镜头审批与成本"
+          >
+            <header className="approval-summary">
+              <div>
+                <span>PRODUCTION LEDGER</span>
+                <h3>成本与采用决策</h3>
+                <p>成本按实际运行归集；未知项不会被伪装成精确总价。</p>
+              </div>
+              <div className="approval-cost-cards">
+                <article>
+                  <span>采用率</span>
+                  <strong>
+                    {costSummary?.acceptanceRate === null || !costSummary
+                      ? "—"
+                      : `${Math.round(costSummary.acceptanceRate * 100)}%`}
+                  </strong>
+                  <small>
+                    {costSummary?.approvedShotCount ?? approvedShots.length} /{" "}
+                    {costSummary?.candidateShotCount ?? 0} 个有候选镜头
+                  </small>
+                </article>
+                {(costSummary?.totals ?? []).map((total) => (
+                  <article key={total.currency}>
+                    <span>{total.currency} 已知支出</span>
+                    <strong>{formatMoney(total.knownAmount, total.currency)}</strong>
+                    <small>
+                      {accuracyLabel(total.accuracy)}
+                      {total.unknownRunCount > 0 ? ` · ${total.unknownRunCount} 次未知` : ""}
+                    </small>
+                  </article>
+                ))}
+                {(costSummary?.finishedMinuteCosts ?? []).map((cost) => (
+                  <article key={`minute-${cost.currency}`}>
+                    <span>成片分钟成本</span>
+                    <strong>
+                      {cost.amountPerMinute === null
+                        ? "不可可靠计算"
+                        : formatMoney(cost.amountPerMinute, cost.currency)}
+                    </strong>
+                    <small>
+                      {cost.amountPerMinute === null
+                        ? "仍有未知成本或尚无采用时长"
+                        : accuracyLabel(cost.accuracy)}
+                    </small>
+                  </article>
+                ))}
+                {costSummary?.totals.length === 0 ? (
+                  <article>
+                    <span>运行成本</span>
+                    <strong>尚无记录</strong>
+                    <small>生成后会按执行端计费配置归集</small>
+                  </article>
+                ) : null}
+                {costError ? (
+                  <article>
+                    <span>成本账本</span>
+                    <strong>暂时不可用</strong>
+                    <small>{costError}</small>
+                  </article>
+                ) : null}
+              </div>
+            </header>
+
+            <div className="approval-shot-list">
+              {orderedShots.map((shot, index) => {
+                const candidates = snapshot.takes.filter(
+                  (take) =>
+                    take.shotId === shot.id &&
+                    take.status !== "rejected" &&
+                    take.status !== "media_missing",
+                );
+                const shotCost = costSummary?.shots.find((entry) => entry.shotId === shot.id);
+                return (
+                  <article className="approval-shot-row" key={shot.id}>
+                    <div className="approval-shot-identity">
+                      <span>{String(index + 1).padStart(2, "0")}</span>
+                      <div>
+                        <strong>{shot.label}</strong>
+                        <small>
+                          {shot.durationSeconds}s · {candidates.length} 个可审批候选
+                        </small>
+                      </div>
+                    </div>
+                    <div className="approval-take-strip">
+                      {candidates.map((take, takeIndex) => {
+                        const asset =
+                          snapshot.assets.find((candidate) => candidate.id === take.assetId) ??
+                          null;
+                        const source =
+                          projectKey && asset
+                            ? projectApi.assetUrl(projectKey, asset.id, true)
+                            : null;
+                        const selected = approvalChoices[shot.id] === take.id;
+                        const approved = shot.approvedTakeId === take.id;
+                        return (
+                          <button
+                            type="button"
+                            className={`${selected ? "selected" : ""} ${approved ? "approved" : ""}`}
+                            aria-pressed={selected}
+                            disabled={readOnly}
+                            onClick={() => {
+                              setApprovalPreview(null);
+                              setApprovalChoices((current) => {
+                                if (current[shot.id] === take.id) {
+                                  const next = { ...current };
+                                  delete next[shot.id];
+                                  return next;
+                                }
+                                return { ...current, [shot.id]: take.id };
+                              });
+                            }}
+                            key={take.id}
+                          >
+                            {source && asset?.mediaType === "image" ? (
+                              <img src={source} alt="" />
+                            ) : source && asset?.mediaType === "video" ? (
+                              <video src={source} muted playsInline preload="metadata" />
+                            ) : (
+                              <span>MEDIA</span>
+                            )}
+                            <i>{approved ? "当前采用" : `Take ${takeIndex + 1}`}</i>
+                            <b>{selected ? "✓" : ""}</b>
+                          </button>
+                        );
+                      })}
+                      {candidates.length === 0 ? <p>这个镜头还没有可审批候选</p> : null}
+                    </div>
+                    <div className="approval-shot-cost">
+                      <span>镜头累计</span>
+                      <strong>
+                        {shotCost?.totals.length
+                          ? shotCost.totals
+                              .map((total) => formatMoney(total.knownAmount, total.currency))
+                              .join(" + ")
+                          : "—"}
+                      </strong>
+                      <small>
+                        {shotCost?.totals.some((total) => total.unknownRunCount > 0)
+                          ? "含未知成本"
+                          : `${shotCost?.runCount ?? 0} 次运行`}
+                      </small>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+
+            <footer className="approval-action-bar">
+              <div>
+                <strong>{approvalDecisions.length} 个镜头待提交</strong>
+                <span>先预览替换影响，再以一个原子操作写入全部决策。</span>
+              </div>
+              {approvalError ? <p role="alert">{approvalError}</p> : null}
+              <button
+                type="button"
+                disabled={readOnly || approvalBusy || approvalDecisions.length === 0}
+                onClick={() => void previewApprovals()}
+              >
+                {approvalBusy ? "正在核对…" : "预览批量批准"}
+              </button>
+            </footer>
+
+            {approvalPreview ? (
+              <div
+                className="approval-confirmation"
+                role="alertdialog"
+                aria-modal="true"
+                aria-label="确认批量批准"
+              >
+                <div>
+                  <span>CONFIRM DECISIONS</span>
+                  <h3>确认采用 {approvalPreview.decisionCount} 个候选</h3>
+                  <p>
+                    {approvalPreview.replacementCount > 0
+                      ? `其中 ${approvalPreview.replacementCount} 个镜头会替换当前采用版本；旧审批会保留为已撤销历史。`
+                      : "不会覆盖已有的其他采用版本。"}
+                  </p>
+                  <ul>
+                    {approvalPreview.decisions.map((decision) => (
+                      <li key={decision.shotId}>
+                        <strong>{decision.shotTitle}</strong>
+                        <span>{decision.replacesTakeId ? "替换当前采用" : "建立采用记录"}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <div>
+                    <button
+                      type="button"
+                      disabled={approvalBusy}
+                      onClick={() => setApprovalPreview(null)}
+                    >
+                      返回调整
+                    </button>
+                    <button
+                      type="button"
+                      disabled={approvalBusy}
+                      onClick={() => void applyApprovals()}
+                    >
+                      {approvalBusy ? "正在提交…" : "确认并保存全部决策"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </section>
         )}
       </section>

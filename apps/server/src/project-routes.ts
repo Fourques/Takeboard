@@ -1,11 +1,22 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createWriteStream, existsSync } from "node:fs";
 import { mkdir, readdir, rename, rm, stat, unlink } from "node:fs/promises";
 import { basename, join, resolve, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
-import type { AspectRatio, ProjectSnapshot } from "@takeboard/contracts";
-import { approveTake, createTakeBoardId, toIsoTimestamp } from "@takeboard/domain";
-import { ComfyClient } from "@takeboard/executor-comfy";
+import {
+  type AspectRatio,
+  type BatchApprovalDecision,
+  batchApprovalApplyRequestSchema,
+  batchApprovalPreviewRequestSchema,
+  type ProjectSnapshot,
+} from "@takeboard/contracts";
+import {
+  approveTake,
+  approveTakesBatch,
+  createTakeBoardId,
+  summarizeProjectCosts,
+  toIsoTimestamp,
+} from "@takeboard/domain";
 import type { FastifyInstance } from "fastify";
 import { authContext } from "./auth-routes.js";
 import type { AuthService } from "./auth-service.js";
@@ -17,8 +28,54 @@ import {
 } from "./project-archive.js";
 import { ProjectService } from "./project-service.js";
 import { ProjectStore } from "./storage/project-store.js";
+import type { WorkerPool } from "./worker-pool.js";
 
 const allowedRatios = new Set<AspectRatio>(["9:16", "16:9", "1:1", "4:5", "2.35:1"]);
+
+function approvalConfirmationToken(revision: number, decisions: readonly BatchApprovalDecision[]) {
+  const canonical = [...decisions]
+    .map((decision) => ({
+      shotId: decision.shotId,
+      takeId: decision.takeId,
+      reason: decision.reason ?? null,
+    }))
+    .sort((left, right) => left.shotId.localeCompare(right.shotId));
+  return createHash("sha256")
+    .update(JSON.stringify({ revision, decisions: canonical }))
+    .digest("hex");
+}
+
+function buildApprovalPreview(
+  snapshot: ProjectSnapshot,
+  revision: number,
+  decisions: readonly BatchApprovalDecision[],
+) {
+  const seenShots = new Set<string>();
+  const preview = decisions.map((decision) => {
+    if (seenShots.has(decision.shotId)) throw new Error("每个镜头在同一批次中只能选择一个候选");
+    seenShots.add(decision.shotId);
+    const shot = snapshot.shots.find((candidate) => candidate.id === decision.shotId);
+    const take = snapshot.takes.find((candidate) => candidate.id === decision.takeId);
+    if (!shot || !take) throw new Error("批量批准包含不存在的镜头或候选");
+    if (take.shotId !== shot.id) throw new Error("候选与镜头不匹配");
+    if (take.status === "media_missing") throw new Error("媒体缺失的候选不能批准");
+    return {
+      shotId: shot.id,
+      shotTitle: shot.label,
+      takeId: take.id,
+      assetId: take.assetId,
+      replacesTakeId: shot.approvedTakeId === take.id ? null : shot.approvedTakeId,
+      reason: decision.reason ?? null,
+    };
+  });
+  return {
+    revision,
+    confirmationToken: approvalConfirmationToken(revision, decisions),
+    decisionCount: preview.length,
+    replacementCount: preview.filter((decision) => decision.replacesTakeId !== null).length,
+    decisions: preview,
+  };
+}
 
 function canvasItemLabel(snapshot: ProjectSnapshot, item: { refType: string; refId: string }) {
   if (item.refType === "text") {
@@ -98,6 +155,7 @@ type ProjectRouteOptions = {
   comfyInputRoot: string | null;
   comfyOutputRoot: string | null;
   auth: AuthService;
+  workerPool: WorkerPool;
 };
 
 const terminalProjectRunStatuses = new Set(["completed", "failed", "cancelled"]);
@@ -162,7 +220,6 @@ export function registerProjectRoutes(
 ) {
   const root = resolve(projectsRoot);
   const service = new ProjectService();
-  const comfy = new ComfyClient(options.comfyUrl, { liveProgress: false });
 
   app.get("/api/projects/trash", async (request) => {
     const context = authContext(request);
@@ -714,6 +771,7 @@ export function registerProjectRoutes(
     );
     const cancellationResults = await Promise.all(
       activeRuns.map(async (run) => {
+        const comfy = options.workerPool.client(run.workerId, false);
         if (!run.promptId) return { run, confirmed: true, error: null as string | null };
         try {
           let confirmed = await comfy.cancel(run.promptId);
@@ -770,11 +828,23 @@ export function registerProjectRoutes(
 
     await Promise.allSettled(
       cancellationResults.flatMap(({ run }) => [
-        ...(run.promptId ? [comfy.deleteHistory(run.promptId)] : []),
+        ...(run.promptId
+          ? [options.workerPool.client(run.workerId, false).deleteHistory(run.promptId)]
+          : []),
         cleanupDeletedProjectRun(run, options),
       ]),
     );
-    if (cancellationResults.length > 0) await comfy.freeResourcesIfIdle().catch(() => undefined);
+    if (cancellationResults.length > 0) {
+      await Promise.all(
+        [...new Set(cancellationResults.map(({ run }) => run.workerId))].map(
+          async (workerId) =>
+            await options.workerPool
+              .client(workerId, false)
+              .freeResourcesIfIdle()
+              .catch(() => undefined),
+        ),
+      );
+    }
 
     const trashRoot = join(root, ".trash");
     await mkdir(trashRoot, { recursive: true });
@@ -1328,6 +1398,136 @@ export function registerProjectRoutes(
     },
   );
 
+  app.get<{ Params: { key: string } }>("/api/projects/:key/costs", async (request, reply) => {
+    const key = projectKey(request.params.key);
+    if (!key) return await reply.code(400).send({ error: "项目标识无效" });
+    const store = ProjectStore.openExisting(join(root, key));
+    if (!store) return await reply.code(404).send({ error: "项目不存在" });
+    try {
+      const current = store.loadCurrent();
+      if (!current) return await reply.code(404).send({ error: "项目不存在" });
+      return {
+        key,
+        revision: current.revision,
+        summary: summarizeProjectCosts(current.snapshot, toIsoTimestamp()),
+      };
+    } finally {
+      store.close();
+    }
+  });
+
+  app.post<{ Params: { key: string } }>(
+    "/api/projects/:key/approvals/batch/preview",
+    async (request, reply) => {
+      const key = projectKey(request.params.key);
+      if (!key) return await reply.code(400).send({ error: "项目标识无效" });
+      const parsed = batchApprovalPreviewRequestSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return await reply.code(400).send({
+          error: parsed.error.issues[0]?.message ?? "批量批准内容无效",
+        });
+      }
+      const store = ProjectStore.openExisting(join(root, key));
+      if (!store) return await reply.code(404).send({ error: "项目不存在" });
+      try {
+        const current = store.loadCurrent();
+        if (!current) return await reply.code(404).send({ error: "项目不存在" });
+        try {
+          return {
+            key,
+            preview: buildApprovalPreview(
+              current.snapshot,
+              current.revision,
+              parsed.data.decisions,
+            ),
+          };
+        } catch (error) {
+          return await reply
+            .code(409)
+            .send({ error: error instanceof Error ? error.message : "无法预览批准变更" });
+        }
+      } finally {
+        store.close();
+      }
+    },
+  );
+
+  app.post<{ Params: { key: string } }>(
+    "/api/projects/:key/approvals/batch",
+    async (request, reply) => {
+      const key = projectKey(request.params.key);
+      if (!key) return await reply.code(400).send({ error: "项目标识无效" });
+      const parsed = batchApprovalApplyRequestSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return await reply.code(400).send({
+          error: parsed.error.issues[0]?.message ?? "批量批准内容无效",
+        });
+      }
+      const store = ProjectStore.openExisting(join(root, key));
+      if (!store) return await reply.code(404).send({ error: "项目不存在" });
+      try {
+        const current = store.loadCurrent();
+        if (!current) return await reply.code(404).send({ error: "项目不存在" });
+        if (current.revision !== parsed.data.revision) {
+          return await reply.code(409).send({
+            error: "项目已被其他操作更新，请重新预览后再批准",
+            code: "APPROVAL_PREVIEW_STALE",
+            currentRevision: current.revision,
+          });
+        }
+        const expectedToken = approvalConfirmationToken(current.revision, parsed.data.decisions);
+        if (expectedToken !== parsed.data.confirmationToken) {
+          return await reply.code(409).send({
+            error: "批准选择与预览内容不一致，请重新确认",
+            code: "APPROVAL_PREVIEW_MISMATCH",
+          });
+        }
+        let preview: ReturnType<typeof buildApprovalPreview>;
+        try {
+          preview = buildApprovalPreview(current.snapshot, current.revision, parsed.data.decisions);
+        } catch (error) {
+          return await reply
+            .code(409)
+            .send({ error: error instanceof Error ? error.message : "无法应用批准变更" });
+        }
+        const timestamp = toIsoTimestamp();
+        const context = authContext(request);
+        const approved = approveTakesBatch({
+          shots: current.snapshot.shots,
+          takes: current.snapshot.takes,
+          approvals: current.snapshot.approvals,
+          decisions: parsed.data.decisions,
+          approvalIds: parsed.data.decisions.map(() => createTakeBoardId("approval")),
+          at: timestamp,
+          actorUserId: context?.user.id ?? null,
+          actorName: context?.user.name ?? null,
+        });
+        current.snapshot.shots = approved.shots;
+        current.snapshot.takes = approved.takes;
+        current.snapshot.approvals = approved.approvals;
+        current.snapshot.project.updatedAt = timestamp;
+        current.snapshot.exportedAt = timestamp;
+        const saved = await store.save(current.snapshot, {
+          type: "takes.batch_approved",
+          payload: {
+            count: parsed.data.decisions.length,
+            replacementCount: preview.replacementCount,
+            shotIds: parsed.data.decisions.map((decision) => decision.shotId),
+            actorUserId: context?.user.id ?? null,
+          },
+        });
+        return {
+          key,
+          approvedCount: parsed.data.decisions.length,
+          replacementCount: preview.replacementCount,
+          ...saved,
+        };
+      } finally {
+        store.close();
+      }
+    },
+  );
+
   app.post<{ Params: { key: string; takeId: string } }>(
     "/api/projects/:key/takes/:takeId/approve",
     async (request, reply) => {
@@ -1356,6 +1556,8 @@ export function registerProjectRoutes(
           approvalId: createTakeBoardId("approval"),
           at: timestamp,
           reason,
+          actorUserId: authContext(request)?.user.id ?? null,
+          actorName: authContext(request)?.user.name ?? null,
         });
         current.snapshot.shots = current.snapshot.shots.map((item) =>
           item.id === shot.id ? approved.shot : item,

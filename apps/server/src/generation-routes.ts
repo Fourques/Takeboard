@@ -2,7 +2,11 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdir, readdir, readFile, rm, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
-import { type ProjectSnapshot, resolveGenerationResolution } from "@takeboard/contracts";
+import {
+  executionPolicySchema,
+  type ProjectSnapshot,
+  resolveGenerationResolution,
+} from "@takeboard/contracts";
 import { createTakeBoardId, toIsoTimestamp } from "@takeboard/domain";
 import {
   buildLtx23I2VPrompt,
@@ -11,7 +15,7 @@ import {
   buildQwenImage2512Prompt,
   buildWan22FirstLastPrompt,
   buildWan22I2VPrompt,
-  ComfyClient,
+  type ComfyClient,
   type ComfyPrompt,
   miniMaxH3Resolution,
   qwenImage2512Resolution,
@@ -26,6 +30,7 @@ import {
   generationCapacityIssues,
   projectStorageReserveBytes,
 } from "./storage-capacity.js";
+import { type WorkerPool, WorkerSelectionError } from "./worker-pool.js";
 import { applyWorkflowBinding, loadExecutableWorkflow } from "./workflow-bindings.js";
 
 const sha256 = (value: Uint8Array | string) => createHash("sha256").update(value).digest("hex");
@@ -155,13 +160,13 @@ async function cleanupComfyRunFiles(
 export function registerGenerationRoutes(
   app: FastifyInstance,
   projectsRoot: string,
-  comfyUrl: string,
+  workerPool: WorkerPool,
   storage: GenerationStorageOptions = { inputRoot: null, outputRoot: null },
 ) {
   const root = resolve(projectsRoot);
-  const comfy = new ComfyClient(comfyUrl, { liveProgress: process.env.NODE_ENV !== "test" });
   const liveProgress = (run: ProjectSnapshot["runs"][number]) => {
     if (!run.promptId) return null;
+    const comfy = workerPool.client(run.workerId, process.env.NODE_ENV !== "test");
     const clientId = run.parameters.comfyClientId;
     if (typeof clientId === "string" && !terminalRunStatuses.has(run.status)) {
       comfy.watchProgress(run.promptId, clientId);
@@ -182,6 +187,33 @@ export function registerGenerationRoutes(
           }
         : null)
     );
+  };
+
+  const finishRunAccounting = (run: ProjectSnapshot["runs"][number], timestamp: string) => {
+    if (!run.execution) return;
+    run.execution.finishedAt = timestamp;
+    const elapsedSeconds = Math.max(
+      0,
+      (Date.parse(timestamp) - Date.parse(run.execution.submittedAt)) / 1_000,
+    );
+    if (run.estimatedCost.source === "worker_rate" && run.estimatedCost.unitRatePerHour !== null) {
+      run.actualCost = {
+        amount: Number(((run.estimatedCost.unitRatePerHour * elapsedSeconds) / 3_600).toFixed(6)),
+        currency: run.estimatedCost.currency,
+        accuracy: "estimated",
+        source: "worker_rate",
+        computeSeconds: elapsedSeconds,
+        unitRatePerHour: run.estimatedCost.unitRatePerHour,
+        recordedAt: timestamp,
+      };
+    } else if (run.actualCost.accuracy === "unknown") {
+      run.actualCost = {
+        ...run.actualCost,
+        currency: run.estimatedCost.currency,
+        computeSeconds: elapsedSeconds,
+        recordedAt: timestamp,
+      };
+    }
   };
 
   app.post<{
@@ -522,6 +554,7 @@ export function registerGenerationRoutes(
           }
           return { key, runId: run.id, status: run.status, cancelled: false, ...current };
         }
+        const comfy = workerPool.client(run.workerId, process.env.NODE_ENV !== "test");
         let dispatched = run.promptId === null;
         let dispatchError: string | null = null;
         if (run.promptId) {
@@ -538,6 +571,7 @@ export function registerGenerationRoutes(
           ? null
           : dispatchError || "执行端没有确认取消；可在恢复连接后再次清理";
         run.updatedAt = timestamp;
+        finishRunAccounting(run, timestamp);
         refreshShotStatus(current.snapshot, run.shotId, timestamp);
         current.snapshot.project.updatedAt = timestamp;
         current.snapshot.exportedAt = timestamp;
@@ -599,6 +633,7 @@ export function registerGenerationRoutes(
       let preparedProjectId: string | null = null;
       let preparedShotId: string | null = null;
       let submissionStarted = false;
+      let comfy: ComfyClient | null = null;
       try {
         const current = store.loadCurrent();
         if (!current) return await reply.code(404).send({ error: "项目不存在" });
@@ -671,7 +706,9 @@ export function registerGenerationRoutes(
         let boundWorkflow: Awaited<ReturnType<typeof loadExecutableWorkflow>> | null = null;
         if (!nativeWorkflow) {
           try {
-            boundWorkflow = await loadExecutableWorkflow(comfyUrl, recipePath);
+            const primaryEndpoint = workerPool.endpoint(workerPool.defaultWorkerId);
+            if (!primaryEndpoint) throw new Error("没有配置默认执行端");
+            boundWorkflow = await loadExecutableWorkflow(primaryEndpoint, recipePath);
           } catch (error) {
             return await reply.code(422).send({
               error:
@@ -866,6 +903,43 @@ export function registerGenerationRoutes(
           });
         }
 
+        const policyResult = executionPolicySchema.safeParse(body.executionPolicy ?? "balanced");
+        if (!policyResult.success) {
+          return await reply.code(400).send({ error: "执行策略无效" });
+        }
+        let selection: Awaited<ReturnType<WorkerPool["select"]>>;
+        try {
+          selection = await workerPool.select({
+            policy: policyResult.data,
+            requestedWorkerId: typeof body.workerId === "string" ? body.workerId : null,
+            containsSensitiveInputs: Boolean(
+              inputAsset ||
+                lastAsset ||
+                referenceImages.length ||
+                referenceVideos.length ||
+                referenceAudios.length,
+            ),
+            budgetCap: typeof body.budgetCap === "number" ? body.budgetCap : null,
+            budgetCurrency: typeof body.budgetCurrency === "string" ? body.budgetCurrency : "CNY",
+            estimatedJobSeconds: Math.max(30, Math.round(durationSeconds * Math.max(10, steps))),
+            deferSingleWorkerProbe: true,
+          });
+        } catch (error) {
+          if (error instanceof WorkerSelectionError) {
+            return await reply.code(409).send({
+              error: error.message,
+              code: "NO_ELIGIBLE_WORKER",
+              candidates: error.candidates,
+            });
+          }
+          throw error;
+        }
+        comfy = workerPool.client(selection.worker.id, process.env.NODE_ENV !== "test");
+        const selectedComfy = comfy;
+        if (boundWorkflow && selection.worker.id !== workerPool.defaultWorkerId) {
+          boundWorkflow = await loadExecutableWorkflow(selection.worker.endpoint, recipePath);
+        }
+
         let comfyImage: string | null = null;
         if (inputAsset?.mediaType === "image") {
           const bytes = await readFile(join(directory, inputAsset.storagePath));
@@ -890,7 +964,7 @@ export function registerGenerationRoutes(
           const extension =
             extname(asset.originalName) ||
             (asset.mediaType === "video" ? ".mp4" : asset.mediaType === "audio" ? ".wav" : ".png");
-          return await comfy.uploadImage(
+          return await selectedComfy.uploadImage(
             new Uint8Array(bytes),
             `takeboard_${current.snapshot.project.id}_${runId}_${asset.id}${extension}`,
             asset.mimeType,
@@ -1039,7 +1113,7 @@ export function registerGenerationRoutes(
           recipeId: createTakeBoardId("recipe", milliseconds),
           recipeVersion,
           workflowSha256: sha256(JSON.stringify(prompt)),
-          workerId: createTakeBoardId("worker", milliseconds),
+          workerId: selection.worker.id,
           promptId: null,
           status: "queued",
           inputs: [
@@ -1129,6 +1203,28 @@ export function registerGenerationRoutes(
             outputMediaType,
             comfyClientId,
           },
+          execution: {
+            policy: policyResult.data,
+            requestedWorkerId: typeof body.workerId === "string" ? body.workerId : null,
+            selectedWorkerId: selection.worker.id,
+            workerName: selection.worker.name,
+            workerKind: selection.worker.kind,
+            transport: selection.worker.transport,
+            selectionReason: selection.reason,
+            candidates: selection.candidates,
+            submittedAt: timestamp,
+            finishedAt: null,
+          },
+          estimatedCost: selection.estimatedCost,
+          actualCost: {
+            amount: null,
+            currency: selection.worker.currency,
+            accuracy: "unknown",
+            source: "unavailable",
+            computeSeconds: null,
+            unitRatePerHour: selection.worker.hourlyRate,
+            recordedAt: null,
+          },
           errorCode: null,
           errorMessage: null,
           createdAt: timestamp,
@@ -1177,9 +1273,10 @@ export function registerGenerationRoutes(
       } catch (error) {
         let remoteCancellationConfirmed = submittedPromptId === null && !submissionStarted;
         if (submittedPromptId) {
-          remoteCancellationConfirmed = await comfy.cancel(submittedPromptId).catch(() => false);
-          await comfy.deleteHistory(submittedPromptId).catch(() => undefined);
-          comfy.forgetProgress(submittedPromptId);
+          remoteCancellationConfirmed =
+            (await comfy?.cancel(submittedPromptId).catch(() => false)) ?? false;
+          await comfy?.deleteHistory(submittedPromptId).catch(() => undefined);
+          comfy?.forgetProgress(submittedPromptId);
         }
         if (remoteCancellationConfirmed && preparedProjectId && preparedShotId && preparedRunId) {
           await cleanupComfyRunFiles(storage, preparedProjectId, preparedShotId, preparedRunId);
@@ -1197,6 +1294,7 @@ export function registerGenerationRoutes(
               run.errorMessage =
                 error instanceof Error ? error.message.slice(0, 20_000) : "生成任务提交失败";
               run.updatedAt = timestamp;
+              finishRunAccounting(run, timestamp);
               refreshShotStatus(latest.snapshot, run.shotId, timestamp);
               latest.snapshot.project.updatedAt = timestamp;
               latest.snapshot.exportedAt = timestamp;
@@ -1244,6 +1342,7 @@ export function registerGenerationRoutes(
           run.errorCode = "SUBMISSION_INTERRUPTED";
           run.errorMessage = "任务准备完成，但没有取得执行端任务编号；请重试或清理该运行";
           run.updatedAt = timestamp;
+          finishRunAccounting(run, timestamp);
           refreshShotStatus(current.snapshot, run.shotId, timestamp);
           current.snapshot.project.updatedAt = timestamp;
           current.snapshot.exportedAt = timestamp;
@@ -1253,6 +1352,8 @@ export function registerGenerationRoutes(
           });
           return { key, runId: run.id, status: run.status, ...saved };
         }
+
+        const comfy = workerPool.client(run.workerId, process.env.NODE_ENV !== "test");
 
         const history = await comfy.history(run.promptId);
         if (!history) {
@@ -1270,6 +1371,7 @@ export function registerGenerationRoutes(
           run.errorCode = "COMFY_EXECUTION_ERROR";
           run.errorMessage = "ComfyUI 执行失败，请检查工作站日志";
           run.updatedAt = timestamp;
+          finishRunAccounting(run, timestamp);
           refreshShotStatus(current.snapshot, run.shotId, timestamp);
           const saved = await store.save(current.snapshot, {
             type: "run.failed",
@@ -1312,6 +1414,7 @@ export function registerGenerationRoutes(
             ? "ComfyUI 已完成，但 Workflow 没有返回图片文件"
             : "ComfyUI 已完成，但 Workflow 没有返回视频文件";
           run.updatedAt = timestamp;
+          finishRunAccounting(run, timestamp);
           refreshShotStatus(current.snapshot, run.shotId, timestamp);
           const saved = await store.save(current.snapshot, {
             type: "run.failed",
@@ -1394,6 +1497,7 @@ export function registerGenerationRoutes(
         }
         run.status = "completed";
         run.updatedAt = timestamp;
+        finishRunAccounting(run, timestamp);
         const shot = current.snapshot.shots.find((item) => item.id === run.shotId);
         if (shot) {
           if (

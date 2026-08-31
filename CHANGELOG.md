@@ -4,6 +4,27 @@ TakeBoard follows [Semantic Versioning](https://semver.org/) from the first publ
 1.0, project packages and database migrations remain forward-oriented: always keep a verified backup
 before moving production work to a newer minor version.
 
+## Unreleased
+
+### Added
+
+- Honest Run and project cost records with exact, estimated and unknown accuracy, currency-safe
+  aggregation, per-shot summaries and finished-minute visibility.
+- Revision-bound approval previews and atomic approval batches spanning multiple shots, including
+  replacement impact and approving-account provenance.
+- Persistent local/remote ComfyUI worker management, SSH-tunnel and HTTPS transports, explicit
+  sensitive-media grants, stable retirement of removed workers and seven explainable scheduling
+  policies.
+- A declarative extension library with manifest validation, content hashes, permission review,
+  disabled-by-default local installs, project QC rules and safe external links.
+
+### Security
+
+- Remote worker URLs reject embedded credentials, query strings and fragments; unencrypted remote
+  HTTP is rejected unless an explicit legacy override is set.
+- TakeBoard extension manifests cannot execute JavaScript, Python, shell commands or ComfyUI Custom
+  Nodes. Arbitrary-code plugins remain outside this release boundary.
+
 ## 0.2.0-beta.1 — 2026-08-30
 
 Resilience and distribution preview.

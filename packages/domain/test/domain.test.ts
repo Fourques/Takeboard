@@ -1,11 +1,13 @@
-import type { Approval, Run, Shot, Take } from "@takeboard/contracts";
+import type { Approval, ProjectSnapshot, Run, Shot, Take } from "@takeboard/contracts";
 import { describe, expect, it } from "vitest";
 import {
   approveTake,
+  approveTakesBatch,
   canTransitionRun,
   createTakeBoardId,
   createUuidV7,
   DomainError,
+  summarizeProjectCosts,
   transitionRun,
 } from "../src/index.js";
 
@@ -140,5 +142,124 @@ describe("approveTake", () => {
     expect(result.approvals[0]).toMatchObject({ status: "revoked", revokedAt: later });
     expect(result.approvals[1]).toMatchObject({ status: "active", takeId: ids.takeB });
     expect(approvals[0]?.status).toBe("active");
+  });
+
+  it("validates the complete cross-shot batch before applying decisions", () => {
+    const candidateTake = takes[1];
+    if (!candidateTake) throw new Error("Candidate fixture is missing");
+    const secondShot: Shot = {
+      ...shot,
+      id: "shot_018f47a0-2c91-7a4f-a812-78f12a2c4512",
+      label: "SH-002",
+    };
+    const secondTake: Take = {
+      ...candidateTake,
+      id: "take_018f47a0-2c91-7a4f-a812-78f12a2c4513",
+      shotId: secondShot.id,
+    };
+    const result = approveTakesBatch({
+      shots: [shot, secondShot],
+      takes: [...takes, secondTake],
+      approvals,
+      decisions: [
+        { shotId: shot.id, takeId: ids.takeB, reason: "Batch review" },
+        { shotId: secondShot.id, takeId: secondTake.id, reason: null },
+      ],
+      approvalIds: [ids.approvalB, "approval_018f47a0-2c91-7a4f-a812-78f12a2c4514"],
+      at: later,
+      actorUserId: "user-editor",
+      actorName: "Editor",
+    });
+
+    expect(result.shots.map((item) => item.approvedTakeId)).toEqual([ids.takeB, secondTake.id]);
+    expect(result.approvals.filter((approval) => approval.status === "active")).toHaveLength(2);
+    expect(result.approvals.at(-1)).toMatchObject({ actorName: "Editor" });
+    expect(() =>
+      approveTakesBatch({
+        shots: [shot],
+        takes,
+        approvals,
+        decisions: [
+          { shotId: shot.id, takeId: ids.takeA, reason: null },
+          { shotId: shot.id, takeId: ids.takeB, reason: null },
+        ],
+        approvalIds: [ids.approvalB, "approval_018f47a0-2c91-7a4f-a812-78f12a2c4515"],
+        at: later,
+      }),
+    ).toThrow(/only one decision/);
+  });
+});
+
+describe("production cost summary", () => {
+  it("keeps known spend as a floor when any run cost is unknown", () => {
+    const approvedTake = takes[0];
+    if (!approvedTake) throw new Error("Approved take fixture is missing");
+    const exactRun: Run = {
+      ...run,
+      status: "completed",
+      execution: null,
+      estimatedCost: {
+        amount: null,
+        currency: "CNY",
+        accuracy: "unknown",
+        source: "unavailable",
+        computeSeconds: null,
+        unitRatePerHour: null,
+        recordedAt: null,
+      },
+      actualCost: {
+        amount: 2.5,
+        currency: "CNY",
+        accuracy: "exact",
+        source: "provider_reported",
+        computeSeconds: 120,
+        unitRatePerHour: null,
+        recordedAt: later,
+      },
+    };
+    const unknownRun: Run = {
+      ...exactRun,
+      id: "run_018f47a0-2c91-7a4f-a812-78f12a2c4516",
+      actualCost: {
+        ...exactRun.actualCost,
+        amount: null,
+        accuracy: "unknown",
+        source: "unavailable",
+      },
+    };
+    const snapshot = {
+      schemaVersion: "0.1.0",
+      exportedAt: later,
+      project: {
+        id: ids.project,
+        schemaVersion: "0.1.0",
+        title: "Cost test",
+        defaultAspectRatio: "9:16",
+        createdAt: now,
+        updatedAt: later,
+      },
+      scenes: [],
+      textItems: [],
+      entities: [],
+      assets: [],
+      shots: [{ ...shot, approvedTakeId: ids.takeA, status: "approved" }],
+      runs: [exactRun, unknownRun],
+      takes: [approvedTake],
+      approvals,
+      canvasItems: [],
+      canvasEdges: [],
+    } satisfies ProjectSnapshot;
+    const summary = summarizeProjectCosts(snapshot, later);
+
+    expect(summary.totals[0]).toMatchObject({
+      knownAmount: 2.5,
+      accuracy: "unknown",
+      exactRunCount: 1,
+      unknownRunCount: 1,
+    });
+    expect(summary.finishedMinuteCosts[0]).toMatchObject({
+      amountPerMinute: null,
+      knownAmountFloor: 2.5,
+    });
   });
 });

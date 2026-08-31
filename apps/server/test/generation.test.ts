@@ -48,7 +48,7 @@ async function projectFixture(storage?: { inputRoot: string; outputRoot: string 
   const app = buildApp({
     projectsRoot: root,
     webRoot: null,
-    comfyUrl: "http://comfy.test",
+    comfyUrl: "https://comfy.test",
     comfyInputRoot: storage?.inputRoot ?? null,
     comfyOutputRoot: storage?.outputRoot ?? null,
   });
@@ -292,7 +292,7 @@ describe("real generation routes", () => {
 
     expect(response.statusCode).toBe(502);
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://comfy.test/api/jobs/prompt-compensate/cancel",
+      "https://comfy.test/api/jobs/prompt-compensate/cancel",
       expect.objectContaining({ method: "POST" }),
     );
     const reopened = await app.inject({ method: "GET", url: `/api/projects/${key}` });
@@ -582,7 +582,7 @@ describe("real generation routes", () => {
     await expect(access(temporaryInput)).rejects.toThrow();
     await expect(access(runOutputDirectory)).rejects.toThrow();
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://comfy.test/api/jobs/prompt-cancel/cancel",
+      "https://comfy.test/api/jobs/prompt-cancel/cancel",
       expect.objectContaining({ method: "POST" }),
     );
   });

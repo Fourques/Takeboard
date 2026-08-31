@@ -7,12 +7,14 @@ import { type AuthOptions, registerAuth } from "./auth-routes.js";
 import type { AuthMode } from "./auth-service.js";
 import { type BackupAutomationConfig, registerBackupAutomation } from "./backup-automation.js";
 import { registerDemoRoutes } from "./demo/routes.js";
+import { registerExtensionRoutes } from "./extension-routes.js";
 import { registerGenerationRoutes } from "./generation-routes.js";
 import { registerOperationsRoutes } from "./operations-routes.js";
 import { registerProjectCommandRoutes } from "./project-command-routes.js";
 import { registerProjectRequestLock } from "./project-request-lock.js";
 import { registerProjectRoutes } from "./project-routes.js";
 import { type RequestSecurityOptions, registerRequestSecurity } from "./request-security.js";
+import { WorkerPool } from "./worker-pool.js";
 import { registerWorkerRoutes, type WorkerRouteOptions } from "./worker-routes.js";
 import { registerWorkflowRoutes } from "./workflow-routes.js";
 
@@ -87,11 +89,17 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   const comfyInputRoot = options.comfyInputRoot ?? process.env.COMFY_INPUT_ROOT ?? null;
   const comfyOutputRoot = options.comfyOutputRoot ?? process.env.COMFY_OUTPUT_ROOT ?? null;
   const webRoot = options.webRoot ?? process.env.TAKEBOARD_WEB_ROOT ?? null;
+  const workerPool = new WorkerPool(
+    resolve(projectsRoot, ".system", "workers.json"),
+    comfyUrl,
+    options.workerOptions?.runtime?.fetch,
+  );
   registerProjectRoutes(app, projectsRoot, {
     comfyUrl,
     comfyInputRoot,
     comfyOutputRoot,
     auth,
+    workerPool,
   });
   registerOperationsRoutes(app, projectsRoot, auth, {
     version: takeBoardVersion,
@@ -100,8 +108,9 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     backupAutomation,
   });
   registerProjectCommandRoutes(app, projectsRoot);
-  registerWorkerRoutes(app, comfyUrl, options.workerOptions);
-  registerGenerationRoutes(app, projectsRoot, comfyUrl, {
+  registerExtensionRoutes(app, projectsRoot);
+  registerWorkerRoutes(app, comfyUrl, options.workerOptions, workerPool);
+  registerGenerationRoutes(app, projectsRoot, workerPool, {
     inputRoot: comfyInputRoot,
     outputRoot: comfyOutputRoot,
   });
