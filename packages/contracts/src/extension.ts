@@ -8,7 +8,12 @@ export const extensionIdSchema = z
   .max(160)
   .regex(/^[a-z0-9]+(?:[.-][a-z0-9]+)+$/, "Use a lowercase reverse-domain extension ID");
 
-export const extensionPermissionSchema = z.enum(["project.read", "network.open"]);
+export const extensionPermissionSchema = z.enum(["project.read", "project.write", "network.open"]);
+export const extensionFeatureSchema = z.enum([
+  "storyboard.rough_cut",
+  "production.cost_insights",
+  "production.batch_approval",
+]);
 export const extensionQcCheckSchema = z.enum([
   "unapproved_shots",
   "failed_runs",
@@ -41,6 +46,7 @@ export const extensionManifestSchema = z
     permissions: z.array(extensionPermissionSchema).max(10).default([]),
     contributions: z
       .object({
+        features: z.array(extensionFeatureSchema).max(20).default([]),
         links: z
           .array(
             z.object({
@@ -76,7 +82,7 @@ export const extensionManifestSchema = z
           .max(50)
           .default([]),
       })
-      .default(() => ({ links: [], qcRules: [] })),
+      .default(() => ({ features: [], links: [], qcRules: [] })),
   })
   .superRefine((manifest, context) => {
     if (manifest.contributions.links.length > 0 && !manifest.permissions.includes("network.open")) {
@@ -96,6 +102,26 @@ export const extensionManifestSchema = z
         path: ["permissions"],
       });
     }
+    if (
+      manifest.contributions.features.length > 0 &&
+      !manifest.permissions.includes("project.read")
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Workspace features require the project.read permission",
+        path: ["permissions"],
+      });
+    }
+    if (
+      manifest.contributions.features.includes("production.batch_approval") &&
+      !manifest.permissions.includes("project.write")
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Batch approval requires the project.write permission",
+        path: ["permissions"],
+      });
+    }
     const contributionIds = [
       ...manifest.contributions.links.map((item) => item.id),
       ...manifest.contributions.qcRules.map((item) => item.id),
@@ -105,6 +131,13 @@ export const extensionManifestSchema = z
         code: "custom",
         message: "Contribution IDs must be unique inside an extension",
         path: ["contributions"],
+      });
+    }
+    if (new Set(manifest.contributions.features).size !== manifest.contributions.features.length) {
+      context.addIssue({
+        code: "custom",
+        message: "Workspace features must be unique inside an extension",
+        path: ["contributions", "features"],
       });
     }
   });
@@ -130,6 +163,7 @@ export const extensionQcIssueSchema = z.object({
 });
 
 export type ExtensionPermission = z.infer<typeof extensionPermissionSchema>;
+export type ExtensionFeature = z.infer<typeof extensionFeatureSchema>;
 export type ExtensionManifest = z.infer<typeof extensionManifestSchema>;
 export type InstalledExtension = z.infer<typeof installedExtensionSchema>;
 export type ExtensionQcIssue = z.infer<typeof extensionQcIssueSchema>;

@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { chmod, mkdir, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import {
+  type ExtensionFeature,
   type ExtensionManifest,
   type ExtensionQcIssue,
   extensionManifestSchema,
@@ -14,13 +15,70 @@ import { toIsoTimestamp } from "@takeboard/domain";
 
 type ExtensionFile = { version: 1; extensions: InstalledExtension[] };
 
+export const bundledExtensionIds = {
+  roughCut: "studio.takeboard.rough-cut",
+  costInsights: "studio.takeboard.cost-insights",
+  batchReview: "studio.takeboard.batch-review",
+  productionQc: "studio.takeboard.production-qc",
+} as const;
+
+const roughCutManifest = extensionManifestSchema.parse({
+  format: "takeboard.extension",
+  manifestVersion: 1,
+  id: bundledExtensionIds.roughCut,
+  name: "粗剪预览",
+  version: "1.0.0",
+  description: "按已采用镜头形成只读时间线，用于检查节奏和整片覆盖，不改写原始素材。",
+  author: "TakeBoard",
+  homepage: null,
+  permissions: ["project.read"],
+  contributions: { features: ["storyboard.rough_cut"] },
+});
+
+const costInsightsManifest = extensionManifestSchema.parse({
+  format: "takeboard.extension",
+  manifestVersion: 1,
+  id: bundledExtensionIds.costInsights,
+  name: "成本洞察",
+  version: "1.0.0",
+  description: "按 Run、镜头和成片分钟查看精确、估算与未知成本，适合配置了算力费率的工作室。",
+  author: "TakeBoard",
+  homepage: null,
+  permissions: ["project.read"],
+  contributions: {
+    features: ["production.cost_insights"],
+    qcRules: [
+      {
+        id: "unknown-costs",
+        title: "运行成本未知",
+        description: "执行端没有配置费率或提供账单，因此无法形成完整成本。",
+        check: "unknown_costs",
+        severity: "info",
+      },
+    ],
+  },
+});
+
+const batchReviewManifest = extensionManifestSchema.parse({
+  format: "takeboard.extension",
+  manifestVersion: 1,
+  id: bundledExtensionIds.batchReview,
+  name: "批量审片",
+  version: "1.0.0",
+  description: "跨镜头选择候选、预览替换影响并一次提交，适合集中审片和团队交付。",
+  author: "TakeBoard",
+  homepage: null,
+  permissions: ["project.read", "project.write"],
+  contributions: { features: ["production.batch_approval"] },
+});
+
 const productionQcManifest = extensionManifestSchema.parse({
   format: "takeboard.extension",
   manifestVersion: 1,
-  id: "studio.takeboard.production-qc",
+  id: bundledExtensionIds.productionQc,
   name: "成片完整性质检",
   version: "1.0.0",
-  description: "在提交成片前检查未采用镜头、失败运行、素材元数据与未知成本。",
+  description: "在提交成片前检查未采用镜头、失败运行与素材元数据。",
   author: "TakeBoard",
   homepage: null,
   permissions: ["project.read"],
@@ -47,16 +105,17 @@ const productionQcManifest = extensionManifestSchema.parse({
         check: "missing_asset_metadata",
         severity: "warning",
       },
-      {
-        id: "unknown-costs",
-        title: "运行成本未知",
-        description: "执行端没有配置费率或提供账单，因此无法形成完整成本。",
-        check: "unknown_costs",
-        severity: "info",
-      },
     ],
   },
 });
+
+const bundledManifests = [
+  roughCutManifest,
+  costInsightsManifest,
+  batchReviewManifest,
+  productionQcManifest,
+];
+const bundledIds = new Set(bundledManifests.map((manifest) => manifest.id));
 
 function canonicalManifest(manifest: ExtensionManifest) {
   return JSON.stringify(manifest);
@@ -66,13 +125,13 @@ export function extensionContentSha(manifest: ExtensionManifest) {
   return createHash("sha256").update(canonicalManifest(manifest)).digest("hex");
 }
 
-function builtInExtension(): InstalledExtension {
+function bundledExtension(manifest: ExtensionManifest): InstalledExtension {
   const timestamp = "2026-08-31T00:00:00.000Z";
   return {
-    manifest: productionQcManifest,
-    contentSha256: extensionContentSha(productionQcManifest),
+    manifest,
+    contentSha256: extensionContentSha(manifest),
     source: "built_in",
-    enabled: true,
+    enabled: false,
     trust: "built_in",
     installedAt: timestamp,
     updatedAt: timestamp,
@@ -93,7 +152,12 @@ export class ExtensionRegistry {
       if (payload.version !== 1 || !Array.isArray(payload.extensions)) return [];
       return payload.extensions.flatMap((extension) => {
         const parsed = installedExtensionSchema.safeParse(extension);
-        return parsed.success && parsed.data.source === "local_manifest" ? [parsed.data] : [];
+        if (!parsed.success) return [];
+        if (parsed.data.source === "built_in" && !bundledIds.has(parsed.data.manifest.id))
+          return [];
+        if (parsed.data.source === "local_manifest" && bundledIds.has(parsed.data.manifest.id))
+          return [];
+        return [parsed.data];
       });
     } catch {
       return [];
@@ -113,10 +177,41 @@ export class ExtensionRegistry {
   }
 
   list() {
-    return [builtInExtension(), ...this.extensions].map((extension) => ({
+    const bundled = bundledManifests.map((manifest) => {
+      const saved = this.extensions.find(
+        (extension) => extension.source === "built_in" && extension.manifest.id === manifest.id,
+      );
+      return saved
+        ? { ...saved, manifest, contentSha256: extensionContentSha(manifest) }
+        : bundledExtension(manifest);
+    });
+    const local = this.extensions.filter((extension) => extension.source === "local_manifest");
+    return [...bundled, ...local].map((extension) => ({
       ...extension,
-      manifest: { ...extension.manifest },
+      manifest: {
+        ...extension.manifest,
+        permissions: [...extension.manifest.permissions],
+        contributions: {
+          features: [...extension.manifest.contributions.features],
+          links: extension.manifest.contributions.links.map((link) => ({ ...link })),
+          qcRules: extension.manifest.contributions.qcRules.map((rule) => ({ ...rule })),
+        },
+      },
     }));
+  }
+
+  features(): ExtensionFeature[] {
+    return [
+      ...new Set(
+        this.list()
+          .filter((extension) => extension.enabled)
+          .flatMap((extension) => extension.manifest.contributions.features),
+      ),
+    ];
+  }
+
+  hasFeature(feature: ExtensionFeature) {
+    return this.features().includes(feature);
   }
 
   inspect(input: unknown) {
@@ -146,7 +241,7 @@ export class ExtensionRegistry {
     if (inspected.confirmationToken !== confirmationToken) {
       throw new Error("扩展内容与预览不一致，请重新检查后安装");
     }
-    if (inspected.manifest.id === productionQcManifest.id) {
+    if (bundledIds.has(inspected.manifest.id)) {
       throw new Error("不能覆盖 TakeBoard 内置扩展");
     }
     const existing = this.extensions.find(
@@ -171,15 +266,19 @@ export class ExtensionRegistry {
   }
 
   async setEnabled(extensionId: string, enabled: boolean) {
-    const extension = this.extensions.find((candidate) => candidate.manifest.id === extensionId);
-    if (!extension) throw new Error("扩展不存在或属于不可停用的内置能力");
-    extension.enabled = enabled;
-    extension.updatedAt = toIsoTimestamp();
+    const listed = this.list().find((candidate) => candidate.manifest.id === extensionId);
+    if (!listed) throw new Error("扩展不存在");
+    const extension = { ...listed, enabled, updatedAt: toIsoTimestamp() };
+    this.extensions = [
+      ...this.extensions.filter((candidate) => candidate.manifest.id !== extensionId),
+      extension,
+    ];
     await this.persist();
     return extension;
   }
 
   async remove(extensionId: string) {
+    if (bundledIds.has(extensionId)) return false;
     const previous = this.extensions.length;
     this.extensions = this.extensions.filter((extension) => extension.manifest.id !== extensionId);
     if (this.extensions.length === previous) return false;

@@ -109,6 +109,18 @@ describe("production accounting and cross-shot approval routes", () => {
     await store.save(current.snapshot, { type: "test.production_fixture", payload: {} });
     store.close();
 
+    const disabledCosts = await app.inject({ method: "GET", url: `/api/projects/${key}/costs` });
+    expect(disabledCosts.statusCode).toBe(409);
+    expect(disabledCosts.json()).toMatchObject({ code: "EXTENSION_DISABLED" });
+    for (const extensionId of ["studio.takeboard.cost-insights", "studio.takeboard.batch-review"]) {
+      const enabled = await app.inject({
+        method: "PATCH",
+        url: `/api/admin/extensions/${extensionId}`,
+        payload: { enabled: true },
+      });
+      expect(enabled.statusCode, enabled.body).toBe(200);
+    }
+
     const costs = await app.inject({ method: "GET", url: `/api/projects/${key}/costs` });
     expect(costs.statusCode, costs.body).toBe(200);
     expect(costs.json().summary).toMatchObject({

@@ -2,13 +2,14 @@ import type {
   Asset,
   BatchApprovalDecision,
   BatchApprovalPreview,
+  ExtensionFeature,
   ProjectCostSummary,
   ProjectSnapshot,
   Shot,
   Take,
 } from "@takeboard/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { projectApi } from "./api";
+import { extensionApi, projectApi } from "./api";
 
 const roughCutCss = `.rough-cut-player{display:grid;min-height:0;padding:clamp(14px,2vw,26px);overflow:auto;border-top:1px solid var(--line);background:color-mix(in srgb,var(--surface-root) 55%,transparent);grid-template-rows:minmax(260px,1fr) auto auto auto;gap:12px}.rough-cut-stage{position:relative;display:grid;min-height:0;overflow:hidden;place-items:center;border:1px solid var(--line);border-radius:12px;background:radial-gradient(circle at 50% 35%,color-mix(in srgb,var(--accent) 8%,transparent),transparent 40%),#070a09}.rough-cut-stage>:is(img,video){display:block;width:100%;height:100%;min-height:0;object-fit:contain}.rough-cut-slate{display:grid;width:min(480px,82%);padding:34px;border:1px dashed color-mix(in srgb,var(--line) 78%,var(--accent));border-radius:10px;text-align:center;background:color-mix(in srgb,var(--surface-2) 55%,transparent);gap:8px}.rough-cut-slate span{color:var(--accent-strong);font-size:calc(10px * var(--ui-scale));font-weight:800;letter-spacing:.14em}.rough-cut-slate strong{font-size:clamp(22px,3vw,38px);font-weight:560}.rough-cut-slate p{margin:0;color:var(--text-2);font-size:calc(11px * var(--ui-scale));line-height:1.6}.rough-cut-overlay{position:absolute;right:14px;bottom:14px;left:14px;display:flex;align-items:flex-end;justify-content:space-between;pointer-events:none;text-shadow:0 1px 12px #000}.rough-cut-overlay>span{padding:5px 7px;border:1px solid rgb(255 255 255/18%);border-radius:5px;color:#fff;background:rgb(0 0 0/48%);font:calc(10px * var(--ui-scale)) ui-monospace,monospace}.rough-cut-overlay>div{display:grid;text-align:right;gap:2px}.rough-cut-overlay strong{color:#fff;font-size:calc(13px * var(--ui-scale))}.rough-cut-overlay small{color:rgb(255 255 255/70%);font-size:calc(10px * var(--ui-scale))}.rough-cut-transport{display:grid;align-items:center;grid-template-columns:1fr auto 1fr;gap:12px}.rough-cut-clock strong{font:calc(16px * var(--ui-scale)) ui-monospace,monospace}.rough-cut-clock span{margin-left:5px;color:var(--faint);font:calc(10px * var(--ui-scale)) ui-monospace,monospace}.rough-cut-controls{display:flex;align-items:center;gap:6px}.rough-cut-transport button{min-height:34px;padding:0 11px;border:1px solid var(--line);border-radius:8px;color:var(--text-2);background:var(--surface-2);cursor:pointer;font-size:calc(11px * var(--ui-scale))}.rough-cut-transport button:disabled{cursor:default;opacity:.35}.rough-cut-transport .rough-cut-play{min-width:104px;border-color:color-mix(in srgb,var(--accent) 52%,var(--line));color:var(--surface-root);background:var(--accent-strong);font-weight:720}.rough-cut-open-shot{justify-self:end}.rough-cut-timeline{display:flex;min-width:0;min-height:66px;margin:0;overflow-x:auto;padding:0 0 4px;border:0;gap:4px}.rough-cut-timeline>button{position:relative;display:grid;min-width:72px;max-width:260px;padding:9px 10px 11px;overflow:hidden;border:1px solid var(--line);border-radius:7px;color:var(--text-2);text-align:left;background:var(--surface-2);cursor:pointer;gap:3px}.rough-cut-timeline>button.open{border-style:dashed;background:color-mix(in srgb,var(--surface-2) 45%,transparent)}.rough-cut-timeline>button.selected{border-color:var(--accent);color:var(--text-1)}.rough-cut-timeline span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:calc(11px * var(--ui-scale));font-weight:650}.rough-cut-timeline small{color:var(--faint);font-size:calc(9px * var(--ui-scale))}.rough-cut-timeline i{position:absolute;bottom:0;left:0;height:2px;background:var(--accent-strong)}.rough-cut-empty{display:grid;width:100%;place-items:center;border:1px dashed var(--line);border-radius:8px;color:var(--text-2);font-size:calc(11px * var(--ui-scale))}.rough-cut-note{display:flex;justify-content:space-between;color:var(--faint);font-size:calc(10px * var(--ui-scale));gap:12px}@media(max-width:680px){.rough-cut-player{grid-template-rows:minmax(220px,1fr) auto auto auto}.rough-cut-transport{grid-template-columns:auto 1fr}.rough-cut-controls{justify-self:end}.rough-cut-open-shot{display:none}.rough-cut-note{display:grid}}`;
 
@@ -31,6 +32,11 @@ const approvalCss = `.approval-workbench {
   border-bottom: 1px solid var(--line);
   grid-template-columns: minmax(220px, 0.7fr) minmax(0, 1.3fr);
   gap: 20px;
+}
+
+.approval-summary.review-only {
+  align-items: start;
+  grid-template-columns: 1fr;
 }
 
 .approval-summary > div:first-child > span,
@@ -105,6 +111,14 @@ const approvalCss = `.approval-workbench {
   border-bottom: 1px solid var(--line);
   grid-template-columns: minmax(130px, 0.62fr) minmax(260px, 2fr) minmax(120px, 0.58fr);
   gap: 14px;
+}
+
+.approval-shot-row.cost-only {
+  grid-template-columns: minmax(180px, 1fr) minmax(160px, 0.7fr);
+}
+
+.approval-shot-row.review-only {
+  grid-template-columns: minmax(130px, 0.55fr) minmax(280px, 2fr);
 }
 
 .approval-shot-identity {
@@ -275,6 +289,10 @@ const approvalCss = `.approval-workbench {
 
 .approval-action-bar p {
   color: var(--red);
+}
+
+.approval-action-bar p.success {
+  color: var(--green);
 }
 
 .approval-action-bar > button,
@@ -491,6 +509,33 @@ export function Storyboard({
   onSnapshotChange,
   onClose,
 }: StoryboardProps) {
+  const [extensionFeatures, setExtensionFeatures] = useState<ExtensionFeature[]>([]);
+  const roughCutEnabled = extensionFeatures.includes("storyboard.rough_cut");
+  const costInsightsEnabled = extensionFeatures.includes("production.cost_insights");
+  const batchApprovalEnabled = extensionFeatures.includes("production.batch_approval");
+  const productionViewEnabled = costInsightsEnabled || batchApprovalEnabled;
+  const availableViews = useMemo(
+    () => [
+      "wall" as const,
+      ...(roughCutEnabled ? (["rough-cut"] as const) : []),
+      ...(productionViewEnabled ? (["approval"] as const) : []),
+    ],
+    [productionViewEnabled, roughCutEnabled],
+  );
+  useEffect(() => {
+    let active = true;
+    void extensionApi
+      .list()
+      .then((state) => {
+        if (active) setExtensionFeatures(state.enabledFeatures);
+      })
+      .catch(() => {
+        if (active) setExtensionFeatures([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
   const orderedScenes = useMemo(
     () =>
       [...snapshot.scenes]
@@ -529,6 +574,7 @@ export function Storyboard({
   const [approvalPreview, setApprovalPreview] = useState<BatchApprovalPreview | null>(null);
   const [approvalBusy, setApprovalBusy] = useState(false);
   const [approvalError, setApprovalError] = useState<string | null>(null);
+  const [approvalNotice, setApprovalNotice] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
   const onCloseRef = useRef(onClose);
@@ -566,7 +612,7 @@ export function Storyboard({
   );
 
   const refreshCosts = useCallback(async () => {
-    if (!projectKey) return;
+    if (!projectKey || !costInsightsEnabled) return;
     try {
       const payload = await projectApi.costs(projectKey);
       setCostSummary(payload.summary);
@@ -574,16 +620,28 @@ export function Storyboard({
     } catch (cause) {
       setCostError(cause instanceof Error ? cause.message : "暂时无法读取成本账本");
     }
-  }, [projectKey]);
+  }, [costInsightsEnabled, projectKey]);
 
   useEffect(() => {
-    if (snapshot.exportedAt) void refreshCosts();
-  }, [refreshCosts, snapshot.exportedAt]);
+    if (costInsightsEnabled && snapshot.exportedAt) void refreshCosts();
+    if (!costInsightsEnabled) {
+      setCostSummary(null);
+      setCostError(null);
+    }
+  }, [costInsightsEnabled, refreshCosts, snapshot.exportedAt]);
+
+  useEffect(() => {
+    if (!availableViews.includes(view)) {
+      setPlaying(false);
+      setView("wall");
+    }
+  }, [availableViews, view]);
 
   const previewApprovals = async () => {
     if (!projectKey || approvalDecisions.length === 0) return;
     setApprovalBusy(true);
     setApprovalError(null);
+    setApprovalNotice(null);
     try {
       const payload = await projectApi.previewBatchApprovals(projectKey, approvalDecisions);
       setApprovalPreview(payload.preview);
@@ -607,7 +665,8 @@ export function Storyboard({
       onSnapshotChange(payload);
       setApprovalChoices({});
       setApprovalPreview(null);
-      await refreshCosts();
+      setApprovalNotice("跨镜头审批已原子保存");
+      if (costInsightsEnabled) await refreshCosts();
     } catch (cause) {
       setApprovalPreview(null);
       setApprovalError(cause instanceof Error ? cause.message : "审批没有提交，请重新预览后再试");
@@ -774,75 +833,86 @@ export function Storyboard({
             ) : null}
           </div>
           <div className="storyboard-header-actions">
-            <div
-              className="storyboard-view-switch"
-              role="tablist"
-              aria-label="分镜查看方式"
-              onKeyDown={(event) => {
-                if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-                event.preventDefault();
-                const views = ["wall", "rough-cut", "approval"] as const;
-                const currentIndex = views.indexOf(view);
-                const nextIndex =
-                  event.key === "Home"
-                    ? 0
-                    : event.key === "End"
-                      ? views.length - 1
-                      : (currentIndex + (event.key === "ArrowRight" ? 1 : -1) + views.length) %
-                        views.length;
-                const nextView = views[nextIndex] ?? "wall";
-                setPlaying(false);
-                if (nextView === "rough-cut") setElapsedInShot(0);
-                setView(nextView);
-                window.requestAnimationFrame(() =>
-                  document.getElementById(`storyboard-tab-${nextView}`)?.focus(),
-                );
-              }}
-            >
-              <button
-                type="button"
-                role="tab"
-                id="storyboard-tab-wall"
-                aria-controls="storyboard-panel-wall"
-                aria-selected={view === "wall"}
-                tabIndex={view === "wall" ? 0 : -1}
-                onClick={() => {
+            {availableViews.length > 1 ? (
+              <div
+                className="storyboard-view-switch"
+                role="tablist"
+                aria-label="分镜查看方式"
+                onKeyDown={(event) => {
+                  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+                  event.preventDefault();
+                  const currentIndex = availableViews.indexOf(view);
+                  const nextIndex =
+                    event.key === "Home"
+                      ? 0
+                      : event.key === "End"
+                        ? availableViews.length - 1
+                        : (currentIndex +
+                            (event.key === "ArrowRight" ? 1 : -1) +
+                            availableViews.length) %
+                          availableViews.length;
+                  const nextView = availableViews[nextIndex] ?? "wall";
                   setPlaying(false);
-                  setView("wall");
+                  if (nextView === "rough-cut") setElapsedInShot(0);
+                  setView(nextView);
+                  window.requestAnimationFrame(() =>
+                    document.getElementById(`storyboard-tab-${nextView}`)?.focus(),
+                  );
                 }}
               >
-                分镜墙
-              </button>
-              <button
-                type="button"
-                role="tab"
-                id="storyboard-tab-rough-cut"
-                aria-controls="storyboard-panel-rough-cut"
-                aria-selected={view === "rough-cut"}
-                tabIndex={view === "rough-cut" ? 0 : -1}
-                onClick={() => {
-                  setElapsedInShot(0);
-                  setPlaying(false);
-                  setView("rough-cut");
-                }}
-              >
-                粗剪预览
-              </button>
-              <button
-                type="button"
-                role="tab"
-                id="storyboard-tab-approval"
-                aria-controls="storyboard-panel-approval"
-                aria-selected={view === "approval"}
-                tabIndex={view === "approval" ? 0 : -1}
-                onClick={() => {
-                  setPlaying(false);
-                  setView("approval");
-                }}
-              >
-                审批与成本
-              </button>
-            </div>
+                <button
+                  type="button"
+                  role="tab"
+                  id="storyboard-tab-wall"
+                  aria-controls="storyboard-panel-wall"
+                  aria-selected={view === "wall"}
+                  tabIndex={view === "wall" ? 0 : -1}
+                  onClick={() => {
+                    setPlaying(false);
+                    setView("wall");
+                  }}
+                >
+                  分镜墙
+                </button>
+                {roughCutEnabled ? (
+                  <button
+                    type="button"
+                    role="tab"
+                    id="storyboard-tab-rough-cut"
+                    aria-controls="storyboard-panel-rough-cut"
+                    aria-selected={view === "rough-cut"}
+                    tabIndex={view === "rough-cut" ? 0 : -1}
+                    onClick={() => {
+                      setElapsedInShot(0);
+                      setPlaying(false);
+                      setView("rough-cut");
+                    }}
+                  >
+                    粗剪预览
+                  </button>
+                ) : null}
+                {productionViewEnabled ? (
+                  <button
+                    type="button"
+                    role="tab"
+                    id="storyboard-tab-approval"
+                    aria-controls="storyboard-panel-approval"
+                    aria-selected={view === "approval"}
+                    tabIndex={view === "approval" ? 0 : -1}
+                    onClick={() => {
+                      setPlaying(false);
+                      setView("approval");
+                    }}
+                  >
+                    {batchApprovalEnabled && costInsightsEnabled
+                      ? "批量审片与成本"
+                      : batchApprovalEnabled
+                        ? "批量审片"
+                        : "成本台账"}
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
             {readOnly ? <span>VIEW ONLY</span> : null}
             <button type="button" onClick={onClose} aria-label="关闭分镜墙">
               ×
@@ -1192,67 +1262,85 @@ export function Storyboard({
             className="approval-workbench"
             id="storyboard-panel-approval"
             role="tabpanel"
-            aria-label="跨镜头审批与成本"
+            aria-label={
+              batchApprovalEnabled && costInsightsEnabled
+                ? "跨镜头批量审片与成本"
+                : batchApprovalEnabled
+                  ? "跨镜头批量审片"
+                  : "项目成本台账"
+            }
           >
-            <header className="approval-summary">
+            <header className={`approval-summary ${costInsightsEnabled ? "" : "review-only"}`}>
               <div>
-                <span>PRODUCTION LEDGER</span>
-                <h3>成本与采用决策</h3>
-                <p>成本按实际运行归集；未知项不会被伪装成精确总价。</p>
+                <span>{costInsightsEnabled ? "PRODUCTION LEDGER" : "REVIEW DESK"}</span>
+                <h3>
+                  {batchApprovalEnabled && costInsightsEnabled
+                    ? "成本与采用决策"
+                    : batchApprovalEnabled
+                      ? "跨镜头采用决策"
+                      : "项目成本台账"}
+                </h3>
+                <p>
+                  {costInsightsEnabled
+                    ? "成本按实际运行归集；未知项不会被伪装成精确总价。"
+                    : "集中选择多个镜头候选，预览替换影响后再一次提交。"}
+                </p>
               </div>
-              <div className="approval-cost-cards">
-                <article>
-                  <span>采用率</span>
-                  <strong>
-                    {costSummary?.acceptanceRate === null || !costSummary
-                      ? "—"
-                      : `${Math.round(costSummary.acceptanceRate * 100)}%`}
-                  </strong>
-                  <small>
-                    {costSummary?.approvedShotCount ?? approvedShots.length} /{" "}
-                    {costSummary?.candidateShotCount ?? 0} 个有候选镜头
-                  </small>
-                </article>
-                {(costSummary?.totals ?? []).map((total) => (
-                  <article key={total.currency}>
-                    <span>{total.currency} 已知支出</span>
-                    <strong>{formatMoney(total.knownAmount, total.currency)}</strong>
-                    <small>
-                      {accuracyLabel(total.accuracy)}
-                      {total.unknownRunCount > 0 ? ` · ${total.unknownRunCount} 次未知` : ""}
-                    </small>
-                  </article>
-                ))}
-                {(costSummary?.finishedMinuteCosts ?? []).map((cost) => (
-                  <article key={`minute-${cost.currency}`}>
-                    <span>成片分钟成本</span>
+              {costInsightsEnabled ? (
+                <div className="approval-cost-cards">
+                  <article>
+                    <span>采用率</span>
                     <strong>
-                      {cost.amountPerMinute === null
-                        ? "不可可靠计算"
-                        : formatMoney(cost.amountPerMinute, cost.currency)}
+                      {costSummary?.acceptanceRate === null || !costSummary
+                        ? "—"
+                        : `${Math.round(costSummary.acceptanceRate * 100)}%`}
                     </strong>
                     <small>
-                      {cost.amountPerMinute === null
-                        ? "仍有未知成本或尚无采用时长"
-                        : accuracyLabel(cost.accuracy)}
+                      {costSummary?.approvedShotCount ?? approvedShots.length} /{" "}
+                      {costSummary?.candidateShotCount ?? 0} 个有候选镜头
                     </small>
                   </article>
-                ))}
-                {costSummary?.totals.length === 0 ? (
-                  <article>
-                    <span>运行成本</span>
-                    <strong>尚无记录</strong>
-                    <small>生成后会按执行端计费配置归集</small>
-                  </article>
-                ) : null}
-                {costError ? (
-                  <article>
-                    <span>成本账本</span>
-                    <strong>暂时不可用</strong>
-                    <small>{costError}</small>
-                  </article>
-                ) : null}
-              </div>
+                  {(costSummary?.totals ?? []).map((total) => (
+                    <article key={total.currency}>
+                      <span>{total.currency} 已知支出</span>
+                      <strong>{formatMoney(total.knownAmount, total.currency)}</strong>
+                      <small>
+                        {accuracyLabel(total.accuracy)}
+                        {total.unknownRunCount > 0 ? ` · ${total.unknownRunCount} 次未知` : ""}
+                      </small>
+                    </article>
+                  ))}
+                  {(costSummary?.finishedMinuteCosts ?? []).map((cost) => (
+                    <article key={`minute-${cost.currency}`}>
+                      <span>成片分钟成本</span>
+                      <strong>
+                        {cost.amountPerMinute === null
+                          ? "不可可靠计算"
+                          : formatMoney(cost.amountPerMinute, cost.currency)}
+                      </strong>
+                      <small>
+                        {cost.amountPerMinute === null
+                          ? "仍有未知成本或尚无采用时长"
+                          : accuracyLabel(cost.accuracy)}
+                      </small>
+                    </article>
+                  ))}
+                  {costSummary?.totals.length === 0 ? (
+                    <article>
+                      <span>运行成本</span>
+                      <strong>尚无记录</strong>
+                      <small>生成后会按执行端计费配置归集</small>
+                    </article>
+                  ) : null}
+                  {costError ? (
+                    <article>
+                      <span>成本账本</span>
+                      <strong>暂时不可用</strong>
+                      <small>{costError}</small>
+                    </article>
+                  ) : null}
+                </div>
+              ) : null}
             </header>
 
             <div className="approval-shot-list">
@@ -1265,7 +1353,10 @@ export function Storyboard({
                 );
                 const shotCost = costSummary?.shots.find((entry) => entry.shotId === shot.id);
                 return (
-                  <article className="approval-shot-row" key={shot.id}>
+                  <article
+                    className={`approval-shot-row ${!batchApprovalEnabled ? "cost-only" : !costInsightsEnabled ? "review-only" : ""}`}
+                    key={shot.id}
+                  >
                     <div className="approval-shot-identity">
                       <span>{String(index + 1).padStart(2, "0")}</span>
                       <div>
@@ -1275,86 +1366,98 @@ export function Storyboard({
                         </small>
                       </div>
                     </div>
-                    <div className="approval-take-strip">
-                      {candidates.map((take, takeIndex) => {
-                        const asset =
-                          snapshot.assets.find((candidate) => candidate.id === take.assetId) ??
-                          null;
-                        const source =
-                          projectKey && asset
-                            ? projectApi.assetUrl(projectKey, asset.id, true)
-                            : null;
-                        const selected = approvalChoices[shot.id] === take.id;
-                        const approved = shot.approvedTakeId === take.id;
-                        return (
-                          <button
-                            type="button"
-                            className={`${selected ? "selected" : ""} ${approved ? "approved" : ""}`}
-                            aria-pressed={selected}
-                            disabled={readOnly}
-                            onClick={() => {
-                              setApprovalPreview(null);
-                              setApprovalChoices((current) => {
-                                if (current[shot.id] === take.id) {
-                                  const next = { ...current };
-                                  delete next[shot.id];
-                                  return next;
-                                }
-                                return { ...current, [shot.id]: take.id };
-                              });
-                            }}
-                            key={take.id}
-                          >
-                            {source && asset?.mediaType === "image" ? (
-                              <img src={source} alt="" />
-                            ) : source && asset?.mediaType === "video" ? (
-                              <video src={source} muted playsInline preload="metadata" />
-                            ) : (
-                              <span>MEDIA</span>
-                            )}
-                            <i>{approved ? "当前采用" : `Take ${takeIndex + 1}`}</i>
-                            <b>{selected ? "✓" : ""}</b>
-                          </button>
-                        );
-                      })}
-                      {candidates.length === 0 ? <p>这个镜头还没有可审批候选</p> : null}
-                    </div>
-                    <div className="approval-shot-cost">
-                      <span>镜头累计</span>
-                      <strong>
-                        {shotCost?.totals.length
-                          ? shotCost.totals
-                              .map((total) => formatMoney(total.knownAmount, total.currency))
-                              .join(" + ")
-                          : "—"}
-                      </strong>
-                      <small>
-                        {shotCost?.totals.some((total) => total.unknownRunCount > 0)
-                          ? "含未知成本"
-                          : `${shotCost?.runCount ?? 0} 次运行`}
-                      </small>
-                    </div>
+                    {batchApprovalEnabled ? (
+                      <div className="approval-take-strip">
+                        {candidates.map((take, takeIndex) => {
+                          const asset =
+                            snapshot.assets.find((candidate) => candidate.id === take.assetId) ??
+                            null;
+                          const source =
+                            projectKey && asset
+                              ? projectApi.assetUrl(projectKey, asset.id, true)
+                              : null;
+                          const selected = approvalChoices[shot.id] === take.id;
+                          const approved = shot.approvedTakeId === take.id;
+                          return (
+                            <button
+                              type="button"
+                              className={`${selected ? "selected" : ""} ${approved ? "approved" : ""}`}
+                              aria-pressed={selected}
+                              disabled={readOnly}
+                              onClick={() => {
+                                setApprovalPreview(null);
+                                setApprovalNotice(null);
+                                setApprovalChoices((current) => {
+                                  if (current[shot.id] === take.id) {
+                                    const next = { ...current };
+                                    delete next[shot.id];
+                                    return next;
+                                  }
+                                  return { ...current, [shot.id]: take.id };
+                                });
+                              }}
+                              key={take.id}
+                            >
+                              {source && asset?.mediaType === "image" ? (
+                                <img src={source} alt="" />
+                              ) : source && asset?.mediaType === "video" ? (
+                                <video src={source} muted playsInline preload="metadata" />
+                              ) : (
+                                <span>MEDIA</span>
+                              )}
+                              <i>{approved ? "当前采用" : `Take ${takeIndex + 1}`}</i>
+                              <b>{selected ? "✓" : ""}</b>
+                            </button>
+                          );
+                        })}
+                        {candidates.length === 0 ? <p>这个镜头还没有可审批候选</p> : null}
+                      </div>
+                    ) : null}
+                    {costInsightsEnabled ? (
+                      <div className="approval-shot-cost">
+                        <span>镜头累计</span>
+                        <strong>
+                          {shotCost?.totals.length
+                            ? shotCost.totals
+                                .map((total) => formatMoney(total.knownAmount, total.currency))
+                                .join(" + ")
+                            : "—"}
+                        </strong>
+                        <small>
+                          {shotCost?.totals.some((total) => total.unknownRunCount > 0)
+                            ? "含未知成本"
+                            : `${shotCost?.runCount ?? 0} 次运行`}
+                        </small>
+                      </div>
+                    ) : null}
                   </article>
                 );
               })}
             </div>
 
-            <footer className="approval-action-bar">
-              <div>
-                <strong>{approvalDecisions.length} 个镜头待提交</strong>
-                <span>先预览替换影响，再以一个原子操作写入全部决策。</span>
-              </div>
-              {approvalError ? <p role="alert">{approvalError}</p> : null}
-              <button
-                type="button"
-                disabled={readOnly || approvalBusy || approvalDecisions.length === 0}
-                onClick={() => void previewApprovals()}
-              >
-                {approvalBusy ? "正在核对…" : "预览批量批准"}
-              </button>
-            </footer>
+            {batchApprovalEnabled ? (
+              <footer className="approval-action-bar">
+                <div>
+                  <strong>{approvalDecisions.length} 个镜头待提交</strong>
+                  <span>先预览替换影响，再以一个原子操作写入全部决策。</span>
+                </div>
+                {approvalError ? <p role="alert">{approvalError}</p> : null}
+                {approvalNotice ? (
+                  <p className="success" role="status">
+                    {approvalNotice}
+                  </p>
+                ) : null}
+                <button
+                  type="button"
+                  disabled={readOnly || approvalBusy || approvalDecisions.length === 0}
+                  onClick={() => void previewApprovals()}
+                >
+                  {approvalBusy ? "正在核对…" : "预览批量批准"}
+                </button>
+              </footer>
+            ) : null}
 
-            {approvalPreview ? (
+            {batchApprovalEnabled && approvalPreview ? (
               <div
                 className="approval-confirmation"
                 role="alertdialog"

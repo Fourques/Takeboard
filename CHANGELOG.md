@@ -17,6 +17,8 @@ before moving production work to a newer minor version.
   policies.
 - A declarative extension library with manifest validation, content hashes, permission review,
   disabled-by-default local installs, project QC rules and safe external links.
+- Rough-cut preview, cost insights, batch review and delivery QC are now bundled opt-in extensions;
+  all four default to disabled and gate both their workspace views and specialized API routes.
 
 ### Security
 

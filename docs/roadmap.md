@@ -119,7 +119,7 @@ M0 未通过时不进入 M1；M1 未证明成本/混合执行价值时，仍可�
 
 优先选择用户实际在用、文档和价格接口清楚的一家 BYOK 服务。不要为了“模型多”在 M1 同时做五个 Adapter。
 
-截至 2026-08-31，TB-102、TB-104 与 TB-106 已完成产品闭环：远程 ComfyUI 支持 HTTPS / SSH tunnel，七种策略会保存候选与理由，成本明确区分 exact / estimated / unknown，并可跨镜头原子审批。TB-103 的真实 BYOK 账单 Adapter 和 TB-105 的 Draft → Final 专用升级动作仍未完成；因此当前 ComfyUI 成本主要是按 Worker 费率估算，不能宣传成云提供商账单。
+截至 2026-08-31，TB-102、TB-104 与 TB-106 已完成产品闭环：远程 ComfyUI 支持 HTTPS / SSH tunnel，七种策略会保存候选与理由，Run 成本明确区分 exact / estimated / unknown；汇总台账和跨镜头原子审批作为默认关闭的扩展按需启用。TB-103 的真实 BYOK 账单 Adapter 和 TB-105 的 Draft → Final 专用升级动作仍未完成；因此当前 ComfyUI 成本主要是按 Worker 费率估算，不能宣传成云提供商账单。
 
 扩展能力新增为 M1.5：声明式扩展库、权限预览、内容指纹、默认停用和项目质检已经完成。签名市场、沙箱代码插件、自动更新与撤销列表需要独立安全 Gate，不与 JSON 清单混为同一能力。
 
@@ -141,7 +141,7 @@ M0 未通过时不进入 M1；M1 未证明成本/混合执行价值时，仍可�
 
 ### Week 7：粗剪与上手
 
-- [x] Approved Take 只读粗剪；
+- [x] 默认关闭、按需启用的 Approved Take 只读粗剪扩展；
 - MP4 preview 或 OTIO 导出二选一，优先实现更简单且测试者需要的一个；
 - 示例项目和 3 个示例 Recipe；
 - [x] 错误说明和脱敏诊断包；

@@ -45,7 +45,6 @@ import {
 } from "./api";
 import { AccountButton, useAuth } from "./auth-ui";
 import { type BoardNode, boardNodeTypes } from "./board-nodes";
-import { DisplaySettings } from "./display-settings";
 import {
   loadModelPreferences,
   type ModelProfile,
@@ -61,6 +60,9 @@ const AssetLibrary = lazy(() =>
 );
 const CommandHistory = lazy(() =>
   import("./command-history").then((module) => ({ default: module.CommandHistory })),
+);
+const DisplaySettings = lazy(() =>
+  import("./display-settings").then((module) => ({ default: module.DisplaySettings })),
 );
 const RecipeStudio = lazy(() =>
   import("./recipe-studio").then((module) => ({ default: module.RecipeStudio })),
@@ -4777,7 +4779,9 @@ export function App() {
             扩展
           </button>
           <ThemeSwitcher compact />
-          <DisplaySettings compact />
+          <Suspense fallback={null}>
+            <DisplaySettings compact />
+          </Suspense>
           <button
             className="density-button"
             type="button"
@@ -5610,10 +5614,8 @@ export function App() {
               }
             }}
             onSnapshotChange={(payload) => {
-              if (acceptPayload(payload)) {
-                if (projectKey) projectApi.markRevision(projectKey, payload.revision);
-                setNotice("跨镜头审批已原子保存，成本台账已更新");
-              }
+              const accepted = acceptPayload(payload);
+              if (accepted && projectKey) projectApi.markRevision(projectKey, payload.revision);
             }}
           />
         ) : null}

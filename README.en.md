@@ -16,8 +16,9 @@
 ![TakeBoard project hub](docs/assets/takeboard-home.webp)
 
 TakeBoard does not replace ComfyUI's node editor. It adds the production layer around it: projects,
-assets, semantic shot inputs, reproducible runs, candidate takes, approvals and a read-only rough cut.
-Models, workflows, media and project files stay on infrastructure you control.
+assets, semantic shot inputs, reproducible runs, candidate takes and approvals. Optional studio tools,
+including a read-only rough cut, stay out of the core workspace until you enable them. Models,
+workflows, media and project files stay on infrastructure you control.
 
 ## What works today
 
@@ -28,12 +29,13 @@ Models, workflows, media and project files stay on infrastructure you control.
 - Text-to-image, image-to-image, text/image-to-video and first/last-frame video execution paths.
 - Real ComfyUI node progress when available, honest indeterminate states otherwise, cancellation,
   reconnect reconciliation and output provenance.
-- Run/Take review, rejection and approval, storyboard coverage and ordered rough-cut playback.
+- Core Run/Take review, rejection, single-shot approval and storyboard coverage.
 - Local, SSH-tunnel and HTTPS ComfyUI workers with explainable privacy, speed, cost, quality and
   per-run budget policies.
-- Honest exact/estimated/unknown cost summaries and atomic approval previews across multiple shots.
-- A declarative extension library for team QC rules and external tool links; third-party code is not
-  executed.
+- Bundled, disabled-by-default extensions for rough-cut playback, exact/estimated/unknown cost
+  summaries, atomic cross-shot approval and delivery QC.
+- A declarative extension library for controlled workspace features, team QC rules and external tool
+  links; third-party code is not executed.
 - Recoverable project deletion, integrity-checked project import/export and pre-migration backups.
 - Accounts, device sessions, instance admins and project Owner/Editor/Viewer roles.
 - Cross-project task/storage center and a redacted downloadable support report.
@@ -116,10 +118,13 @@ run records the selected worker, all considered candidates and the reason for ea
 rejection. A configured hourly rate produces an estimate; missing rates remain unknown rather than
 being reported as zero, and currencies are never silently combined.
 
-The storyboard's approval-and-cost view previews replacements before applying one revision-checked,
-atomic approval batch across shots. The extension library currently accepts only validated,
-content-hash-confirmed declarative manifests for QC rules and HTTP(S) links. Imported extensions are
-disabled by default and cannot run JavaScript, Python or shell commands. See
+Run provenance is always retained, but rough-cut preview, cost insights, batch review and delivery QC
+are bundled opt-in extensions and are disabled by default. Enabling cost insights exposes honest
+exact, estimated and unknown totals; enabling batch review adds revision-checked atomic decisions
+across shots. When disabled, those views and service endpoints stay out of the core workflow. The
+extension library accepts only validated, content-hash-confirmed declarative manifests for controlled
+workspace features, QC rules and HTTP(S) links. Imported extensions are disabled by default and
+cannot run JavaScript, Python or shell commands. See
 [extension development and trust](docs/extensions.md).
 
 ## Data and security boundary

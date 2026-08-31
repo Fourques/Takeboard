@@ -15,7 +15,7 @@ pnpm demo:capture
 2. 检查一个来源素材节点，再回到镜头；
 3. 生成四个 Demo 候选并选择其中一个；
 4. 批准候选，确认镜头完成度和来源状态变化；
-5. 打开分镜墙和只读粗剪；
+5. 在录制实例显式启用粗剪扩展，再打开分镜墙和只读粗剪；
 6. 关闭浏览器、服务并删除临时项目数据。
 
 产物位于被 Git 忽略的 `test-results/demo/`：
@@ -28,7 +28,7 @@ pnpm demo:capture
 
 ## 诚实边界
 
-Demo Worker 不调用 GPU 或付费 API。候选卡是稳定的产品交互样片，用来展示项目、画布、生成状态、选片和粗剪闭环；界面与清单均将其标记为 `deterministic_demo` / `realGpu: false`。它不证明 MiniMax H3、其他模型或某个自定义 Workflow 的画质。
+Demo Worker 不调用 GPU 或付费 API。候选卡是稳定的产品交互样片，用来展示项目、画布、生成状态、选片，以及显式启用后的粗剪闭环；界面与清单均将其标记为 `deterministic_demo` / `realGpu: false`。它不证明 MiniMax H3、其他模型或某个自定义 Workflow 的画质，也不代表新实例默认开启粗剪。
 
 真实生成证据必须通过：
 

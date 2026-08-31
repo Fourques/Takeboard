@@ -1,9 +1,9 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ProjectSnapshot } from "@takeboard/contracts";
 import { afterEach, describe, expect, it } from "vitest";
-import { ExtensionRegistry } from "../src/extension-registry.js";
+import { bundledExtensionIds, ExtensionRegistry } from "../src/extension-registry.js";
 
 const cleanup: string[] = [];
 
@@ -18,6 +18,8 @@ describe("ExtensionRegistry", () => {
     const root = await mkdtemp(join(tmpdir(), "takeboard-extensions-"));
     cleanup.push(root);
     const registry = new ExtensionRegistry(join(root, "extensions.json"));
+    expect(registry.list().filter((extension) => extension.source === "built_in")).toHaveLength(4);
+    expect(registry.features()).toEqual([]);
     const manifest = {
       format: "takeboard.extension",
       manifestVersion: 1,
@@ -52,12 +54,16 @@ describe("ExtensionRegistry", () => {
         }),
       ]),
     );
+    await reloaded.setEnabled(bundledExtensionIds.costInsights, true);
+    const enabledAgain = new ExtensionRegistry(join(root, "extensions.json"));
+    expect(enabledAgain.features()).toContain("production.cost_insights");
   });
 
   it("evaluates declarative QC without executing extension code", async () => {
     const root = await mkdtemp(join(tmpdir(), "takeboard-extensions-"));
     cleanup.push(root);
     const registry = new ExtensionRegistry(join(root, "extensions.json"));
+    await registry.setEnabled(bundledExtensionIds.productionQc, true);
     const timestamp = "2026-08-31T12:00:00.000Z";
     const snapshot = {
       schemaVersion: "0.1.0",
@@ -82,7 +88,29 @@ describe("ExtensionRegistry", () => {
       canvasEdges: [],
     } satisfies ProjectSnapshot;
     const checks = registry.evaluate(snapshot);
-    expect(checks).toHaveLength(4);
+    expect(checks).toHaveLength(3);
     expect(checks.every((check) => check.count === 0)).toBe(true);
+  });
+
+  it("does not allow persisted local manifests to shadow bundled identities", async () => {
+    const root = await mkdtemp(join(tmpdir(), "takeboard-extensions-"));
+    cleanup.push(root);
+    const storagePath = join(root, "extensions.json");
+    const bundled = new ExtensionRegistry(storagePath).list()[0];
+    if (!bundled) throw new Error("bundled extension fixture is missing");
+    await writeFile(
+      storagePath,
+      JSON.stringify({
+        version: 1,
+        extensions: [{ ...bundled, source: "local_manifest", trust: "explicit", enabled: true }],
+      }),
+    );
+
+    const reloaded = new ExtensionRegistry(storagePath);
+    expect(reloaded.list().filter((extension) => extension.source === "built_in")).toHaveLength(4);
+    expect(reloaded.list().filter((extension) => extension.source === "local_manifest")).toEqual(
+      [],
+    );
+    expect(reloaded.features()).toEqual([]);
   });
 });

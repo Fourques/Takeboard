@@ -28,6 +28,17 @@ test("workspace, operations and storyboard have no serious WCAG A/AA violations"
   page,
   request,
 }) => {
+  for (const extensionId of [
+    "studio.takeboard.rough-cut",
+    "studio.takeboard.cost-insights",
+    "studio.takeboard.batch-review",
+    "studio.takeboard.production-qc",
+  ]) {
+    const disabled = await request.patch(`/api/admin/extensions/${extensionId}`, {
+      data: { enabled: false },
+    });
+    expect(disabled.ok(), await disabled.text()).toBeTruthy();
+  }
   const title = `无障碍验收 ${Date.now()}`;
   const created = await request.post("/api/projects", { data: { title } });
   expect(created.ok(), await created.text()).toBeTruthy();
@@ -71,6 +82,8 @@ test("workspace, operations and storyboard have no serious WCAG A/AA violations"
     await page.getByRole("button", { name: "打开分镜墙" }).click();
     const storyboard = page.getByRole("dialog", { name: "项目分镜墙" });
     await expect(storyboard).toBeVisible();
+    await expect(storyboard.getByRole("tablist", { name: "分镜查看方式" })).toHaveCount(0);
+    await expect(storyboard.getByText("成本台账", { exact: true })).toHaveCount(0);
     const storyboardResults = await new AxeBuilder({ page })
       .include(".storyboard-shell")
       .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])

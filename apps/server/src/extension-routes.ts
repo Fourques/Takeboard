@@ -4,13 +4,17 @@ import { ExtensionRegistry } from "./extension-registry.js";
 import { projectKey } from "./project-routes.js";
 import { ProjectStore } from "./storage/project-store.js";
 
-export function registerExtensionRoutes(app: FastifyInstance, projectsRoot: string) {
+export function registerExtensionRoutes(
+  app: FastifyInstance,
+  projectsRoot: string,
+  registry = new ExtensionRegistry(join(resolve(projectsRoot), ".system", "extensions.json")),
+) {
   const root = resolve(projectsRoot);
-  const registry = new ExtensionRegistry(join(root, ".system", "extensions.json"));
 
   app.get("/api/extensions", async () => ({
     runtime: "declarative-v1" as const,
     codeExecutionAllowed: false as const,
+    enabledFeatures: registry.features(),
     extensions: registry.list(),
   }));
 

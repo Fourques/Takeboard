@@ -20,6 +20,7 @@ import {
 import type { FastifyInstance } from "fastify";
 import { authContext } from "./auth-routes.js";
 import type { AuthService } from "./auth-service.js";
+import type { ExtensionRegistry } from "./extension-registry.js";
 import {
   createProjectArchive,
   findActiveProjectById,
@@ -156,6 +157,7 @@ type ProjectRouteOptions = {
   comfyOutputRoot: string | null;
   auth: AuthService;
   workerPool: WorkerPool;
+  extensionRegistry: ExtensionRegistry;
 };
 
 const terminalProjectRunStatuses = new Set(["completed", "failed", "cancelled"]);
@@ -1399,6 +1401,13 @@ export function registerProjectRoutes(
   );
 
   app.get<{ Params: { key: string } }>("/api/projects/:key/costs", async (request, reply) => {
+    if (!options.extensionRegistry.hasFeature("production.cost_insights")) {
+      return await reply.code(409).send({
+        error: "请先在扩展库启用“成本洞察”",
+        code: "EXTENSION_DISABLED",
+        feature: "production.cost_insights",
+      });
+    }
     const key = projectKey(request.params.key);
     if (!key) return await reply.code(400).send({ error: "项目标识无效" });
     const store = ProjectStore.openExisting(join(root, key));
@@ -1419,6 +1428,13 @@ export function registerProjectRoutes(
   app.post<{ Params: { key: string } }>(
     "/api/projects/:key/approvals/batch/preview",
     async (request, reply) => {
+      if (!options.extensionRegistry.hasFeature("production.batch_approval")) {
+        return await reply.code(409).send({
+          error: "请先在扩展库启用“批量审片”",
+          code: "EXTENSION_DISABLED",
+          feature: "production.batch_approval",
+        });
+      }
       const key = projectKey(request.params.key);
       if (!key) return await reply.code(400).send({ error: "项目标识无效" });
       const parsed = batchApprovalPreviewRequestSchema.safeParse(request.body);
@@ -1455,6 +1471,13 @@ export function registerProjectRoutes(
   app.post<{ Params: { key: string } }>(
     "/api/projects/:key/approvals/batch",
     async (request, reply) => {
+      if (!options.extensionRegistry.hasFeature("production.batch_approval")) {
+        return await reply.code(409).send({
+          error: "请先在扩展库启用“批量审片”",
+          code: "EXTENSION_DISABLED",
+          feature: "production.batch_approval",
+        });
+      }
       const key = projectKey(request.params.key);
       if (!key) return await reply.code(400).send({ error: "项目标识无效" });
       const parsed = batchApprovalApplyRequestSchema.safeParse(request.body);

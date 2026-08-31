@@ -7,6 +7,7 @@ import { type AuthOptions, registerAuth } from "./auth-routes.js";
 import type { AuthMode } from "./auth-service.js";
 import { type BackupAutomationConfig, registerBackupAutomation } from "./backup-automation.js";
 import { registerDemoRoutes } from "./demo/routes.js";
+import { ExtensionRegistry } from "./extension-registry.js";
 import { registerExtensionRoutes } from "./extension-routes.js";
 import { registerGenerationRoutes } from "./generation-routes.js";
 import { registerOperationsRoutes } from "./operations-routes.js";
@@ -94,12 +95,16 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     comfyUrl,
     options.workerOptions?.runtime?.fetch,
   );
+  const extensionRegistry = new ExtensionRegistry(
+    resolve(projectsRoot, ".system", "extensions.json"),
+  );
   registerProjectRoutes(app, projectsRoot, {
     comfyUrl,
     comfyInputRoot,
     comfyOutputRoot,
     auth,
     workerPool,
+    extensionRegistry,
   });
   registerOperationsRoutes(app, projectsRoot, auth, {
     version: takeBoardVersion,
@@ -108,7 +113,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     backupAutomation,
   });
   registerProjectCommandRoutes(app, projectsRoot);
-  registerExtensionRoutes(app, projectsRoot);
+  registerExtensionRoutes(app, projectsRoot, extensionRegistry);
   registerWorkerRoutes(app, comfyUrl, options.workerOptions, workerPool);
   registerGenerationRoutes(app, projectsRoot, workerPool, {
     inputRoot: comfyInputRoot,

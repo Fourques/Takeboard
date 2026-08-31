@@ -258,6 +258,38 @@ describe("extensionManifestSchema", () => {
       }),
     ).toThrow(/HTTP/);
   });
+
+  it("requires write permission before an extension can expose batch approval", () => {
+    expect(() =>
+      extensionManifestSchema.parse({
+        format: "takeboard.extension",
+        manifestVersion: 1,
+        id: "studio.example.review",
+        name: "Review desk",
+        version: "1.0.0",
+        description: "Review multiple shots",
+        author: "Studio",
+        permissions: ["project.read"],
+        contributions: { features: ["production.batch_approval"] },
+      }),
+    ).toThrow(/project.write/);
+  });
+
+  it("requires read permission before a writable workspace feature can inspect project state", () => {
+    expect(() =>
+      extensionManifestSchema.parse({
+        format: "takeboard.extension",
+        manifestVersion: 1,
+        id: "studio.example.write-only-review",
+        name: "Write-only review desk",
+        version: "1.0.0",
+        description: "Invalid review permission boundary",
+        author: "Studio",
+        permissions: ["project.write"],
+        contributions: { features: ["production.batch_approval"] },
+      }),
+    ).toThrow(/project.read/);
+  });
 });
 
 describe("canvasEdgeSchema", () => {

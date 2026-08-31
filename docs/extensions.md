@@ -23,7 +23,7 @@ TakeBoard 需要扩展库，但不应该一开始就做“安装后可在服务�
 3. 导入 JSON 时先做大小、格式、权限、URL 和重复 ID 校验；
 4. 页面展示清单内容 SHA-256、权限和风险说明；
 5. 管理员确认安装，本地扩展仍默认停用；
-6. 管理员显式启用后，质检规则或工具入口才出现；
+6. 管理员显式启用后，工作区功能、质检规则或工具入口才出现；
 7. 停用立即停止贡献，移除需要二次确认。
 
 扩展是实例级配置，不写入 `.takeboard` 项目包。这样导入外部项目不会顺带安装能力，项目也不会把团队内部链接带到另一台机器。
@@ -42,6 +42,7 @@ TakeBoard 需要扩展库，但不应该一开始就做“安装后可在服务�
   "homepage": "https://example.com/takeboard-extension",
   "permissions": ["project.read", "network.open"],
   "contributions": {
+    "features": ["storyboard.rough_cut"],
     "links": [
       {
         "id": "style-guide",
@@ -71,10 +72,22 @@ TakeBoard 需要扩展库，但不应该一开始就做“安装后可在服务�
 - `homepage` 和链接只允许 HTTP(S)，不允许 `javascript:`、文件路径或嵌入凭据；
 - 同一清单内 contribution ID 不能重复；
 - 清单上限 256 KB；
-- 声明链接必须申请 `network.open`，声明质检必须申请 `project.read`；
+- 声明链接必须申请 `network.open`，声明质检和工作区功能必须申请 `project.read`，批量审批还必须申请 `project.write`；
 - 安装确认令牌绑定规范化清单内容，预览后内容变化必须重新确认。
 
 ## 当前贡献点
+
+### `contributions.features`
+
+功能贡献只能从 TakeBoard 已实现、已测试的有限列表中选择，不会加载扩展代码：
+
+| feature | 含义 | 权限 |
+| --- | --- | --- |
+| `storyboard.rough_cut` | 在分镜墙增加只读粗剪和节奏时间线 | `project.read` |
+| `production.cost_insights` | 增加项目、镜头与成片分钟成本工作台 | `project.read` |
+| `production.batch_approval` | 增加跨镜头预览与原子批准 | `project.read` + `project.write` |
+
+TakeBoard 自带的“粗剪预览”“成本洞察”“批量审片”和“成片完整性质检”也使用同一注册表，而不是硬编码为永远出现的页面。四项均默认关闭，管理员按实例用途启用；成本和批量审批在关闭时不仅隐藏 UI，对应服务接口也会返回 `EXTENSION_DISABLED`。Run 来源、单镜头采用和其他核心项目数据不受启停影响。
 
 ### `contributions.qcRules`
 
@@ -96,9 +109,10 @@ TakeBoard 需要扩展库，但不应该一开始就做“安装后可在服务�
 
 ## 权限与角色
 
-- Viewer 和 Editor 可以查看已启用扩展产生的质检结果与入口；
+- Viewer 和 Editor 可以查看其项目内已启用的只读功能、质检结果与入口；写操作仍受项目角色和 `project.write` 双重约束；
 - 只有实例管理员可以安装、启用、停用或移除扩展；
-- 内置扩展由 TakeBoard 发布，不能被本地清单覆盖或移除；
+- 内置扩展由 TakeBoard 发布，可以停用，但不能被本地清单覆盖或移除；
+- 所有内置可选扩展默认停用，避免专业制片功能挤占个人创作者的核心流程；
 - 本地扩展安装后默认停用；
 - 扩展注册表权限为 `0600`，不存放 Token，也不接受带凭据的 URL。
 
@@ -125,7 +139,7 @@ TakeBoard 需要扩展库，但不应该一开始就做“安装后可在服务�
 
 | 层 | 能力 | 信任边界 | 状态 |
 | --- | --- | --- | --- |
-| L1 声明式扩展 | 质检、链接，后续可加表单模板和导出预设 | 无第三方代码 | 已完成 |
+| L1 声明式扩展 | 受控工作区功能、质检、链接，后续可加表单模板和导出预设 | 无第三方代码 | 已完成 |
 | L2 Web 沙箱扩展 | 隔离 UI、消息协议、按次授权的项目投影 | 无服务端 / 文件系统直接访问 | 需独立设计与安全 Gate |
 | L3 执行 Adapter | Provider、导出器、资产处理和自动化 | 签名包、隔离进程、最小权限与审计 | 只面向可信管理员，尚未实现 |
 

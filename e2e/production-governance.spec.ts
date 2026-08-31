@@ -56,6 +56,12 @@ test("declarative extensions require review, start disabled and remain keyboard-
     await expect(dialog).toBeVisible();
     await expect(dialog).toContainText("第三方代码执行已关闭");
     await expect(dialog).toContainText("成片完整性质检");
+    const roughCutCard = dialog.locator(".extension-card").filter({ hasText: "粗剪预览" });
+    const stopRoughCut = roughCutCard.getByRole("button", { name: "停用", exact: true });
+    if ((await stopRoughCut.count()) > 0) await stopRoughCut.click();
+    await expect(roughCutCard).toContainText("已停用");
+    await roughCutCard.getByRole("button", { name: "启用", exact: true }).click();
+    await expect(roughCutCard).toContainText("已启用");
 
     await dialog.locator('input[type="file"]').setInputFiles({
       name: "e2e-extension.json",
@@ -100,6 +106,10 @@ test("declarative extensions require review, start disabled and remain keyboard-
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
     await expect(extensionButton).toBeFocused();
+    await page.getByRole("button", { name: "打开分镜墙" }).click();
+    const storyboard = page.getByRole("dialog", { name: "项目分镜墙" });
+    await expect(storyboard.getByRole("tab", { name: "粗剪预览" })).toBeVisible();
+    await storyboard.getByRole("button", { name: "关闭分镜墙" }).click();
   } finally {
     await request.delete(`/api/admin/extensions/${extensionId}`).catch(() => undefined);
   }
@@ -109,6 +119,12 @@ test("cost ledger and cross-shot approval preview apply as one visible decision"
   page,
   request,
 }) => {
+  for (const extensionId of ["studio.takeboard.cost-insights", "studio.takeboard.batch-review"]) {
+    const enabled = await request.patch(`/api/admin/extensions/${extensionId}`, {
+      data: { enabled: true },
+    });
+    expect(enabled.ok(), await enabled.text()).toBeTruthy();
+  }
   const title = `成本审批验收 ${Date.now()}`;
   const createdResponse = await request.post("/api/projects", {
     data: { title, aspectRatio: "16:9" },
@@ -288,7 +304,7 @@ test("cost ledger and cross-shot approval preview apply as one visible decision"
     await card.getByRole("button", { name: /打开画板/ }).click();
     await page.getByRole("button", { name: "打开分镜墙" }).click();
     const storyboard = page.getByRole("dialog", { name: "项目分镜墙" });
-    await storyboard.getByRole("tab", { name: "审批与成本" }).click();
+    await storyboard.getByRole("tab", { name: "批量审片与成本" }).click();
     await expect(storyboard.getByRole("heading", { name: "成本与采用决策" })).toBeVisible();
     await expect(storyboard).toContainText("CNY 已知支出");
     await expect(storyboard).toContainText("3.00");
@@ -310,7 +326,7 @@ test("cost ledger and cross-shot approval preview apply as one visible decision"
     });
     await confirmation.getByRole("button", { name: "确认并保存全部决策" }).click();
     await expect(confirmation).toBeHidden();
-    await expect(page.getByText("跨镜头审批已原子保存，成本台账已更新")).toBeVisible();
+    await expect(page.getByText("跨镜头审批已原子保存", { exact: true })).toBeVisible();
 
     const loaded = await request.get(`/api/projects/${key}`);
     expect(loaded.ok(), await loaded.text()).toBeTruthy();

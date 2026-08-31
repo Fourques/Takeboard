@@ -8,6 +8,7 @@ import type {
   BatchApprovalPreview,
   CommandAuditEntry,
   ExecutionPolicy,
+  ExtensionFeature,
   ExtensionManifest,
   ExtensionQcIssue,
   InstalledExtension,
@@ -50,6 +51,13 @@ export type ProjectCatalogItem = {
   membershipRole: ProjectRole | null;
   accessSource: "membership" | "instance_admin";
   boards: ProjectBoardPreview[];
+};
+
+export type ExtensionState = {
+  runtime: "declarative-v1";
+  codeExecutionAllowed: false;
+  enabledFeatures: ExtensionFeature[];
+  extensions: InstalledExtension[];
 };
 
 let csrfToken: string | null = null;
@@ -902,12 +910,7 @@ export const workerApi = {
 };
 
 export const extensionApi = {
-  list: () =>
-    jsonRequest<{
-      runtime: "declarative-v1";
-      codeExecutionAllowed: false;
-      extensions: InstalledExtension[];
-    }>("/api/extensions"),
+  list: () => jsonRequest<ExtensionState>("/api/extensions"),
   inspect: (manifest: unknown) =>
     jsonRequest<{
       manifest: ExtensionManifest;

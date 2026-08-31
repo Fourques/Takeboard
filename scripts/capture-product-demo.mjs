@@ -149,6 +149,19 @@ async function main() {
         `演示账号初始化失败：${authenticated.status()} ${await authenticated.text()}`,
       );
     }
+    const { csrfToken } = await authenticated.json();
+    if (typeof csrfToken !== "string" || !csrfToken) {
+      throw new Error("演示账号初始化没有返回安全令牌");
+    }
+    const roughCutEnabled = await api.patch("/api/admin/extensions/studio.takeboard.rough-cut", {
+      data: { enabled: true },
+      headers: { "x-takeboard-csrf": csrfToken },
+    });
+    if (!roughCutEnabled.ok()) {
+      throw new Error(
+        `演示粗剪扩展启用失败：${roughCutEnabled.status()} ${await roughCutEnabled.text()}`,
+      );
+    }
     const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
     browser = await chromium.launch(executablePath ? { executablePath } : undefined);
     const context = await browser.newContext({

@@ -570,8 +570,12 @@ test("a generated video loads and remains controllable on canvas", async ({ page
   });
 });
 
-test("a user can create and reopen a real project", async ({ page }) => {
+test("a user can create and reopen a real project", async ({ page, request }) => {
   test.setTimeout(60_000);
+  const roughCut = await request.patch("/api/admin/extensions/studio.takeboard.rough-cut", {
+    data: { enabled: true },
+  });
+  expect(roughCut.ok(), await roughCut.text()).toBeTruthy();
   const title = `TakeBoard 真实项目 ${Date.now()}`;
   const workflowFixture = (input: {
     path: string;
