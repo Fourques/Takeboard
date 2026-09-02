@@ -63,9 +63,13 @@ test("@performance a 500-node production board remains loadable and interactive"
     const startedAt = await page.evaluate(() => performance.now());
     const card = page.locator(".project-card").filter({ hasText: "500 节点性能验收" });
     await card.getByRole("button", { name: /打开画板/ }).click();
-    await expect(page.locator(".canvas-status")).toContainText("500 节点", { timeout: 8_000 });
+    await expect(page.locator(".canvas-status")).toContainText("500 节点", {
+      timeout: loadBudgetMilliseconds,
+    });
     const renderedNodes = page.locator(".react-flow__node");
-    await expect.poll(() => renderedNodes.count(), { timeout: 8_000 }).toBeGreaterThan(0);
+    await expect
+      .poll(() => renderedNodes.count(), { timeout: loadBudgetMilliseconds })
+      .toBeGreaterThan(0);
     const renderedNodeCount = await renderedNodes.count();
     // React Flow still owns all 500 nodes (the status above is sourced from the complete model),
     // while the DOM only carries the current viewport. This is the production behaviour we want:
