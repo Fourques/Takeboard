@@ -5,8 +5,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import { PortalStore } from "../src/portal-store.js";
 
 const roots: string[] = [];
+const stores: PortalStore[] = [];
 
 afterEach(async () => {
+  for (const store of stores.splice(0)) {
+    store.close();
+  }
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
@@ -14,7 +18,9 @@ async function storeFixture() {
   const root = await mkdtemp(join(tmpdir(), "takeboard-portal-store-"));
   roots.push(root);
   const databasePath = join(root, "portal.db");
-  return { root, databasePath, store: new PortalStore(databasePath) };
+  const store = new PortalStore(databasePath);
+  stores.push(store);
+  return { root, databasePath, store };
 }
 
 describe("PortalStore", () => {
@@ -32,9 +38,14 @@ describe("PortalStore", () => {
       ),
     ).toThrow(/没有开放/);
     const keyPath = `${fixture.databasePath}.key`;
-    expect((await stat(keyPath)).mode & 0o777).toBe(0o600);
+    const keyStat = await stat(keyPath);
+    expect(keyStat.isFile()).toBe(true);
+    // POSIX mode bits do not represent Windows ACLs; Node ignores `mode` there. On Unix, the
+    // secret must never inherit group or world access.
+    if (process.platform !== "win32") {
+      expect(keyStat.mode & 0o777).toBe(0o600);
+    }
     expect(Buffer.from((await readFile(keyPath, "utf8")).trim(), "base64url")).toHaveLength(32);
-    fixture.store.close();
   });
 
   it("completes pairing without exposing a stored plaintext device token", async () => {
@@ -76,7 +87,6 @@ describe("PortalStore", () => {
     expect(
       fixture.store.authenticateDevice("instance-1234567890", completed.deviceToken),
     ).toBeNull();
-    fixture.store.close();
   });
 
   it("enforces login throttling after repeated invalid credentials", async () => {
@@ -93,6 +103,5 @@ describe("PortalStore", () => {
     expect(
       fixture.store.authenticate("owner@example.com", "wrong password value", "10.0.0.2"),
     ).toEqual({ user: null, rateLimited: true });
-    fixture.store.close();
   });
 });
