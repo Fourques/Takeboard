@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { expect, test } from "./fixtures";
 
 test("global operations center exposes real task and storage state", async ({ page }) => {
@@ -32,72 +33,89 @@ test("global operations center exposes real task and storage state", async ({ pa
   expect(download.suggestedFilename()).toMatch(/^takeboard-support-\d{4}-\d{2}-\d{2}\.json$/);
 });
 
-test("homepage chrome and operations center adapt to a short viewport", async ({ page }) => {
-  await page.setViewportSize({ width: 1024, height: 560 });
-  await page.goto("/");
-
-  await expect(page.getByRole("button", { name: "启用可旋转的三维导演板" })).toHaveCount(0);
-  await expect(page.locator(".scene-companion")).toHaveCount(4);
-  await expect(page.getByRole("button", { name: "新建项目" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "打开工作区选项" })).toBeVisible();
-  await expect(page.locator(".hub-header")).toHaveCSS("overflow", "visible");
-
-  const header = await page.locator(".hub-header-inner").boundingBox();
-  if (!header) throw new Error("首页顶栏没有可测量的布局边界");
-  expect(header.x + header.width).toBeLessThanOrEqual(1024);
-  const accountButton = await page.locator(".hub-header .account-button.compact").boundingBox();
-  const accountAvatar = await page
-    .locator(".hub-header .account-button.compact > span")
-    .boundingBox();
-  if (!accountButton || !accountAvatar) throw new Error("账号头像没有可测量的布局边界");
-  const buttonCenter = accountButton.y + accountButton.height / 2;
-  const avatarCenter = accountAvatar.y + accountAvatar.height / 2;
-  expect(Math.abs(buttonCenter - avatarCenter)).toBeLessThanOrEqual(0.5);
-  await expect
-    .poll(
-      () =>
-        page.locator(".universe-webgl canvas").evaluate((canvas) => {
-          const element = canvas as HTMLCanvasElement;
-          return element.width / Math.max(1, element.clientWidth);
-        }),
-      { message: "三维导演板应在布局稳定后以高于 CSS 像素的密度渲染" },
-    )
-    .toBeGreaterThanOrEqual(1.2);
-  await page.screenshot({
-    path: "test-results/takeboard-home-short.png",
-    animations: "disabled",
+test("homepage chrome and operations center adapt to a short viewport", async ({
+  baseURL,
+  browser,
+}) => {
+  // DPR is a browser/device property, not a promise made by a shared CI host. Exercise the crisp
+  // rendering contract in an explicit high-density context so this test cannot randomly become a
+  // DPR=1 test when GitHub changes runner hardware or software rendering.
+  const context = await browser.newContext({
+    baseURL,
+    deviceScaleFactor: 2,
+    storageState: resolve("test-results/e2e-auth-state.json"),
+    viewport: { width: 1024, height: 560 },
   });
-  const stageOpacity = await page
-    .locator(".hub-artifact-background")
-    .evaluate((element) => getComputedStyle(element).opacity);
-  await page.locator(".hub-shell").evaluate((element) => {
-    const projectSection = element.querySelector<HTMLElement>(".hub-projects");
-    const header = element.querySelector<HTMLElement>(".hub-header");
-    element.scrollTo({ top: (projectSection?.offsetTop ?? 0) - (header?.offsetHeight ?? 0) });
-  });
-  await page.waitForTimeout(350);
-  await expect(page.locator(".hub-projects")).toBeVisible();
-  await expect(page.locator(".hub-artifact-background")).toHaveCSS("opacity", stageOpacity);
-  await page.screenshot({
-    path: "test-results/takeboard-home-scrolled.png",
-    animations: "disabled",
-  });
+  const page = await context.newPage();
+  try {
+    await page.goto("/");
 
-  await page.getByRole("button", { name: "打开生成任务、存储与诊断中心" }).click();
-  const panel = page.getByRole("dialog", { name: "生成任务、存储与诊断中心" });
-  await expect(panel).toBeVisible();
-  const bounds = await panel.boundingBox();
-  if (!bounds) throw new Error("任务中心没有可测量的布局边界");
-  expect(bounds.y).toBeGreaterThanOrEqual(0);
-  expect(bounds.y + bounds.height).toBeLessThanOrEqual(560);
+    await expect(page.getByRole("button", { name: "启用可旋转的三维导演板" })).toHaveCount(0);
+    await expect(page.locator(".scene-companion")).toHaveCount(4);
+    await expect(page.getByRole("button", { name: "新建项目" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "打开工作区选项" })).toBeVisible();
+    await expect(page.locator(".hub-header")).toHaveCSS("overflow", "visible");
 
-  await panel.getByRole("tab", { name: "运行诊断" }).click();
-  await expect(panel.getByText(/当前基础环境正常|项建议处理|项会阻止正常使用/)).toBeVisible();
-  await expect(panel.getByRole("button", { name: "下载报告" })).toBeVisible();
-  await page.screenshot({
-    path: "test-results/takeboard-operations-short.png",
-    animations: "disabled",
-  });
+    const header = await page.locator(".hub-header-inner").boundingBox();
+    if (!header) throw new Error("首页顶栏没有可测量的布局边界");
+    expect(header.x + header.width).toBeLessThanOrEqual(1024);
+    const accountButton = await page.locator(".hub-header .account-button.compact").boundingBox();
+    const accountAvatar = await page
+      .locator(".hub-header .account-button.compact > span")
+      .boundingBox();
+    if (!accountButton || !accountAvatar) throw new Error("账号头像没有可测量的布局边界");
+    const buttonCenter = accountButton.y + accountButton.height / 2;
+    const avatarCenter = accountAvatar.y + accountAvatar.height / 2;
+    expect(Math.abs(buttonCenter - avatarCenter)).toBeLessThanOrEqual(0.5);
+    expect(await page.evaluate(() => window.devicePixelRatio)).toBe(2);
+    await expect
+      .poll(
+        () =>
+          page.locator(".universe-webgl canvas").evaluate((canvas) => {
+            const element = canvas as HTMLCanvasElement;
+            return element.width / Math.max(1, element.clientWidth);
+          }),
+        { message: "三维导演板应在高密度屏幕上使用高于 CSS 像素的渲染密度" },
+      )
+      .toBeGreaterThanOrEqual(1.5);
+    await page.screenshot({
+      path: "test-results/takeboard-home-short.png",
+      animations: "disabled",
+    });
+    const stageOpacity = await page
+      .locator(".hub-artifact-background")
+      .evaluate((element) => getComputedStyle(element).opacity);
+    await page.locator(".hub-shell").evaluate((element) => {
+      const projectSection = element.querySelector<HTMLElement>(".hub-projects");
+      const header = element.querySelector<HTMLElement>(".hub-header");
+      element.scrollTo({ top: (projectSection?.offsetTop ?? 0) - (header?.offsetHeight ?? 0) });
+    });
+    await page.waitForTimeout(350);
+    await expect(page.locator(".hub-projects")).toBeVisible();
+    await expect(page.locator(".hub-artifact-background")).toHaveCSS("opacity", stageOpacity);
+    await page.screenshot({
+      path: "test-results/takeboard-home-scrolled.png",
+      animations: "disabled",
+    });
+
+    await page.getByRole("button", { name: "打开生成任务、存储与诊断中心" }).click();
+    const panel = page.getByRole("dialog", { name: "生成任务、存储与诊断中心" });
+    await expect(panel).toBeVisible();
+    const bounds = await panel.boundingBox();
+    if (!bounds) throw new Error("任务中心没有可测量的布局边界");
+    expect(bounds.y).toBeGreaterThanOrEqual(0);
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual(560);
+
+    await panel.getByRole("tab", { name: "运行诊断" }).click();
+    await expect(panel.getByText(/当前基础环境正常|项建议处理|项会阻止正常使用/)).toBeVisible();
+    await expect(panel.getByRole("button", { name: "下载报告" })).toBeVisible();
+    await page.screenshot({
+      path: "test-results/takeboard-operations-short.png",
+      animations: "disabled",
+    });
+  } finally {
+    await context.close();
+  }
 });
 
 test("homepage production dock remains usable on a narrow viewport", async ({ page }) => {

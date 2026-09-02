@@ -64,3 +64,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e:performance
+        env:
+          # Hosted runners do not provide a stable CPU class. Keep the local/controlled budget at
+          # 8s while bounding shared-runner cold starts separately; virtualization and frame P95
+          # remain independent hard assertions inside the test.
+          TAKEBOARD_CANVAS_LOAD_BUDGET_MS: "12000"

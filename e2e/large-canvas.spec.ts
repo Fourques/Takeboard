@@ -8,6 +8,10 @@ import { expect, test } from "./fixtures";
 test("@performance a 500-node production board remains loadable and interactive", async ({
   page,
 }) => {
+  const loadBudgetMilliseconds = Number(process.env.TAKEBOARD_CANVAS_LOAD_BUDGET_MS ?? "8000");
+  if (!Number.isFinite(loadBudgetMilliseconds) || loadBudgetMilliseconds <= 0) {
+    throw new Error("TAKEBOARD_CANVAS_LOAD_BUDGET_MS 必须是正数");
+  }
   const dataRoot = process.env.TAKEBOARD_E2E_DATA_ROOT ?? resolve("test-results/e2e-data");
   const key = `large-canvas-${Date.now().toString(36)}.takeboard`;
   const directory = resolve(dataRoot, key);
@@ -68,7 +72,7 @@ test("@performance a 500-node production board remains loadable and interactive"
     // large boards remain complete without paying layout/paint cost for off-screen cards.
     expect(renderedNodeCount).toBeLessThan(500);
     const loadMilliseconds = (await page.evaluate(() => performance.now())) - startedAt;
-    expect(loadMilliseconds).toBeLessThan(8_000);
+    expect(loadMilliseconds).toBeLessThan(loadBudgetMilliseconds);
 
     const frameP95 = await page.evaluate(async () => {
       const deltas: number[] = [];
@@ -83,7 +87,7 @@ test("@performance a 500-node production board remains loadable and interactive"
     });
     expect(frameP95).toBeLessThan(100);
     console.log(
-      `500-node gate: load=${Math.round(loadMilliseconds)}ms, rendered=${renderedNodeCount}/500, animation-frame-p95=${frameP95.toFixed(1)}ms`,
+      `500-node gate: load=${Math.round(loadMilliseconds)}ms/${loadBudgetMilliseconds}ms, rendered=${renderedNodeCount}/500, animation-frame-p95=${frameP95.toFixed(1)}ms`,
     );
     await page.locator(".react-flow__pane").click({ position: { x: 400, y: 260 } });
     await expect(page.locator(".canvas-status")).toContainText("500 节点");
