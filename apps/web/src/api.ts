@@ -24,6 +24,7 @@ import type {
   ProjectSnapshot,
   PublicInvitation,
   RecoveryCodeStatus,
+  RemoteAccessStatus,
   RunCost,
   WorkerDefinition,
   WorkerHealth,
@@ -967,6 +968,7 @@ export const authApi = {
     }),
   logout: () => jsonRequest<{ loggedOut: true }>("/api/auth/logout", { method: "POST" }),
   sessions: () => jsonRequest<{ sessions: AccountSession[] }>("/api/auth/sessions"),
+  remoteAccess: () => jsonRequest<RemoteAccessStatus>("/api/remote-access/status"),
   revokeSession: (sessionId: string) =>
     jsonRequest<{ revoked: true; current: boolean }>(
       `/api/auth/sessions/${encodeURIComponent(sessionId)}`,

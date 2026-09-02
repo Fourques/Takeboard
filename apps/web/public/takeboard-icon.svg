@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <title>TakeBoard</title>
+  <rect width="512" height="512" rx="112" fill="#111513"/>
+  <rect x="54" y="54" width="404" height="404" rx="84" fill="#d9b477"/>
+  <path d="M133 137h246v72h-82v184h-82V209h-82z" fill="#111513"/>
+  <path d="M77 111l62-57h76l-62 57zm121 0l62-57h76l-62 57zm121 0l62-57h56l-62 57z" fill="#f4e1bb" opacity=".78"/>
+</svg>

@@ -12,7 +12,9 @@ import type {
 import {
   createContext,
   type FormEvent,
+  lazy,
   type ReactNode,
+  Suspense,
   useCallback,
   useContext,
   useEffect,
@@ -26,6 +28,8 @@ import {
   type StagedRestore,
   setApiCsrfToken,
 } from "./api";
+
+const RemoteAccessPanel = lazy(() => import("./remote-access-panel"));
 
 type CenterContext = {
   projectKey?: string | undefined;
@@ -1412,7 +1416,7 @@ function AccountCenter({
   const tabs = [
     "profile",
     "security",
-    ...(user.instanceRole === "admin" ? ["team", "backup", "activity"] : []),
+    ...(user.instanceRole === "admin" ? ["remote", "team", "backup", "activity"] : []),
     ...(hasProjectAccess ? ["project"] : []),
   ] as const;
   const [tab, setTab] = useState<(typeof tabs)[number]>(hasProjectAccess ? "project" : "profile");
@@ -1470,6 +1474,13 @@ function AccountCenter({
             </button>
             {user.instanceRole === "admin" ? (
               <>
+                <button
+                  className={tab === "remote" ? "active" : ""}
+                  type="button"
+                  onClick={() => setTab("remote")}
+                >
+                  访问与安装
+                </button>
                 <button
                   className={tab === "team" ? "active" : ""}
                   type="button"
@@ -1568,6 +1579,18 @@ function AccountCenter({
                   <p>实例管理员可以创建账号或立即停用访问。</p>
                 </div>
                 <TeamPanel currentUser={user} />
+              </>
+            ) : null}
+            {tab === "remote" ? (
+              <>
+                <div className="account-section-heading">
+                  <span>ACCESS &amp; DEVICES</span>
+                  <h3>访问与安装</h3>
+                  <p>查看这台工作站能以哪些方式安全打开，不需要先理解网络术语。</p>
+                </div>
+                <Suspense fallback={<div className="auth-loading compact">正在检查访问方式…</div>}>
+                  <RemoteAccessPanel />
+                </Suspense>
               </>
             ) : null}
             {tab === "activity" ? (

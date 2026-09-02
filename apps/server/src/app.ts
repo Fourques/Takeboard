@@ -14,6 +14,7 @@ import { registerOperationsRoutes } from "./operations-routes.js";
 import { registerProjectCommandRoutes } from "./project-command-routes.js";
 import { registerProjectRequestLock } from "./project-request-lock.js";
 import { registerProjectRoutes } from "./project-routes.js";
+import { registerRemoteAccessRoutes } from "./remote-access-routes.js";
 import { type RequestSecurityOptions, registerRequestSecurity } from "./request-security.js";
 import { WorkerPool } from "./worker-pool.js";
 import { registerWorkerRoutes, type WorkerRouteOptions } from "./worker-routes.js";
@@ -80,6 +81,24 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       : registerBackupAutomation(app, projectsRoot, auth, options.backupAutomation);
 
   registerProjectRequestLock(app, projectsRoot);
+
+  registerRemoteAccessRoutes(app, {
+    auth,
+    instanceId: process.env.TAKEBOARD_INSTANCE_ID ?? null,
+    instanceName: process.env.TAKEBOARD_INSTANCE_NAME ?? null,
+    bindHost: process.env.TAKEBOARD_HOST ?? "127.0.0.1",
+    port: Number.parseInt(process.env.TAKEBOARD_PORT ?? "48120", 10),
+    publicUrl: process.env.TAKEBOARD_PUBLIC_URL ?? null,
+    ...(options.auth?.secureCookies === undefined
+      ? {}
+      : { secureCookies: options.auth.secureCookies }),
+    ...(options.requestSecurity?.allowedHosts
+      ? { allowedHosts: options.requestSecurity.allowedHosts }
+      : {}),
+    ...(options.requestSecurity?.allowedOrigins
+      ? { allowedOrigins: options.requestSecurity.allowedOrigins }
+      : {}),
+  });
 
   registerDemoRoutes(
     app,

@@ -122,6 +122,8 @@ if [[ ! -f $config_dir/env ]]; then
     write_env_value COMFY_MIN_FREE_RAM_GB "${COMFY_MIN_FREE_RAM_GB:-6}"
     write_env_value COMFY_MIN_FREE_VRAM_GB "${COMFY_MIN_FREE_VRAM_GB:-4}"
     write_env_value COMFY_MAX_GPU_UTILIZATION "${COMFY_MAX_GPU_UTILIZATION:-85}"
+    write_env_value TAKEBOARD_INSTANCE_NAME "${TAKEBOARD_INSTANCE_NAME:-}"
+    write_env_value TAKEBOARD_PUBLIC_URL "${TAKEBOARD_PUBLIC_URL:-}"
   } > "$config_dir/env"
   echo "Created ${config_dir}/env"
 fi

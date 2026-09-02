@@ -38,6 +38,8 @@ workflows, media and project files stay on infrastructure you control.
   links; third-party code is not executed.
 - Recoverable project deletion, integrity-checked project import/export and pre-migration backups.
 - Accounts, device sessions, instance admins and project Owner/Editor/Viewer roles.
+- An account-side Access & Install center that reports real local, SSH and team-HTTPS readiness.
+- An installable standalone Web App entry point alongside six native OS/CPU portable bundles.
 - Cross-project task/storage center and a redacted downloadable support report.
 - Optional scheduled off-volume instance backups with retention and isolated restore drills.
 - User-selectable type scaling without changing canvas coordinates or generation resolution.
@@ -95,6 +97,11 @@ npm run easy:remote -- your-server
 The helper detects the remote TakeBoard port, selects a free local port, opens the correct URL and
 releases the tunnel when it exits. A Tailscale hostname works because the transport is still ordinary
 SSH; Tailscale is not required. See [remote access](docs/remote-access.md).
+
+The account center's **Access & Install** view shows the current server port and verifies account
+mode, loopback binding, HTTPS, secure cookies and Host/Origin allowlists. The design boundary for a
+future outbound-connector account portal and signed desktop installers is documented in
+[account portal and distribution strategy](docs/access-and-distribution-strategy.md).
 
 ## Custom workflows: an explicit trust boundary
 

@@ -166,6 +166,16 @@ function buildOutdated() {
   return sourceAt > builtAt;
 }
 
+function currentBuildStamp() {
+  if (!existsSync(serverBuild) || !existsSync(webBuild)) return null;
+  return [
+    newestModification(join(repoDir, "apps", "server", "dist")),
+    newestModification(join(repoDir, "apps", "web", "dist")),
+  ]
+    .map((value) => Math.trunc(value))
+    .join(":");
+}
+
 function installOutdated() {
   const modulesState = join(repoDir, "node_modules", ".modules.yaml");
   if (!existsSync(modulesState)) return true;
@@ -312,10 +322,12 @@ async function startUnlocked() {
   }
   const needsInstall = installOutdated();
   const needsBuild = buildOutdated();
+  const runningBuildIsCurrent = existing?.buildStamp === currentBuildStamp();
   if (
     ownedInstanceRunning &&
     existing?.instanceId === instanceId &&
     existingHealth?.version === applicationVersion &&
+    runningBuildIsCurrent &&
     !needsInstall &&
     !needsBuild
   ) {
@@ -400,10 +412,19 @@ async function startUnlocked() {
   });
   closeSync(log);
   child.unref();
+  const buildStamp = currentBuildStamp();
+  if (!buildStamp) throw new Error("TakeBoard 构建产物不存在，请重新运行 npm run easy");
   writeFileSync(
     stateFile,
     JSON.stringify(
-      { pid: child.pid, port, instanceId, startedAt: new Date().toISOString(), logFile },
+      {
+        pid: child.pid,
+        port,
+        instanceId,
+        buildStamp,
+        startedAt: new Date().toISOString(),
+        logFile,
+      },
       null,
       2,
     ),

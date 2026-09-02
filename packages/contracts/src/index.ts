@@ -9,6 +9,7 @@ export * from "./health.js";
 export * from "./operations.js";
 export * from "./production.js";
 export * from "./project.js";
+export * from "./remote-access.js";
 export * from "./run.js";
 export * from "./snapshot.js";
 export * from "./workflow.js";

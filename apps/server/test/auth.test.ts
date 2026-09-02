@@ -71,6 +71,18 @@ describe("TakeBoard authentication and authorization", () => {
     });
     const owner = sessionHeaders(bootstrap);
 
+    const remoteAccess = await app.inject({
+      method: "GET",
+      url: "/api/remote-access/status",
+      headers: { cookie: owner.cookie },
+    });
+    expect(remoteAccess.statusCode, remoteAccess.body).toBe(200);
+    expect(remoteAccess.json()).toMatchObject({
+      currentAccess: { kind: "local_or_ssh", protection: "loopback" },
+      ssh: { state: "ready" },
+      managedPortal: { state: "not_available" },
+    });
+
     const csrfBlocked = await app.inject({
       method: "POST",
       url: "/api/projects",

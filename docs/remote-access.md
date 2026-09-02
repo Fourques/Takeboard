@@ -4,6 +4,8 @@
 
 TakeBoard 只监听服务器回环地址。稳定服务默认使用 `127.0.0.1:48120`；简易启动器在冲突时会使用 `48120–48139` 中的空闲端口。远程用户通过标准 SSH 本地端口转发访问，不需要 Tailscale Serve、专用客户端或公开 Web 端口。
 
+登录后打开头像中的“访问与安装”，可以看到当前连接方式、实例标识、账号与监听边界检查，并复制与服务器实际端口一致的 SSH 命令。这里显示的是服务端实时状态，不会把尚未提供的云门户标记为可用。
+
 SSH 服务器可以通过公网域名、局域网 IP、跳板机或 Tailscale 主机名抵达。Tailscale 在这里仅是可选网络通道，隧道机制始终是 OpenSSH `-L`。
 
 ## 推荐方式
@@ -131,3 +133,19 @@ Host takeboard-server
 ```
 
 建议使用 SSH 密钥，并在服务器侧限制允许登录的用户。不要在仓库中提交私钥、密码、真实域名或其他凭据。
+
+## 团队 HTTPS 入口
+
+需要固定域名时，应在经过认证的反向代理或出站隧道前提供 HTTPS，并同时配置：
+
+```dotenv
+TAKEBOARD_PUBLIC_URL=https://studio.example.com
+TAKEBOARD_ALLOWED_HOSTS=studio.example.com
+TAKEBOARD_ALLOWED_ORIGINS=https://studio.example.com
+TAKEBOARD_SECURE_COOKIES=1
+TAKEBOARD_AUTH_MODE=required
+```
+
+`TAKEBOARD_PUBLIC_URL` 只用于声明并检查规范入口，不会自行创建隧道、申请证书或改变监听地址。账号中心会联合检查 HTTPS、安全 Cookie、Host 与 Origin 白名单；任一项缺失都会显示为“需处理”。不要把 ComfyUI 的 `8188` 端口一同发布。
+
+面向大众的账号设备门户需要独立控制面与主机出站连接器，不等同于当前实例账号。架构和实施 Gate 见[账号门户与大众化分发策略](access-and-distribution-strategy.md)。

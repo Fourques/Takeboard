@@ -1,0 +1,20 @@
+{
+  "id": "/",
+  "name": "TakeBoard 创作工作台",
+  "short_name": "TakeBoard",
+  "description": "面向 ComfyUI 创作者的本地优先 AI 影像工作台",
+  "lang": "zh-CN",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#111513",
+  "theme_color": "#111513",
+  "icons": [
+    {
+      "src": "/takeboard-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
