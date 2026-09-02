@@ -15,6 +15,8 @@ before moving production work to a newer minor version.
   uses an isolated loopback port, enforces one application instance and cleans up owned processes.
 - Six native desktop build jobs for macOS Intel/Apple Silicon, Windows x64/arm64 and Linux x64/arm64,
   including installer checksums and GitHub build attestations.
+- A path-aware desktop pull-request gate that builds and verifies the embedded production runtime,
+  then performs a locked Rust compile before changes can reach the release matrix.
 - Honest Run and project cost records with exact, estimated and unknown accuracy, currency-safe
   aggregation, per-shot summaries and finished-minute visibility.
 - Revision-bound approval previews and atomic approval batches spanning multiple shots, including

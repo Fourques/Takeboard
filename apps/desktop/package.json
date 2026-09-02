@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "prepare-runtime": "node ../../scripts/prepare-desktop-runtime.mjs",
-    "check": "cargo check --manifest-path src-tauri/Cargo.toml",
+    "check": "cargo check --manifest-path src-tauri/Cargo.toml --locked",
     "bundle": "pnpm run prepare-runtime && tauri build"
   },
   "devDependencies": {
