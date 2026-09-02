@@ -39,3 +39,21 @@ Imported project packages are treated as untrusted data. TakeBoard extracts them
 staging directory, rejects links and path traversal, verifies every declared size and SHA-256 digest,
 and opens the database before publishing the project. Imported ComfyUI workflows are not executable
 until their bindings and dependencies have been explicitly inspected and trusted.
+
+## Known upstream advisory
+
+As of 2026-09-02, the **Linux desktop preview only** inherits
+[RUSTSEC-2024-0429 / GHSA-wrw7-89jp-8q8g](https://rustsec.org/advisories/RUSTSEC-2024-0429.html)
+through Tauri's `wry -> webkit2gtk/gtk -> glib 0.18.5` stack. The affected API is
+`glib::VariantStrIter`; TakeBoard does not call it, and a source-tree reachability search found no
+reference to that API in TakeBoard code. The Web app, server, Portal, portable distributions,
+macOS desktop and Windows desktop do not use this Linux GTK dependency.
+
+The advisory is fixed in `glib >= 0.20`, but the current stable Wry Linux backend still depends on
+GTK3 crates that require the 0.18 line. Wry's
+[GTK4/WebKitGTK 6 migration](https://github.com/tauri-apps/wry/issues/1474) remains open, with its
+[implementation pull request](https://github.com/tauri-apps/wry/pull/1530) still in draft. TakeBoard
+will not replace a stable desktop dependency with an unaudited fork merely to silence the scanner.
+The Dependabot alert remains open and this exception must be reviewed before each release and after
+every Tauri/Wry update. Once the stable stack supports `glib >= 0.20`, upgrading it is a release
+blocker. Until then, the Linux desktop artifact remains explicitly labeled an unsigned preview.

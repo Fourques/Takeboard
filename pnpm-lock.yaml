@@ -55,8 +55,8 @@ importers:
         specifier: 5.11.3
         version: 5.11.3
       ws:
-        specifier: 8.18.3
-        version: 8.18.3
+        specifier: 8.21.0
+        version: 8.21.0
     devDependencies:
       '@types/better-sqlite3':
         specifier: 9.6.0
@@ -104,8 +104,8 @@ importers:
         specifier: 3.2.1
         version: 3.2.1
       ws:
-        specifier: 8.18.3
-        version: 8.18.3
+        specifier: 8.21.0
+        version: 8.21.0
     devDependencies:
       '@types/better-sqlite3':
         specifier: 9.6.0
@@ -1927,8 +1927,8 @@ packages:
   wrappy@1.0.2:
     resolution: {integrity: sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ==}
 
-  ws@8.18.3:
-    resolution: {integrity: sha512-PEIGCY5tSlUt50cqyMXfCzX+oOPqN0vuGqWzbcJ2xvnkzkq46oOpz7dQaTDBdfICb4N14+GARUDw2XV2N4tvzg==}
+  ws@8.21.0:
+    resolution: {integrity: sha512-Vsp28b7DRcimFQvrqu2Wek3z1iYxDCWqHYB8Qsnk/S4RfaCQzPGPyBNuVjJV3cd6UiKtUtp6sNM77gWvzcCH+g==}
     engines: {node: '>=10.0.0'}
     peerDependencies:
       bufferutil: ^4.0.1
@@ -3390,7 +3390,7 @@ snapshots:
 
   wrappy@1.0.2: {}
 
-  ws@8.18.3: {}
+  ws@8.21.0: {}
 
   zod@4.4.3: {}
 

@@ -29,6 +29,9 @@ before moving production work to a newer minor version.
 
 ### Security
 
+- WebSocket transports now use `ws 8.21.0`, resolving the denial-of-service and memory-disclosure
+  advisories reported against 8.18.3. The remaining Linux-only Tauri/GTK advisory is documented in
+  `SECURITY.md` with its dependency chain, reachability assessment and mandatory review condition.
 - Public Portal bootstrap now requires a deployment-held high-entropy setup token; device secrets
   are stored as digests in the Portal and in a mode-0600 local connector file, while relayed browser
   cookies and authorization headers are replaced by a separately scoped local session.
