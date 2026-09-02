@@ -69,26 +69,32 @@ jobs:
             platform: linux-x64
             rust_target: x86_64-unknown-linux-gnu
             bundles: deb
+            extension: deb
           - os: ubuntu-24.04-arm
             platform: linux-arm64
             rust_target: aarch64-unknown-linux-gnu
             bundles: deb
+            extension: deb
           - os: macos-15-intel
             platform: macos-x64
             rust_target: x86_64-apple-darwin
             bundles: dmg
+            extension: dmg
           - os: macos-15
             platform: macos-arm64
             rust_target: aarch64-apple-darwin
             bundles: dmg
+            extension: dmg
           - os: windows-latest
             platform: windows-x64
             rust_target: x86_64-pc-windows-msvc
             bundles: nsis
+            extension: exe
           - os: windows-11-arm
             platform: windows-arm64
             rust_target: aarch64-pc-windows-msvc
             bundles: nsis
+            extension: exe
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
@@ -122,15 +128,13 @@ jobs:
       - name: Attest desktop installers
         uses: actions/attest@v4
         with:
-          subject-path: "apps/desktop/src-tauri/target/${{ matrix.rust_target }}/release/bundle/**/*"
+          subject-path: "apps/desktop/src-tauri/target/${{ matrix.rust_target }}/release/bundle/**/*.${{ matrix.extension }}"
       - name: Upload desktop installers
         uses: actions/upload-artifact@v7
         with:
           name: takeboard-desktop-${{ matrix.platform }}
           path: |
-            apps/desktop/src-tauri/target/${{ matrix.rust_target }}/release/bundle/**/*.deb
-            apps/desktop/src-tauri/target/${{ matrix.rust_target }}/release/bundle/**/*.dmg
-            apps/desktop/src-tauri/target/${{ matrix.rust_target }}/release/bundle/**/*.exe
+            apps/desktop/src-tauri/target/${{ matrix.rust_target }}/release/bundle/**/*.${{ matrix.extension }}
             apps/desktop/src-tauri/target/${{ matrix.rust_target }}/release/bundle/**/*.sha256
           if-no-files-found: error
 
