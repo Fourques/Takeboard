@@ -6,6 +6,9 @@ test-results/
 release/
 .vite/
 .turbo/
+apps/desktop/src-tauri/binaries/
+apps/desktop/src-tauri/resources/
+apps/desktop/src-tauri/target/
 *.log
 .DS_Store
 .env

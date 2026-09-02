@@ -15,7 +15,7 @@
 | 数据库 | SQLite + Drizzle | 单机、可迁移、事务可靠；不在 M0 引入 Redis/Postgres |
 | 文件 | 项目目录 + 内容 hash | 媒体不进数据库；去重、代理和完整导出更容易 |
 | 测试 | Vitest + Playwright | 单元、契约和黄金路径 E2E |
-| 桌面 | M0/M1 不做；M2 后再评估 Electron | 先把浏览器 + localhost 服务跑通，避免打包问题掩盖产品问题 |
+| 桌面 | Tauri 2 薄壳 + 内置 Node sidecar | 复用 React/Fastify/SQLite 唯一业务实现，提供安装、单实例、进程归属和本机 WebView，不携带第二套 Chromium |
 
 不选 tldraw：截至 2026-08，其 SDK 是 source-available，生产使用需要许可证 Key；这与 TakeBoard 希望核心画布可自由自托管和商业扩展的目标不一致。Vue Flow 也可行，但 React Flow 官方为 MIT 且示例与生态更丰富；除非主开发者已明显更熟悉 Vue，否则不切换。
 
@@ -48,6 +48,8 @@ ComfyUI Worker
 ```
 
 浏览器不直接持有 ComfyUI、云模型或文件系统凭据。所有生成调用经过本地服务，才能统一记录 Run、预算和输出。
+
+桌面版不复制任何业务规则。Tauri 只选择空闲回环端口、启动便携 launcher sidecar、等待真实健康检查并加载同一套 Web UI；项目仍写入 `~/TakeBoardData`。应用退出只终止自己拥有的 launcher，单实例插件阻止重复服务。浏览器、便携版和桌面版因此共享相同 API、迁移和权限边界。
 
 跨项目任务中心只聚合当前账号可访问的项目。它通过项目级 Run API 获取实时进度和执行停止，因此不会建立一条绕过 Owner / Editor 权限的新控制通道。存储扫描忽略符号链接，普通成员只能看到自己可访问的项目；系统数据占用仅向实例管理员返回。
 

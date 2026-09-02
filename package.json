@@ -27,6 +27,9 @@
     "gate:gpu": "node scripts/gpu-release-gate.mjs",
     "compatibility:matrix": "node scripts/build-compatibility-matrix.mjs",
     "demo:capture": "pnpm build && node scripts/capture-product-demo.mjs",
+    "desktop:prepare": "pnpm --filter @takeboard/desktop prepare-runtime",
+    "desktop:check": "pnpm --filter @takeboard/desktop check",
+    "desktop:bundle": "pnpm --filter @takeboard/desktop bundle",
     "bundle:portable": "node scripts/build-portable-bundle.mjs",
     "bundle:verify": "node scripts/verify-release-checksums.mjs release",
     "verify": "pnpm lint && pnpm typecheck && pnpm build && pnpm test && pnpm compatibility:matrix -- --check"

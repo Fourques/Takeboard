@@ -19,6 +19,8 @@ TakeBoard 应同时保留三种入口，但三者解决的问题不同：
 - 稳定实例标识、回环监听、Host / Origin 白名单和安全 Cookie；
 - SSH 自动探测、端口避让、健康检查和退出后清理；
 - Linux x64/arm64、macOS Intel/Apple Silicon、Windows x64/arm64 便携包；
+- 复用同一业务实现的 Tauri 2 桌面壳、内置 Node sidecar、启动状态机与单实例保护；
+- DMG、MSI/NSIS、AppImage/Deb 的六平台原生 CI 构建、运行时自检和 SHA-256；
 - 构建校验、原生依赖启动冒烟、SHA-256 与 GitHub Artifact Attestation；
 - Web App Manifest，可从支持的浏览器添加为独立应用窗口。
 
@@ -116,23 +118,25 @@ Tailscale Serve 提供身份化的私网服务入口，Funnel 则面向更广互
 
 ### 现在
 
-继续发布便携包，同时把 Web App Manifest 作为最低成本的独立窗口入口。便携包是真实可执行产品，只是还不是系统原生安装器：
+继续发布便携包，同时提供 Tauri 2 原生安装预览，并把 Web App Manifest 作为最低成本的独立窗口入口：
 
 - 不需要用户安装 Node.js 或 pnpm；
-- 自动选端口、启动服务并打开浏览器；
-- 仍需用户解压，并在 macOS 首次右键打开；
-- 没有系统托盘、自动更新、签名与卸载程序。
+- 原生壳随机选择回环端口，真实查询启动状态，失败后可以重新拉起服务；
+- 关闭应用会回收它拥有的 launcher，重复打开会聚焦已有窗口；
+- 桌面版与便携版共用 `~/TakeBoardData`，升级或切换入口不复制项目；
+- GitHub Actions 在六种 OS/CPU 原生 Runner 上准备 sidecar、执行 `doctor`、编译并产出安装包；
+- 尚无 Apple/Windows 商业签名凭据，因此仍明确标为未签名预览，自动更新也保持关闭。
 
-### 下一步推荐：Tauri 2 桌面壳
+### 已采用：Tauri 2 薄桌面壳
 
 不建议重写 React UI，也不建议立即把全部服务端迁到 Rust。Tauri 壳只负责：
 
 - 安装 / 卸载；
 - 托管内置 TakeBoard Server sidecar；
 - 等待健康检查后打开 WebView；
-- 菜单栏 / 系统托盘中的打开、诊断、安全停止；
+- 单实例、进程归属、健康检查和安全停止；
 - 数据目录选择和 ComfyUI 连接向导；
-- 验证签名后的自动更新。
+- 在取得发布签名凭据后接入强制验签的自动更新。
 
 现有 React、Fastify、SQLite 和便携启动器仍是唯一业务实现。这样能避免桌面版和浏览器版形成两套产品逻辑。
 
@@ -161,14 +165,16 @@ Electron 与现有 TypeScript 团队技能匹配，也有成熟更新机制，�
 
 ### Gate B：桌面安装器
 
-- [ ] 建立最小 Tauri sidecar 原型；
-- [ ] 系统托盘安全启停与单实例锁；
-- [ ] 保留现有数据目录并验证升级回滚；
+- [x] 建立最小 Tauri sidecar 原型；
+- [x] 单实例锁、真实启动状态、重试和退出回收；
+- [x] 保留现有 `~/TakeBoardData`，桌面版与便携版可逆切换；
+- [x] 六种原生 Runner 的 DMG、MSI/NSIS、AppImage/Deb 构建、校验和与来源证明；
 - [ ] macOS / Windows 签名凭据；
-- [ ] DMG、MSI/NSIS、AppImage 原生安装测试；
+- [ ] 三种真实净机上的安装、升级与卸载人工验收；
 - [ ] 签名更新源与失败恢复。
 
 没有签名凭据时可以发布明确标注的开发预览，但不能把未签名安装器宣传为适合大众的稳定版。
+预览版暂不常驻系统托盘：关闭窗口就明确停止本次拥有的服务，避免不懂技术的用户误以为应用已经退出但进程仍在后台。
 
 ### Gate C：账号门户
 

@@ -59,7 +59,10 @@ Project → Scene → Shot → Run → Take → Approved Take
 ## 快速开始
 
 最省事的方式是在 [Releases](https://github.com/Fourques/Takeboard/releases) 下载与你系统和 CPU
-对应的 `takeboard-*.tar.gz` 便携预览包。它内置匹配的 Node.js 运行时，不需要安装 pnpm：
+对应的构建：发布页有桌面安装包时优先使用 DMG、MSI/NSIS 或 AppImage/Deb；尚未提供时使用
+`takeboard-*.tar.gz` 便携预览包。
+两种形式都内置匹配的 Node.js 运行时，不需要安装 pnpm；桌面版会自动启动本机服务并在同一窗口进入
+TakeBoard，重复打开只会聚焦已有窗口。
 
 | 系统 | 解压后打开 |
 | --- | --- |
@@ -67,11 +70,21 @@ Project → Scene → Shot → Run → Take → Approved Take
 | Windows | 双击 `START-TAKEBOARD.cmd` |
 | Linux | 运行 `./start-takeboard.sh` |
 
-便携包会在 `48120–48139` 选择空闲回环端口，项目默认保存在 `~/TakeBoardData`。当前预览包具有
-SHA-256 和 GitHub Actions 构建来源证明，但还没有 Apple notarization / Windows 代码签名；下载页会明确标注这一边界。可以用 GitHub CLI 验证构建来源：
+桌面版使用随机空闲回环端口，便携包会在 `48120–48139` 中避让；两者的项目都默认保存在
+`~/TakeBoardData`，可以互相切换而不迁移数据。当前预览构建具有 SHA-256 和 GitHub Actions
+构建来源证明，但还没有 Apple notarization / Windows 代码签名；下载页会明确标注这一边界。可以用
+GitHub CLI 验证构建来源：
 
 ```bash
 gh attestation verify takeboard-*.tar.gz --repo Fourques/Takeboard
+```
+
+从源码构建桌面预览需要 Rust、Tauri 对应平台依赖和 Node.js 22.12–26.x：
+
+```bash
+pnpm install --frozen-lockfile
+pnpm desktop:prepare   # 构建并自检内置服务、Web UI、Node sidecar 与原生模块
+pnpm desktop:bundle    # 生成当前系统的安装包
 ```
 
 从源码运行时要求 Node.js `>= 22.12 < 27`，以及可选的 ComfyUI。下载或克隆项目后，也可以继续使用根目录里的启动入口：

@@ -1,0 +1,13 @@
+{
+  "name": "@takeboard/desktop",
+  "version": "0.2.0-beta.1",
+  "private": true,
+  "scripts": {
+    "prepare-runtime": "node ../../scripts/prepare-desktop-runtime.mjs",
+    "check": "cargo check --manifest-path src-tauri/Cargo.toml",
+    "bundle": "pnpm run prepare-runtime && tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.11.4"
+  }
+}

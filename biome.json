@@ -8,6 +8,9 @@
       "!**/coverage",
       "!**/playwright-report",
       "!**/test-results",
+      "!**/src-tauri/binaries",
+      "!**/src-tauri/resources",
+      "!**/src-tauri/target",
       "!**/*.takeboard"
     ]
   },
