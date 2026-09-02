@@ -60,7 +60,7 @@ Project → Scene → Shot → Run → Take → Approved Take
 ## 快速开始
 
 最省事的方式是在 [Releases](https://github.com/Fourques/Takeboard/releases) 下载与你系统和 CPU
-对应的构建：发布页有桌面安装包时优先使用 DMG、MSI/NSIS 或 AppImage/Deb；尚未提供时使用
+对应的构建：发布页有桌面安装包时优先使用 macOS DMG、Windows NSIS 或 Linux Deb；尚未提供时使用
 `takeboard-*.tar.gz` 便携预览包。
 两种形式都内置匹配的 Node.js 运行时，不需要安装 pnpm；桌面版会自动启动本机服务并在同一窗口进入
 TakeBoard，重复打开只会聚焦已有窗口。

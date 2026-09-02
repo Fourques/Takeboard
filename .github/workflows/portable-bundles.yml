@@ -68,11 +68,11 @@ jobs:
           - os: ubuntu-latest
             platform: linux-x64
             rust_target: x86_64-unknown-linux-gnu
-            bundles: appimage,deb
+            bundles: deb
           - os: ubuntu-24.04-arm
             platform: linux-arm64
             rust_target: aarch64-unknown-linux-gnu
-            bundles: appimage,deb
+            bundles: deb
           - os: macos-15-intel
             platform: macos-x64
             rust_target: x86_64-apple-darwin
@@ -84,11 +84,11 @@ jobs:
           - os: windows-latest
             platform: windows-x64
             rust_target: x86_64-pc-windows-msvc
-            bundles: nsis,msi
+            bundles: nsis
           - os: windows-11-arm
             platform: windows-arm64
             rust_target: aarch64-pc-windows-msvc
-            bundles: nsis,msi
+            bundles: nsis
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
@@ -114,7 +114,7 @@ jobs:
         env:
           TAKEBOARD_DESKTOP_TARGET: ${{ matrix.rust_target }}
       - name: Compile and bundle desktop app
-        run: pnpm --filter @takeboard/desktop exec tauri build --target ${{ matrix.rust_target }} --bundles ${{ matrix.bundles }}
+        run: pnpm --filter @takeboard/desktop exec tauri build --verbose --target ${{ matrix.rust_target }} --bundles ${{ matrix.bundles }}
         env:
           APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && '-' || '' }}
       - name: Write SHA-256 checksums
@@ -128,11 +128,9 @@ jobs:
         with:
           name: takeboard-desktop-${{ matrix.platform }}
           path: |
-            apps/desktop/src-tauri/target/${{ matrix.rust_target }}/release/bundle/**/*.AppImage
             apps/desktop/src-tauri/target/${{ matrix.rust_target }}/release/bundle/**/*.deb
             apps/desktop/src-tauri/target/${{ matrix.rust_target }}/release/bundle/**/*.dmg
             apps/desktop/src-tauri/target/${{ matrix.rust_target }}/release/bundle/**/*.exe
-            apps/desktop/src-tauri/target/${{ matrix.rust_target }}/release/bundle/**/*.msi
             apps/desktop/src-tauri/target/${{ matrix.rust_target }}/release/bundle/**/*.sha256
           if-no-files-found: error
 

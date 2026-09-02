@@ -14,11 +14,10 @@ before moving production work to a newer minor version.
 - A Tauri 2 desktop preview that embeds the production server, Web UI and matching Node.js sidecar,
   uses an isolated loopback port, enforces one application instance and cleans up owned processes.
 - Explicit square PNG, Windows ICO and macOS ICNS bundle icons so every native packager uses the
-  same TakeBoard identity and Linux AppImage generation cannot fall back to a missing icon.
-- Deterministic numeric WiX versions and a stable Windows upgrade identity, preserving alpha → beta
-  → release ordering without letting prerelease SemVer strings break MSI packaging or upgrades.
+  same TakeBoard identity.
 - Six native desktop build jobs for macOS Intel/Apple Silicon, Windows x64/arm64 and Linux x64/arm64,
-  including installer checksums and GitHub build attestations.
+  using one dependable preview format per platform (DMG, NSIS and Deb), installer checksums and
+  GitHub build attestations. Six-architecture portable archives remain available alongside them.
 - A path-aware desktop pull-request gate that builds and verifies the embedded production runtime,
   then performs a locked Rust compile before changes can reach the release matrix.
 - An isolated 500-node canvas performance gate, separated from the stateful functional browser

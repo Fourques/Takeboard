@@ -20,7 +20,7 @@ TakeBoard 应同时保留三种入口，但三者解决的问题不同：
 - SSH 自动探测、端口避让、健康检查和退出后清理；
 - Linux x64/arm64、macOS Intel/Apple Silicon、Windows x64/arm64 便携包；
 - 复用同一业务实现的 Tauri 2 桌面壳、内置 Node sidecar、启动状态机与单实例保护；
-- DMG、MSI/NSIS、AppImage/Deb 的六平台原生 CI 构建、运行时自检和 SHA-256；
+- DMG、NSIS、Deb 的六平台原生 CI 构建、运行时自检和 SHA-256，并配套六架构便携包；
 - 构建校验、原生依赖启动冒烟、SHA-256 与 GitHub Artifact Attestation；
 - Web App Manifest，可从支持的浏览器添加为独立应用窗口；
 - 独立 Portal 服务、一次性设备配对、出站 Connector、设备目录与撤销审计；
@@ -170,7 +170,7 @@ Electron 与现有 TypeScript 团队技能匹配，也有成熟更新机制，�
 - [x] 建立最小 Tauri sidecar 原型；
 - [x] 单实例锁、真实启动状态、重试和退出回收；
 - [x] 保留现有 `~/TakeBoardData`，桌面版与便携版可逆切换；
-- [x] 六种原生 Runner 的 DMG、MSI/NSIS、AppImage/Deb 构建、校验和与来源证明；
+- [x] 六种原生 Runner 的 DMG、NSIS、Deb 构建、校验和与来源证明；
 - [ ] macOS / Windows 签名凭据；
 - [ ] 三种真实净机上的安装、升级与卸载人工验收；
 - [ ] 签名更新源与失败恢复。
