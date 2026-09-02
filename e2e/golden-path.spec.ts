@@ -559,7 +559,10 @@ test("a generated video loads and remains controllable on canvas", async ({ page
 });
 
 test("a user can create and reopen a real project", async ({ page, request }) => {
-  test.setTimeout(60_000);
+  // This is the intentionally comprehensive, serial lifecycle journey. Keep each UI assertion on
+  // the normal expect budget while allowing the full import/edit/connect/generate/reopen sequence
+  // to finish on a cold shared runner without relying on a whole-test retry.
+  test.setTimeout(120_000);
   const roughCut = await request.patch("/api/admin/extensions/studio.takeboard.rough-cut", {
     data: { enabled: true },
   });
