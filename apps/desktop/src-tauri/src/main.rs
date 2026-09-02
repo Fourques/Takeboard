@@ -44,7 +44,7 @@ fn stop_server(app: &tauri::AppHandle) {
         if let Some(child) = runtime.take() {
             let _ = child.kill();
         }
-    }
+    };
 }
 
 fn choose_port() -> Result<u16, String> {
