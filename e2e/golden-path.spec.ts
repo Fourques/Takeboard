@@ -1,3 +1,4 @@
+import { captureEvidence } from "./capture-evidence";
 import { expect, test } from "./fixtures";
 
 test("project hub presents a complete project overview", async ({ page, request }) => {
@@ -35,7 +36,7 @@ test("project hub presents a complete project overview", async ({ page, request 
   );
   expect(projectBackdropTop).toBe(0);
   await expect(projectShelf).not.toHaveClass(/is-visible/);
-  await page.screenshot({
+  await captureEvidence(page, {
     path: "test-results/takeboard-home.png",
     animations: "disabled",
   });
