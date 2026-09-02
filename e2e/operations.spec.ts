@@ -53,11 +53,16 @@ test("homepage chrome and operations center adapt to a short viewport", async ({
   const buttonCenter = accountButton.y + accountButton.height / 2;
   const avatarCenter = accountAvatar.y + accountAvatar.height / 2;
   expect(Math.abs(buttonCenter - avatarCenter)).toBeLessThanOrEqual(0.5);
-  const canvasDensity = await page.locator(".universe-webgl canvas").evaluate((canvas) => {
-    const element = canvas as HTMLCanvasElement;
-    return element.width / Math.max(1, element.clientWidth);
-  });
-  expect(canvasDensity).toBeGreaterThanOrEqual(1.2);
+  await expect
+    .poll(
+      () =>
+        page.locator(".universe-webgl canvas").evaluate((canvas) => {
+          const element = canvas as HTMLCanvasElement;
+          return element.width / Math.max(1, element.clientWidth);
+        }),
+      { message: "三维导演板应在布局稳定后以高于 CSS 像素的密度渲染" },
+    )
+    .toBeGreaterThanOrEqual(1.2);
   await page.screenshot({
     path: "test-results/takeboard-home-short.png",
     animations: "disabled",

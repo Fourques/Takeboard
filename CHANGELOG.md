@@ -17,6 +17,8 @@ before moving production work to a newer minor version.
   including installer checksums and GitHub build attestations.
 - A path-aware desktop pull-request gate that builds and verifies the embedded production runtime,
   then performs a locked Rust compile before changes can reach the release matrix.
+- An isolated 500-node canvas performance gate, separated from the stateful functional browser
+  journey so cold shared-runner variance cannot be mistaken for canvas rendering time.
 - Honest Run and project cost records with exact, estimated and unknown accuracy, currency-safe
   aggregation, per-shot summaries and finished-minute visibility.
 - Revision-bound approval previews and atomic approval batches spanning multiple shots, including

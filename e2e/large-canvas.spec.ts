@@ -5,7 +5,9 @@ import { ProjectStore } from "../apps/server/dist/storage/project-store.js";
 import { createTakeBoardId, toIsoTimestamp } from "../packages/domain/dist/index.js";
 import { expect, test } from "./fixtures";
 
-test("a 500-node production board remains loadable and interactive", async ({ page }) => {
+test("@performance a 500-node production board remains loadable and interactive", async ({
+  page,
+}) => {
   const dataRoot = process.env.TAKEBOARD_E2E_DATA_ROOT ?? resolve("test-results/e2e-data");
   const key = `large-canvas-${Date.now().toString(36)}.takeboard`;
   const directory = resolve(dataRoot, key);

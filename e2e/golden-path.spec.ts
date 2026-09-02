@@ -37,7 +37,6 @@ test("project hub presents a complete project overview", async ({ page, request 
   await expect(projectShelf).not.toHaveClass(/is-visible/);
   await page.screenshot({
     path: "test-results/takeboard-home.png",
-    fullPage: true,
     animations: "disabled",
   });
 
