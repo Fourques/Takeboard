@@ -4,6 +4,7 @@ import {
   type ErrorInfo,
   type ReactNode,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -624,6 +625,27 @@ function ArtifactScene({
   );
 }
 
+function PixelDensityController({ density }: { density: number }) {
+  const gl = useThree((state) => state.gl);
+  const height = useThree((state) => state.size.height);
+  const invalidate = useThree((state) => state.invalidate);
+  const setDpr = useThree((state) => state.setDpr);
+  const width = useThree((state) => state.size.width);
+
+  useLayoutEffect(() => {
+    if (width <= 0 || height <= 0) return;
+    // Some software-WebGL hosts initialize Three with a 1x backing buffer even when the browser
+    // advertises a high DPR. Synchronize both R3F state and the renderer after layout so the
+    // director board does not become blurry on high-density or browser-zoomed displays.
+    setDpr(density);
+    gl.setPixelRatio(density);
+    gl.setSize(width, height, false);
+    invalidate();
+  }, [density, gl, height, invalidate, setDpr, width]);
+
+  return null;
+}
+
 class SceneBoundary extends Component<
   { children: ReactNode; fallback: ReactNode },
   { failed: boolean }
@@ -663,6 +685,9 @@ export function StudioUniverse({
   recentProjectTitle: string | null;
 }) {
   const theme = usePageTheme();
+  const densityBounds = quality === "full" ? ([1.5, 2] as const) : ([1.25, 1.75] as const);
+  const deviceDensity = typeof window === "undefined" ? 1 : (window.devicePixelRatio ?? 1);
+  const renderDensity = Math.min(densityBounds[1], Math.max(densityBounds[0], deviceDensity));
   return (
     <div
       className="studio-universe artifact-universe"
@@ -672,7 +697,7 @@ export function StudioUniverse({
       <SceneBoundary fallback={<SceneFallback />}>
         <Canvas
           className="universe-webgl"
-          dpr={quality === "full" ? [1.5, 2] : [1.25, 1.75]}
+          dpr={renderDensity}
           frameloop="demand"
           camera={{ position: [0, 0.08, 6.5], fov: 32, near: 0.1, far: 40 }}
           gl={{
@@ -688,6 +713,7 @@ export function StudioUniverse({
             scene.background = null;
           }}
         >
+          <PixelDensityController density={renderDensity} />
           <ArtifactScene
             theme={theme}
             workerReady={workerReady}
