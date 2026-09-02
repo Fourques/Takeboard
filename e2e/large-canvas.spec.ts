@@ -60,7 +60,13 @@ test("@performance a 500-node production board remains loadable and interactive"
     const card = page.locator(".project-card").filter({ hasText: "500 节点性能验收" });
     await card.getByRole("button", { name: /打开画板/ }).click();
     await expect(page.locator(".canvas-status")).toContainText("500 节点", { timeout: 8_000 });
-    await expect(page.locator(".react-flow__node")).toHaveCount(500, { timeout: 8_000 });
+    const renderedNodes = page.locator(".react-flow__node");
+    await expect.poll(() => renderedNodes.count(), { timeout: 8_000 }).toBeGreaterThan(0);
+    const renderedNodeCount = await renderedNodes.count();
+    // React Flow still owns all 500 nodes (the status above is sourced from the complete model),
+    // while the DOM only carries the current viewport. This is the production behaviour we want:
+    // large boards remain complete without paying layout/paint cost for off-screen cards.
+    expect(renderedNodeCount).toBeLessThan(500);
     const loadMilliseconds = (await page.evaluate(() => performance.now())) - startedAt;
     expect(loadMilliseconds).toBeLessThan(8_000);
 
@@ -77,7 +83,7 @@ test("@performance a 500-node production board remains loadable and interactive"
     });
     expect(frameP95).toBeLessThan(100);
     console.log(
-      `500-node gate: load=${Math.round(loadMilliseconds)}ms, animation-frame-p95=${frameP95.toFixed(1)}ms`,
+      `500-node gate: load=${Math.round(loadMilliseconds)}ms, rendered=${renderedNodeCount}/500, animation-frame-p95=${frameP95.toFixed(1)}ms`,
     );
     await page.locator(".react-flow__pane").click({ position: { x: 400, y: 260 } });
     await expect(page.locator(".canvas-status")).toContainText("500 节点");

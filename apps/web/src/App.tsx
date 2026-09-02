@@ -5270,6 +5270,7 @@ export function App() {
           }}
           minZoom={0.35}
           maxZoom={1.5}
+          onlyRenderVisibleElements
           snapToGrid
           snapGrid={canvasSnapGrid}
           defaultViewport={{ x: 60, y: 30, zoom: 0.78 }}
