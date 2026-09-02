@@ -59,9 +59,13 @@ test("project hub presents a complete project overview", async ({ page, request 
       expect(
         await mobileHeader.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
       ).toBe(true);
-      await expect(mobileHeader.getByRole("button", { name: "导入项目包" })).toBeInViewport();
       await expect(mobileHeader.getByRole("button", { name: "新建项目" })).toBeInViewport();
-      await expect(page.getByRole("button", { name: "启用可旋转的三维导演板" })).toBeVisible();
+      const optionsButton = mobileHeader.getByRole("button", { name: "打开工作区选项" });
+      await expect(optionsButton).toBeInViewport();
+      await optionsButton.click();
+      await expect(page.getByRole("button", { name: "导入项目" })).toBeVisible();
+      await page.getByRole("button", { name: "关闭工作区选项" }).click();
+      await expect(page.locator(".hub-artifact-background .studio-universe")).toBeVisible();
       await page.waitForTimeout(400);
       await page.screenshot({
         path: "test-results/takeboard-home-mobile.png",
@@ -81,7 +85,7 @@ test("project hub presents a complete project overview", async ({ page, request 
     (await page.locator(".hub-header").boundingBox())?.height ?? 0,
   );
   expect(measuredTerminalTop).toBeGreaterThan(900);
-  const crewCompanion = page.getByRole("button", { name: "触发场记 · 这一条保留" });
+  const crewCompanion = page.getByRole("button", { name: "已打板互动" });
   await crewCompanion.click();
   await expect(crewCompanion).toHaveClass(/is-active/);
   await page.locator(".hub-artifact-background").hover({ position: { x: 800, y: 470 } });
@@ -96,7 +100,6 @@ test("project hub presents a complete project overview", async ({ page, request 
   expect(firstWheelShelfY).toBeLessThan(1100);
   await page.mouse.wheel(0, measuredTerminalTop - firstWheelTop);
   await expect(projectShelf).toHaveClass(/is-visible/);
-  await expect(page.locator(".hub-shell")).toHaveClass(/project-stage-active/);
   await expect
     .poll(async () => Math.round((await projectShelf.boundingBox())?.y ?? -1))
     .toBe(stageHeaderBottom);
@@ -114,21 +117,6 @@ test("project hub presents a complete project overview", async ({ page, request 
     stageHeaderBottom,
   );
   await expect(page.getByRole("searchbox", { name: "搜索项目" })).toBeVisible();
-  await expect(page.locator(".project-curiosities")).toBeVisible();
-  const curiositiesBox = await page.locator(".project-curiosities").boundingBox();
-  expect((curiositiesBox?.y ?? 0) + (curiositiesBox?.height ?? 0)).toBeLessThanOrEqual(1100);
-  const rhythmTool = page.getByRole("button", { name: /剪辑节拍预演/ });
-  await expect(rhythmTool).toHaveAccessibleName(/96 BPM/);
-  await rhythmTool.click();
-  await expect(rhythmTool).toHaveAccessibleName(/120 BPM/);
-  const framingTool = page.getByRole("button", { name: /画幅试镜/ });
-  await expect(framingTool).toHaveAccessibleName(/16:9/);
-  await framingTool.click();
-  await expect(framingTool).toHaveAccessibleName(/9:16/);
-  const axisTool = page.getByRole("button", { name: /轴线检查/ });
-  await expect(axisTool).toHaveAccessibleName(/当前守轴/);
-  await axisTool.click();
-  await expect(axisTool).toHaveAccessibleName(/当前越轴/);
   const projectBackdropWidth = await projectShelf.evaluate((element) =>
     Number.parseFloat(window.getComputedStyle(element, "::before").width),
   );
@@ -137,15 +125,16 @@ test("project hub presents a complete project overview", async ({ page, request 
     path: "test-results/takeboard-project-shelf.png",
     animations: "disabled",
   });
+  await page.getByRole("button", { name: "打开工作区选项" }).click();
   await page.getByRole("button", { name: "柔彩主题" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "chroma");
+  await page.getByRole("button", { name: "关闭工作区选项" }).click();
   await page.screenshot({
     path: "test-results/takeboard-project-shelf-chroma.png",
     animations: "disabled",
   });
   await page.locator(".project-card-managed").first().hover();
   await page.mouse.wheel(0, -1600);
-  await expect(page.locator(".hub-shell")).not.toHaveClass(/project-stage-active/);
   await expect
     .poll(async () => page.locator(".hub-shell").evaluate((element) => element.scrollTop))
     .toBe(0);
@@ -158,7 +147,7 @@ test("project hub presents a complete project overview", async ({ page, request 
   await expect(workerPanel).toBeVisible();
   const safeStart = workerPanel.getByRole("button", { name: "安全启动", exact: true });
   if (await safeStart.count()) await expect(safeStart).toBeDisabled();
-  else await expect(workerPanel.getByText("执行端已连接")).toBeVisible();
+  else await expect(workerPanel.locator(".worker-ready-detail")).toBeVisible();
   await page.screenshot({
     path: "test-results/takeboard-worker-panel.png",
     animations: "disabled",

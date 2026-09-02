@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <title>TakeBoard Portal</title>
+    <link rel="stylesheet" href="/__portal/assets/portal.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="TakeBoard Portal 首页">
+        <span class="mark">TB</span>
+        <span>TakeBoard</span>
+        <small>PORTAL</small>
+      </a>
+      <div id="account" class="account" hidden>
+        <span id="account-name"></span>
+        <button id="logout" class="quiet" type="button">退出</button>
+      </div>
+    </header>
+
+    <main>
+      <section id="auth-view" class="auth-shell" hidden>
+        <div class="auth-copy">
+          <p class="eyebrow">YOUR WORKSTATION, WHEREVER YOU ARE</p>
+          <h1>找到自己的工作站，<br />再继续创作。</h1>
+          <p>门户只保存账号、设备和安全活动，不索引项目、提示词或媒体。生成仍发生在自己的 TakeBoard 主机。</p>
+        </div>
+        <form id="auth-form" class="panel">
+          <p id="auth-kicker" class="eyebrow">安全登录</p>
+          <h2 id="auth-title">进入门户</h2>
+          <label id="name-field" hidden>
+            <span>称呼</span>
+            <input name="name" autocomplete="name" maxlength="120" />
+          </label>
+          <label id="setup-token-field" hidden>
+            <span>首次设置密钥</span>
+            <input name="setupToken" type="password" autocomplete="off" minlength="24" />
+          </label>
+          <label>
+            <span>邮箱</span>
+            <input name="email" type="email" autocomplete="email" required maxlength="254" />
+          </label>
+          <label>
+            <span>密码</span>
+            <input name="password" type="password" autocomplete="current-password" required minlength="12" />
+          </label>
+          <p id="auth-error" class="error" role="alert"></p>
+          <button id="auth-submit" class="primary" type="submit">登录</button>
+          <button id="auth-switch" class="text-action" type="button" hidden></button>
+        </form>
+      </section>
+
+      <section id="workspace-view" hidden>
+        <div class="hero">
+          <div>
+            <p class="eyebrow">REMOTE WORKSTATIONS</p>
+            <h1>你的工作站</h1>
+            <p>主机保持在线时，从这里安全回到同一套项目、权限和生成任务。</p>
+          </div>
+          <button id="show-pairing" class="primary" type="button">连接工作站</button>
+        </div>
+
+        <form id="pairing-form" class="pairing panel" hidden>
+          <div>
+            <p class="eyebrow">一次性配对</p>
+            <h2>输入主机上显示的代码</h2>
+            <p>代码十分钟后失效。认领后，这个门户账号只映射到发起配对的本地账号。</p>
+          </div>
+          <label>
+            <span>配对码</span>
+            <input name="code" class="code" autocomplete="one-time-code" placeholder="ABCD-EFGH" maxlength="12" required />
+          </label>
+          <p id="pairing-error" class="error" role="alert"></p>
+          <div class="actions">
+            <button class="primary" type="submit">确认连接</button>
+            <button id="cancel-pairing" class="quiet" type="button">取消</button>
+          </div>
+        </form>
+
+        <div id="devices" class="device-grid" aria-live="polite"></div>
+
+        <details class="activity panel">
+          <summary>安全活动</summary>
+          <div id="activity-list" class="activity-list"></div>
+        </details>
+      </section>
+    </main>
+
+    <template id="device-template">
+      <article class="device panel">
+        <div class="device-head">
+          <span class="device-light"></span>
+          <span class="device-state"></span>
+        </div>
+        <h2 class="device-name">工作站</h2>
+        <p class="device-meta"></p>
+        <p class="device-seen"></p>
+        <div class="actions">
+          <a class="primary device-open" href="/">打开工作站</a>
+          <button class="quiet device-revoke" type="button">撤销</button>
+        </div>
+      </article>
+    </template>
+    <script type="module" src="/__portal/assets/portal.js"></script>
+  </body>
+</html>

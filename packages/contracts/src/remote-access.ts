@@ -30,7 +30,7 @@ export const remoteAccessStatusSchema = z.object({
     detail: z.string(),
   }),
   managedPortal: z.object({
-    state: z.literal("not_available"),
+    state: z.enum(["available", "not_available"]),
     detail: z.string(),
   }),
   checks: z.array(remoteAccessCheckSchema),

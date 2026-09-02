@@ -8,6 +8,13 @@ before moving production work to a newer minor version.
 
 ### Added
 
+- A self-hosted TakeBoard Portal with real accounts, one-time workstation pairing, outbound-only
+  connectors, device presence, remote HTTP/Range relay, explicit portal-to-local identity mapping,
+  immediate revocation and security activity.
+- A Tauri 2 desktop preview that embeds the production server, Web UI and matching Node.js sidecar,
+  uses an isolated loopback port, enforces one application instance and cleans up owned processes.
+- Six native desktop build jobs for macOS Intel/Apple Silicon, Windows x64/arm64 and Linux x64/arm64,
+  including installer checksums and GitHub build attestations.
 - Honest Run and project cost records with exact, estimated and unknown accuracy, currency-safe
   aggregation, per-shot summaries and finished-minute visibility.
 - Revision-bound approval previews and atomic approval batches spanning multiple shots, including
@@ -22,6 +29,12 @@ before moving production work to a newer minor version.
 
 ### Security
 
+- Public Portal bootstrap now requires a deployment-held high-entropy setup token; device secrets
+  are stored as digests in the Portal and in a mode-0600 local connector file, while relayed browser
+  cookies and authorization headers are replaced by a separately scoped local session.
+- The relay rejects cross-origin path confusion, invalid or oversized protocol chunks, unknown
+  hosts, insecure public origins and unsafe response cookies; project/media payloads are never
+  persisted by the Portal.
 - Remote worker URLs reject embedded credentials, query strings and fragments; unencrypted remote
   HTTP is rejected unless an explicit legacy override is set.
 - TakeBoard extension manifests cannot execute JavaScript, Python, shell commands or ComfyUI Custom

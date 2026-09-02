@@ -22,14 +22,16 @@ TakeBoard 应同时保留三种入口，但三者解决的问题不同：
 - 复用同一业务实现的 Tauri 2 桌面壳、内置 Node sidecar、启动状态机与单实例保护；
 - DMG、MSI/NSIS、AppImage/Deb 的六平台原生 CI 构建、运行时自检和 SHA-256；
 - 构建校验、原生依赖启动冒烟、SHA-256 与 GitHub Artifact Attestation；
-- Web App Manifest，可从支持的浏览器添加为独立应用窗口。
+- Web App Manifest，可从支持的浏览器添加为独立应用窗口；
+- 独立 Portal 服务、一次性设备配对、出站 Connector、设备目录与撤销审计；
+- 门户账号到本地账号的显式绑定，以及由本地权限再次裁决的远程 HTTP 中继。
 
 本次新增的“账号 → 访问与安装”会读取真实服务端状态，明确区分：
 
 - 本机或 SSH 是否可安全使用；
 - 团队 HTTPS 入口是否完整配置；
 - 哪一项安全条件缺失；
-- 账号门户尚未上线，不用假状态误导用户。
+- 自托管账号门户是否已配对、在线、离线或被撤销。
 
 ## 账号门户的推荐架构
 
@@ -60,7 +62,7 @@ TakeBoard Server ── ComfyUI
 
 1. 用户已登录门户；
 2. 用户在本地实例重新验证管理员身份；
-3. 实例生成设备密钥，门户只保存公钥和设备元数据；
+3. 实例取得高熵设备令牌；门户长期只保存令牌摘要和设备元数据；
 4. 本地保存 `portal subject → local user id` 的显式映射；
 5. 每次远程请求同时验证门户短期授权与本地项目角色。
 
@@ -70,7 +72,7 @@ TakeBoard Server ── ComfyUI
 
 - Connector 仅发起出站连接，不要求家庭路由器端口转发；
 - 每个实例使用独立设备密钥，支持撤销、轮换和最后在线时间；
-- Relay 必须支持 HTTP 流式上传、Range 视频播放和 WebSocket，不缓存媒体响应；
+- Relay 支持有界 HTTP 上传、流式响应和 Range 视频播放，不缓存媒体响应；浏览器 WebSocket 在有真实产品依赖前不放开；
 - ComfyUI 永远不直接接入门户，只能由 TakeBoard 服务端代为调用；
 - 浏览器断线不能取消服务器 Run；用户重新登录后从持久化状态恢复；
 - 删除项目、停用账号和撤销设备应立即阻止新请求，并明确处理已有生成任务；
@@ -102,7 +104,7 @@ TakeBoard Server ── ComfyUI
 | Tailscale Serve | 已有 tailnet 的个人或团队 | 文档化为可选高级入口，不绑定为产品依赖 |
 | Cloudflare Tunnel + Access | 已有域名和 Cloudflare 的团队 | 支持自托管配置，明确代理与 Cookie 检查 |
 | Pangolin | 希望自托管身份代理与站点连接器的团队 | 作为可选部署参考，不内嵌第三方控制面 |
-| TakeBoard Portal | 不懂网络、希望登录后看到自己的工作站 | 待单独建设控制面和 Connector |
+| TakeBoard Portal | 不懂网络、希望登录后看到自己的工作站 | 已提供自托管预览；公共托管服务仍需安全运营能力 |
 
 Tailscale Serve 提供身份化的私网服务入口，Funnel 则面向更广互联网；Cloudflare Tunnel 与 Pangolin 都采用主机主动出站的连接器思路。这些方案证明了连接模型，但它们的账号不能直接替代 TakeBoard 项目权限。
 
@@ -178,13 +180,16 @@ Electron 与现有 TypeScript 团队技能匹配，也有成熟更新机制，�
 
 ### Gate C：账号门户
 
-- [ ] 独立威胁模型与隐私说明；
-- [ ] Portal OIDC + PKCE；
-- [ ] 一次性设备配对和密钥轮换；
-- [ ] 出站 Connector 与 Relay；
-- [ ] HTTP / WebSocket / Range / 大文件背压测试；
-- [ ] 本地项目权限二次裁决；
-- [ ] 设备撤销、会话撤销与审计；
-- [ ] Relay 数据保留和故障边界验证。
+- [x] 独立威胁模型、数据边界与自托管说明；
+- [x] 真实门户密码账号、会话摘要、CSRF、限速和安全 Cookie；
+- [x] 一次性设备配对、高熵令牌摘要、本地加密保存与立即撤销；
+- [x] 仅出站 Connector 与多路复用 Relay；
+- [x] HTTP、Range、响应分片背压与 110 MB 请求硬上限；
+- [x] 门户身份到本地账号显式映射、本地项目权限二次裁决；
+- [x] 设备撤销、会话撤销与门户/本地审计；
+- [x] 真实 Portal + Connector + Local Server 端到端自动验证；
+- [ ] OIDC + PKCE、Passkey / MFA、邮件恢复与恢复码；
+- [ ] 浏览器 WebSocket 代理、请求体流式背压与大规模并发压测；
+- [ ] 多租户组织、配额、滥用治理和托管服务安全运营。
 
-在 Gate C 完成前，界面必须始终把“账号门户”标记为未提供，不能出现无法兑现的“已连接云端”状态。
+当前界面只展示真实的自托管门户状态，不把它称为云同步或官方托管服务。完整部署、隐私与恢复边界见[账号门户自托管](portal-self-hosting.md)。

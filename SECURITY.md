@@ -1,6 +1,6 @@
 # Security policy
 
-TakeBoard 0.1.x is a self-hosted Public Preview and listens on `127.0.0.1` by default. Authentication
+TakeBoard 0.x is a self-hosted Public Preview and listens on `127.0.0.1` by default. Authentication
 is required by default. The server refuses a non-loopback bind unless authentication is required and
 the operator explicitly sets `TAKEBOARD_ALLOW_NON_LOOPBACK=1`; it also rejects unapproved `Host` and
 browser `Origin` values to reduce DNS-rebinding and cross-site request risks.
@@ -19,10 +19,19 @@ For an HTTPS reverse proxy, configure its exact public hostname and origin with
 `TAKEBOARD_ALLOWED_HOSTS` and `TAKEBOARD_ALLOWED_ORIGINS`, set `TAKEBOARD_SECURE_COOKIES=1`, and keep
 ComfyUI private. TakeBoard stores high-cost scrypt password hashes and opaque server-side sessions;
 cookies are HttpOnly and SameSite, unsafe requests require a per-session CSRF token, and project
-authorization is enforced on the server. SSH forwarding remains the recommended personal path.
+authorization is enforced on the server. SSH forwarding remains the simplest personal path.
+
+The optional TakeBoard Portal is a separate self-hosted service. Public first-run setup requires a
+deployment-held high-entropy bootstrap token; each workstation then uses a one-time pairing code and
+an independent device credential over an outbound-only connection. Portal cookies and authorization
+headers are never forwarded to the workstation, and the local TakeBoard account remains the final
+authorization boundary. The Portal does not persist project or media payloads, but it terminates TLS
+and can technically observe relayed content in memory. It must not be described as end-to-end
+encrypted. Protect the Portal database and master key as one secret-bearing backup set, use wildcard
+HTTPS for its device subdomains, and review [the self-hosting guide](docs/portal-self-hosting.md).
 
 The built-in account system is intended for a self-hosted creator or trusted production team. It is
-not yet an enterprise identity platform: 0.1.x does not include MFA, email-based recovery, SSO/SCIM,
+not yet an enterprise identity platform: 0.x does not include MFA, email-based recovery, SSO/SCIM,
 tenant billing/quotas, or a managed security operations service. Public Preview operators remain
 responsible for TLS, backups, host patching, log review, and account recovery.
 

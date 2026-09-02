@@ -21,7 +21,7 @@ TakeBoard 不重做 ComfyUI 的节点系统。它在现有 Workflow 和算力之
 模型、工作流、素材和项目文件始终保存在自己的设备上。没有 ComfyUI 时，也可以完整使用项目管理和画布界面。
 
 > [!IMPORTANT]
-> TakeBoard 现在提供服务端账号、设备会话、实例管理员和项目 Owner / Editor / Viewer 权限。服务仍默认只监听 `127.0.0.1`；个人远程使用推荐 SSH 隧道，团队公网入口必须使用 HTTPS 反向代理并限定 Host / Origin。ComfyUI 端口不要直接开放到公网。
+> TakeBoard 现在提供服务端账号、设备会话、实例管理员和项目 Owner / Editor / Viewer 权限。服务仍默认只监听 `127.0.0.1`；个人远程可使用 SSH 隧道，也可连接独立自托管的 TakeBoard Portal。团队公网入口必须使用 HTTPS，ComfyUI 端口不要直接开放到公网。
 
 ## 能力概览
 
@@ -42,6 +42,7 @@ TakeBoard 不重做 ComfyUI 的节点系统。它在现有 Workflow 和算力之
 - 以独立 `.takeboard` 目录保存项目，方便备份、迁移和版本归档。
 - 一次性团队邀请、离线恢复码、可验证实例备份与保留旧数据的离线恢复。
 - 在账号中心检查本机、SSH 与团队 HTTPS 的真实可用状态，并复制与当前端口一致的安全连接命令；
+- 通过一次性代码连接自托管账号门户，由工作站主动建立出站连接；门户撤销与本地项目权限持续生效；
 - 支持从浏览器安装为独立 Web App 窗口，便携包继续覆盖六种系统/CPU 组合；
 - 可选的跨存储定时实例备份、日/周/月保留策略、损坏检测与隔离恢复演练。
 - 分镜墙始终提供真实镜头顺序与覆盖率；按需启用粗剪扩展后，可播放只读节奏预览，未采用镜头仍只显示计划空镜。
@@ -163,6 +164,21 @@ npm run easy:remote -- your-server
 完整场景、故障诊断与安全边界见[远程访问指南](docs/remote-access.md)。
 账号门户与原生安装器的产品边界、威胁模型和分阶段 Gate 见[账号门户与大众化分发策略](docs/access-and-distribution-strategy.md)。
 
+### 账号门户（可选，自托管预览）
+
+需要从任意电脑登录后找到自己的工作站时，可以单独部署 Portal：
+
+```bash
+pnpm portal:build
+TAKEBOARD_PORTAL_HOSTNAME=portal.example.com \
+TAKEBOARD_PORTAL_ORIGIN=https://portal.example.com \
+TAKEBOARD_PORTAL_DATABASE=/var/lib/takeboard-portal/portal.db \
+TAKEBOARD_PORTAL_SECURE_COOKIES=1 \
+pnpm portal:start
+```
+
+Portal 需要主域名、通配符子域名和 HTTPS 反向代理。工作站只建立出站连接，不要求路由器端口转发；项目、素材和 ComfyUI 仍留在工作站，本地账号和项目角色仍是最终权限边界。当前是自托管预览，不是官方运营的多租户云。部署、证书、备份、隐私和已知限制见[账号门户自托管指南](docs/portal-self-hosting.md)。
+
 ## 连接 ComfyUI
 
 开发模式可以直接设置环境变量：
@@ -245,9 +261,11 @@ React 19 · Vite · React Flow · Three.js
 | --- | --- |
 | `apps/web` | 项目主页、内容画布、资产库与运行交互 |
 | `apps/server` | 本地 API、项目持久化、媒体管理与任务编排 |
+| `apps/portal` | 可选的账号入口、设备目录和无持久媒体的出站连接中继 |
 | `packages/contracts` | 前后端共享契约 |
 | `packages/domain` | Project、Shot、Run、Take 等领域模型 |
 | `packages/executor-comfy` | Workflow 检测、参数注入与 ComfyUI 适配 |
+| `packages/identity` / `portal-protocol` | 本地与门户共享的身份原语、受限中继协议 |
 
 更多设计边界见[技术架构](docs/architecture.md)。
 

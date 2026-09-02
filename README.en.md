@@ -39,16 +39,19 @@ workflows, media and project files stay on infrastructure you control.
 - Recoverable project deletion, integrity-checked project import/export and pre-migration backups.
 - Accounts, device sessions, instance admins and project Owner/Editor/Viewer roles.
 - An account-side Access & Install center that reports real local, SSH and team-HTTPS readiness.
-- An installable standalone Web App entry point alongside six native OS/CPU portable bundles.
+- An optional self-hosted account portal with one-time pairing, outbound workstation connections,
+  revocation and local authorization enforcement.
+- A Tauri 2 native desktop preview and an installable Web App alongside six OS/CPU portable bundles.
 - Cross-project task/storage center and a redacted downloadable support report.
 - Optional scheduled off-volume instance backups with retention and isolated restore drills.
 - User-selectable type scaling without changing canvas coordinates or generation resolution.
 
 ## Quick start
 
-For the lowest-friction preview, download the `takeboard-*.tar.gz` matching your OS and CPU from
-[Releases](https://github.com/Fourques/Takeboard/releases). Portable bundles include a matching
-Node.js runtime: extract, then open `START-TAKEBOARD.command` on macOS,
+For the lowest-friction preview, download a native DMG, MSI/NSIS, AppImage/Deb installer from
+[Releases](https://github.com/Fourques/Takeboard/releases) when available. Otherwise download the
+`takeboard-*.tar.gz` matching your OS and CPU. Both forms include a matching Node.js runtime; for a
+portable archive, extract it and open `START-TAKEBOARD.command` on macOS,
 `START-TAKEBOARD.cmd` on Windows, or `./start-takeboard.sh` on Linux. They include SHA-256 checksums
 and GitHub build-provenance attestations, but are not yet Apple-notarized or Windows code-signed.
 
@@ -99,9 +102,13 @@ releases the tunnel when it exits. A Tailscale hostname works because the transp
 SSH; Tailscale is not required. See [remote access](docs/remote-access.md).
 
 The account center's **Access & Install** view shows the current server port and verifies account
-mode, loopback binding, HTTPS, secure cookies and Host/Origin allowlists. The design boundary for a
-future outbound-connector account portal and signed desktop installers is documented in
-[account portal and distribution strategy](docs/access-and-distribution-strategy.md).
+mode, loopback binding, HTTPS, secure cookies and Host/Origin allowlists. It can also pair a
+workstation with the optional self-hosted Portal. The workstation opens the outbound connection, so
+home-router port forwarding is not required; the Portal account is explicitly mapped to a local
+account and local project roles remain authoritative. See the Chinese
+[Portal self-hosting guide](docs/portal-self-hosting.md) and
+[account portal and distribution strategy](docs/access-and-distribution-strategy.md). This is a
+self-hosted preview, not an OpenAI- or TakeBoard-operated public cloud.
 
 ## Custom workflows: an explicit trust boundary
 

@@ -187,8 +187,8 @@ export function buildRemoteAccessStatus(
       detail: httpsDetail,
     },
     managedPortal: {
-      state: "not_available",
-      detail: "账号设备门户仍在设计中；当前版本不会把本机账号伪装成云账号",
+      state: "available",
+      detail: "出站连接器已内置；连接自托管门户后，仍由本机账号和项目角色做最终授权",
     },
     checks,
   };

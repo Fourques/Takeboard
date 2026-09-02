@@ -1,8 +1,17 @@
-import type { RemoteAccessStatus } from "@takeboard/contracts";
+import type { PortalConnectorStatus, RemoteAccessStatus } from "@takeboard/contracts";
 import { useCallback, useEffect, useState } from "react";
 import { authApi } from "./api";
 
-const remoteAccessCss = `.auth-loading.compact{min-height:180px;background:transparent}.remote-access-panel{display:grid;gap:14px}.remote-current-card,.remote-checks,.remote-method-card{border:1px solid var(--line);background:color-mix(in srgb,var(--surface-2) 74%,transparent)}.remote-current-card{display:flex;min-height:82px;align-items:center;justify-content:space-between;padding:16px 18px;border-radius:16px;gap:16px}.remote-current-card>div{display:grid;min-width:0;gap:4px}.remote-current-card strong{font-size:16px}.remote-current-card small{overflow:hidden;color:var(--text-2);text-overflow:ellipsis;white-space:nowrap}.remote-access-kicker,.remote-method-card header>span{color:var(--text-3);font-size:9px;font-weight:800;letter-spacing:.12em}.remote-current-card>i,.remote-method-card header>i{flex:none;padding:5px 8px;border:1px solid var(--line);border-radius:999px;color:var(--text-2);font-size:9px;font-style:normal;font-weight:750}.remote-current-card>i.ready,.remote-method-card header>i.ready{border-color:color-mix(in srgb,var(--success) 42%,var(--line));color:var(--success)}.remote-current-card>i.attention,.remote-method-card header>i.blocked,.remote-method-card header>i.attention{border-color:color-mix(in srgb,var(--warning) 42%,var(--line));color:var(--warning)}.remote-method-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.remote-method-card{display:flex;min-width:0;min-height:196px;flex-direction:column;padding:16px;border-radius:16px;gap:9px}.remote-method-card.recommended{border-color:color-mix(in srgb,var(--accent) 38%,var(--line));background:radial-gradient(circle at 100% 0,color-mix(in srgb,var(--accent) 11%,transparent),transparent 50%),color-mix(in srgb,var(--surface-2) 78%,transparent)}.remote-method-card.future{border-style:dashed}.remote-method-card header{display:flex;align-items:center;justify-content:space-between;gap:8px}.remote-method-card h4,.remote-method-card p{margin:0}.remote-method-card h4{font-size:15px}.remote-method-card p,.remote-method-card small{color:var(--text-2);font-size:10px;line-height:1.55}.remote-method-card code{overflow:auto;padding:9px;border-radius:9px;color:var(--text-2);background:var(--surface-root);font-size:9px;line-height:1.45;white-space:nowrap}.remote-method-card button,.remote-checks header button{min-height:34px;padding:0 11px;border:1px solid var(--line);border-radius:9px;cursor:pointer;color:var(--text-1);background:var(--surface-1);font-size:10px;font-weight:750}.remote-method-card button{align-self:flex-start;margin-top:auto}.remote-checks{overflow:hidden;border-radius:16px}.remote-checks>header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--line);gap:12px}.remote-checks>header>div{display:grid;gap:3px}.remote-checks>header small{color:var(--text-2);font-size:9px}.remote-check{display:flex;align-items:start;padding:11px 16px;border-bottom:1px solid color-mix(in srgb,var(--line) 72%,transparent);gap:10px}.remote-check:last-child{border-bottom:0}.remote-check>i{width:7px;height:7px;margin-top:4px;border-radius:50%;background:var(--text-3)}.remote-check>i.pass{background:var(--success)}.remote-check>i.warning{background:var(--warning)}.remote-check>i.blocked{background:var(--red)}.remote-check>div{display:grid;min-width:0;gap:2px}.remote-check strong{font-size:11px}.remote-check span{color:var(--text-2);font-size:10px;line-height:1.45}@media(max-width:720px){.remote-method-grid{grid-template-columns:1fr}.remote-current-card{align-items:flex-start;flex-direction:column}}`;
+const remoteAccessCss = `.auth-loading.compact{min-height:180px;background:transparent}.remote-access-panel{display:grid;gap:14px}.remote-current-card,.remote-checks,.remote-method-card{border:1px solid var(--line);background:color-mix(in srgb,var(--surface-2) 74%,transparent)}.remote-current-card{display:flex;min-height:82px;align-items:center;justify-content:space-between;padding:16px 18px;border-radius:16px;gap:16px}.remote-current-card>div{display:grid;min-width:0;gap:4px}.remote-current-card strong{font-size:16px}.remote-current-card small{overflow:hidden;color:var(--text-2);text-overflow:ellipsis;white-space:nowrap}.remote-access-kicker,.remote-method-card header>span{color:var(--text-3);font-size:9px;font-weight:800;letter-spacing:.12em}.remote-current-card>i,.remote-method-card header>i{flex:none;padding:5px 8px;border:1px solid var(--line);border-radius:999px;color:var(--text-2);font-size:9px;font-style:normal;font-weight:750}.remote-current-card>i.ready,.remote-method-card header>i.ready{border-color:color-mix(in srgb,var(--success) 42%,var(--line));color:var(--success)}.remote-current-card>i.attention,.remote-method-card header>i.blocked,.remote-method-card header>i.attention{border-color:color-mix(in srgb,var(--warning) 42%,var(--line));color:var(--warning)}.remote-method-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.remote-method-card{display:flex;min-width:0;min-height:196px;flex-direction:column;padding:16px;border-radius:16px;gap:9px}.remote-method-card.recommended{border-color:color-mix(in srgb,var(--accent) 38%,var(--line));background:radial-gradient(circle at 100% 0,color-mix(in srgb,var(--accent) 11%,transparent),transparent 50%),color-mix(in srgb,var(--surface-2) 78%,transparent)}.remote-method-card.future{border-style:dashed}.remote-method-card header{display:flex;align-items:center;justify-content:space-between;gap:8px}.remote-method-card h4,.remote-method-card p{margin:0}.remote-method-card h4{font-size:15px}.remote-method-card p,.remote-method-card small{color:var(--text-2);font-size:10px;line-height:1.55}.remote-method-card code{overflow:auto;padding:9px;border-radius:9px;color:var(--text-2);background:var(--surface-root);font-size:9px;line-height:1.45;white-space:nowrap}.remote-method-card button,.remote-checks header button{min-height:34px;padding:0 11px;border:1px solid var(--line);border-radius:9px;cursor:pointer;color:var(--text-1);background:var(--surface-1);font-size:10px;font-weight:750}.remote-method-card button{align-self:flex-start;margin-top:auto}.portal-connect{display:grid;gap:7px;margin-top:auto}.portal-connect input{min-width:0;width:100%;height:34px;padding:0 10px;border:1px solid var(--line);border-radius:9px;color:var(--text-1);background:var(--surface-root);font-size:10px;outline:none}.portal-connect input:focus{border-color:color-mix(in srgb,var(--accent) 60%,var(--line))}.portal-code{font-size:18px!important;font-weight:850;letter-spacing:.13em;text-align:center}.portal-actions{display:flex;align-items:center;gap:7px;margin-top:auto}.portal-actions a{display:inline-flex;min-height:34px;align-items:center;padding:0 11px;border-radius:9px;color:var(--surface-root);background:var(--text-1);font-size:10px;font-weight:750;text-decoration:none}.remote-checks{overflow:hidden;border-radius:16px}.remote-checks>header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--line);gap:12px}.remote-checks>header>div{display:grid;gap:3px}.remote-checks>header small{color:var(--text-2);font-size:9px}.remote-check{display:flex;align-items:start;padding:11px 16px;border-bottom:1px solid color-mix(in srgb,var(--line) 72%,transparent);gap:10px}.remote-check:last-child{border-bottom:0}.remote-check>i{width:7px;height:7px;margin-top:4px;border-radius:50%;background:var(--text-3)}.remote-check>i.pass{background:var(--success)}.remote-check>i.warning{background:var(--warning)}.remote-check>i.blocked{background:var(--red)}.remote-check>div{display:grid;min-width:0;gap:2px}.remote-check strong{font-size:11px}.remote-check span{color:var(--text-2);font-size:10px;line-height:1.45}@media(max-width:720px){.remote-method-grid{grid-template-columns:1fr}.remote-current-card{align-items:flex-start;flex-direction:column}}`;
+
+function portalStateLabel(state: PortalConnectorStatus["state"]) {
+  if (state === "connected") return "已连接";
+  if (state === "pairing") return "等待认领";
+  if (state === "connecting") return "连接中";
+  if (state === "revoked") return "已撤销";
+  if (state === "offline") return "暂时离线";
+  return "未连接";
+}
 
 function accessKindLabel(kind: RemoteAccessStatus["currentAccess"]["kind"]) {
   if (kind === "https_proxy") return "HTTPS 团队入口";
@@ -12,19 +21,57 @@ function accessKindLabel(kind: RemoteAccessStatus["currentAccess"]["kind"]) {
 
 export default function RemoteAccessPanel() {
   const [status, setStatus] = useState<RemoteAccessStatus | null>(null);
+  const [portal, setPortal] = useState<PortalConnectorStatus | null>(null);
+  const [portalUrl, setPortalUrl] = useState("");
+  const [portalBusy, setPortalBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const standalone = window.matchMedia("(display-mode: standalone)").matches;
 
   const load = useCallback(() => {
     setError(null);
-    void authApi
-      .remoteAccess()
-      .then(setStatus)
+    void Promise.all([authApi.remoteAccess(), authApi.portalStatus()])
+      .then(([access, portalStatus]) => {
+        setStatus(access);
+        setPortal(portalStatus);
+        if (portalStatus.portalUrl) setPortalUrl(portalStatus.portalUrl);
+      })
       .catch((cause) => setError(cause instanceof Error ? cause.message : "无法读取远程访问状态"));
   }, []);
 
   useEffect(() => load(), [load]);
+
+  useEffect(() => {
+    if (portal?.state !== "pairing" && portal?.state !== "connecting") return;
+    const timer = window.setInterval(load, 2_000);
+    return () => window.clearInterval(timer);
+  }, [load, portal?.state]);
+
+  async function beginPairing() {
+    if (!portalUrl.trim()) return setError("请输入门户地址");
+    setPortalBusy(true);
+    setError(null);
+    try {
+      setPortal(await authApi.beginPortalPairing(portalUrl.trim()));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "无法连接门户");
+    } finally {
+      setPortalBusy(false);
+    }
+  }
+
+  async function disconnectPortal() {
+    if (!window.confirm("撤销这台工作站的门户连接？本地账号、项目与生成任务不会删除。")) return;
+    setPortalBusy(true);
+    setError(null);
+    try {
+      setPortal(await authApi.disconnectPortal());
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "无法撤销门户连接");
+    } finally {
+      setPortalBusy(false);
+    }
+  }
 
   async function copySshCommand() {
     if (!status) return;
@@ -96,14 +143,93 @@ export default function RemoteAccessPanel() {
               <small>适合可信团队；ComfyUI 端口仍不应公开。</small>
             </article>
 
-            <article className="remote-method-card future">
+            <article
+              className={
+                portal?.state === "connected"
+                  ? "remote-method-card recommended"
+                  : "remote-method-card"
+              }
+            >
               <header>
                 <span>多设备入口</span>
-                <i>规划中</i>
+                <i
+                  className={
+                    portal?.state === "connected"
+                      ? "ready"
+                      : portal?.state === "offline" || portal?.state === "revoked"
+                        ? "attention"
+                        : "not_configured"
+                  }
+                >
+                  {portal ? portalStateLabel(portal.state) : "检查中"}
+                </i>
               </header>
               <h4>TakeBoard 账号门户</h4>
-              <p>{status.managedPortal.detail}</p>
-              <small>未来由主机主动出站连接，不要求路由器开放端口。</small>
+              {portal?.state === "pairing" && portal.pairing ? (
+                <>
+                  <p>在门户登录后输入下面的一次性代码。代码不会授予 ComfyUI 端口访问。</p>
+                  <code className="portal-code">{portal.pairing.userCode}</code>
+                  <div className="portal-actions">
+                    <a href={portal.portalUrl ?? "#"} target="_blank" rel="noreferrer">
+                      打开门户
+                    </a>
+                    <button
+                      type="button"
+                      disabled={portalBusy}
+                      onClick={() => void disconnectPortal()}
+                    >
+                      取消配对
+                    </button>
+                  </div>
+                </>
+              ) : portal?.state === "connected" ? (
+                <>
+                  <p>工作站通过出站连接在线；项目和素材仍保留在本机。</p>
+                  <div className="portal-actions">
+                    {portal.remoteUrl ? (
+                      <a href={portal.remoteUrl} target="_blank" rel="noreferrer">
+                        远程打开
+                      </a>
+                    ) : null}
+                    {portal.canManage ? (
+                      <button
+                        type="button"
+                        disabled={portalBusy}
+                        onClick={() => void disconnectPortal()}
+                      >
+                        撤销连接
+                      </button>
+                    ) : null}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p>
+                    {portal?.lastError ??
+                      "登录自托管门户即可从其他电脑找到并打开这台工作站，无需路由器端口转发。"}
+                  </p>
+                  {portal?.canManage ? (
+                    <div className="portal-connect">
+                      <input
+                        value={portalUrl}
+                        onChange={(event) => setPortalUrl(event.target.value)}
+                        inputMode="url"
+                        placeholder="https://portal.example.com"
+                        aria-label="TakeBoard 门户地址"
+                      />
+                      <button
+                        type="button"
+                        disabled={portalBusy}
+                        onClick={() => void beginPairing()}
+                      >
+                        {portalBusy ? "连接中…" : "开始安全配对"}
+                      </button>
+                    </div>
+                  ) : (
+                    <small>请由实例管理员完成工作站配对。</small>
+                  )}
+                </>
+              )}
             </article>
 
             <article className="remote-method-card">

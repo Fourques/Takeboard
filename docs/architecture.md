@@ -1,7 +1,7 @@
 # TakeBoard 技术架构
 
 状态：持续演进的实现边界
-更新时间：2026-08-31
+更新时间：2026-09-02
 
 ## 1. 技术选型结论
 
@@ -49,6 +49,8 @@ ComfyUI Worker
 
 浏览器不直接持有 ComfyUI、云模型或文件系统凭据。所有生成调用经过本地服务，才能统一记录 Run、预算和输出。
 
+可选的账号门户不改变这条边界：Portal 负责门户账号、设备目录和临时中继，工作站 Connector 只建立出站 WebSocket。Portal 会剥离门户 Cookie / Authorization，再把门户 Subject 交给 Connector；Connector 只接受配对时保存的显式 `portal subject → local user id` 映射，并创建独立本地会话。最终的项目角色、CSRF、账号状态和 API 输入仍由本地 Server 判定。Portal 不读取 ComfyUI 端口，也不保存项目载荷。
+
 桌面版不复制任何业务规则。Tauri 只选择空闲回环端口、启动便携 launcher sidecar、等待真实健康检查并加载同一套 Web UI；项目仍写入 `~/TakeBoardData`。应用退出只终止自己拥有的 launcher，单实例插件阻止重复服务。浏览器、便携版和桌面版因此共享相同 API、迁移和权限边界。
 
 跨项目任务中心只聚合当前账号可访问的项目。它通过项目级 Run API 获取实时进度和执行停止，因此不会建立一条绕过 Owner / Editor 权限的新控制通道。存储扫描忽略符号链接，普通成员只能看到自己可访问的项目；系统数据占用仅向实例管理员返回。
@@ -59,11 +61,15 @@ ComfyUI Worker
 takeboard/
 ├── apps/
 │   ├── web/                    # React 画布与交互
-│   └── server/                 # Fastify 本地服务
+│   ├── server/                 # Fastify 本地服务与出站 Connector
+│   ├── portal/                 # 可选的账号、设备目录与无持久媒体中继
+│   └── desktop/                # Tauri 2 薄壳与 Node sidecar 生命周期
 ├── packages/
 │   ├── contracts/              # Zod/JSON Schema、ID、事件
 │   ├── domain/                 # Project/Shot/Run/Take/Approval 规则
 │   ├── executor-comfy/         # ComfyUI Adapter
+│   ├── identity/               # 本地与 Portal 共享的密码/令牌原语
+│   ├── portal-protocol/        # 有界、版本化的 Connector 中继帧
 │   ├── recipe/                 # Manifest、注入、预检
 │   └── test-fixtures/          # 假 Worker、样例 Workflow/媒体
 ├── examples/

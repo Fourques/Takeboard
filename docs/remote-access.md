@@ -148,4 +148,4 @@ TAKEBOARD_AUTH_MODE=required
 
 `TAKEBOARD_PUBLIC_URL` 只用于声明并检查规范入口，不会自行创建隧道、申请证书或改变监听地址。账号中心会联合检查 HTTPS、安全 Cookie、Host 与 Origin 白名单；任一项缺失都会显示为“需处理”。不要把 ComfyUI 的 `8188` 端口一同发布。
 
-面向大众的账号设备门户需要独立控制面与主机出站连接器，不等同于当前实例账号。架构和实施 Gate 见[账号门户与大众化分发策略](access-and-distribution-strategy.md)。
+需要登录后从任意电脑找到工作站时，可以部署独立的 TakeBoard Portal。它使用一次性代码把门户账号显式映射到本地管理员，并由工作站主动建立出站连接；不等同于当前实例账号，也不会按邮箱自动合并。部署和隐私边界见[账号门户自托管](portal-self-hosting.md)，架构与后续 Gate 见[账号门户与大众化分发策略](access-and-distribution-strategy.md)。

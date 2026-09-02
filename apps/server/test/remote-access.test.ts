@@ -43,7 +43,7 @@ describe("remote access readiness", () => {
     expect(status.ssh).toMatchObject({ state: "ready", remotePort: 48_121 });
     expect(status.ssh.command).toContain("-L 48230:127.0.0.1:48121");
     expect(status.https.state).toBe("not_configured");
-    expect(status.managedPortal.state).toBe("not_available");
+    expect(status.managedPortal.state).toBe("available");
   });
 
   it("requires secure cookies and exact host/origin allowlists for a team HTTPS URL", () => {

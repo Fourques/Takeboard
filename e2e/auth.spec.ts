@@ -13,7 +13,7 @@ test("unauthenticated visitors see the login boundary and can sign in", async ({
     await page.getByLabel("密码").fill("takeboard e2e private passphrase");
     await page.getByRole("button", { name: "进入 TakeBoard" }).click();
     await expect(page.getByText("FILMMAKING WORKSPACE")).toBeVisible();
-    await expect(page.getByRole("button", { name: /TakeBoard E2E/ })).toBeVisible();
+    await expect(page.locator(".account-button").first()).toBeVisible();
   } finally {
     await context.close();
   }
@@ -99,7 +99,7 @@ test("administrator can understand and operate external backup protection", asyn
   });
 
   await page.goto("/");
-  await page.getByRole("button", { name: /TakeBoard E2E/ }).click();
+  await page.locator(".account-button").first().click();
   await page.getByRole("button", { name: "备份与恢复" }).click();
   const account = page.getByRole("dialog", { name: /TakeBoard E2E/ });
   await expect(account.getByRole("heading", { name: "外部副本与恢复演练" })).toBeVisible();
@@ -232,7 +232,7 @@ test("a teammate can accept an invitation and recover the account with a one-tim
     await page.getByRole("button", { name: "加入工作室" }).click();
     await expect(page.getByText("FILMMAKING WORKSPACE")).toBeVisible();
 
-    await page.getByRole("button", { name: /Invited E2E/ }).click();
+    await page.locator(".account-button").first().click();
     await page.getByRole("button", { name: "密码与设备" }).click();
     await page.getByRole("button", { name: "生成恢复码" }).click();
     await page.locator(".recovery-codes-panel").getByLabel("当前密码").fill(password);
@@ -251,7 +251,7 @@ test("a teammate can accept an invitation and recover the account with a one-tim
     await page.getByLabel("邮箱").fill(email);
     await page.getByLabel("密码").fill(replacement);
     await page.getByRole("button", { name: "进入 TakeBoard" }).click();
-    await expect(page.getByRole("button", { name: /Invited E2E/ })).toBeVisible();
+    await expect(page.locator(".account-button").first()).toBeVisible();
   } finally {
     await context.close();
     const users = await request.get("/api/admin/users");

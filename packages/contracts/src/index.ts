@@ -7,6 +7,7 @@ export * from "./extension.js";
 export * from "./generation.js";
 export * from "./health.js";
 export * from "./operations.js";
+export * from "./portal.js";
 export * from "./production.js";
 export * from "./project.js";
 export * from "./remote-access.js";

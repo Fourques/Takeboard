@@ -80,7 +80,7 @@ describe("TakeBoard authentication and authorization", () => {
     expect(remoteAccess.json()).toMatchObject({
       currentAccess: { kind: "local_or_ssh", protection: "loopback" },
       ssh: { state: "ready" },
-      managedPortal: { state: "not_available" },
+      managedPortal: { state: "available" },
     });
 
     const csrfBlocked = await app.inject({
@@ -612,4 +612,27 @@ describe("TakeBoard authentication and authorization", () => {
     });
     expect(login.statusCode, login.body).toBe(200);
   }, 30_000);
+
+  it("keeps portal diagnostics readable while refusing pairing when account mode is disabled", async () => {
+    const root = await mkdtemp(join(tmpdir(), "takeboard-portal-auth-mode-"));
+    const app = buildApp({
+      projectsRoot: join(root, "projects"),
+      webRoot: null,
+      auth: { mode: "off", databasePath: join(root, "system", "auth.db") },
+    });
+    cleanup.push(async () => {
+      await app.close();
+      await rm(root, { recursive: true, force: true });
+    });
+
+    const status = await app.inject({ method: "GET", url: "/api/portal/status" });
+    expect(status.statusCode, status.body).toBe(200);
+    expect(status.json()).toMatchObject({ state: "not_configured", canManage: false });
+    const pairing = await app.inject({
+      method: "POST",
+      url: "/api/admin/portal/pairing",
+      payload: { portalUrl: "http://127.0.0.1:49200" },
+    });
+    expect(pairing.statusCode).toBe(409);
+  });
 });

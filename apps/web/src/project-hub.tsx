@@ -607,8 +607,7 @@ const hubChromeCss = `.hub-header {
 }
 
 /* The 3D stage remains the backdrop; the project chapter itself carries the translucent veil. */
-.hub-shell .hub-artifact-background,
-.hub-shell.project-stage-active .hub-artifact-background {
+.hub-shell .hub-artifact-background {
   opacity: 1;
   filter: none;
   transform: none;

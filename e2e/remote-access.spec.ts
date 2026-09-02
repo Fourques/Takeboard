@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("account center explains real access and install options without claiming a cloud portal", async ({
+test("account center explains real access and the optional self-hosted portal", async ({
   page,
 }) => {
   await page.goto("/");
@@ -25,7 +25,11 @@ test("account center explains real access and install options without claiming a
   await expect(center.getByText("本机或 SSH 隧道", { exact: true })).toBeVisible();
   await expect(center.getByRole("button", { name: "复制连接命令" })).toBeVisible();
   await expect(center.getByText("TakeBoard 账号门户", { exact: true })).toBeVisible();
-  await expect(center.getByText(/账号设备门户仍在设计中/)).toBeVisible();
+  await expect(center.getByText(/登录自托管门户即可/)).toBeVisible();
+  await expect(center.getByLabel("TakeBoard 门户地址")).toHaveAttribute(
+    "placeholder",
+    "https://portal.example.com",
+  );
   await expect(center.getByText(/已连接云端/)).toHaveCount(0);
   await expect(center.getByRole("region", { name: "远程访问安全检查" })).toBeVisible();
 });

@@ -11,6 +11,8 @@ import { ExtensionRegistry } from "./extension-registry.js";
 import { registerExtensionRoutes } from "./extension-routes.js";
 import { registerGenerationRoutes } from "./generation-routes.js";
 import { registerOperationsRoutes } from "./operations-routes.js";
+import { PortalConnector } from "./portal-connector.js";
+import { registerPortalRoutes } from "./portal-routes.js";
 import { registerProjectCommandRoutes } from "./project-command-routes.js";
 import { registerProjectRequestLock } from "./project-request-lock.js";
 import { registerProjectRoutes } from "./project-routes.js";
@@ -99,6 +101,18 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       ? { allowedOrigins: options.requestSecurity.allowedOrigins }
       : {}),
   });
+  const serverPort = Number.parseInt(process.env.TAKEBOARD_PORT ?? "48120", 10);
+  const portalConnector = new PortalConnector({
+    configPath: resolve(projectsRoot, ".system", "portal-connector.json"),
+    instanceId: process.env.TAKEBOARD_INSTANCE_ID ?? "takeboard-local-instance",
+    instanceName: process.env.TAKEBOARD_INSTANCE_NAME ?? "TakeBoard Workstation",
+    applicationVersion: takeBoardVersion,
+    localOrigin: `http://127.0.0.1:${serverPort}`,
+    auth,
+  });
+  registerPortalRoutes(app, portalConnector);
+  app.addHook("onReady", async () => portalConnector.start());
+  app.addHook("onClose", async () => portalConnector.stop());
 
   registerDemoRoutes(
     app,
