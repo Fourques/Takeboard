@@ -28,11 +28,25 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
     "category": "Productivity",
     "copyright": "Copyright © TakeBoard contributors",
     "shortDescription": "Local-first AI filmmaking workspace",
     "longDescription": "Organize assets, shots, ComfyUI workflows, generation runs and approved takes in one local-first workspace.",
     "resources": ["resources/TakeBoard"],
-    "externalBin": ["binaries/takeboard-node"]
+    "externalBin": ["binaries/takeboard-node"],
+    "windows": {
+      "wix": {
+        "version": "0.2.0.20001",
+        "upgradeCode": "b893e5ab-af9b-5697-acbd-d12b7a4ab163"
+      }
+    }
   }
 }

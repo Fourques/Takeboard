@@ -7,6 +7,7 @@ import { access, chmod, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { validateDesktopReleaseConfig } from "./desktop-release-config.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const desktopRoot = join(repositoryRoot, "apps", "desktop");
@@ -82,6 +83,11 @@ async function main() {
   const executableSuffix = process.platform === "win32" ? ".exe" : "";
   const sidecar = join(binariesRoot, `takeboard-node-${nativeTriple}${executableSuffix}`);
   const rootPackage = JSON.parse(await readFile(join(repositoryRoot, "package.json"), "utf8"));
+  const tauriConfig = JSON.parse(await readFile(join(tauriRoot, "tauri.conf.json"), "utf8"));
+  const releaseConfig = validateDesktopReleaseConfig(rootPackage.version, tauriConfig);
+  await Promise.all(
+    releaseConfig.icons.map((icon) => access(join(tauriRoot, icon), constants.R_OK)),
+  );
 
   await Promise.all([
     rm(join(tauriRoot, "resources"), { recursive: true, force: true }),

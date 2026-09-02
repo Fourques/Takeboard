@@ -89,13 +89,23 @@ describe("scheduled external backups", () => {
       },
       { timeout: 8_000, interval: 100 },
     );
-    const audit = await app.inject({
-      method: "GET",
-      url: "/api/admin/audit?limit=20",
-      headers: { cookie: headers.cookie },
-    });
-    expect(audit.json().entries).toEqual(
-      expect.arrayContaining([expect.objectContaining({ action: "backup.external_scheduled" })]),
+    // The status file and identity audit database are separate durability boundaries. A status
+    // request can observe the completed backup in the few milliseconds before its audit write, so
+    // wait for the second observable contract instead of relying on platform-specific I/O timing.
+    await vi.waitFor(
+      async () => {
+        const audit = await app.inject({
+          method: "GET",
+          url: "/api/admin/audit?limit=20",
+          headers: { cookie: headers.cookie },
+        });
+        expect(audit.json().entries).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ action: "backup.external_scheduled" }),
+          ]),
+        );
+      },
+      { timeout: 2_000, interval: 50 },
     );
   }, 15_000);
 
