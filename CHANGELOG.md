@@ -11,6 +11,9 @@ before moving production work to a newer minor version.
 - A self-hosted TakeBoard Portal with real accounts, one-time workstation pairing, outbound-only
   connectors, device presence, remote HTTP/Range relay, explicit portal-to-local identity mapping,
   immediate revocation and security activity.
+- A production-oriented Portal container baseline with a non-root account, read-only root
+  filesystem, loopback-only host port, native health check, bounded graceful shutdown and
+  whole-data-directory backup/restore runbook.
 - A Tauri 2 desktop preview that embeds the production server, Web UI and matching Node.js sidecar,
   uses an isolated loopback port, enforces one application instance and cleans up owned processes.
 - Explicit square PNG, Windows ICO and macOS ICNS bundle icons so every native packager uses the
@@ -40,6 +43,14 @@ before moving production work to a newer minor version.
 
 ### Security
 
+- Fastify is updated to 5.12.1 and both transitive `fast-uri` lines to patched releases, resolving
+  the September 2026 proxy-header, schema-coercion, SSRF and host-normalization advisories before
+  they can enter the Portal production image.
+- Unsigned desktop previews can no longer be published automatically from a version tag. A separate
+  protected workflow now requires Developer ID notarization for both macOS architectures and
+  Authenticode for the Windows x64 application, runtime and NSIS installer before publication.
+- The Linux GTK advisory exception is now version-locked, source-reachability checked and
+  time-bounded; signed production releases exclude Linux Tauri until stable Wry migrates to GTK4.
 - WebSocket transports now use `ws 8.21.0`, resolving the denial-of-service and memory-disclosure
   advisories reported against 8.18.3. The remaining Linux-only Tauri/GTK advisory is documented in
   `SECURITY.md` with its dependency chain, reachability assessment and mandatory review condition.

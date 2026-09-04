@@ -98,6 +98,45 @@ set +a
 pnpm portal:start
 ```
 
+### 推荐：容器化生产基线
+
+仓库提供非 root、只读根文件系统、健康检查、最小 Linux capabilities 和优雅停机配置。反向代理仍在
+宿主机终止 TLS，容器端口只绑定到 `127.0.0.1`：
+
+```bash
+cd deploy/portal
+cp .env.example .env
+openssl rand -base64 36
+```
+
+把生成值写入本机 `.env` 的 `TAKEBOARD_PORTAL_BOOTSTRAP_TOKEN`，同时替换真实域名，然后：
+
+```bash
+mkdir -p data
+docker compose build --pull
+docker compose up -d
+docker compose ps
+curl -fsS -H 'Host: portal.example.com' http://127.0.0.1:49200/__portal/api/health
+```
+
+`deploy/portal/data` 包含数据库、WAL 和自动生成的主密钥，权限应只授予部署账号。完成首个管理员注册后，
+从 `.env` 删除 `TAKEBOARD_PORTAL_BOOTSTRAP_TOKEN` 并执行 `docker compose up -d`。不要把 `.env` 或
+`data/` 提交到 Git。
+
+升级前先排空请求并做一致性备份：
+
+```bash
+cd deploy/portal
+docker compose stop portal
+tar -C . -czf "takeboard-portal-backup-$(date +%Y%m%d-%H%M%S).tar.gz" data
+docker compose build --pull
+docker compose up -d
+docker compose ps
+```
+
+恢复时先停止服务，把同一次备份中的整个 `data/` 一起恢复，再启动并检查健康接口。不要在服务运行时直接
+复制 SQLite 文件，也不要只备份 `portal.db`。
+
 公网门户首次启动强制要求至少 24 字符的 `TAKEBOARD_PORTAL_BOOTSTRAP_TOKEN`；部署者需要在首次设置页面同时输入这项密钥，避免空数据库刚上线时被他人抢注。创建首个管理员后应从环境文件删除该密钥并重启。只有回环地址上的开发门户允许免密初始化。
 
 完成首个账号后，即使 `TAKEBOARD_PORTAL_ALLOW_REGISTRATION=0` 也不会再允许匿名注册。需要开放额外账号时可以短暂设为 `1`，创建后立即关闭；当前版本尚未提供组织邀请与域名准入。
@@ -168,3 +207,17 @@ curl -fsS https://portal.example.com/__portal/api/health
 - 桌面安装器仍未取得 Apple notarization 与 Windows 商业签名。
 
 这些限制会在界面和发布说明中保持明确，不能把自托管预览宣传为已经运营的多租户 SaaS。
+
+## 从自托管产品到公共 SaaS
+
+“代码可以部署”不等于“已经有公共服务”。正式代用户运营前，至少还要完成以下独立 Gate：
+
+1. 产品：确定注册范围、免费/付费配额、账号删除、数据导出和人工恢复边界；
+2. 身份：Passkey 或 MFA、恢复码、验证邮件、邀请和敏感操作再认证；
+3. 租户：组织级隔离、成员角色、每租户限流/并发/流量配额和封禁；
+4. 基础设施：至少数据库加密备份、恢复演练、监控告警、容量压测、DDoS/WAF 和密钥托管；
+5. 运营：隐私政策、服务条款、滥用举报、安全响应、值班责任和服务状态页；
+6. 安全：上线前渗透测试，之后持续依赖扫描、日志审查和事件复盘。
+
+在域名、部署地区、账号开放方式、邮件供应商和实际运营责任人未确定前，TakeBoard 会继续把 Portal 准确
+标记为自托管服务，不在 UI 或 README 中暗示官方公共云已经存在。

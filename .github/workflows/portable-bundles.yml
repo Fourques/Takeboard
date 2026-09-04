@@ -1,10 +1,7 @@
-name: Release bundles
+name: Preview bundles
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - "v*"
 
 permissions:
   contents: read
@@ -137,31 +134,6 @@ jobs:
             apps/desktop/src-tauri/target/${{ matrix.rust_target }}/release/bundle/**/*.${{ matrix.extension }}
             apps/desktop/src-tauri/target/${{ matrix.rust_target }}/release/bundle/**/*.sha256
           if-no-files-found: error
-
-  publish:
-    name: Attach to GitHub release
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build, desktop, demo]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v8
-        with:
-          pattern: "takeboard-*"
-          path: release
-          merge-multiple: true
-      - name: Publish verified assets
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          if ! gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
-            extra=""
-            case "${GITHUB_REF_NAME}" in *-*) extra="--prerelease";; esac
-            gh release create "${GITHUB_REF_NAME}" --verify-tag --generate-notes ${extra}
-          fi
-          gh release upload "${GITHUB_REF_NAME}" release/* --clobber
 
   demo:
     name: Deterministic product walkthrough

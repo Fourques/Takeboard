@@ -73,7 +73,9 @@ TakeBoard，重复打开只会聚焦已有窗口。
 
 桌面版使用随机空闲回环端口，便携包会在 `48120–48139` 中避让；两者的项目都默认保存在
 `~/TakeBoardData`，可以互相切换而不迁移数据。当前预览构建具有 SHA-256 和 GitHub Actions
-构建来源证明，但还没有 Apple notarization / Windows 代码签名；下载页会明确标注这一边界。可以用
+构建来源证明，但 Preview 没有 Apple notarization / Windows 代码签名；下载页会明确标注这一边界，
+并且未签名工作流不会自动发布 GitHub Release。正式签名流水线、凭据隔离和净机验收步骤见
+[桌面正式签名与发行](docs/desktop-production-signing.md)。可以用
 GitHub CLI 验证构建来源：
 
 ```bash
@@ -291,6 +293,7 @@ pnpm format       # 格式化代码
 | [视频质量工作流](docs/video-quality-workflows.md) | Wan 质量/预演分层、MiniMax H3 原生音画与提示词结构 |
 | [远程访问](docs/remote-access.md) | 标准 SSH 隧道、自动清理与端口诊断 |
 | [自托管部署](docs/self-hosting.md) | systemd、配置、升级与运行维护 |
+| [桌面正式发行](docs/desktop-production-signing.md) | Apple notarization、Windows Authenticode 与发布 Gate |
 | [数据目录](docs/data-layout.md) | 项目隔离、备份与迁移 |
 | [技术架构](docs/architecture.md) | 模块边界、数据流与安全约束 |
 | [易用性与可靠性审计](docs/usability-audit.md) | 完整用户旅程、已修断点与后续里程碑 |

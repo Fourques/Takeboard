@@ -42,7 +42,7 @@ until their bindings and dependencies have been explicitly inspected and trusted
 
 ## Known upstream advisory
 
-As of 2026-09-02, the **Linux desktop preview only** inherits
+As of 2026-09-04, the **Linux desktop preview only** inherits
 [RUSTSEC-2024-0429 / GHSA-wrw7-89jp-8q8g](https://rustsec.org/advisories/RUSTSEC-2024-0429.html)
 through Tauri's `wry -> webkit2gtk/gtk -> glib 0.18.5` stack. The affected API is
 `glib::VariantStrIter`; TakeBoard does not call it, and a source-tree reachability search found no
@@ -54,6 +54,9 @@ GTK3 crates that require the 0.18 line. Wry's
 [GTK4/WebKitGTK 6 migration](https://github.com/tauri-apps/wry/issues/1474) remains open, with its
 [implementation pull request](https://github.com/tauri-apps/wry/pull/1530) still in draft. TakeBoard
 will not replace a stable desktop dependency with an unaudited fork merely to silence the scanner.
-The Dependabot alert remains open and this exception must be reviewed before each release and after
-every Tauri/Wry update. Once the stable stack supports `glib >= 0.20`, upgrading it is a release
-blocker. Until then, the Linux desktop artifact remains explicitly labeled an unsigned preview.
+The bounded exception is machine-readable in `security/rust-advisory-exceptions.json`: CI verifies
+the exact dependency version, searches TakeBoard Rust sources for the affected API and rejects the
+exception after 2026-12-15. It must also be reviewed before each release and after every Tauri/Wry
+update. Once the stable stack supports `glib >= 0.20`, upgrading it is a release blocker. Until then,
+the Linux desktop artifact remains explicitly labeled an unsigned preview and is excluded from the
+signed production workflow.

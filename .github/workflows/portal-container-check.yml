@@ -1,0 +1,76 @@
+name: Portal container check
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "apps/portal/**"
+      - "packages/identity/**"
+      - "packages/portal-protocol/**"
+      - "deploy/portal/**"
+      - ".dockerignore"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "tsconfig.base.json"
+      - ".github/workflows/portal-container-check.yml"
+  pull_request:
+    paths:
+      - "apps/portal/**"
+      - "packages/identity/**"
+      - "packages/portal-protocol/**"
+      - "deploy/portal/**"
+      - ".dockerignore"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "tsconfig.base.json"
+      - ".github/workflows/portal-container-check.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: portal-container-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Non-root read-only runtime
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build production image
+        run: docker build -f deploy/portal/Dockerfile -t takeboard-portal:ci .
+      - name: Start isolated Portal
+        run: |
+          docker run -d --name takeboard-portal-ci \
+            --read-only \
+            --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+            -e TAKEBOARD_PORTAL_HOSTNAME=portal.example.test \
+            -e TAKEBOARD_PORTAL_ORIGIN=https://portal.example.test \
+            -e TAKEBOARD_PORTAL_SECURE_COOKIES=1 \
+            -e TAKEBOARD_PORTAL_BOOTSTRAP_TOKEN=test-only-bootstrap-token-1234567890 \
+            takeboard-portal:ci
+      - name: Require a healthy least-privilege container
+        shell: bash
+        run: |
+          for attempt in $(seq 1 30); do
+            status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' takeboard-portal-ci)"
+            if [ "$status" = "healthy" ]; then break; fi
+            if [ "$status" = "unhealthy" ]; then docker logs takeboard-portal-ci; exit 1; fi
+            sleep 2
+          done
+          test "$(docker inspect --format '{{.State.Health.Status}}' takeboard-portal-ci)" = "healthy"
+          test "$(docker inspect --format '{{.Config.User}}' takeboard-portal-ci)" = "takeboard-portal"
+          test "$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' takeboard-portal-ci)" = "true"
+      - name: Stop gracefully
+        run: docker stop --timeout 20 takeboard-portal-ci
+      - name: Show logs on failure
+        if: failure()
+        run: docker logs takeboard-portal-ci || true
+      - name: Remove smoke container
+        if: always()
+        run: docker rm -f takeboard-portal-ci || true

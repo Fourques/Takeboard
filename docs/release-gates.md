@@ -64,4 +64,6 @@ pnpm compatibility:matrix -- --check
 
 ## 便携包门槛
 
-`.github/workflows/portable-bundles.yml` 在 Linux x64/arm64、macOS Intel/Apple Silicon、Windows x64/arm64 原生 Runner 上分别构建依赖和内置 Node.js 运行时。构建器会核对 Runner 实际平台/架构与矩阵目标，避免用模拟或错误架构产物冒充原生包。每个包都记录精确 Commit 与工作树状态；CI 拒绝从脏工作树发布。归档后会重新解压，执行 `doctor`、加载 `better-sqlite3` 与 `sharp`，再用包内运行时真正启动一次服务并读取健康接口和网页入口；Unix 包还检查启动权限。构建或自检任一步失败，本次产物都不会进入上传。全部通过后才保留 SHA-256 和 GitHub Artifact Attestation。Tag 发布必须等待六个平台包与确定性产品演示全部通过；预览包仍明确标为未做 Apple notarization / Windows 代码签名。
+`.github/workflows/portable-bundles.yml` 在 Linux x64/arm64、macOS Intel/Apple Silicon、Windows x64/arm64 原生 Runner 上分别构建依赖和内置 Node.js 运行时。构建器会核对 Runner 实际平台/架构与矩阵目标，避免用模拟或错误架构产物冒充原生包。每个包都记录精确 Commit 与工作树状态；CI 拒绝从脏工作树发布。归档后会重新解压，执行 `doctor`、加载 `better-sqlite3` 与 `sharp`，再用包内运行时真正启动一次服务并读取健康接口和网页入口；Unix 包还检查启动权限。构建或自检任一步失败，本次产物都不会进入上传。全部通过后才保留 SHA-256 和 GitHub Artifact Attestation。
+
+预览包只允许手动构建，不再由 Tag 自动发布。正式 Tag 发布使用独立的 `Signed production release`：必须等待 macOS 双架构完成 Developer ID 签名、notarization 和 stapling，以及 Windows x64 主程序与 NSIS 完成 Authenticode 签名并通过系统验证。Windows ARM64 和 Linux Tauri 当前仍只属于预览通道；详细配置与净机验收见[桌面正式签名与发行](desktop-production-signing.md)。

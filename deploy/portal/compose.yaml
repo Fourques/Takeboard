@@ -1,0 +1,28 @@
+version: "3.8"
+
+services:
+  portal:
+    build:
+      context: ../..
+      dockerfile: deploy/portal/Dockerfile
+    image: takeboard-portal:${TAKEBOARD_PORTAL_IMAGE_TAG:-local}
+    restart: unless-stopped
+    env_file:
+      - ${TAKEBOARD_PORTAL_ENV_FILE:-.env}
+    environment:
+      NODE_ENV: production
+      TAKEBOARD_PORTAL_BIND_HOST: 0.0.0.0
+      TAKEBOARD_PORTAL_PORT: 49200
+      TAKEBOARD_PORTAL_DATABASE: /var/lib/takeboard-portal/portal.db
+    ports:
+      - "127.0.0.1:${TAKEBOARD_PORTAL_HOST_PORT:-49200}:49200"
+    volumes:
+      - ./data:/var/lib/takeboard-portal
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    stop_grace_period: 20s

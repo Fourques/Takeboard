@@ -1,0 +1,44 @@
+name: Security audit
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * *"
+  push:
+    branches: [main]
+    paths:
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "apps/*/package.json"
+      - "packages/*/package.json"
+      - "apps/desktop/src-tauri/Cargo.lock"
+      - "security/rust-advisory-exceptions.json"
+      - "scripts/check-linux-desktop-advisory.mjs"
+      - ".github/workflows/security-audit.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: Production dependency advisories
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.15.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Reject known production Node.js vulnerabilities
+        run: pnpm audit --prod --audit-level=moderate
+      - name: Enforce the bounded Linux GTK exception
+        run: pnpm security:linux-desktop

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "exceptions": [
+    {
+      "advisoryId": "RUSTSEC-2024-0429",
+      "package": "glib",
+      "affectedVersions": ["0.18.5"],
+      "scope": "Linux Tauri preview only",
+      "affectedApi": "glib::VariantStrIter",
+      "decision": "tolerable-risk-until-upstream-migration",
+      "expiresOn": "2026-12-15",
+      "owner": "TakeBoard maintainers",
+      "rationale": "The affected iterator API is not referenced by TakeBoard. Stable Wry still requires the GTK3 glib 0.18 line; replacing it with an unreviewed fork would increase release risk.",
+      "upstream": [
+        "https://github.com/tauri-apps/wry/issues/1474",
+        "https://github.com/tauri-apps/wry/pull/1530"
+      ]
+    }
+  ]
+}

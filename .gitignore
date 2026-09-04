@@ -19,3 +19,5 @@ apps/desktop/src-tauri/target/
 *.takeboard/
 .takeboard-data/
 renders/
+deploy/portal/data/
+deploy/portal/takeboard-portal-backup-*.tar.gz

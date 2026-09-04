@@ -1,0 +1,303 @@
+name: Signed production release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing signed version tag, for example v0.2.0
+        required: true
+        type: string
+      publish:
+        description: Attach verified artifacts to the GitHub release
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: production-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate immutable release input
+    runs-on: ubuntu-latest
+    outputs:
+      commit: ${{ steps.ref.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: ref
+        name: Require an existing version tag
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          case "$RELEASE_TAG" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "Release tag must look like v0.2.0 or v0.2.0-beta.1" >&2; exit 1 ;;
+          esac
+          git show-ref --verify --quiet "refs/tags/$RELEASE_TAG" || {
+            echo "Tag $RELEASE_TAG does not exist in this repository" >&2
+            exit 1
+          }
+          app_version="$(node -p "require('./package.json').version")"
+          test "$RELEASE_TAG" = "v$app_version" || {
+            echo "Tag $RELEASE_TAG does not match package version $app_version" >&2
+            exit 1
+          }
+          commit="$(git rev-list -n 1 "$RELEASE_TAG")"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
+  macos:
+    name: Signed and notarized macOS (${{ matrix.platform }})
+    needs: validate
+    environment: production-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15-intel
+            platform: macos-x64
+            rust_target: x86_64-apple-darwin
+          - os: macos-15
+            platform: macos-arm64
+            rust_target: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate.outputs.commit }}
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.15.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+      - run: pnpm install --frozen-lockfile
+      - name: Require Apple production credentials
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+        run: node scripts/release-signing-preflight.mjs macos
+      - name: Import Developer ID certificate
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/takeboard-signing.keychain-db"
+          keychain_password="$(openssl rand -hex 32)"
+          printf '%s' "$APPLE_CERTIFICATE" | base64 -D > "$RUNNER_TEMP/takeboard-developer-id.p12"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$RUNNER_TEMP/takeboard-developer-id.p12" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain"
+          security list-keychains -d user -s "$keychain"
+          security find-identity -v -p codesigning "$keychain"
+          echo "TAKEBOARD_SIGNING_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+      - name: Write App Store Connect API key
+        shell: bash
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+        run: |
+          key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY}.p8"
+          printf '%s' "$APPLE_API_PRIVATE_KEY" > "$key_path"
+          chmod 600 "$key_path"
+          echo "APPLE_API_KEY_PATH=$key_path" >> "$GITHUB_ENV"
+      - name: Prepare bundled runtime
+        run: pnpm desktop:prepare
+        env:
+          TAKEBOARD_DESKTOP_TARGET: ${{ matrix.rust_target }}
+      - name: Build, sign, notarize and staple DMG
+        run: pnpm --filter @takeboard/desktop exec tauri build --verbose --target ${{ matrix.rust_target }} --bundles dmg
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_PATH: ${{ env.APPLE_API_KEY_PATH }}
+      - name: Verify Gatekeeper and notarization ticket
+        shell: bash
+        env:
+          BUNDLE_ROOT: apps/desktop/src-tauri/target/${{ matrix.rust_target }}/release/bundle
+        run: |
+          dmg="$(find "$BUNDLE_ROOT" -type f -name '*.dmg' -print -quit)"
+          test -n "$dmg"
+          xcrun stapler validate "$dmg"
+          spctl --assess --type open --context context:primary-signature --verbose=4 "$dmg"
+      - name: Write SHA-256 checksums
+        run: node scripts/write-desktop-checksums.mjs apps/desktop/src-tauri/target/${{ matrix.rust_target }}/release/bundle
+      - name: Attest signed macOS installer
+        uses: actions/attest@v4
+        with:
+          subject-path: apps/desktop/src-tauri/target/${{ matrix.rust_target }}/release/bundle/**/*.dmg
+      - name: Upload signed macOS installer
+        uses: actions/upload-artifact@v7
+        with:
+          name: takeboard-signed-${{ matrix.platform }}
+          path: |
+            apps/desktop/src-tauri/target/${{ matrix.rust_target }}/release/bundle/**/*.dmg
+            apps/desktop/src-tauri/target/${{ matrix.rust_target }}/release/bundle/**/*.sha256
+          if-no-files-found: error
+      - name: Remove temporary Apple credentials
+        if: always()
+        shell: bash
+        run: |
+          if [ -n "${TAKEBOARD_SIGNING_KEYCHAIN:-}" ]; then
+            security delete-keychain "$TAKEBOARD_SIGNING_KEYCHAIN" || true
+          fi
+          rm -f "$RUNNER_TEMP/takeboard-developer-id.p12" "$RUNNER_TEMP"/AuthKey_*.p8
+
+  windows:
+    name: Authenticode Windows (x64)
+    needs: validate
+    environment: production-release
+    runs-on: windows-2025
+    timeout-minutes: 75
+    env:
+      RUST_TARGET: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate.outputs.commit }}
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.15.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - run: pnpm install --frozen-lockfile
+      - name: Require Azure Artifact Signing configuration
+        shell: pwsh
+        env:
+          AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          AZURE_CERTIFICATE_PROFILE: ${{ vars.AZURE_CERTIFICATE_PROFILE }}
+        run: node scripts/release-signing-preflight.mjs windows
+      - uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Prepare bundled runtime
+        run: pnpm desktop:prepare
+        env:
+          TAKEBOARD_DESKTOP_TARGET: x86_64-pc-windows-msvc
+      - name: Compile application before bundling
+        run: pnpm --filter @takeboard/desktop exec tauri build --verbose --target x86_64-pc-windows-msvc --no-bundle
+      - name: Sign application and bundled runtime executables
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_CERTIFICATE_PROFILE }}
+          files: |
+            ${{ github.workspace }}\apps\desktop\src-tauri\target\x86_64-pc-windows-msvc\release\takeboard-desktop.exe
+            ${{ github.workspace }}\apps\desktop\src-tauri\binaries\takeboard-node-x86_64-pc-windows-msvc.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          description: TakeBoard
+          description-url: https://github.com/Fourques/Takeboard
+      - name: Verify application and runtime signatures
+        shell: pwsh
+        run: |
+          $paths = @(
+            "apps/desktop/src-tauri/target/$env:RUST_TARGET/release/takeboard-desktop.exe",
+            "apps/desktop/src-tauri/binaries/takeboard-node-$env:RUST_TARGET.exe"
+          )
+          foreach ($path in $paths) {
+            $signature = Get-AuthenticodeSignature $path
+            if ($signature.Status -ne "Valid") { throw "$path signature is $($signature.Status)" }
+            Write-Host "$path publisher: $($signature.SignerCertificate.Subject)"
+          }
+      - name: Bundle signed application
+        run: pnpm --filter @takeboard/desktop exec tauri bundle --verbose --target x86_64-pc-windows-msvc --bundles nsis
+      - name: Sign NSIS installer
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_CERTIFICATE_PROFILE }}
+          files-folder: ${{ github.workspace }}\apps\desktop\src-tauri\target\x86_64-pc-windows-msvc\release\bundle\nsis
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          description: TakeBoard Installer
+          description-url: https://github.com/Fourques/Takeboard
+      - name: Verify installer signatures
+        shell: pwsh
+        run: |
+          $installers = Get-ChildItem "apps/desktop/src-tauri/target/$env:RUST_TARGET/release/bundle/nsis" -Filter *.exe
+          if ($installers.Count -eq 0) { throw "No NSIS installer found" }
+          foreach ($installer in $installers) {
+            $signature = Get-AuthenticodeSignature $installer.FullName
+            if ($signature.Status -ne "Valid") { throw "$($installer.Name) signature is $($signature.Status)" }
+            Write-Host "$($installer.Name): $($signature.SignerCertificate.Subject)"
+          }
+      - name: Write SHA-256 checksums
+        run: node scripts/write-desktop-checksums.mjs apps/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle
+      - name: Attest signed Windows installer
+        uses: actions/attest@v4
+        with:
+          subject-path: apps/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/**/*.exe
+      - name: Upload signed Windows installer
+        uses: actions/upload-artifact@v7
+        with:
+          name: takeboard-signed-windows-x64
+          path: |
+            apps/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/**/*.exe
+            apps/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/**/*.sha256
+          if-no-files-found: error
+
+  publish:
+    name: Publish only verified signed artifacts
+    if: inputs.publish
+    needs: [validate, macos, windows]
+    runs-on: ubuntu-latest
+    environment: production-release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: takeboard-signed-*
+          path: release
+          merge-multiple: true
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            extra=""
+            case "$RELEASE_TAG" in *-*) extra="--prerelease";; esac
+            gh release create "$RELEASE_TAG" --verify-tag --generate-notes $extra
+          fi
+          gh release upload "$RELEASE_TAG" release/* --clobber

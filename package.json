@@ -35,9 +35,10 @@
     "desktop:prepare": "pnpm --filter @takeboard/desktop prepare-runtime",
     "desktop:check": "pnpm --filter @takeboard/desktop check",
     "desktop:bundle": "pnpm --filter @takeboard/desktop bundle",
+    "security:linux-desktop": "node scripts/check-linux-desktop-advisory.mjs",
     "bundle:portable": "node scripts/build-portable-bundle.mjs",
     "bundle:verify": "node scripts/verify-release-checksums.mjs release",
-    "verify": "pnpm lint && pnpm typecheck && pnpm build && pnpm test && pnpm compatibility:matrix -- --check"
+    "verify": "pnpm lint && pnpm typecheck && pnpm build && pnpm test && pnpm security:linux-desktop && pnpm compatibility:matrix -- --check"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.11.1",

@@ -32,6 +32,26 @@ const app = buildPortal({
 
 try {
   await app.listen({ host, port });
+  let closing = false;
+  const shutdown = async (signal: NodeJS.Signals) => {
+    if (closing) return;
+    closing = true;
+    app.log.info({ signal }, "closing TakeBoard Portal");
+    const forcedExit = setTimeout(() => {
+      app.log.error("Portal did not close within 15 seconds");
+      process.exit(1);
+    }, 15_000);
+    forcedExit.unref();
+    try {
+      await app.close();
+      clearTimeout(forcedExit);
+    } catch (error) {
+      app.log.error(error, "Portal shutdown failed");
+      process.exitCode = 1;
+    }
+  };
+  process.once("SIGTERM", () => void shutdown("SIGTERM"));
+  process.once("SIGINT", () => void shutdown("SIGINT"));
 } catch (error) {
   app.log.error(error);
   process.exitCode = 1;
