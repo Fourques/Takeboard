@@ -14,7 +14,8 @@ GitHub 构建来源证明不能替代操作系统代码签名。不要把 Previe
 
 在仓库 `Settings → Environments` 创建 `production-release`：
 
-1. 只允许受保护的版本 Tag 部署；
+1. 将部署分支限制为受保护的 `main`；该工作流必须从 `main` 手动发起，并会在签名之前验证输入的版本
+   Tag 已存在、与 `package.json` 版本完全一致，再检出该 Tag 对应的不可变提交；
 2. 建议开启 Required reviewers，防止普通提交使用签名身份；
 3. 不允许来自 Fork 的工作流访问该环境；
 4. 在完成下面两种签名配置前，不运行正式工作流。
@@ -85,7 +86,7 @@ Artifact Signing 配置步骤：
 
 1. 在干净 `main` 上完成 `pnpm gate:release` 和真实 GPU Gate；
 2. 更新版本号和发布说明，创建并推送不可变版本 Tag；
-3. 在 Actions 手动运行 `Signed production release`，先保持 `publish=false`；
+3. 从 `main` 分支在 Actions 手动运行 `Signed production release`，先保持 `publish=false`；
 4. 下载三个安装器，在无开发环境的 Intel Mac、Apple Silicon Mac、Windows x64 上分别验证安装、首次
    启动、升级、卸载和数据保留；
 5. 检查 macOS `spctl` 与 Windows “数字签名”发布者名称；

@@ -33,11 +33,16 @@ jobs:
         with:
           fetch-depth: 0
       - id: ref
-        name: Require an existing version tag
+        name: Require main and an existing version tag
         shell: bash
         env:
           RELEASE_TAG: ${{ inputs.tag }}
+          WORKFLOW_REF: ${{ github.ref }}
         run: |
+          test "$WORKFLOW_REF" = "refs/heads/main" || {
+            echo "Production releases must be dispatched from the main branch, not $WORKFLOW_REF" >&2
+            exit 1
+          }
           case "$RELEASE_TAG" in
             v[0-9]*.[0-9]*.[0-9]*) ;;
             *) echo "Release tag must look like v0.2.0 or v0.2.0-beta.1" >&2; exit 1 ;;
