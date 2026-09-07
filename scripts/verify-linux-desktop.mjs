@@ -16,7 +16,7 @@ assert.ok(
   process.env.DISPLAY && process.env.DBUS_SESSION_BUS_ADDRESS,
   "Needs X11 and session D-Bus",
 );
-for (const command of ["openbox", "xprop", "xdotool", "import"]) {
+for (const command of ["openbox", "xprop", "xdotool", "import", "convert"]) {
   execFileSync("which", [command], { stdio: "pipe" });
 }
 const dataRoot = join(homedir(), "TakeBoardData");
@@ -108,6 +108,24 @@ async function closeWindow(entry, id) {
   await until("graceful native window exit", () => !running(entry), 15_000);
   assert.equal(entry.child.exitCode, 0, entry.log);
 }
+function capture(id, name) {
+  const windowImage = join(artifacts, `${name}.png`);
+  execFileSync("import", ["-window", id, windowImage]);
+  execFileSync("import", ["-window", "root", join(artifacts, `${name}-desktop.png`)]);
+  // Reject a blank dark form shell with no painted text/buttons. This is a narrow
+  // smoke assertion, not OCR, a visual-quality score, or proof of a WebKit defect.
+  const visibleContent = Number(
+    execFileSync(
+      "convert",
+      [windowImage, "-colorspace", "Gray", "-threshold", "70%", "-format", "%[fx:mean]", "info:"],
+      { encoding: "utf8" },
+    ),
+  );
+  assert.ok(
+    Number.isFinite(visibleContent) && visibleContent > 0.001,
+    `${name}: login content did not paint (${visibleContent})`,
+  );
+}
 async function vacantPort() {
   const server = createServer();
   await new Promise((resolve, reject) => {
@@ -141,7 +159,7 @@ try {
   const id = await windowId(desktop);
   // Rendering gets its own artifact; this is not a claim of automatic visual approval.
   await delay(5_000);
-  execFileSync("import", ["-window", id, join(artifacts, "first-launch.png")]);
+  capture(id, "first-launch");
   await closeWindow(desktop, id);
   await until(
     "owned server stopped and lease released",
@@ -168,7 +186,7 @@ try {
   const reused = await ready(second);
   assert.equal(reused.pid, borrowed.pid, "Desktop must reuse the existing server process");
   assert.equal(reused.port, borrowed.port);
-  execFileSync("import", ["-window", secondId, join(artifacts, "reused-service.png")]);
+  capture(secondId, "reused-service");
   await closeWindow(second, secondId);
   assert.ok(running(external));
   assert.equal(

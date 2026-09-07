@@ -91,6 +91,6 @@ TAKEBOARD_DESKTOP_SMOKE=1 xvfb-run -a -s '-screen 0 1600x1000x24' \
 - 强制结束本次启动的桌面进程后，启动器通过控制管道关闭自有服务。
 - 强制结束本次启动的启动器后，服务端通过 IPC 断开通知自行关闭，不成为无主进程。
 
-截图保存在 `test-results/linux-desktop/`；CI 保存截图供人工复核，截图生成本身不代表自动视觉验收通过。生成的 Tauri `gen/` schema 和安装包属于构建产物，不进入源码提交。
+窗口和完整桌面截图保存在 `test-results/linux-desktop/`；额外的亮色内容下限只用于拒绝完全空白的深色登录卡片，不是文字识别或视觉质量评分。CI 保存截图供人工复核，截图生成本身不代表自动视觉验收通过。生成的 Tauri `gen/` schema 和安装包属于构建产物，不进入源码提交。
 
 2026-09-07 本地原生验收使用 Ubuntu 22.04 x64 隔离容器、D-Bus 1.12.20、GTK 3.24.33、WebKitGTK 2.50.4、内置 Node.js 22.23.1；未修改宿主机系统库。该门槛只证明 Linux `.deb` 的构建、安装和上述生命周期行为，不代表 AppImage、macOS/Windows 安装器、桌面签名、实际 GPU 生成或全部图形驱动组合已验证。
