@@ -4,8 +4,8 @@ use std::{
     net::{SocketAddr, TcpListener, TcpStream},
     path::PathBuf,
     sync::{
-        atomic::{AtomicU64, Ordering},
-        Mutex,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        Arc, Mutex,
     },
     thread,
     time::{Duration, Instant},
@@ -17,8 +17,12 @@ use tauri_plugin_shell::{
 };
 
 struct DesktopRuntime {
-    child: Mutex<Option<CommandChild>>,
+    child: Mutex<Option<OwnedLauncher>>,
     generation: AtomicU64,
+}
+struct OwnedLauncher {
+    process: CommandChild,
+    exited: Arc<AtomicBool>,
 }
 struct DesktopStartup(Mutex<StartupEvent>);
 
@@ -41,8 +45,18 @@ fn stop_server(app: &tauri::AppHandle) {
     let state = app.state::<DesktopRuntime>();
     state.generation.fetch_add(1, Ordering::SeqCst);
     if let Ok(mut runtime) = state.child.lock() {
-        if let Some(child) = runtime.take() {
-            let _ = child.kill();
+        if let Some(mut child) = runtime.take() {
+            // Killing the launcher first used to orphan its Node server. Let it
+            // stop the owned server over IPC, then wait for the launcher to exit.
+            let _ = child.process.write(b"takeboard.launcher.shutdown\n");
+            let deadline = Instant::now() + Duration::from_secs(28);
+            while !child.exited.load(Ordering::SeqCst) && Instant::now() < deadline {
+                thread::sleep(Duration::from_millis(50));
+            }
+            if !child.exited.load(Ordering::SeqCst) {
+                // The server also observes its parent's IPC disconnect, including crashes.
+                let _ = child.process.kill();
+            }
         }
     };
 }
@@ -56,7 +70,7 @@ fn choose_port() -> Result<u16, String> {
         .map_err(|error| format!("无法读取本机端口：{error}"))
 }
 
-fn health_ready(port: u16) -> bool {
+fn health_matches(port: u16, instance_id: Option<&str>) -> bool {
     let address = SocketAddr::from(([127, 0, 0, 1], port));
     let Ok(mut stream) = TcpStream::connect_timeout(&address, Duration::from_millis(700)) else {
         return false;
@@ -75,6 +89,13 @@ fn health_ready(port: u16) -> bool {
         && response.starts_with("HTTP/1.1 200")
         && response.contains("\"service\":\"takeboard-server\"")
         && response.contains("\"status\":\"ok\"")
+        && instance_id.map_or(true, |id| {
+            response.contains(&format!("\"instanceId\":\"{id}\""))
+        })
+}
+
+fn health_ready(port: u16) -> bool {
+    health_matches(port, None)
 }
 
 fn wait_for_server(app: tauri::AppHandle, port: u16, generation: u64) {
@@ -120,6 +141,40 @@ fn wait_for_server(app: tauri::AppHandle, port: u16, generation: u64) {
 }
 
 fn start_server(app: &tauri::AppHandle) -> Result<(u16, u64), String> {
+    let data_root = app
+        .path()
+        .home_dir()
+        .map_err(|error| format!("无法定位用户目录：{error}"))?
+        .join("TakeBoardData");
+    if let (Ok(id), Ok(record)) = (
+        std::fs::read_to_string(data_root.join(".takeboard-instance-id")),
+        std::fs::read_to_string(data_root.join(".system").join("instance.json")),
+    ) {
+        if let Ok(record) = serde_json::from_str::<serde_json::Value>(&record) {
+            if record["instanceId"].as_str() == Some(id.trim()) {
+                if let Some(port) = record["port"]
+                    .as_u64()
+                    .and_then(|value| u16::try_from(value).ok())
+                    .filter(|port| *port > 0)
+                {
+                    if health_matches(port, Some(id.trim())) {
+                        if record["version"].as_str() != Some(env!("CARGO_PKG_VERSION")) {
+                            return Err(
+                                "同一数据目录已有其他版本正在运行，请先从原启动方式停止它。".into(),
+                            );
+                        }
+                        // Reusing a service does not transfer process ownership to this window.
+                        let generation = app
+                            .state::<DesktopRuntime>()
+                            .generation
+                            .fetch_add(1, Ordering::SeqCst)
+                            + 1;
+                        return Ok((port, generation));
+                    }
+                }
+            }
+        }
+    }
     let port = choose_port()?;
     let resource_root: PathBuf = app
         .path()
@@ -130,11 +185,6 @@ fn start_server(app: &tauri::AppHandle) -> Result<(u16, u64), String> {
     if !launcher.is_file() {
         return Err("桌面包缺少 TakeBoard 运行资源，请重新安装。".into());
     }
-    let data_root = app
-        .path()
-        .home_dir()
-        .map_err(|error| format!("无法定位用户目录：{error}"))?
-        .join("TakeBoardData");
     let command = app
         .shell()
         .sidecar("takeboard-node")
@@ -153,7 +203,11 @@ fn start_server(app: &tauri::AppHandle) -> Result<(u16, u64), String> {
         .map_err(|error| format!("无法启动 TakeBoard 服务：{error}"))?;
     let runtime = app.state::<DesktopRuntime>();
     let generation = runtime.generation.fetch_add(1, Ordering::SeqCst) + 1;
-    *runtime.child.lock().map_err(|_| "桌面进程状态不可用")? = Some(child);
+    let exited = Arc::new(AtomicBool::new(false));
+    *runtime.child.lock().map_err(|_| "桌面进程状态不可用")? = Some(OwnedLauncher {
+        process: child,
+        exited: exited.clone(),
+    });
     let event_app = app.clone();
     tauri::async_runtime::spawn(async move {
         while let Some(event) = events.recv().await {
@@ -162,6 +216,7 @@ fn start_server(app: &tauri::AppHandle) -> Result<(u16, u64), String> {
                     eprintln!("{}", String::from_utf8_lossy(&bytes));
                 }
                 CommandEvent::Terminated(payload) => {
+                    exited.store(true, Ordering::SeqCst);
                     if event_app
                         .state::<DesktopRuntime>()
                         .generation

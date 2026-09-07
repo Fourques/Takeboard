@@ -18,5 +18,8 @@ export function validateDesktopReleaseConfig(applicationVersion, config) {
   if (missingIcons.length > 0) {
     throw new Error(`桌面安装器缺少图标声明：${missingIcons.join(", ")}`);
   }
+  if (config?.bundle?.resources?.["resources/TakeBoard/"] !== "TakeBoard/") {
+    throw new Error("桌面运行资源必须映射到 TakeBoard/，与原生启动器的资源路径一致");
+  }
   return { icons: DESKTOP_ICONS };
 }

@@ -1015,7 +1015,7 @@ export class ComfyClient {
 
   constructor(
     private readonly baseUrl: string,
-    options: { liveProgress?: boolean } = {},
+    private readonly options: { liveProgress?: boolean; cancelConfirmationTimeoutMs?: number } = {},
   ) {
     this.progressTracker = new ComfyProgressTracker(baseUrl, options.liveProgress ?? true);
   }
@@ -1085,7 +1085,7 @@ export class ComfyClient {
     }
   }
 
-  private async queueState(promptId: string) {
+  async queueState(promptId: string) {
     const queueResponse = await fetch(`${this.baseUrl}/queue`, {
       signal: AbortSignal.timeout(30_000),
     });
@@ -1094,6 +1094,9 @@ export class ComfyClient {
       queue_running?: unknown[];
       queue_pending?: unknown[];
     };
+    if (!Array.isArray(queue.queue_running) || !Array.isArray(queue.queue_pending)) {
+      throw new Error("ComfyUI returned an invalid queue; task state cannot be confirmed");
+    }
     const containsPrompt = (entries: unknown[] | undefined) =>
       (entries ?? []).some(
         (entry) => Array.isArray(entry) && entry.some((value) => value === promptId),
@@ -1145,13 +1148,24 @@ export class ComfyClient {
       if (results.some((result) => !result.ok)) {
         throw new Error("ComfyUI targeted cancellation failed");
       }
-      return true;
+      return await this.waitUntilStopped(promptId);
     }
     if (!response.ok) throw new Error(`ComfyUI job cancellation failed: ${response.status}`);
     const result = (await response.json()) as { cancelled?: boolean };
-    if (result.cancelled) return true;
+    if (result.cancelled) return await this.waitUntilStopped(promptId);
     const state = await this.queueState(promptId);
     return !state.running && !state.pending;
+  }
+
+  private async waitUntilStopped(promptId: string) {
+    const deadline = Date.now() + (this.options.cancelConfirmationTimeoutMs ?? 5_000);
+    do {
+      const state = await this.queueState(promptId);
+      if (!state.running && !state.pending) return true;
+      if (Date.now() >= deadline) return false;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    } while (Date.now() <= deadline);
+    return false;
   }
 
   async deleteHistory(promptId: string) {

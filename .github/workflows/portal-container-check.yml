@@ -43,34 +43,38 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Build production image
-        run: docker build -f deploy/portal/Dockerfile -t takeboard-portal:ci .
+        run: docker compose -p takeboard-portal-ci -f deploy/portal/compose.yaml build
+        env:
+          TAKEBOARD_PORTAL_IMAGE_TAG: ci
+          TAKEBOARD_PORTAL_ENV_FILE: .env.example
       - name: Start isolated Portal
         run: |
-          docker run -d --name takeboard-portal-ci \
-            --read-only \
-            --tmpfs /tmp:rw,noexec,nosuid,size=64m \
-            -e TAKEBOARD_PORTAL_HOSTNAME=portal.example.test \
-            -e TAKEBOARD_PORTAL_ORIGIN=https://portal.example.test \
-            -e TAKEBOARD_PORTAL_SECURE_COOKIES=1 \
-            -e TAKEBOARD_PORTAL_BOOTSTRAP_TOKEN=test-only-bootstrap-token-1234567890 \
-            takeboard-portal:ci
+          mkdir -p deploy/portal/data
+          docker compose -p takeboard-portal-ci -f deploy/portal/compose.yaml up -d --wait --wait-timeout 90
+        env:
+          TAKEBOARD_PORTAL_IMAGE_TAG: ci
+          TAKEBOARD_PORTAL_ENV_FILE: .env.example
       - name: Require a healthy least-privilege container
         shell: bash
         run: |
           for attempt in $(seq 1 30); do
-            status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' takeboard-portal-ci)"
+            status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' takeboard-portal-ci-portal-1)"
             if [ "$status" = "healthy" ]; then break; fi
-            if [ "$status" = "unhealthy" ]; then docker logs takeboard-portal-ci; exit 1; fi
+            if [ "$status" = "unhealthy" ]; then docker logs takeboard-portal-ci-portal-1; exit 1; fi
             sleep 2
           done
-          test "$(docker inspect --format '{{.State.Health.Status}}' takeboard-portal-ci)" = "healthy"
-          test "$(docker inspect --format '{{.Config.User}}' takeboard-portal-ci)" = "takeboard-portal"
-          test "$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' takeboard-portal-ci)" = "true"
+          test "$(docker inspect --format '{{.State.Health.Status}}' takeboard-portal-ci-portal-1)" = "healthy"
+          test "$(docker inspect --format '{{.Config.User}}' takeboard-portal-ci-portal-1)" = "takeboard-portal"
+          test "$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' takeboard-portal-ci-portal-1)" = "true"
+          test "$(stat -c '%u:%g:%a' deploy/portal/data)" = "10001:10001:700"
       - name: Stop gracefully
-        run: docker stop --timeout 20 takeboard-portal-ci
+        run: docker stop --timeout 20 takeboard-portal-ci-portal-1
       - name: Show logs on failure
         if: failure()
-        run: docker logs takeboard-portal-ci || true
+        run: docker logs takeboard-portal-ci-portal-1 || true
       - name: Remove smoke container
         if: always()
-        run: docker rm -f takeboard-portal-ci || true
+        run: docker compose -p takeboard-portal-ci -f deploy/portal/compose.yaml down
+        env:
+          TAKEBOARD_PORTAL_IMAGE_TAG: ci
+          TAKEBOARD_PORTAL_ENV_FILE: .env.example

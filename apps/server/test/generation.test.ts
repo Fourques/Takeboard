@@ -279,6 +279,7 @@ describe("real generation routes", () => {
       if (url.endsWith("/api/jobs/prompt-compensate/cancel")) {
         return Response.json({ cancelled: true });
       }
+      if (url.endsWith("/queue")) return Response.json({ queue_running: [], queue_pending: [] });
       if (url.endsWith("/history")) return new Response(null, { status: 200 });
       throw new Error(`Unexpected ComfyUI request: ${url}`);
     });

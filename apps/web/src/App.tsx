@@ -45,6 +45,7 @@ import {
 } from "./api";
 import { AccountButton, useAuth } from "./auth-ui";
 import { type BoardNode, boardNodeTypes } from "./board-nodes";
+import { submitCandidates } from "./generation-session";
 import {
   loadModelPreferences,
   type ModelProfile,
@@ -54,9 +55,13 @@ import {
 } from "./model-profiles";
 import { NumericInput } from "./numeric-input";
 import { ThemeSwitcher } from "./theme-switcher";
+import { useRunRecovery } from "./use-run-recovery";
 
 const AssetLibrary = lazy(() =>
   import("./asset-library").then((module) => ({ default: module.AssetLibrary })),
+);
+const ExecutionProvenance = lazy(() =>
+  import("./execution-provenance").then((module) => ({ default: module.ExecutionProvenance })),
 );
 const CommandHistory = lazy(() =>
   import("./command-history").then((module) => ({ default: module.CommandHistory })),
@@ -83,89 +88,6 @@ const ProjectHub = lazy(() =>
 const rejectionReasons = ["角色漂移", "运动方向错误", "构图不稳定", "细节异常"];
 const canvasSnapGrid: [number, number] = [12, 12];
 const alignmentThreshold = 7;
-
-const executionProvenanceCss = `.execution-provenance {
-  margin-top: 8px;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--surface-2) 66%, transparent);
-}
-
-.execution-provenance summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  color: var(--text-2);
-  cursor: pointer;
-  gap: 12px;
-  font-size: calc(9px * var(--ui-scale));
-}
-
-.execution-provenance summary strong {
-  overflow: hidden;
-  color: var(--text-1);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.execution-provenance > p {
-  margin: 10px 0;
-  color: var(--text-2);
-  font-size: calc(9px * var(--ui-scale));
-  line-height: 1.55;
-}
-
-.execution-provenance dl {
-  display: grid;
-  margin: 0;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 6px;
-}
-
-.execution-provenance dl > div,
-.execution-provenance li {
-  padding: 7px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-}
-
-.execution-provenance dt,
-.execution-provenance dd {
-  margin: 0;
-  font-size: calc(8px * var(--ui-scale));
-}
-
-.execution-provenance dt {
-  color: var(--faint);
-}
-
-.execution-provenance dd {
-  margin-top: 2px;
-  color: var(--text-1);
-}
-
-.execution-provenance ul {
-  display: grid;
-  margin: 7px 0 0;
-  padding: 0;
-  list-style: none;
-  gap: 4px;
-}
-
-.execution-provenance li {
-  display: grid;
-  gap: 2px;
-}
-
-.execution-provenance li strong,
-.execution-provenance li span {
-  font-size: calc(8px * var(--ui-scale));
-}
-
-.execution-provenance li span {
-  color: var(--faint);
-}`;
 
 type GenerationSettings = {
   recipePath: string;
@@ -2095,39 +2017,9 @@ function Inspector({
             </div>
           ) : null}
           {selectedTakeRun?.execution ? (
-            <details className="execution-provenance">
-              <summary>
-                <span>执行与成本依据</span>
-                <strong>{selectedTakeRun.execution.workerName}</strong>
-              </summary>
-              <p>{selectedTakeRun.execution.selectionReason}</p>
-              <dl>
-                <div>
-                  <dt>策略</dt>
-                  <dd>{selectedTakeRun.execution.policy}</dd>
-                </div>
-                <div>
-                  <dt>成本</dt>
-                  <dd>
-                    {selectedTakeRun.actualCost.amount ??
-                      selectedTakeRun.estimatedCost.amount ??
-                      "未知"}
-                    {selectedTakeRun.actualCost.amount !== null ||
-                    selectedTakeRun.estimatedCost.amount !== null
-                      ? ` ${selectedTakeRun.actualCost.currency}`
-                      : ""}
-                  </dd>
-                </div>
-              </dl>
-              <ul>
-                {selectedTakeRun.execution.candidates.map((candidate) => (
-                  <li key={candidate.workerId}>
-                    <strong>{candidate.workerName}</strong>
-                    <span>{candidate.reason}</span>
-                  </li>
-                ))}
-              </ul>
-            </details>
+            <Suspense fallback={null}>
+              <ExecutionProvenance run={selectedTakeRun} />
+            </Suspense>
           ) : null}
         </>
       )}
@@ -2244,6 +2136,12 @@ export function App() {
   const pendingAssetPosition = useRef<{ x: number; y: number } | null>(null);
   const generationScopeRef = useRef("");
   const generationTokenRef = useRef(0);
+  const pendingSubmissionRef = useRef<{
+    token: number;
+    projectKey: string;
+    batchId: string;
+    promise: Promise<PromiseSettledResult<Awaited<ReturnType<typeof projectApi.generate>>>[]>;
+  } | null>(null);
   const generationRunIdsRef = useRef<string[]>([]);
   const projectCatalogRequestRef = useRef(0);
   const acceptedProjectIdRef = useRef<string | null>(null);
@@ -2726,64 +2624,34 @@ export function App() {
     selectedWorkflow,
   ]);
 
-  useEffect(() => {
-    if (showHub || projectMode !== "project" || !projectKey || !snapshot || generationBusy) return;
-    const recoverableRuns = snapshot.runs.filter(
-      (run) =>
-        !["completed", "failed", "cancelled"].includes(run.status) &&
-        (run.status !== "orphaned" || Boolean(run.promptId)),
-    );
-    if (recoverableRuns.length === 0) {
-      setGenerationProgress(null);
-      return;
-    }
-
-    const selectedRun = [...recoverableRuns].reverse().find((run) => run.shotId === selectedShotId);
-    if (selectedRun) {
-      setGenerationProgress({
-        phase: selectedRun.status === "collecting_outputs" ? "collecting" : "running",
-        label: selectedRun.status === "orphaned" ? "正在核对执行端任务" : "已恢复后台生成任务",
-        detail: "正在连接 ComfyUI 实时事件；页面可以安全刷新",
-        percent: null,
-        elapsedSeconds: Math.max(
-          0,
-          Math.round((Date.now() - Date.parse(selectedRun.createdAt)) / 1000),
-        ),
-      });
-    } else {
-      setGenerationProgress(null);
-    }
-
-    let stopped = false;
-    let retryTimer = 0;
-    const poll = async () => {
-      try {
-        for (const run of recoverableRuns) {
-          if (stopped) return;
-          const result = await projectApi.run(projectKey, run.id);
-          if (stopped) return;
-          acceptPayload(result, run.shotId);
-          if (run.shotId === selectedShotId) {
-            setGenerationProgress(
-              realGenerationProgress(result.progress, Date.parse(run.createdAt)),
-            );
-          }
-        }
-        if (!stopped) retryTimer = window.setTimeout(() => void poll(), 3_000);
-      } catch (cause) {
-        if (!stopped) {
-          setError(cause instanceof Error ? cause.message : "后台任务状态同步失败");
-          retryTimer = window.setTimeout(() => void poll(), 5_000);
-        }
+  useRunRecovery({
+    enabled: !showHub && projectMode === "project" && !generationBusy,
+    projectKey,
+    selectedShotId,
+    runs: snapshot?.runs ?? [],
+    onResult: (result, run) => {
+      acceptPayload(result);
+      if (run.shotId === selectedShotId) {
+        setGenerationProgress(realGenerationProgress(result.progress, Date.parse(run.createdAt)));
       }
-    };
-    const initialTimer = window.setTimeout(() => void poll(), 1_000);
-    return () => {
-      stopped = true;
-      window.clearTimeout(initialTimer);
-      window.clearTimeout(retryTimer);
-    };
-  }, [acceptPayload, generationBusy, projectKey, projectMode, selectedShotId, showHub, snapshot]);
+    },
+    onPending: (run) =>
+      setGenerationProgress(
+        run
+          ? {
+              phase: run.status === "collecting_outputs" ? "collecting" : "running",
+              label: run.status === "orphaned" ? "正在核对执行端任务" : "已恢复后台生成任务",
+              detail: "生成任务由服务端持续跟踪，关闭页面不影响结果回收",
+              percent: null,
+              elapsedSeconds: Math.max(
+                0,
+                Math.round((Date.now() - Date.parse(run.createdAt)) / 1000),
+              ),
+            }
+          : null,
+      ),
+    onError: (cause) => setError(cause instanceof Error ? cause.message : "后台任务状态同步失败"),
+  });
   const imageAssets = useMemo(
     () => snapshot?.assets.filter((asset) => asset.mediaType === "image") ?? [],
     [snapshot?.assets],
@@ -4203,6 +4071,7 @@ export function App() {
           : generationDisabledReason;
       const token = generationTokenRef.current + 1;
       generationTokenRef.current = token;
+      generationRunIdsRef.current = [];
       setGenerationBusy(true);
       const startedAt = Date.now();
       setGenerationProgress({
@@ -4244,8 +4113,9 @@ export function App() {
             ? submittedSettings.seed
             : (submittedSettings.seed + offset * 104_729) % 2_147_483_648,
         );
-        const submissionResults = await Promise.allSettled(
-          seeds.map((seed, offset) =>
+        const submissionPromise = submitCandidates(
+          seeds,
+          (seed, offset) =>
             projectApi.generate(projectKey, shot.id, {
               ...submittedSettings,
               seed,
@@ -4274,8 +4144,13 @@ export function App() {
               candidateCount: requestedCount,
               ...(launchOptions.retryOfRunId ? { retryOfRunId: launchOptions.retryOfRunId } : {}),
             }),
-          ),
+          () => generationTokenRef.current === token,
         );
+        pendingSubmissionRef.current = { token, projectKey, batchId, promise: submissionPromise };
+        const submissionResults = await submissionPromise;
+        if (pendingSubmissionRef.current?.token === token) pendingSubmissionRef.current = null;
+        // Navigation detaches the view, not the server-owned generation task.
+        if (generationTokenRef.current !== token) return;
         const submitted = submissionResults.flatMap((result) =>
           result.status === "fulfilled" ? [result.value] : [],
         );
@@ -4295,12 +4170,9 @@ export function App() {
         ];
         generationRunIdsRef.current = batchRunIds;
         if (generationTokenRef.current !== token) {
-          await Promise.allSettled(
-            batchRunIds.map((runId) => projectApi.cancelRun(projectKey, runId)),
-          );
           return;
         }
-        const submissionFailures = submissionResults.length - submitted.length;
+        const submissionFailures = batchSize - submitted.length;
         if (batchRunIds.length === 0) {
           const firstFailure = submissionResults.find(
             (result): result is PromiseRejectedResult => result.status === "rejected",
@@ -4348,7 +4220,7 @@ export function App() {
           if (generationTokenRef.current !== token) return;
           for (const result of successful) {
             runStates.set(result.runId, result.status);
-            acceptPayload(result, shot.id);
+            acceptPayload(result);
           }
           const knownRuns = latestSnapshotRef.current?.runs.filter((run) =>
             batchRunIds.includes(run.id),
@@ -4485,32 +4357,49 @@ export function App() {
   );
 
   const cancelGeneration = useCallback(async () => {
+    const pendingSubmission =
+      pendingSubmissionRef.current?.projectKey === projectKey ? pendingSubmissionRef.current : null;
     generationTokenRef.current += 1;
     setGenerationCancelling(true);
     setGenerationProgress({
       phase: "collecting",
       label: "正在停止任务",
-      detail: "取消执行、清理历史、临时输入与未采用生成物",
+      detail: "等待提交确认并核对执行端停止，确认后再清理临时文件",
       percent: null,
       elapsedSeconds: generationProgress?.elapsedSeconds ?? 0,
     });
     try {
+      // An explicit stop waits for the in-flight submission's identity. Navigation
+      // merely detaches the view; it never cancels already accepted server work.
+      const submitted = pendingSubmission ? await pendingSubmission.promise : [];
+      const refreshed =
+        projectMode === "project" && projectKey ? await projectApi.open(projectKey) : null;
       const runIds = [
-        ...new Set([...generationRunIdsRef.current, ...activeRuns.map((run) => run.id)]),
+        ...new Set([
+          ...generationRunIdsRef.current,
+          ...activeRuns.map((run) => run.id),
+          ...submitted.flatMap((result) =>
+            result.status === "fulfilled" ? [result.value.runId] : [],
+          ),
+          ...(pendingSubmission
+            ? (refreshed?.snapshot.runs
+                .filter((run) => run.parameters.candidateBatchId === pendingSubmission.batchId)
+                .map((run) => run.id) ?? [])
+            : []),
+        ]),
       ];
       if (projectMode === "project" && projectKey && runIds.length > 0) {
-        const results = await Promise.allSettled(
-          runIds.map((runId) => projectApi.cancelRun(projectKey, runId)),
+        const results = await submitCandidates(runIds, (runId) =>
+          projectApi.cancelRun(projectKey, runId),
         );
         const stopped = results.flatMap((result) =>
           result.status === "fulfilled" ? [result.value] : [],
         );
         for (const result of stopped) {
-          const run = result.snapshot.runs.find((item) => item.id === result.runId);
-          acceptPayload(result, run?.shotId);
+          acceptPayload(result);
         }
         const unconfirmed = stopped.filter((result) => !result.cancelled).length;
-        const requestFailures = results.length - stopped.length;
+        const requestFailures = runIds.length - stopped.length;
         setNotice(
           unconfirmed + requestFailures > 0
             ? `${stopped.length} 个任务已处理，${unconfirmed + requestFailures} 个仍需稍后核对`
@@ -4712,7 +4601,6 @@ export function App() {
     <main
       className={`app-shell ${sidebarOpen ? "sidebar-open" : "sidebar-collapsed"} ${inspectorVisible ? "inspector-open" : "inspector-collapsed"} ${comfortableDensity ? "density-comfortable" : "density-compact"}`}
     >
-      <style>{executionProvenanceCss}</style>
       <header className="topbar">
         <div className="brand">
           <span className="brand-mark">T</span>

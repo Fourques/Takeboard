@@ -671,6 +671,42 @@ export function registerGenerationRoutes(
           return await reply.code(400).send({ error: "候选批次信息无效；每批仅支持 1–4 个结果" });
         }
         const retryOfRunId = typeof body.retryOfRunId === "string" ? body.retryOfRunId : null;
+        const candidateRequestHash = sha256(
+          JSON.stringify(
+            Object.fromEntries(Object.entries(body).sort(([a], [b]) => a.localeCompare(b))),
+          ),
+        );
+        const existingCandidate =
+          candidateBatchId &&
+          current.snapshot.runs.find(
+            (run) =>
+              run.shotId === shot.id &&
+              run.parameters.candidateBatchId === candidateBatchId &&
+              run.parameters.candidateIndex === candidateIndex &&
+              (run.parameters.retryOfRunId ?? null) === retryOfRunId,
+          );
+        if (existingCandidate) {
+          if (existingCandidate.parameters.candidateRequestHash !== candidateRequestHash) {
+            return await reply
+              .code(409)
+              .send({ error: "此候选已经提交；更改参数后请创建新的生成批次" });
+          }
+          if (!existingCandidate.promptId) {
+            return await reply
+              .code(409)
+              .send({ error: "此候选已有提交记录，但执行端状态未确认；请先检查任务中心" });
+          }
+          return await reply.code(202).send({
+            key,
+            runId: existingCandidate.id,
+            promptId: existingCandidate.promptId,
+            candidateBatchId,
+            candidateIndex,
+            candidateCount,
+            replayed: true,
+            ...current,
+          });
+        }
         if (retryOfRunId) {
           const retryTarget = current.snapshot.runs.find((run) => run.id === retryOfRunId);
           if (!retryTarget || retryTarget.shotId !== shot.id) {
@@ -1185,6 +1221,7 @@ export function registerGenerationRoutes(
             ...(candidateBatchId
               ? {
                   candidateBatchId,
+                  candidateRequestHash,
                   candidateIndex,
                   candidateCount,
                 }
@@ -1317,46 +1354,142 @@ export function registerGenerationRoutes(
     },
   );
 
-  app.get<{ Params: { key: string; runId: string } }>(
-    "/api/projects/:key/runs/:runId",
-    async (request, reply) => {
-      const key = projectKey(request.params.key);
-      if (!key) return await reply.code(400).send({ error: "项目标识无效" });
-      const directory = join(root, key);
-      const store = ProjectStore.openExisting(directory);
-      if (!store) return await reply.code(404).send({ error: "项目不存在" });
-      try {
-        const current = store.loadCurrent();
-        if (!current) return await reply.code(404).send({ error: "项目不存在" });
-        const run = current.snapshot.runs.find((item) => item.id === request.params.runId);
-        if (!run) return await reply.code(404).send({ error: "运行记录不存在" });
-        if (
-          ["completed", "failed", "cancelled"].includes(run.status) ||
-          (run.status === "orphaned" && !run.promptId)
-        ) {
-          return { key, runId: run.id, status: run.status, progress: null, ...current };
-        }
-        if (!run.promptId) {
-          const timestamp = toIsoTimestamp();
-          run.status = "orphaned";
-          run.errorCode = "SUBMISSION_INTERRUPTED";
-          run.errorMessage = "任务准备完成，但没有取得执行端任务编号；请重试或清理该运行";
-          run.updatedAt = timestamp;
+  // Called under the project lock by either the HTTP route or the background worker.
+  async function reconcileRun(key: string, runId: string) {
+    const directory = join(root, key);
+    const store = ProjectStore.openExisting(directory);
+    if (!store) throw Object.assign(new Error("项目不存在"), { statusCode: 404 });
+    try {
+      const current = store.loadCurrent();
+      if (!current) throw Object.assign(new Error("项目不存在"), { statusCode: 404 });
+      const run = current.snapshot.runs.find((item) => item.id === runId);
+      if (!run) throw Object.assign(new Error("运行记录不存在"), { statusCode: 404 });
+      if (
+        ["completed", "failed", "cancelled"].includes(run.status) ||
+        (run.status === "orphaned" && !run.promptId)
+      ) {
+        return { key, runId: run.id, status: run.status, progress: null, ...current };
+      }
+      if (!run.promptId) {
+        const timestamp = toIsoTimestamp();
+        run.status = "orphaned";
+        run.errorCode = "SUBMISSION_INTERRUPTED";
+        run.errorMessage = "任务准备完成，但没有取得执行端任务编号；请重试或清理该运行";
+        run.updatedAt = timestamp;
+        finishRunAccounting(run, timestamp);
+        refreshShotStatus(current.snapshot, run.shotId, timestamp);
+        current.snapshot.project.updatedAt = timestamp;
+        current.snapshot.exportedAt = timestamp;
+        const saved = await store.save(current.snapshot, {
+          type: "run.orphaned",
+          payload: { runId: run.id, errorCode: run.errorCode },
+        });
+        return { key, runId: run.id, status: run.status, ...saved };
+      }
+
+      const comfy = workerPool.client(run.workerId, process.env.NODE_ENV !== "test");
+
+      const history = await comfy.history(run.promptId);
+      if (!history) {
+        // History is not the queue: a restart/pruned history must not leave a
+        // phantom running task forever. Transport failures throw without declaring loss.
+        const state = await comfy.queueState(run.promptId);
+        const timestamp = toIsoTimestamp();
+        let changed = false;
+        if (state.running || state.pending) {
+          if (run.parameters.missingFromWorkerSince !== undefined) {
+            delete run.parameters.missingFromWorkerSince;
+            changed = true;
+          }
+          if (run.errorCode === "WORKER_TASK_MISSING") {
+            run.status = state.running ? "running" : "queued";
+            run.errorCode = null;
+            run.errorMessage = null;
+            changed = true;
+          }
+        } else if (run.errorCode?.endsWith("CANCEL_UNCONFIRMED")) {
+          run.status = "cancelled";
+          run.errorCode = null;
+          run.errorMessage = null;
           finishRunAccounting(run, timestamp);
+          changed = true;
+        } else {
+          const missingSince = run.parameters.missingFromWorkerSince;
+          if (typeof missingSince !== "string" || !Number.isFinite(Date.parse(missingSince))) {
+            run.parameters.missingFromWorkerSince = timestamp;
+            changed = true;
+          } else if (
+            Date.now() - Date.parse(missingSince) >= 30_000 &&
+            run.errorCode !== "WORKER_TASK_MISSING"
+          ) {
+            run.status = "orphaned";
+            run.errorCode = "WORKER_TASK_MISSING";
+            run.errorMessage =
+              "执行端队列与历史中均未找到此任务；状态待确认，可检查执行端后重试或清理";
+            changed = true;
+          }
+        }
+        if (changed) {
+          run.updatedAt = timestamp;
           refreshShotStatus(current.snapshot, run.shotId, timestamp);
           current.snapshot.project.updatedAt = timestamp;
           current.snapshot.exportedAt = timestamp;
           const saved = await store.save(current.snapshot, {
-            type: "run.orphaned",
-            payload: { runId: run.id, errorCode: run.errorCode },
+            type: "run.status_reconciled",
+            payload: { runId: run.id, status: run.status },
           });
-          return { key, runId: run.id, status: run.status, ...saved };
+          return {
+            key,
+            runId: run.id,
+            status: run.status,
+            progress:
+              run.status === "orphaned" || run.status === "cancelled" ? null : liveProgress(run),
+            ...saved,
+          };
         }
+        return {
+          key,
+          runId: run.id,
+          status: run.status,
+          progress: run.status === "orphaned" ? null : liveProgress(run),
+          ...current,
+        };
+      }
+      const timestamp = toIsoTimestamp();
+      if (history.status?.status_str === "error") {
+        run.status = "failed";
+        run.errorCode = "COMFY_EXECUTION_ERROR";
+        run.errorMessage = "ComfyUI 执行失败，请检查工作站日志";
+        run.updatedAt = timestamp;
+        finishRunAccounting(run, timestamp);
+        refreshShotStatus(current.snapshot, run.shotId, timestamp);
+        const saved = await store.save(current.snapshot, {
+          type: "run.failed",
+          payload: { runId: run.id },
+        });
+        await Promise.allSettled([
+          comfy.deleteHistory(run.promptId),
+          cleanupComfyRunFiles(storage, current.snapshot.project.id, run.shotId, run.id),
+        ]);
+        comfy.forgetProgress(run.promptId);
+        return { key, runId: run.id, status: run.status, progress: null, ...saved };
+      }
 
-        const comfy = workerPool.client(run.workerId, process.env.NODE_ENV !== "test");
-
-        const history = await comfy.history(run.promptId);
-        if (!history) {
+      const outputs = Object.values(history.outputs ?? {});
+      const expectsImage =
+        run.parameters.outputMediaType === "image" ||
+        run.recipeVersion.startsWith("qwen-image-2512-");
+      const videoOutput = outputs.flatMap((item) => [
+        ...(item.videos ?? []),
+        ...(item.gifs ?? []).filter((file) => /\.(?:mp4|webm)$/i.test(file.filename)),
+        ...(item.images ?? []).filter((file) => /\.(?:mp4|webm)$/i.test(file.filename)),
+      ])[0];
+      const imageOutput = outputs
+        .flatMap((item) => item.images ?? [])
+        .find((file) => /\.(?:png|jpe?g|webp)$/i.test(file.filename));
+      const output = expectsImage ? imageOutput : videoOutput;
+      if (!output) {
+        if (!history.status?.completed) {
           return {
             key,
             runId: run.id,
@@ -1365,170 +1498,17 @@ export function registerGenerationRoutes(
             ...current,
           };
         }
-        const timestamp = toIsoTimestamp();
-        if (history.status?.status_str === "error") {
-          run.status = "failed";
-          run.errorCode = "COMFY_EXECUTION_ERROR";
-          run.errorMessage = "ComfyUI 执行失败，请检查工作站日志";
-          run.updatedAt = timestamp;
-          finishRunAccounting(run, timestamp);
-          refreshShotStatus(current.snapshot, run.shotId, timestamp);
-          const saved = await store.save(current.snapshot, {
-            type: "run.failed",
-            payload: { runId: run.id },
-          });
-          await Promise.allSettled([
-            comfy.deleteHistory(run.promptId),
-            cleanupComfyRunFiles(storage, current.snapshot.project.id, run.shotId, run.id),
-          ]);
-          comfy.forgetProgress(run.promptId);
-          return { key, runId: run.id, status: run.status, progress: null, ...saved };
-        }
-
-        const outputs = Object.values(history.outputs ?? {});
-        const expectsImage =
-          run.parameters.outputMediaType === "image" ||
-          run.recipeVersion.startsWith("qwen-image-2512-");
-        const videoOutput = outputs.flatMap((item) => [
-          ...(item.videos ?? []),
-          ...(item.gifs ?? []).filter((file) => /\.(?:mp4|webm)$/i.test(file.filename)),
-          ...(item.images ?? []).filter((file) => /\.(?:mp4|webm)$/i.test(file.filename)),
-        ])[0];
-        const imageOutput = outputs
-          .flatMap((item) => item.images ?? [])
-          .find((file) => /\.(?:png|jpe?g|webp)$/i.test(file.filename));
-        const output = expectsImage ? imageOutput : videoOutput;
-        if (!output) {
-          if (!history.status?.completed) {
-            return {
-              key,
-              runId: run.id,
-              status: run.status,
-              progress: liveProgress(run),
-              ...current,
-            };
-          }
-          run.status = "failed";
-          run.errorCode = expectsImage ? "NO_IMAGE_OUTPUT" : "NO_VIDEO_OUTPUT";
-          run.errorMessage = expectsImage
-            ? "ComfyUI 已完成，但 Workflow 没有返回图片文件"
-            : "ComfyUI 已完成，但 Workflow 没有返回视频文件";
-          run.updatedAt = timestamp;
-          finishRunAccounting(run, timestamp);
-          refreshShotStatus(current.snapshot, run.shotId, timestamp);
-          const saved = await store.save(current.snapshot, {
-            type: "run.failed",
-            payload: { runId: run.id, errorCode: run.errorCode },
-          });
-          await Promise.allSettled([
-            comfy.deleteHistory(run.promptId),
-            cleanupComfyRunFiles(storage, current.snapshot.project.id, run.shotId, run.id),
-          ]);
-          comfy.forgetProgress(run.promptId);
-          return { key, runId: run.id, status: run.status, progress: null, ...saved };
-        }
-        const bytes = await comfy.download(output);
-        const plannedAssetId = run.parameters.outputAssetId;
-        const assetId =
-          typeof plannedAssetId === "string" && plannedAssetId.startsWith("asset_")
-            ? plannedAssetId
-            : createTakeBoardId("asset");
-        const extension = extname(output.filename) || (expectsImage ? ".png" : ".mp4");
-        const storagePath = `renders/${run.shotId}/${run.id}/${assetId}${extension}`;
-        await mkdir(dirname(join(directory, storagePath)), { recursive: true });
-        await writeFile(join(directory, storagePath), bytes, { mode: 0o600 });
-        const normalizedExtension = extension.toLowerCase();
-        const mimeType = expectsImage
-          ? normalizedExtension === ".webp"
-            ? "image/webp"
-            : normalizedExtension === ".jpg" || normalizedExtension === ".jpeg"
-              ? "image/jpeg"
-              : "image/png"
-          : normalizedExtension === ".webm"
-            ? "video/webm"
-            : "video/mp4";
-        const imageInfo = expectsImage ? inspectImage(bytes, mimeType) : null;
-        const videoInfo = expectsImage ? null : inspectVideo(bytes, mimeType);
-        const proxyStoragePath = expectsImage ? `assets/proxies/${assetId}.jpg` : null;
-        const proxyPath =
-          proxyStoragePath &&
-          (await createImageProxy(join(directory, storagePath), join(directory, proxyStoragePath)))
-            ? proxyStoragePath
-            : null;
-        if (!current.snapshot.assets.some((asset) => asset.id === assetId)) {
-          current.snapshot.assets.push({
-            id: assetId,
-            projectId: current.snapshot.project.id,
-            mediaType: expectsImage ? "image" : "video",
-            originalName: basename(output.filename).slice(0, 512),
-            mimeType,
-            byteSize: bytes.byteLength,
-            sha256: sha256(bytes),
-            storagePath,
-            proxyPath,
-            width: imageInfo?.width ?? videoInfo?.width ?? null,
-            height: imageInfo?.height ?? videoInfo?.height ?? null,
-            durationSeconds: videoInfo?.durationSeconds ?? null,
-            frameRate: videoInfo?.frameRate ?? null,
-            metadataInspectedAt: expectsImage ? null : timestamp,
-            metadataInspectionError:
-              !expectsImage && !videoInfo ? "当前视频封装未提供可读取的轨道信息" : null,
-            customTags: [],
-            createdAt: timestamp,
-            updatedAt: timestamp,
-          });
-        }
-        const plannedTakeId = run.parameters.outputTakeId;
-        const takeId =
-          typeof plannedTakeId === "string" && plannedTakeId.startsWith("take_")
-            ? plannedTakeId
-            : createTakeBoardId("take");
-        if (!current.snapshot.takes.some((take) => take.id === takeId)) {
-          current.snapshot.takes.push({
-            id: takeId,
-            runId: run.id,
-            shotId: run.shotId,
-            assetId,
-            status: "candidate",
-            rejectionReasons: [],
-            createdAt: timestamp,
-            updatedAt: timestamp,
-          });
-        }
-        run.status = "completed";
+        run.status = "failed";
+        run.errorCode = expectsImage ? "NO_IMAGE_OUTPUT" : "NO_VIDEO_OUTPUT";
+        run.errorMessage = expectsImage
+          ? "ComfyUI 已完成，但 Workflow 没有返回图片文件"
+          : "ComfyUI 已完成，但 Workflow 没有返回视频文件";
         run.updatedAt = timestamp;
         finishRunAccounting(run, timestamp);
-        const shot = current.snapshot.shots.find((item) => item.id === run.shotId);
-        if (shot) {
-          if (
-            !current.snapshot.canvasItems.some(
-              (item) => item.refType === "take_stack" && item.refId === shot.id,
-            )
-          ) {
-            const stackPosition = takeStackPosition(current.snapshot, shot.id);
-            current.snapshot.canvasItems.push({
-              id: createTakeBoardId("canvas_item"),
-              sceneId: shot.sceneId,
-              refType: "take_stack",
-              refId: shot.id,
-              x: stackPosition.x,
-              y: stackPosition.y,
-              width: 280,
-              height: 190,
-              zIndex: 2,
-              parentGroupId: null,
-              collapsed: false,
-              createdAt: timestamp,
-              updatedAt: timestamp,
-            });
-          }
-        }
         refreshShotStatus(current.snapshot, run.shotId, timestamp);
-        current.snapshot.project.updatedAt = timestamp;
-        current.snapshot.exportedAt = timestamp;
         const saved = await store.save(current.snapshot, {
-          type: "run.completed",
-          payload: { runId: run.id, takeId, assetId },
+          type: "run.failed",
+          payload: { runId: run.id, errorCode: run.errorCode },
         });
         await Promise.allSettled([
           comfy.deleteHistory(run.promptId),
@@ -1536,9 +1516,131 @@ export function registerGenerationRoutes(
         ]);
         comfy.forgetProgress(run.promptId);
         return { key, runId: run.id, status: run.status, progress: null, ...saved };
-      } finally {
-        store.close();
       }
+      const bytes = await comfy.download(output);
+      const plannedAssetId = run.parameters.outputAssetId;
+      const assetId =
+        typeof plannedAssetId === "string" && plannedAssetId.startsWith("asset_")
+          ? plannedAssetId
+          : createTakeBoardId("asset");
+      const extension = extname(output.filename) || (expectsImage ? ".png" : ".mp4");
+      const storagePath = `renders/${run.shotId}/${run.id}/${assetId}${extension}`;
+      await mkdir(dirname(join(directory, storagePath)), { recursive: true });
+      await writeFile(join(directory, storagePath), bytes, { mode: 0o600 });
+      const normalizedExtension = extension.toLowerCase();
+      const mimeType = expectsImage
+        ? normalizedExtension === ".webp"
+          ? "image/webp"
+          : normalizedExtension === ".jpg" || normalizedExtension === ".jpeg"
+            ? "image/jpeg"
+            : "image/png"
+        : normalizedExtension === ".webm"
+          ? "video/webm"
+          : "video/mp4";
+      const imageInfo = expectsImage ? inspectImage(bytes, mimeType) : null;
+      const videoInfo = expectsImage ? null : inspectVideo(bytes, mimeType);
+      const proxyStoragePath = expectsImage ? `assets/proxies/${assetId}.jpg` : null;
+      const proxyPath =
+        proxyStoragePath &&
+        (await createImageProxy(join(directory, storagePath), join(directory, proxyStoragePath)))
+          ? proxyStoragePath
+          : null;
+      if (!current.snapshot.assets.some((asset) => asset.id === assetId)) {
+        current.snapshot.assets.push({
+          id: assetId,
+          projectId: current.snapshot.project.id,
+          mediaType: expectsImage ? "image" : "video",
+          originalName: basename(output.filename).slice(0, 512),
+          mimeType,
+          byteSize: bytes.byteLength,
+          sha256: sha256(bytes),
+          storagePath,
+          proxyPath,
+          width: imageInfo?.width ?? videoInfo?.width ?? null,
+          height: imageInfo?.height ?? videoInfo?.height ?? null,
+          durationSeconds: videoInfo?.durationSeconds ?? null,
+          frameRate: videoInfo?.frameRate ?? null,
+          metadataInspectedAt: expectsImage ? null : timestamp,
+          metadataInspectionError:
+            !expectsImage && !videoInfo ? "当前视频封装未提供可读取的轨道信息" : null,
+          customTags: [],
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        });
+      }
+      const plannedTakeId = run.parameters.outputTakeId;
+      const takeId =
+        typeof plannedTakeId === "string" && plannedTakeId.startsWith("take_")
+          ? plannedTakeId
+          : createTakeBoardId("take");
+      if (!current.snapshot.takes.some((take) => take.id === takeId)) {
+        current.snapshot.takes.push({
+          id: takeId,
+          runId: run.id,
+          shotId: run.shotId,
+          assetId,
+          status: "candidate",
+          rejectionReasons: [],
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        });
+      }
+      run.status = "completed";
+      run.errorCode = null;
+      run.errorMessage = null;
+      delete run.parameters.missingFromWorkerSince;
+      run.updatedAt = timestamp;
+      finishRunAccounting(run, timestamp);
+      const shot = current.snapshot.shots.find((item) => item.id === run.shotId);
+      if (shot) {
+        if (
+          !current.snapshot.canvasItems.some(
+            (item) => item.refType === "take_stack" && item.refId === shot.id,
+          )
+        ) {
+          const stackPosition = takeStackPosition(current.snapshot, shot.id);
+          current.snapshot.canvasItems.push({
+            id: createTakeBoardId("canvas_item"),
+            sceneId: shot.sceneId,
+            refType: "take_stack",
+            refId: shot.id,
+            x: stackPosition.x,
+            y: stackPosition.y,
+            width: 280,
+            height: 190,
+            zIndex: 2,
+            parentGroupId: null,
+            collapsed: false,
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          });
+        }
+      }
+      refreshShotStatus(current.snapshot, run.shotId, timestamp);
+      current.snapshot.project.updatedAt = timestamp;
+      current.snapshot.exportedAt = timestamp;
+      const saved = await store.save(current.snapshot, {
+        type: "run.completed",
+        payload: { runId: run.id, takeId, assetId },
+      });
+      await Promise.allSettled([
+        comfy.deleteHistory(run.promptId),
+        cleanupComfyRunFiles(storage, current.snapshot.project.id, run.shotId, run.id),
+      ]);
+      comfy.forgetProgress(run.promptId);
+      return { key, runId: run.id, status: run.status, progress: null, ...saved };
+    } finally {
+      store.close();
+    }
+  }
+
+  app.get<{ Params: { key: string; runId: string } }>(
+    "/api/projects/:key/runs/:runId",
+    async (request, reply) => {
+      const key = projectKey(request.params.key);
+      if (!key) return await reply.code(400).send({ error: "项目标识无效" });
+      return await reconcileRun(key, request.params.runId);
     },
   );
+  return { reconcileRun };
 }

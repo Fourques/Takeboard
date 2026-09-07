@@ -1,12 +1,31 @@
-version: "3.8"
-
 services:
+  portal-data-init:
+    image: takeboard-portal:${TAKEBOARD_PORTAL_IMAGE_TAG:-local}
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-ec"]
+    command: ["chown 10001:10001 /data && chmod 0700 /data"]
+    volumes:
+      - ./data:/data
+    read_only: true
+    network_mode: none
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - FOWNER
+      - DAC_OVERRIDE
+    restart: "no"
   portal:
     build:
       context: ../..
       dockerfile: deploy/portal/Dockerfile
     image: takeboard-portal:${TAKEBOARD_PORTAL_IMAGE_TAG:-local}
     restart: unless-stopped
+    depends_on:
+      portal-data-init:
+        condition: service_completed_successfully
     env_file:
       - ${TAKEBOARD_PORTAL_ENV_FILE:-.env}
     environment:

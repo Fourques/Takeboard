@@ -8,6 +8,7 @@ import { createRequire } from "node:module";
 import net from "node:net";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { createInterface } from "node:readline";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const bundleRoot = dirname(fileURLToPath(import.meta.url));
@@ -117,7 +118,7 @@ function portAvailable(port) {
   });
 }
 
-async function selectPort(instanceId, applicationVersion) {
+async function selectPort(instanceId, applicationVersion, dataRoot) {
   const configured = process.env.TAKEBOARD_PORT?.trim();
   if (configured && !/^\d+$/.test(configured)) {
     throw new Error("TAKEBOARD_PORT 必须是 1–65535 的整数");
@@ -125,7 +126,21 @@ async function selectPort(instanceId, applicationVersion) {
   const ports = configured
     ? [Number(configured)]
     : Array.from({ length: 20 }, (_, index) => 48120 + index);
-  for (const port of ports) {
+  try {
+    const record = JSON.parse(await readFile(join(dataRoot, ".system", "instance.json"), "utf8"));
+    if (
+      record.instanceId === instanceId &&
+      Number.isSafeInteger(record.port) &&
+      record.port > 0 &&
+      record.port <= 65535
+    ) {
+      ports.unshift(record.port);
+    }
+  } catch {
+    /* Older builds do not publish discovery metadata. Scan their ports below. */
+  }
+  let available = null;
+  for (const port of [...new Set(ports)]) {
     if (!Number.isSafeInteger(port) || port < 1 || port > 65_535) continue;
     const running = await health(port, 500);
     if (running?.instanceId === instanceId) {
@@ -136,8 +151,14 @@ async function selectPort(instanceId, applicationVersion) {
       }
       return { port, existing: true };
     }
-    if (await portAvailable(port)) return { port, existing: false };
+    if (
+      available === null &&
+      (!configured || port === Number(configured)) &&
+      (await portAvailable(port))
+    )
+      available = port;
   }
+  if (available !== null) return { port: available, existing: false };
   throw new Error(
     configured ? `配置端口 ${configured} 已被其他程序使用` : "48120–48139 都已被其他程序使用",
   );
@@ -165,7 +186,7 @@ function openBrowser(url) {
 async function waitForServer(child, port, instanceId) {
   const startedAt = Date.now();
   while (Date.now() - startedAt < 30_000) {
-    if (child.exitCode !== null) {
+    if (child.exitCode !== null || child.signalCode !== null) {
       throw new Error(`服务提前退出（代码 ${child.exitCode}）`);
     }
     if ((await health(port))?.instanceId === instanceId) return;
@@ -218,7 +239,7 @@ async function stopOwnedServer(child) {
 
 async function start() {
   const { applicationVersion, dataRoot, instanceId } = await doctor();
-  const selected = await selectPort(instanceId, applicationVersion);
+  const selected = await selectPort(instanceId, applicationVersion, dataRoot);
   const url = `http://127.0.0.1:${selected.port}`;
   if (selected.existing) {
     console.log(`TakeBoard 已经在运行：${url}`);
@@ -240,6 +261,7 @@ async function start() {
     windowsHide: false,
   });
   let stopPromise = null;
+  const childExit = new Promise((resolveExit) => child.once("exit", resolveExit));
   const terminate = () => {
     stopPromise ??= stopOwnedServer(child);
     void stopPromise.catch(() => undefined);
@@ -250,22 +272,32 @@ async function start() {
   process.once("SIGINT", terminate);
   process.once("SIGTERM", terminate);
   process.on("message", onControlMessage);
+  const desktopControl =
+    process.env.TAKEBOARD_DESKTOP === "1" ? createInterface({ input: process.stdin }) : null;
+  desktopControl?.on("line", (line) => {
+    if (line === "takeboard.launcher.shutdown") terminate();
+  });
+  desktopControl?.once("close", terminate);
   try {
     await waitForServer(child, selected.port, instanceId);
     console.log(`\nTakeBoard 已启动：${url}`);
     console.log("保持此窗口打开；按 Ctrl+C 安全停止。\n");
     if (openRequested) openBrowser(url);
-    const code = await new Promise((resolveExit) => child.once("exit", resolveExit));
+    const code = await childExit;
     if (code && code !== 0) process.exitCode = code;
   } catch (error) {
+    const stopping = Boolean(stopPromise);
     if (!stopPromise) stopPromise = stopOwnedServer(child);
     await stopPromise;
-    throw error;
+    if (!stopping) throw error;
   } finally {
     if (stopPromise) await stopPromise;
     process.removeListener("SIGINT", terminate);
     process.removeListener("SIGTERM", terminate);
     process.removeListener("message", onControlMessage);
+    desktopControl?.removeListener("close", terminate);
+    desktopControl?.close();
+    if (desktopControl) process.stdin.pause();
     if (process.connected) process.disconnect();
   }
 }

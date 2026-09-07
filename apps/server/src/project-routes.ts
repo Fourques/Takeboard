@@ -773,9 +773,9 @@ export function registerProjectRoutes(
     );
     const cancellationResults = await Promise.all(
       activeRuns.map(async (run) => {
-        const comfy = options.workerPool.client(run.workerId, false);
         if (!run.promptId) return { run, confirmed: true, error: null as string | null };
         try {
+          const comfy = options.workerPool.client(run.workerId, false);
           let confirmed = await comfy.cancel(run.promptId);
           if (!confirmed) {
             const history = await comfy.history(run.promptId).catch(() => null);

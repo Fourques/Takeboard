@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import fastifyMultipart from "@fastify/multipart";
 import fastifyStatic from "@fastify/static";
 import Fastify, { type FastifyInstance } from "fastify";
+import { resolveAuthDatabasePath } from "./auth-database-path.js";
 import { type AuthOptions, registerAuth } from "./auth-routes.js";
 import type { AuthMode } from "./auth-service.js";
 import { type BackupAutomationConfig, registerBackupAutomation } from "./backup-automation.js";
@@ -18,6 +19,7 @@ import { registerProjectRequestLock } from "./project-request-lock.js";
 import { registerProjectRoutes } from "./project-routes.js";
 import { registerRemoteAccessRoutes } from "./remote-access-routes.js";
 import { type RequestSecurityOptions, registerRequestSecurity } from "./request-security.js";
+import { registerRunReconciler } from "./run-reconciler.js";
 import { WorkerPool } from "./worker-pool.js";
 import { registerWorkerRoutes, type WorkerRouteOptions } from "./worker-routes.js";
 import { registerWorkflowRoutes } from "./workflow-routes.js";
@@ -36,6 +38,7 @@ export type AppOptions = {
   requestSecurity?: RequestSecurityOptions;
   auth?: Partial<AuthOptions> & { mode?: AuthMode };
   backupAutomation?: BackupAutomationConfig | false;
+  runReconciliation?: { intervalMs: number } | false;
 };
 
 export function authModeFromEnvironment(): AuthMode {
@@ -62,7 +65,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     mode: options.auth?.mode ?? authModeFromEnvironment(),
     databasePath:
       options.auth?.databasePath ??
-      resolve(process.env.TAKEBOARD_AUTH_DATABASE ?? projectsRoot, ".system", "auth.db"),
+      resolveAuthDatabasePath(projectsRoot, process.env.TAKEBOARD_AUTH_DATABASE),
     projectsRoot,
     ...(options.auth?.secureCookies === undefined
       ? {}
@@ -148,10 +151,21 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   registerProjectCommandRoutes(app, projectsRoot);
   registerExtensionRoutes(app, projectsRoot, extensionRegistry);
   registerWorkerRoutes(app, comfyUrl, options.workerOptions, workerPool);
-  registerGenerationRoutes(app, projectsRoot, workerPool, {
+  const generation = registerGenerationRoutes(app, projectsRoot, workerPool, {
     inputRoot: comfyInputRoot,
     outputRoot: comfyOutputRoot,
   });
+  if (
+    options.runReconciliation !== false &&
+    (options.runReconciliation || process.env.NODE_ENV !== "test")
+  ) {
+    registerRunReconciler(
+      app,
+      projectsRoot,
+      generation.reconcileRun,
+      options.runReconciliation?.intervalMs,
+    );
+  }
   registerWorkflowRoutes(
     app,
     comfyUrl,

@@ -365,11 +365,19 @@ async function startUnlocked() {
     throw new Error("TAKEBOARD_PORT 必须是 1–65535 的有效端口");
   }
   let port = null;
+  try {
+    const record = JSON.parse(readFileSync(join(dataRoot(), ".system", "instance.json"), "utf8"));
+    if (
+      record.instanceId === instanceId &&
+      Number.isSafeInteger(record.port) &&
+      record.port > 0 &&
+      record.port <= 65535
+    )
+      portCandidates.unshift(record.port);
+  } catch {
+    /* Discovery metadata is optional for older releases. */
+  }
   for (const candidate of portCandidates) {
-    if (await portAvailable(candidate)) {
-      port = candidate;
-      break;
-    }
     const running = await healthPayload(candidate);
     if (running?.service === "takeboard-server" && running?.instanceId === instanceId) {
       if (running.version !== applicationVersion) {
@@ -382,6 +390,12 @@ async function startUnlocked() {
       openBrowser(url);
       return;
     }
+    if (
+      port === null &&
+      (!configuredPort || candidate === Number(configuredPort)) &&
+      (await portAvailable(candidate))
+    )
+      port = candidate;
   }
   if (port === null) {
     throw new Error(
@@ -673,8 +687,13 @@ async function restore(archive, confirmation) {
   const module = await import(
     pathToFileURL(join(repoDir, "apps", "server", "dist", "instance-backup.js")).href
   );
-  const authDatabase =
-    runtimeEnvironment.TAKEBOARD_AUTH_DATABASE || join(dataRoot(), ".system", "auth.db");
+  const { resolveAuthDatabasePath } = await import(
+    pathToFileURL(join(repoDir, "apps", "server", "dist", "auth-database-path.js")).href
+  );
+  const authDatabase = resolveAuthDatabasePath(
+    dataRoot(),
+    runtimeEnvironment.TAKEBOARD_AUTH_DATABASE,
+  );
   console.log("正在隔离解包并验证所有哈希、身份数据库和项目数据库…");
   const receipt = await module.restoreInstanceOffline(dataRoot(), source, authDatabase);
   console.log(`恢复完成：${receipt.projects} 个项目、${receipt.users} 个账号。`);

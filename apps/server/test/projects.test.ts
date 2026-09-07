@@ -151,6 +151,7 @@ describe("TakeBoard project API", () => {
       if (url.endsWith("/api/jobs/prompt-delete-project/cancel")) {
         return Response.json({ cancelled: true });
       }
+      if (url.endsWith("/queue")) return Response.json({ queue_running: [], queue_pending: [] });
       if (url.endsWith("/history")) return Response.json({});
       throw new Error(`Unexpected fetch: ${url}`);
     });

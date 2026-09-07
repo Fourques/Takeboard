@@ -9,6 +9,7 @@ release/
 apps/desktop/src-tauri/binaries/
 apps/desktop/src-tauri/resources/
 apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
 *.log
 .DS_Store
 .env

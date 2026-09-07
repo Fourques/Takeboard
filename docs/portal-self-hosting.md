@@ -119,7 +119,11 @@ docker compose ps
 curl -fsS -H 'Host: portal.example.com' http://127.0.0.1:49200/__portal/api/health
 ```
 
-`deploy/portal/data` 包含数据库、WAL 和自动生成的主密钥，权限应只授予部署账号。完成首个管理员注册后，
+Compose 会先运行一次无网络的权限初始化容器，仅将挂载的 `data` 顶层目录设为 UID/GID `10001`、权限 `0700`；
+随后 Portal 始终以非 root 身份运行。不会递归修改现有文件权限。Linux 上此目录因此需要管理员权限进行备份；
+若迁入旧数据，应在停止服务后确认其中数据库、WAL 和密钥均归服务账号所有，不能以 `chmod 777` 绕过检查。
+
+`deploy/portal/data` 包含数据库、WAL 和自动生成的主密钥。完成首个管理员注册后，
 从 `.env` 删除 `TAKEBOARD_PORTAL_BOOTSTRAP_TOKEN` 并执行 `docker compose up -d`。不要把 `.env` 或
 `data/` 提交到 Git。
 
@@ -128,7 +132,7 @@ curl -fsS -H 'Host: portal.example.com' http://127.0.0.1:49200/__portal/api/heal
 ```bash
 cd deploy/portal
 docker compose stop portal
-tar -C . -czf "takeboard-portal-backup-$(date +%Y%m%d-%H%M%S).tar.gz" data
+sudo tar -C . -czf "takeboard-portal-backup-$(date +%Y%m%d-%H%M%S).tar.gz" data
 docker compose build --pull
 docker compose up -d
 docker compose ps

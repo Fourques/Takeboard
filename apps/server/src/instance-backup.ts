@@ -8,6 +8,7 @@ import { createGunzip, createGzip } from "node:zlib";
 import BetterSqlite3 from "better-sqlite3";
 import { extract, type Header, pack } from "tar-stream";
 import type { AuthService } from "./auth-service.js";
+import { acquireInstanceLease } from "./instance-lease.js";
 import {
   createProjectArchive,
   findActiveProjectById,
@@ -596,6 +597,19 @@ export async function removeStagedRestore(projectsRoot: string, restoreId: strin
 }
 
 export async function restoreInstanceOffline(
+  projectsRoot: string,
+  archivePath: string,
+  authDatabasePath: string,
+) {
+  const lease = acquireInstanceLease(projectsRoot);
+  try {
+    return await restoreInstanceOfflineUnlocked(projectsRoot, archivePath, authDatabasePath);
+  } finally {
+    lease.release();
+  }
+}
+
+async function restoreInstanceOfflineUnlocked(
   projectsRoot: string,
   archivePath: string,
   authDatabasePath: string,
