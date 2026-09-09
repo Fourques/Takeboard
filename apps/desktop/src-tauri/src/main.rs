@@ -329,13 +329,6 @@ fn main() {
                 });
             }
         })
-        .on_window_event(|window, event| {
-            if window.label() == "remote-workspace"
-                && matches!(event, tauri::WindowEvent::Destroyed)
-            {
-                connections::remote_window_closed(window.app_handle().clone());
-            }
-        })
         .setup(|app| {
             let menu = tauri::menu::Menu::default(app.handle())?;
             let connect = tauri::menu::MenuItem::with_id(

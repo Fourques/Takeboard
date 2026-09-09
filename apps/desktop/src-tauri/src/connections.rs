@@ -58,8 +58,7 @@ pub async fn open(app: tauri::AppHandle) -> tauri::Result<()> {
     }
     Ok(())
 }
-pub fn remote_window_closed(app: tauri::AppHandle) {
-    let generation = app.state::<Connections>().generation.load(Ordering::SeqCst);
+fn remote_window_closed(app: tauri::AppHandle, generation: u64) {
     tauri::async_runtime::spawn(async move {
         let state = app.state::<Connections>();
         let _guard = state.operation.lock().await;
@@ -224,12 +223,21 @@ pub async fn open_remote_workspace(
         remote.set_focus().map_err(|error| error.to_string())?;
     } else {
         // No capabilities are assigned to this remote-content window.
-        WebviewWindowBuilder::new(&app, "remote-workspace", WebviewUrl::External(url))
+        let remote = WebviewWindowBuilder::new(&app, "remote-workspace", WebviewUrl::External(url))
             .title("TakeBoard · 远程设备")
             .inner_size(1440.0, 900.0)
             .min_inner_size(720.0, 520.0)
             .build()
             .map_err(|error| error.to_string())?;
+        // Capture ownership when this window is created, not when its delayed
+        // Destroyed event arrives (by then a different connection may be active).
+        let generation = state.generation.load(Ordering::SeqCst);
+        let closing_app = app.clone();
+        remote.on_window_event(move |event| {
+            if matches!(event, tauri::WindowEvent::Destroyed) {
+                remote_window_closed(closing_app.clone(), generation);
+            }
+        });
     }
     Ok(())
 }
