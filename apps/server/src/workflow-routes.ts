@@ -3,6 +3,7 @@ import { readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { ComfyPrompt } from "@takeboard/executor-comfy";
 import type { FastifyInstance } from "fastify";
+import { projectDirectory } from "./project-locations.js";
 import { ProjectStore } from "./storage/project-store.js";
 import {
   fetchComfyObjectInfo,
@@ -447,7 +448,7 @@ async function workflowReferences(projectsRoot: string, path: string) {
       ) {
         continue;
       }
-      const store = ProjectStore.openExisting(join(source.directory, entry.name));
+      const store = ProjectStore.openExisting(projectDirectory(source.directory, entry.name));
       if (!store) continue;
       try {
         const current = store.loadCurrent();

@@ -64,7 +64,7 @@ function render() {
     row.className = "recent-row";
     const open = document.createElement("button");
     open.type = "button";
-    open.textContent = item.address;
+    open.textContent = item.name || item.address;
     const subtitle = document.createElement("small");
     subtitle.textContent =
       item.kind === "portal"
@@ -76,7 +76,10 @@ function render() {
     open.onclick = () => {
       kind.value = item.kind;
       address.value = item.address;
+      document.querySelector("#device-name").value = item.name ?? "";
       port.value = item.port ?? "";
+      document.querySelector("#allow-start").checked = item.allowStart === true;
+      document.querySelector("#platform").value = item.platform ?? "auto";
       explain();
       form.requestSubmit();
     };
@@ -98,6 +101,7 @@ async function apply(value) {
   // The broker first releases an old transport. Do not briefly enable the form
   // or overwrite "connecting" with "disconnected" during that transition.
   if (value.state === "idle" && opening) return;
+  document.querySelector("#start-needed").hidden = value.code !== "START_REQUIRED";
   connected = value.state === "ready";
   const busy = value.state === "connecting";
   document.querySelector("#connect").disabled = busy;
@@ -110,7 +114,7 @@ async function apply(value) {
     status.textContent = "尚未连接。选择服务器开始，服务器任务和项目不受影响。";
   }
   if (value.state === "ready") {
-    status.textContent = `已连接 · ${value.target.address}`;
+    status.textContent = `已连接 · ${value.target.name ? `${value.target.name} · ` : ""}${value.target.address}`;
     recent = [
       { ...value.target, instanceId: value.instanceId, localPort: value.localPort },
       ...recent.filter(
@@ -135,9 +139,12 @@ form.addEventListener("submit", async (event) => {
   if (connected && !confirm("重新连接将替换当前远程连接。请先保存编辑；服务器生成任务不会停止。"))
     return;
   const target = {
+    name: document.querySelector("#device-name").value.trim(),
     kind: kind.value,
     address: address.value.trim(),
     port: kind.value === "ssh" ? port.value : null,
+    allowStart: kind.value === "ssh" && document.querySelector("#allow-start").checked,
+    platform: document.querySelector("#platform").value,
   };
   const stored = recent.find(
     (item) =>
@@ -161,7 +168,20 @@ disconnect.onclick = () => {
   void api.core.invoke("disconnect_remote").catch(failure);
 };
 reopen.onclick = () => api.core.invoke("open_remote_workspace").catch(failure);
-kind.onchange = explain;
+document.querySelector("#open-local").onclick = () =>
+  api.core.invoke("open_local_workspace").catch(failure);
+document.querySelector("#start-needed").onclick = () => {
+  document.querySelector("#allow-start").checked = true;
+  document.querySelector("#start-needed").hidden = true;
+  form.requestSubmit();
+};
+kind.onchange = () => {
+  document.querySelector("#allow-start").checked = false;
+  explain();
+};
+address.addEventListener("input", () => {
+  document.querySelector("#allow-start").checked = false;
+});
 render();
 explain();
 kind.focus();

@@ -11,6 +11,7 @@ import { authContext } from "./auth-routes.js";
 import type { AuthService } from "./auth-service.js";
 import type { BackupAutomation } from "./backup-automation.js";
 import { listInstanceBackups } from "./instance-backup.js";
+import { projectDirectory } from "./project-locations.js";
 import { projectKey } from "./project-routes.js";
 import { ProjectStore } from "./storage/project-store.js";
 import { diskCapacity, projectStorageReserveBytes } from "./storage-capacity.js";
@@ -93,9 +94,18 @@ function effectiveProjectRole(
   return auth.projectRole(projectId, context.user.id);
 }
 
-function loadProjectForOperations(directory: string) {
+function operationDirectory(root: string, key: string) {
+  try {
+    return projectDirectory(root, key);
+  } catch {
+    return undefined;
+  }
+}
+
+function loadProjectForOperations(directory: string | undefined) {
   let store: ProjectStore | null = null;
   try {
+    if (!directory) return { current: null, unreadable: true } as const;
     store = ProjectStore.openExisting(directory);
     if (!store) return { current: null, unreadable: true } as const;
     const current = store.loadCurrent();
@@ -133,7 +143,7 @@ export function registerOperationsRoutes(
     const tasks: OperationTask[] = [];
     for (const entry of entries) {
       if (!entry.isDirectory() || !projectKey(entry.name)) continue;
-      const { current } = loadProjectForOperations(join(root, entry.name));
+      const { current } = loadProjectForOperations(operationDirectory(root, entry.name));
       if (!current || (accessible && !accessible.has(current.snapshot.project.id))) continue;
       const role = effectiveProjectRole(auth, current.snapshot.project.id, context);
       if (!role) continue;
@@ -189,9 +199,10 @@ export function registerOperationsRoutes(
     const projects = [];
     for (const entry of entries) {
       if (!entry.isDirectory() || !projectKey(entry.name)) continue;
-      const directory = join(root, entry.name);
+      const directory = operationDirectory(root, entry.name);
       const { current } = loadProjectForOperations(directory);
-      if (!current || (accessible && !accessible.has(current.snapshot.project.id))) continue;
+      if (!directory || !current || (accessible && !accessible.has(current.snapshot.project.id)))
+        continue;
       const usage = await directoryUsage(directory, true);
       projects.push({
         projectKey: entry.name,
@@ -207,9 +218,9 @@ export function registerOperationsRoutes(
     const trashEntries = await readdir(trashRoot, { withFileTypes: true }).catch(() => []);
     for (const entry of trashEntries) {
       if (!entry.isDirectory()) continue;
-      const directory = join(trashRoot, entry.name);
+      const directory = operationDirectory(trashRoot, entry.name);
       const { current } = loadProjectForOperations(directory);
-      if (!current) continue;
+      if (!directory || !current) continue;
       const role = effectiveProjectRole(auth, current.snapshot.project.id, context);
       if (!role || (context && context.user.instanceRole !== "admin" && role !== "owner")) continue;
       trashBytes += (await directoryUsage(directory)).totalBytes;
@@ -252,7 +263,7 @@ export function registerOperationsRoutes(
     const canInspectInstance = !context || context.user.instanceRole === "admin";
     for (const entry of entries) {
       if (!entry.isDirectory() || !projectKey(entry.name)) continue;
-      const loaded = loadProjectForOperations(join(root, entry.name));
+      const loaded = loadProjectForOperations(operationDirectory(root, entry.name));
       if (loaded.unreadable) {
         if (canInspectInstance) unreadableProjects += 1;
         continue;

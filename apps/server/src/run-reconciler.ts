@@ -1,6 +1,6 @@
 import { readdir } from "node:fs/promises";
-import { join } from "node:path";
 import type { FastifyInstance } from "fastify";
+import { projectDirectory } from "./project-locations.js";
 import { acquireProjectLock } from "./project-request-lock.js";
 import { projectKey } from "./project-routes.js";
 import { ProjectStore } from "./storage/project-store.js";
@@ -32,7 +32,7 @@ export function registerRunReconciler(
         const releaseRead = await acquireProjectLock(key);
         try {
           if (stopped) return;
-          const store = ProjectStore.openExisting(join(root, key));
+          const store = ProjectStore.openExisting(projectDirectory(root, key));
           if (!store) continue;
           try {
             runIds =

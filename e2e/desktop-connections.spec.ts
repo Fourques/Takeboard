@@ -54,6 +54,26 @@ test("connection form keeps pending state, saves verified targets and confirms d
   await expect(connect).toBeDisabled();
   await expect(page.locator("#status")).toContainText("正在验证");
   await page.evaluate(() => {
+    (window as unknown as { testEvents: (value: unknown) => void }).testEvents({
+      state: "failed",
+      code: "START_REQUIRED",
+      message: "已安装但未启动，需要授权",
+    });
+  });
+  await expect(page.getByRole("button", { name: "允许启动并连接" })).toBeVisible();
+  await page.getByRole("button", { name: "允许启动并连接" }).click();
+  expect(
+    await page.evaluate(() => {
+      const calls = (
+        window as unknown as {
+          testInvocations: { command: string; args: { target?: { allowStart?: boolean } } }[];
+        }
+      ).testInvocations;
+      return calls.filter((item) => item.command === "connect_remote").at(-1)?.args.target
+        ?.allowStart;
+    }),
+  ).toBe(true);
+  await page.evaluate(() => {
     const state = window as unknown as { testEvents: (value: unknown) => void };
     state.testEvents({
       state: "ready",

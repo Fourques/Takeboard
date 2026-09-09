@@ -1,4 +1,4 @@
-import { mkdtemp, rename, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -11,6 +11,7 @@ import {
   restoreInstanceOffline,
   stageInstanceRestore,
 } from "../src/instance-backup.js";
+import { addStorageRoot, linkProjectDirectory } from "../src/project-locations.js";
 import { ProjectService } from "../src/project-service.js";
 import { ProjectStore } from "../src/storage/project-store.js";
 
@@ -21,6 +22,60 @@ afterEach(async () => {
 });
 
 describe("TakeBoard instance backups", () => {
+  it("backs up real externally located content and restores a self-contained project without overwriting the source", async () => {
+    const base = await mkdtemp(join(tmpdir(), "takeboard-external-backup-"));
+    roots.push(base);
+    const root = join(base, "instance");
+    const external = join(base, "film-drive");
+    await mkdir(root);
+    await mkdir(external);
+    const auth = new AuthService(join(root, ".system", "auth.db"), "required");
+    try {
+      const admin = auth.createBootstrap(
+        {
+          name: "Owner",
+          email: "backup@studio.test",
+          password: "external project backup passphrase",
+        },
+        [],
+      );
+      await addStorageRoot(root, { path: external, name: "Film drive" });
+      const key = "external-film.takeboard";
+      const directory = join(external, "Film (external).takeboard");
+      const created = await new ProjectService().create({
+        projectDirectory: directory,
+        title: "External film",
+      });
+      auth.grantProjectOwner(created.snapshot.project.id, admin.id);
+      await linkProjectDirectory(root, key, directory, {
+        projectId: created.snapshot.project.id,
+        title: "External film",
+        updatedAt: created.snapshot.project.updatedAt,
+      });
+      const backup = await createInstanceBackup(root, auth);
+      expect(backup.projectCount).toBe(1);
+      const archive = instanceBackupPath(root, backup.id);
+      if (!archive) throw new Error("Missing backup archive");
+      await rename(external, `${external}-offline`);
+      await expect(createInstanceBackup(root, auth)).rejects.toThrow(/项目文件夹不可用/);
+      const offline = await stageInstanceRestore(root, archive);
+      expect(offline.projects[0]?.alreadyExists).toBe(true);
+      await rename(`${external}-offline`, external);
+      await rename(join(root, key), join(root, ".saved-index"));
+      const staged = await stageInstanceRestore(root, archive);
+      expect(staged.projects[0]?.alreadyExists).toBe(false);
+      await applyStagedProjectRestore(root, staged.restoreId, auth, admin.id);
+      const original = JSON.parse(
+        await readFile(join(directory, "project.takeboard.json"), "utf8"),
+      );
+      const restored = JSON.parse(
+        await readFile(join(root, key, "project.takeboard.json"), "utf8"),
+      );
+      expect(restored.project).toEqual(original.project);
+    } finally {
+      auth.close();
+    }
+  });
   it("honors the requested local recovery-point limit", async () => {
     const dataRoot = await mkdtemp(join(tmpdir(), "takeboard-instance-retention-"));
     roots.push(dataRoot);

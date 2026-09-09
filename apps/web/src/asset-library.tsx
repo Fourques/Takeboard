@@ -1179,6 +1179,13 @@ export function AssetLibrary({
                   ) : null}
                   <a
                     className="asset-original-link"
+                    href={`${projectApi.assetUrl(projectKey, selectedAsset.id)}?download=1`}
+                    download={selectedAsset.originalName}
+                  >
+                    下载到当前电脑
+                  </a>
+                  <a
+                    className="asset-original-link"
                     href={projectApi.assetUrl(projectKey, selectedAsset.id)}
                     target="_blank"
                     rel="noreferrer"

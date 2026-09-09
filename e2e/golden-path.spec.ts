@@ -675,7 +675,8 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
   await expect(page.getByLabel("默认画幅")).toHaveCount(0);
   await expect(page.getByLabel("第一场名称")).toHaveCount(0);
   await expect(page.getByLabel("第一个镜头意图")).toHaveCount(0);
-  await expect(page.locator(".project-start-card")).toContainText("不预设镜头");
+  await expect(page.locator(".project-location-picker")).toContainText("创建到");
+  await expect(page.locator(".project-location-summary code")).not.toHaveText("正在读取保存位置…");
   await page.screenshot({
     path: "test-results/takeboard-new-project.png",
     animations: "disabled",

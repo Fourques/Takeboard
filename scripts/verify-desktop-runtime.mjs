@@ -1,12 +1,13 @@
 // Execute the packaged runtime, not the workspace's Node or node_modules.
 // This is an API/lifecycle gate, not a claim of native window or GPU validation.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { promisify } from "node:util";
 
 const binary = resolve(process.argv[2] ?? "");
 const resources = resolve(process.argv[3] ?? "");
@@ -18,6 +19,24 @@ let child;
 let exited;
 let ended = true;
 let log = "";
+async function inspectPackagedService(action = "inspect", instanceId = "") {
+  const { stdout } = await promisify(execFile)(
+    binary,
+    [join(resources, "remote-service.mjs"), action, instanceId],
+    {
+      env: {
+        ...process.env,
+        TAKEBOARD_DATA_ROOT: root,
+        NO_PROXY: "127.0.0.1,localhost",
+        no_proxy: "127.0.0.1,localhost",
+      },
+      timeout: 6000,
+      maxBuffer: 65536,
+      windowsHide: true,
+    },
+  );
+  return JSON.parse(stdout.trim().split(/\r?\n/).at(-1));
+}
 async function until(label, check) {
   const deadline = Date.now() + 30000;
   let last;
@@ -87,6 +106,15 @@ async function stop() {
 }
 try {
   const first = await start();
+  const remoteInspection = await inspectPackagedService();
+  assert.equal(remoteInspection.state, "running");
+  assert.equal(remoteInspection.instanceId, first.instanceId);
+  assert.equal(`http://127.0.0.1:${remoteInspection.port}`, first.origin);
+  // Running the SSH management entry must reuse this actual packaged instance.
+  assert.equal(
+    (await inspectPackagedService("start", first.instanceId)).port,
+    remoteInspection.port,
+  );
   const response = await fetch(`${first.origin}/api/auth/status`);
   const status = await response.json();
   assert.equal(status.access, "local");
@@ -99,6 +127,7 @@ try {
   });
   assert.equal(created.status, 201, await created.text());
   await stop();
+  assert.equal((await inspectPackagedService()).state, "stopped");
   const second = await start();
   assert.equal(second.instanceId, first.instanceId);
   const restored = await fetch(`${second.origin}/api/auth/status`, { headers: { cookie } }).then(
@@ -117,7 +146,7 @@ try {
   assert.equal(list.projects[0].title, "Packaged runtime verification");
   await stop();
   console.log(
-    "PASS: packaged runtime starts, creates a project without signup, restores the session/data and releases its owned lease",
+    "PASS: packaged runtime starts, remote helper verifies/reuses its actual port, creates a project without signup, restores the session/data and releases its owned lease",
   );
 } finally {
   await stop().catch(() => {

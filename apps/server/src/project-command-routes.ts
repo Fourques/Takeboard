@@ -1,10 +1,11 @@
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import {
   projectCommandEnvelopeSchema,
   projectCommandPreviewRequestSchema,
 } from "@takeboard/contracts";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { ProjectCommandError, ProjectCommandService } from "./project-command-service.js";
+import { projectDirectory } from "./project-locations.js";
 import { projectKey } from "./project-routes.js";
 import { ProjectStore } from "./storage/project-store.js";
 
@@ -34,7 +35,7 @@ export function registerProjectCommandRoutes(app: FastifyInstance, projectsRoot:
           })),
         });
       }
-      const store = ProjectStore.openExisting(join(root, key));
+      const store = ProjectStore.openExisting(projectDirectory(root, key));
       if (!store) return await reply.code(404).send({ error: "项目不存在" });
       try {
         return { key, preview: commands.preview(store, parsed.data) };
@@ -56,7 +57,7 @@ export function registerProjectCommandRoutes(app: FastifyInstance, projectsRoot:
         issues: parsed.error.issues.map((issue) => ({ path: issue.path, message: issue.message })),
       });
     }
-    const store = ProjectStore.openExisting(join(root, key));
+    const store = ProjectStore.openExisting(projectDirectory(root, key));
     if (!store) return await reply.code(404).send({ error: "项目不存在" });
     try {
       const execution = await commands.execute(store, parsed.data);
@@ -77,7 +78,7 @@ export function registerProjectCommandRoutes(app: FastifyInstance, projectsRoot:
     async (request, reply) => {
       const key = projectKey(request.params.key);
       if (!key) return await reply.code(400).send({ error: "项目标识无效" });
-      const store = ProjectStore.openExisting(join(root, key));
+      const store = ProjectStore.openExisting(projectDirectory(root, key));
       if (!store) return await reply.code(404).send({ error: "项目不存在" });
       try {
         const current = store.loadCurrent();
@@ -100,7 +101,7 @@ export function registerProjectCommandRoutes(app: FastifyInstance, projectsRoot:
     async (request, reply) => {
       const key = projectKey(request.params.key);
       if (!key) return await reply.code(400).send({ error: "项目标识无效" });
-      const store = ProjectStore.openExisting(join(root, key));
+      const store = ProjectStore.openExisting(projectDirectory(root, key));
       if (!store) return await reply.code(404).send({ error: "项目不存在" });
       try {
         const execution = await commands.undo(store, request.params.commandId);

@@ -1,5 +1,6 @@
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import type { FastifyInstance, FastifyRequest } from "fastify";
+import { projectDirectory } from "./project-locations.js";
 import { ProjectStore } from "./storage/project-store.js";
 
 const projectTails = new Map<string, Promise<void>>();
@@ -80,7 +81,7 @@ export function registerProjectRequestLock(app: FastifyInstance, projectsRoot: s
       !/^[a-z0-9][a-z0-9-]{0,80}\.takeboard$/.test(key)
     )
       return;
-    const store = ProjectStore.openExisting(join(root, key));
+    const store = ProjectStore.openExisting(projectDirectory(root, key));
     if (!store) return;
     try {
       const currentRevision = store.currentRevision();

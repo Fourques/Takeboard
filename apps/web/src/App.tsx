@@ -45,6 +45,7 @@ import {
 } from "./api";
 import { AccountButton, useAuth } from "./auth-ui";
 import { type BoardNode, boardNodeTypes } from "./board-nodes";
+import { DeviceIndicator } from "./device-indicator";
 import { submitCandidates } from "./generation-session";
 import {
   loadModelPreferences,
@@ -4551,7 +4552,11 @@ export function App() {
   const startWorker = useCallback(async () => {
     setWorkerBusy(true);
     try {
-      setWorker(await projectApi.startWorker());
+      const started = await projectApi.startWorker();
+      setWorker(started);
+      // Refresh ownership controls after startup without misreporting a successful
+      // launch as failed when the follow-up status request loses connectivity.
+      setWorker(await projectApi.worker().catch(() => started));
     } catch (cause) {
       setWorker({
         status: "offline",
@@ -4602,6 +4607,9 @@ export function App() {
       className={`app-shell ${sidebarOpen ? "sidebar-open" : "sidebar-collapsed"} ${inspectorVisible ? "inspector-open" : "inspector-collapsed"} ${comfortableDensity ? "density-comfortable" : "density-compact"}`}
     >
       <header className="topbar">
+        <DeviceIndicator
+          projectKey={projectMode === "project" ? (projectKey ?? undefined) : undefined}
+        />
         <div className="brand">
           <span className="brand-mark">T</span>
           <div>

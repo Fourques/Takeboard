@@ -27,6 +27,7 @@ import {
   instanceBackupPath,
   restoreInstanceOffline,
 } from "./instance-backup.js";
+import { projectDirectory } from "./project-locations.js";
 import { ProjectStore } from "./storage/project-store.js";
 
 const stateFormat = "takeboard.backup-automation-state";
@@ -526,7 +527,7 @@ async function restoredProjectCount(root: string) {
   let projects = 0;
   for (const entry of entries) {
     if (!entry.isDirectory() || !entry.name.endsWith(".takeboard")) continue;
-    const store = ProjectStore.openExisting(join(root, entry.name));
+    const store = ProjectStore.openExisting(projectDirectory(root, entry.name));
     if (!store) throw new Error("恢复演练无法打开项目数据库");
     try {
       if (!store.loadCurrent()) throw new Error("恢复演练项目没有可读取快照");

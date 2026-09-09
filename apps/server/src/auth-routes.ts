@@ -15,6 +15,7 @@ import {
   removeStagedRestore,
   stageInstanceRestore,
 } from "./instance-backup.js";
+import { locatedProjectSummary, projectDirectory } from "./project-locations.js";
 import { projectKey } from "./project-routes.js";
 import { isLoopbackHostname } from "./request-security.js";
 import { ProjectStore } from "./storage/project-store.js";
@@ -91,7 +92,14 @@ function cleanText(value: unknown, maximum: number) {
 function resolveProject(root: string, keyValue: unknown) {
   const key = projectKey(keyValue);
   if (!key) return null;
-  const store = ProjectStore.openExisting(join(root, key));
+  let directory: string;
+  try {
+    directory = projectDirectory(root, key);
+  } catch {
+    const cached = locatedProjectSummary(root, key);
+    return cached ? { key, projectId: cached.projectId } : null;
+  }
+  const store = ProjectStore.openExisting(directory);
   if (!store) return null;
   try {
     const current = store.loadCurrent();
@@ -124,7 +132,7 @@ function publicAuthRoute(route: string, method: string) {
 
 function adminOnly(route: string, method: string) {
   if (route.startsWith("/api/admin/")) return true;
-  if (route === "/api/workers/comfy/start") return true;
+  if (route === "/api/workers/comfy/start" || route === "/api/workers/comfy/stop") return true;
   if (
     route === "/api/workflows/raw" ||
     route === "/api/workflows/recipe-package" ||

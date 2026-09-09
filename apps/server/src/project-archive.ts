@@ -8,6 +8,7 @@ import { isDeepStrictEqual } from "node:util";
 import { createGunzip, createGzip } from "node:zlib";
 import { projectSnapshotSchema } from "@takeboard/contracts";
 import { extract, type Header, pack } from "tar-stream";
+import { locatedProjectSummary, projectDirectory } from "./project-locations.js";
 import { ProjectStore } from "./storage/project-store.js";
 
 const manifestName = "takeboard-package.json";
@@ -211,14 +212,16 @@ function parseManifest(value: Buffer): ProjectPackageManifest {
 export async function findActiveProjectById(root: string, projectId: string) {
   const directory = await opendir(root);
   for await (const entry of directory) {
-    if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+    if (!entry.isDirectory() || !/^[a-z0-9][a-z0-9-]{0,80}\.takeboard$/.test(entry.name)) continue;
     try {
       const marker = JSON.parse(
-        await readFile(join(root, entry.name, "project.takeboard.json"), "utf8"),
+        await readFile(join(projectDirectory(root, entry.name), "project.takeboard.json"), "utf8"),
       ) as { project?: { id?: string } };
       if (marker.project?.id === projectId) return entry.name;
     } catch {
-      // A damaged unrelated directory must not block importing a valid package.
+      // An offline registered project still owns its identity; importing another
+      // copy must not silently create a duplicate when its disk is disconnected.
+      if (locatedProjectSummary(root, entry.name)?.projectId === projectId) return entry.name;
     }
   }
   return null;

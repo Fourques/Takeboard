@@ -1,5 +1,6 @@
 use serde::Serialize;
 mod connections;
+mod local_files;
 use std::{
     io::{Read, Write},
     net::{SocketAddr, TcpListener, TcpStream},
@@ -134,7 +135,7 @@ fn wait_for_server(app: tauri::AppHandle, port: u16, generation: u64) {
         set_startup(
             &app,
             StartupEvent::Failed {
-                message: "本机服务没有在 35 秒内就绪。请检查磁盘权限，或打开便携版运行 doctor。"
+                message: "本机服务没有在 35 秒内就绪。请检查 TakeBoardData 的磁盘空间与访问权限，或重新打开应用查看启动状态。"
                     .into(),
             },
         );
@@ -304,6 +305,7 @@ fn main() {
             }
         }))
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(connections::Connections::default())
         .manage(DesktopRuntime {
             child: Mutex::new(None),
@@ -316,7 +318,8 @@ fn main() {
             connections::connection_status,
             connections::connect_remote,
             connections::disconnect_remote,
-            connections::open_remote_workspace
+            connections::open_remote_workspace,
+            connections::open_local_workspace
         ])
         .on_menu_event(|app, event| {
             if event.id().as_ref() == "connect-device" {
@@ -330,6 +333,11 @@ fn main() {
             }
         })
         .setup(|app| {
+            let handle = app.handle().clone();
+            tauri::WebviewWindowBuilder::from_config(app, &app.config().app.windows[0])?
+                .on_navigation(move |url| local_files::navigation(&handle, "main", url))
+                .on_download(local_files::download)
+                .build()?;
             let menu = tauri::menu::Menu::default(app.handle())?;
             let connect = tauri::menu::MenuItem::with_id(
                 app,

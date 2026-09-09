@@ -8,6 +8,7 @@ import { type AuthOptions, registerAuth } from "./auth-routes.js";
 import type { AuthMode } from "./auth-service.js";
 import { type BackupAutomationConfig, registerBackupAutomation } from "./backup-automation.js";
 import { registerDemoRoutes } from "./demo/routes.js";
+import { registerDeviceRoutes } from "./device-routes.js";
 import { ExtensionRegistry } from "./extension-registry.js";
 import { registerExtensionRoutes } from "./extension-routes.js";
 import { registerGenerationRoutes } from "./generation-routes.js";
@@ -94,6 +95,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       : registerBackupAutomation(app, projectsRoot, auth, options.backupAutomation);
 
   registerProjectRequestLock(app, projectsRoot);
+  registerDeviceRoutes(app, projectsRoot);
 
   registerRemoteAccessRoutes(app, {
     auth,
@@ -158,7 +160,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   });
   registerProjectCommandRoutes(app, projectsRoot);
   registerExtensionRoutes(app, projectsRoot, extensionRegistry);
-  registerWorkerRoutes(app, comfyUrl, options.workerOptions, workerPool);
+  registerWorkerRoutes(app, comfyUrl, options.workerOptions, workerPool, projectsRoot);
   const generation = registerGenerationRoutes(app, projectsRoot, workerPool, {
     inputRoot: comfyInputRoot,
     outputRoot: comfyOutputRoot,

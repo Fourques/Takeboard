@@ -37,7 +37,44 @@ export type DemoPayload = {
   snapshot: ProjectSnapshot;
 };
 
+export type DeviceInfo = {
+  instanceId: string | null;
+  name: string;
+  platform: string;
+  canManage: boolean;
+  projectsDirectory: string | null;
+};
+
+export const deviceApi = {
+  storageRoots: () =>
+    jsonRequest<{ roots: Array<{ id: string; name: string; path: string }> }>("/api/storage/roots"),
+  addStorageRoot: (path: string, name: string) =>
+    jsonRequest<{ root: { id: string; name: string; path: string } }>("/api/storage/roots", {
+      method: "POST",
+      body: JSON.stringify({ path, name }),
+    }),
+  folders: (rootId: string, folder: string) =>
+    jsonRequest<{ path: string; folders: string[] }>(
+      `/api/storage/folders?${new URLSearchParams({ rootId, folder })}`,
+    ),
+  createFolder: (rootId: string, folder: string, name: string) =>
+    jsonRequest<{ name: string }>("/api/storage/folders", {
+      method: "POST",
+      body: JSON.stringify({ rootId, folder, name }),
+    }),
+  status: () => jsonRequest<DeviceInfo>("/api/device"),
+  projectLocation: (key: string) =>
+    jsonRequest<{
+      key: string;
+      title: string;
+      directory: string | null;
+      deviceName: string;
+      downloadIsCopy: boolean;
+    }>(`/api/projects/${encodeURIComponent(key)}/location`),
+};
+
 export type ProjectCatalogItem = {
+  unavailable?: boolean;
   key: string;
   revision: number;
   id: string;
@@ -218,6 +255,7 @@ export type ProjectBoardPreview = {
 };
 
 export type WorkerStatus = {
+  control?: { canStop: boolean; message: string };
   status: "ready" | "offline";
   engine: string;
   version?: string;
@@ -556,7 +594,7 @@ export const projectApi = {
     }
     return payload;
   },
-  create: (input: { title: string }) =>
+  create: (input: { title: string; storageRootId?: string; storageFolder?: string }) =>
     jsonRequest<DemoPayload & { key: string }>("/api/projects", {
       method: "POST",
       body: JSON.stringify(input),
@@ -871,6 +909,11 @@ export const projectApi = {
     }
     throw new Error(payload.error ?? `ComfyUI 启动请求失败（${response.status}）`);
   },
+  stopWorker: () =>
+    jsonRequest<{ stopped: boolean }>("/api/workers/comfy/stop", {
+      method: "POST",
+      body: JSON.stringify({ action: "safe-stop" }),
+    }),
 };
 
 export const workerApi = {

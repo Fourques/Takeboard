@@ -1,4 +1,5 @@
 import { execFile as execFileCallback } from "node:child_process";
+import { readdir } from "node:fs/promises";
 import { arch, freemem } from "node:os";
 import { promisify } from "node:util";
 import { executionPolicySchema, workerDefinitionSchema } from "@takeboard/contracts";
@@ -8,6 +9,9 @@ import {
   createComfyLauncher,
   launcherConfigFromEnvironment,
 } from "./comfy-launcher.js";
+import { projectDirectory } from "./project-locations.js";
+import { projectKey } from "./project-routes.js";
+import { ProjectStore } from "./storage/project-store.js";
 import { WorkerPool, WorkerSelectionError } from "./worker-pool.js";
 
 const execFile = promisify(execFileCallback);
@@ -38,6 +42,7 @@ type WorkerPayload = {
   vramFree?: number | null;
   error?: string;
   startup: StartupInfo;
+  control?: { canStop: boolean; message: string };
 };
 
 export type WorkerRuntime = {
@@ -285,6 +290,7 @@ export function registerWorkerRoutes(
     comfyUrl,
     routeOptions.runtime?.fetch,
   ),
+  projectsRoot?: string,
 ) {
   const runtime: WorkerRuntime = { ...defaultRuntime, ...routeOptions.runtime };
   const launcher = routeOptions.launcher ?? createComfyLauncher(launcherConfigFromEnvironment());
@@ -309,6 +315,41 @@ export function registerWorkerRoutes(
     startupTimeoutMs: routeOptions.startupTimeoutMs ?? 30_000,
   };
   let starting = false;
+  let lifecycleBusy = false;
+  let submissions = 0;
+  // Hold the gate until the handler itself completes, even if a client aborts.
+  // HTTP response/abort hooks alone would release it while an upload still runs.
+  app.addHook("onRoute", (route) => {
+    const control =
+      route.method === "POST" &&
+      ["/api/workers/comfy/start", "/api/workers/comfy/stop"].includes(route.url);
+    const generation =
+      route.method === "POST" && route.url === "/api/projects/:key/shots/:shotId/generate";
+    if (!control && !generation) return;
+    const handler = route.handler;
+    route.handler = async function (request, reply) {
+      if (lifecycleBusy || (control && submissions > 0))
+        return await reply.code(409).send({ error: "生成请求或服务启停正在处理，请稍后重试" });
+      if (control) lifecycleBusy = true;
+      else submissions += 1;
+      try {
+        return await handler.call(this, request, reply);
+      } finally {
+        if (control) lifecycleBusy = false;
+        else submissions -= 1;
+      }
+    };
+  });
+  const controlStatus = async () => {
+    const canStop =
+      localEndpoint(comfyUrl) && (await launcher.canStop?.().catch(() => false)) === true;
+    return {
+      canStop,
+      message: canStop
+        ? "可停止由本次 TakeBoard 启动的生成服务；停止前会再次检查任务"
+        : "此服务不属于可验证的受管进程，只连接，不代为关闭",
+    };
+  };
 
   app.get("/api/workers", async () => ({
     defaultWorkerId: workerPool.defaultWorkerId,
@@ -436,7 +477,7 @@ export function registerWorkerRoutes(
 
   app.get("/api/workers/comfy", async () => {
     const worker = await probeWorker(runtime, comfyUrl, platform, launcher);
-    if (worker) return worker;
+    if (worker) return { ...worker, control: await controlStatus() };
     const startup = await preflight(runtime, comfyUrl, launcher, options);
     return {
       status: "offline",
@@ -444,6 +485,62 @@ export function registerWorkerRoutes(
       error: "ComfyUI 接口未响应",
       startup,
     } satisfies WorkerPayload;
+  });
+
+  app.post<{ Body: { action?: string } }>("/api/workers/comfy/stop", async (request, reply) => {
+    if (request.body?.action !== "safe-stop")
+      return await reply.code(400).send({ error: "请确认停止生成服务" });
+    if (!(await controlStatus()).canStop)
+      return await reply.code(409).send({ error: "不能确认服务归属，不会关闭外部启动的 ComfyUI" });
+    if (!projectsRoot)
+      return await reply.code(409).send({ error: "无法检查项目任务，已阻止停止服务" });
+    try {
+      const entries = await readdir(projectsRoot, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory() || !projectKey(entry.name)) continue;
+        const store = ProjectStore.openExisting(projectDirectory(projectsRoot, entry.name));
+        if (!store) throw new Error("存在无法检查的项目，已阻止停止服务");
+        try {
+          const snapshot = store.loadCurrent()?.snapshot;
+          if (!snapshot) throw new Error("项目任务状态不可读，已阻止停止服务");
+          if (
+            snapshot.runs.some(
+              (run) =>
+                (!run.workerId || run.workerId === workerPool.defaultWorkerId) &&
+                !["completed", "failed", "cancelled"].includes(run.status),
+            )
+          )
+            throw new Error("仍有生成或结果收集任务，请完成或取消后再停止服务");
+        } finally {
+          store.close();
+        }
+      }
+      const response = await runtime.fetch(`${comfyUrl}/queue`, {
+        signal: AbortSignal.timeout(3000),
+      });
+      if (!response.ok) throw new Error("无法检查 ComfyUI 队列，已阻止停止服务");
+      const queue = (await response.json()) as {
+        queue_running?: unknown[];
+        queue_pending?: unknown[];
+      };
+      if (!Array.isArray(queue.queue_running) || !Array.isArray(queue.queue_pending))
+        throw new Error("ComfyUI 队列响应无效，已阻止停止服务");
+      if (queue.queue_running.length || queue.queue_pending.length)
+        throw new Error("ComfyUI 仍有任务，不会中断其他生成");
+      if (!(await controlStatus()).canStop) throw new Error("服务归属已变化，已取消停止操作");
+      await launcher.stop();
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        if (!(await probeWorker(runtime, comfyUrl, platform, launcher))) return { stopped: true };
+        await runtime.delay(500);
+      }
+      return await reply
+        .code(502)
+        .send({ error: "已发送停止请求，但接口仍响应；未强制结束进程，请重新检测" });
+    } catch (cause) {
+      return await reply
+        .code(409)
+        .send({ error: cause instanceof Error ? cause.message : "无法安全停止生成服务" });
+    }
   });
 
   app.post<{ Body: { action?: string } }>("/api/workers/comfy/start", async (request, reply) => {

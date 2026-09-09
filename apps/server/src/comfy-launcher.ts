@@ -1,4 +1,4 @@
-import { execFile as execFileCallback, spawn } from "node:child_process";
+import { type ChildProcess, execFile as execFileCallback, spawn } from "node:child_process";
 import { constants } from "node:fs";
 import { access, readFile, unlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
@@ -18,6 +18,7 @@ export type ComfyLauncher = {
   preflight: () => Promise<ComfyLauncherCheck>;
   start: () => Promise<void>;
   stop: () => Promise<void>;
+  canStop?: () => Promise<boolean>;
 };
 
 type CommandResult = { stdout: string; stderr: string };
@@ -42,6 +43,7 @@ export type ComfyLauncherConfig = {
   runtime?: Partial<LauncherRuntime>;
 };
 
+const ownedChildren = new Map<number, ChildProcess>();
 const defaultRuntime: LauncherRuntime = {
   execute: async (file, args) => {
     const result = await execFile(file, args, { timeout: 8_000, windowsHide: true });
@@ -54,11 +56,23 @@ const defaultRuntime: LauncherRuntime = {
       stdio: "ignore",
       windowsHide: true,
     });
+    // spawn can emit an error asynchronously even when no PID was assigned.
+    child.once("error", () => {});
     if (!child.pid) throw new Error("ComfyUI process did not return a PID");
+    const pid = child.pid;
+    ownedChildren.set(pid, child);
+    const release = () => {
+      if (ownedChildren.get(pid) === child) ownedChildren.delete(pid);
+    };
+    child.once("exit", release);
+    child.once("error", release);
     child.unref();
     return child.pid;
   },
   stopProcess: async (pid) => {
+    // Do not trust a persisted numeric PID after this launcher or its child exited.
+    const child = ownedChildren.get(pid);
+    if (!child || child.exitCode !== null || child.signalCode !== null) return;
     if (process.platform === "win32") {
       await execFile("taskkill.exe", ["/PID", String(pid), "/T", "/F"], {
         timeout: 8_000,
@@ -108,8 +122,22 @@ function systemdLauncher(service: string, runtime: LauncherRuntime): ComfyLaunch
     return unavailable("systemd 服务名不安全或无效");
   }
   let owned = false;
+  let invocationId: string | null = null;
+  const readInvocation = async () => {
+    const result = await runtime.execute("systemctl", [
+      "--user",
+      "show",
+      service,
+      "--property=InvocationID",
+      "--value",
+    ]);
+    const value = result.stdout.trim();
+    return /^[a-f0-9]{32}$/i.test(value) && !/^0+$/.test(value) ? value : null;
+  };
   return {
     kind: "systemd",
+    canStop: async () =>
+      owned && invocationId !== null && (await readInvocation().catch(() => null)) === invocationId,
     preflight: async () => {
       try {
         const { stdout } = await runtime.execute("systemctl", [
@@ -156,11 +184,15 @@ function systemdLauncher(service: string, runtime: LauncherRuntime): ComfyLaunch
     start: async () => {
       await runtime.execute("systemctl", ["--user", "start", service]);
       owned = true;
+      invocationId = await readInvocation().catch(() => null);
     },
     stop: async () => {
       if (!owned) return;
+      if (invocationId === null || (await readInvocation().catch(() => null)) !== invocationId)
+        throw new Error("systemd 服务归属已变化或无法验证，不会停止该服务");
       await runtime.execute("systemctl", ["--user", "stop", service]);
       owned = false;
+      invocationId = null;
     },
   };
 }
@@ -272,6 +304,10 @@ function processLauncher(
   };
   return {
     kind: "process",
+    canStop: async () =>
+      ownedPid !== null &&
+      runtime.processRunning(ownedPid) &&
+      (runtime.startProcess !== defaultRuntime.startProcess || ownedChildren.has(ownedPid)),
     preflight: async () => {
       try {
         await access(executable, platform === "win32" ? constants.F_OK : constants.X_OK);

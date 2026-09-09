@@ -193,6 +193,23 @@ describe("TakeBoard authentication and authorization", () => {
       },
     });
     expect(changedInitialPassword.statusCode, changedInitialPassword.body).toBe(200);
+    for (const url of ["/api/storage/roots", "/api/storage/folders"]) {
+      expect(
+        (await app.inject({ method: "GET", url, headers: { cookie: member.cookie } })).statusCode,
+      ).toBe(403);
+    }
+    const restrictedDevice = await app.inject({
+      url: "/api/device",
+      headers: { cookie: member.cookie },
+    });
+    expect(restrictedDevice.json()).toMatchObject({ canManage: false, projectsDirectory: null });
+    const arbitraryLocation = await app.inject({
+      method: "POST",
+      url: "/api/projects",
+      headers: { cookie: member.cookie, "x-takeboard-csrf": member.csrf },
+      payload: { title: "Forbidden location", storageRootId: "instance" },
+    });
+    expect(arbitraryLocation.statusCode).toBe(403);
 
     const privateCatalog = await app.inject({
       method: "GET",

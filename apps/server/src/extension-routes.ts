@@ -1,6 +1,7 @@
 import { join, resolve } from "node:path";
 import type { FastifyInstance } from "fastify";
 import { ExtensionRegistry } from "./extension-registry.js";
+import { projectDirectory } from "./project-locations.js";
 import { projectKey } from "./project-routes.js";
 import { ProjectStore } from "./storage/project-store.js";
 
@@ -83,7 +84,7 @@ export function registerExtensionRoutes(
     async (request, reply) => {
       const key = projectKey(request.params.key);
       if (!key) return await reply.code(400).send({ error: "项目标识无效" });
-      const store = ProjectStore.openExisting(join(root, key));
+      const store = ProjectStore.openExisting(projectDirectory(root, key));
       if (!store) return await reply.code(404).send({ error: "项目不存在" });
       try {
         const current = store.loadCurrent();

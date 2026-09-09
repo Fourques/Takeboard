@@ -99,6 +99,27 @@ describe("ComfyUI safe startup", () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
+  it("verifies the same systemd invocation again at the actual stop boundary", async () => {
+    let invocation = "a".repeat(32);
+    const execute = vi.fn(async (_file: string, args: string[]) => ({
+      stdout: args.includes("--property=InvocationID") ? invocation : "",
+      stderr: "",
+    }));
+    const managed = createComfyLauncher({
+      platform: "linux",
+      provider: "systemd",
+      systemdService: "takeboard-comfy.service",
+      runtime: { execute },
+    });
+    expect(await managed.canStop?.()).toBe(false);
+    await managed.start();
+    expect(await managed.canStop?.()).toBe(true);
+    invocation = "b".repeat(32);
+    expect(await managed.canStop?.()).toBe(false);
+    await expect(managed.stop()).rejects.toThrow(/归属已变化/);
+    expect(execute.mock.calls.some(([, args]) => args.includes("stop"))).toBe(false);
+  });
+
   it("blocks transient launchd jobs and accepts only a loaded idle job", async () => {
     const transientLauncher = createComfyLauncher({
       platform: "darwin",

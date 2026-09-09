@@ -6,6 +6,11 @@ before moving production work to a newer minor version.
 
 ## Unreleased
 
+- Unified local/remote device indicator shows the selected TakeBoard identity, address and project folder separately from ComfyUI hardware. The connection manager can return to the local workspace or request consent to start an installed remote runtime over SSH; disconnect does not stop remote jobs.
+- New projects support device-scoped folders, a local native folder picker and permission-scoped remote browsing. External projects retain stable keys, recoverable deletion and complete archive/backup support; unavailable disks do not become empty replacement projects.
+- Asset downloads explicitly deliver original files to the current computer. Managed ComfyUI shutdown checks process ownership, active project runs and the real queue, with generation/start/stop concurrency protection.
+- Native automatic updates remain disabled. See the [device workflow guide](docs/device-workflow.md) for installation, ownership and release boundaries.
+- Soft-color secondary text, save state, shot progress and destructive actions meet the existing serious WCAG contrast gate; theme layout and the 3D homepage remain intact.
 - New installations start with the soft-color theme. Explicit theme choices are retained using a
   host-scoped preference cookie and localStorage fallback, including after desktop service ports change.
   Multiple theme controls remain synchronized and blocked storage no longer aborts theme initialization.

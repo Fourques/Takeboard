@@ -15,6 +15,7 @@ import {
   findActiveProjectById,
   importProjectArchive,
 } from "./project-archive.js";
+import { projectDirectory } from "./project-locations.js";
 import { acquireProjectLock, acquireProjectLocks } from "./project-request-lock.js";
 import { ProjectStore } from "./storage/project-store.js";
 
@@ -133,7 +134,7 @@ export async function createInstanceBackup(
     auth.backupDatabase(identityPath);
     const projects: BackupProject[] = [];
     for (const key of keys) {
-      const directory = join(root, key);
+      const directory = projectDirectory(root, key);
       const store = ProjectStore.openExisting(directory);
       if (!store) continue;
       let current: ReturnType<ProjectStore["loadCurrent"]>;

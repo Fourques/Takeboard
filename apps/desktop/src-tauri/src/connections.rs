@@ -212,19 +212,45 @@ pub async fn open_remote_workspace(
     if value["state"] != "ready" {
         return Err("请先建立并验证连接".into());
     }
-    let url = value["url"]
+    let mut url: tauri::Url = value["url"]
         .as_str()
         .ok_or("连接地址缺失")?
         .parse()
         .map_err(|_| "连接地址无效")?;
+    let address = value["target"]["address"].as_str().unwrap_or("远程设备");
+    let name = value["target"]["name"]
+        .as_str()
+        .filter(|name| !name.is_empty())
+        .unwrap_or(address);
+    let title = format!("TakeBoard · {name}");
+    let display = json!({
+        "kind": value["target"]["kind"], "address": address,
+        "name": value["target"]["name"].as_str().unwrap_or(""),
+        "instanceId": value["instanceId"].as_str().unwrap_or("")
+    });
+    let fragment: String =
+        tauri::Url::parse_with_params("https://localhost", &[("tb-device", display.to_string())])
+            .map_err(|error| error.to_string())?
+            .query()
+            .unwrap_or("")
+            .into();
+    url.set_fragment(Some(&fragment));
     if let Some(remote) = app.get_webview_window("remote-workspace") {
+        remote
+            .set_title(&title)
+            .map_err(|error| error.to_string())?;
         remote.navigate(url).map_err(|error| error.to_string())?;
         remote.show().map_err(|error| error.to_string())?;
         remote.set_focus().map_err(|error| error.to_string())?;
     } else {
         // No capabilities are assigned to this remote-content window.
+        let navigation_app = app.clone();
         let remote = WebviewWindowBuilder::new(&app, "remote-workspace", WebviewUrl::External(url))
-            .title("TakeBoard · 远程设备")
+            .on_navigation(move |url| {
+                crate::local_files::navigation(&navigation_app, "remote-workspace", url)
+            })
+            .on_download(crate::local_files::download)
+            .title(&title)
             .inner_size(1440.0, 900.0)
             .min_inner_size(720.0, 520.0)
             .build()
@@ -240,4 +266,13 @@ pub async fn open_remote_workspace(
         });
     }
     Ok(())
+}
+
+#[tauri::command]
+pub fn open_local_workspace(app: tauri::AppHandle, window: WebviewWindow) -> Result<(), String> {
+    trusted(&window)?;
+    let local = app.get_webview_window("main").ok_or("本机窗口不可用")?;
+    local.show().map_err(|error| error.to_string())?;
+    local.unminimize().map_err(|error| error.to_string())?;
+    local.set_focus().map_err(|error| error.to_string())
 }

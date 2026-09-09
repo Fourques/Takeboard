@@ -113,9 +113,12 @@ async function main() {
       join(repositoryRoot, "scripts", "portable-launcher.mjs"),
       join(resourceRoot, "launcher.mjs"),
     ),
-    ...["desktop-connection.mjs", "remote-connection.mjs"].map((name) =>
-      cp(join(repositoryRoot, "scripts", name), join(resourceRoot, name)),
-    ),
+    ...[
+      "desktop-connection.mjs",
+      "remote-connection.mjs",
+      "remote-bootstrap.mjs",
+      "remote-service.mjs",
+    ].map((name) => cp(join(repositoryRoot, "scripts", name), join(resourceRoot, name))),
     cp(join(repositoryRoot, "LICENSE"), join(resourceRoot, "LICENSE")),
     cp(process.execPath, sidecar),
   ]);

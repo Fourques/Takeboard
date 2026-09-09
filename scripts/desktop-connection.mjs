@@ -1,9 +1,16 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { manageRemoteService } from "./remote-bootstrap.mjs";
 import { connectRemote, validateRemoteHost } from "./remote-connection.mjs";
 
 export function connectionTarget(input) {
   if (!input || !["ssh", "https", "portal"].includes(input.kind)) throw new Error("请选择连接方式");
+  const name = typeof input.name === "string" ? input.name.trim() : "";
+  if (
+    name.length > 100 ||
+    [...name].some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127)
+  )
+    throw new Error("设备名称无效");
   if (input.kind === "ssh") {
     const host = validateRemoteHost(String(input.address ?? "").trim());
     const port =
@@ -12,7 +19,16 @@ export function connectionTarget(input) {
         : Number(input.port);
     if (port !== null && (!Number.isInteger(port) || port < 1 || port > 65535))
       throw new Error("服务端口必须为 1–65535，留空可自动检测");
-    return { kind: "ssh", address: host, port };
+    const platform = input.platform ?? "auto";
+    if (!["auto", "posix", "windows"].includes(platform)) throw new Error("远程系统选项无效");
+    return {
+      kind: "ssh",
+      address: host,
+      port,
+      ...(name ? { name } : {}),
+      ...(input.allowStart === true ? { allowStart: true } : {}),
+      ...(platform !== "auto" ? { platform } : {}),
+    };
   }
   let url;
   try {
@@ -31,16 +47,56 @@ export function connectionTarget(input) {
   ) {
     throw new Error("请输入不含路径、密码或参数的 HTTPS 地址；HTTP 仅允许本机隧道地址");
   }
-  return { kind: input.kind, address: url.origin, port: null };
+  return { kind: input.kind, address: url.origin, port: null, ...(name ? { name } : {}) };
 }
 
 export async function verifyConnection(input, signal) {
   const target = connectionTarget(input);
   let connection;
   if (target.kind === "ssh") {
+    let remotePort = target.port;
+    if (!remotePort) {
+      // Read-only discovery can be unavailable on an SSH account restricted to
+      // forwarding. In that case retain the existing verified-port connection.
+      let service = await manageRemoteService({
+        host: target.address,
+        platform: target.platform,
+        signal,
+      }).catch((error) => {
+        if (error?.code === "REMOTE_SERVICE_ERROR") throw error;
+        return null;
+      });
+      if (service?.state === "busy")
+        throw new Error("远端 TakeBoard 进程尚未就绪，请稍后重试或检查服务器日志；不会重复启动。");
+      if (service?.state === "stopped") {
+        if (input.instanceId && input.instanceId !== service.instanceId)
+          throw new Error("服务器身份与保存记录不同，请先核实设备");
+        if (!target.allowStart) {
+          const error = new Error(
+            `远端 TakeBoard 已安装但未启动。版本 ${service.version}，项目位置 ${service.dataRoot}。授权后可启动；不会同时启动 ComfyUI。`,
+          );
+          error.code = "START_REQUIRED";
+          throw error;
+        }
+        service = await manageRemoteService({
+          host: target.address,
+          platform: service.platform === "win32" ? "windows" : "posix",
+          action: "start",
+          instanceId: input.instanceId ?? service.instanceId ?? "",
+          signal,
+        });
+      }
+      if (
+        service?.state === "running" &&
+        Number.isInteger(service.port) &&
+        service.port > 0 &&
+        service.port <= 65535
+      )
+        remotePort = service.port;
+    }
     connection = await connectRemote({
       host: target.address,
-      ...(target.port ? { remotePorts: [target.port] } : {}),
+      ...(remotePort ? { remotePorts: [remotePort] } : {}),
       ...(Number.isInteger(input.localPort) && input.localPort >= 1024 && input.localPort <= 65535
         ? { preferredLocalPort: input.localPort }
         : {}),
@@ -144,6 +200,7 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
     console.log(
       JSON.stringify({
         state: "failed",
+        code: error?.code === "START_REQUIRED" ? "START_REQUIRED" : null,
         message: error instanceof Error ? error.message : "连接失败",
       }),
     );

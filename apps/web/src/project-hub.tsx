@@ -5,9 +5,11 @@ import type {
   TrashedProjectItem,
   WorkerStatus,
 } from "./api";
-import { workerApi } from "./api";
+import { projectApi, workerApi } from "./api";
 import { AccountButton, useAuth } from "./auth-ui";
+import { DeviceIndicator } from "./device-indicator";
 import { DisplaySettings, type SceneQuality } from "./display-settings";
+import { type ProjectLocationChoice, ProjectLocationPicker } from "./project-location-picker";
 import { ThemeSwitcher } from "./theme-switcher";
 
 const loadStudioUniverse = () =>
@@ -691,6 +693,8 @@ function projectScrollLimit(shell: HTMLElement, section: HTMLElement) {
 
 type NewProjectInput = {
   title: string;
+  storageRootId?: string;
+  storageFolder?: string;
 };
 
 function ActionIcon({ name }: { name: "open" | "rename" | "delete" | "export" }) {
@@ -880,7 +884,7 @@ function ProjectCard({
             onClick={onOpen}
             disabled={busy}
           >
-            打开画板 <ActionIcon name="open" />
+            {project.unavailable ? "项目位置不可用" : "打开画板"} <ActionIcon name="open" />
           </button>
           {canManage ? (
             <button type="button" onClick={onRename} aria-label={`重命名 ${project.title}`}>
@@ -964,6 +968,8 @@ export function ProjectHub({
   const [deleting, setDeleting] = useState<ProjectCatalogItem | null>(null);
   const [renameTitle, setRenameTitle] = useState("");
   const [title, setTitle] = useState("");
+  const [projectLocation, setProjectLocation] = useState<ProjectLocationChoice | null>(null);
+  const [projectLocationValid, setProjectLocationValid] = useState(false);
   const [projectQuery, setProjectQuery] = useState("");
   const [projectSort, setProjectSort] = useState<"recent" | "name">("recent");
   const [projectsVisible, setProjectsVisible] = useState(false);
@@ -977,6 +983,7 @@ export function ProjectHub({
   const [workerActionError, setWorkerActionError] = useState<string | null>(null);
   const [workerTrustArmed, setWorkerTrustArmed] = useState<string | null>(null);
   const [workerRemoveArmed, setWorkerRemoveArmed] = useState<string | null>(null);
+  const [stopWorkerArmed, setStopWorkerArmed] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [recycleOpen, setRecycleOpen] = useState(false);
   const [utilityOpen, setUtilityOpen] = useState(false);
@@ -1196,6 +1203,7 @@ export function ProjectHub({
             </div>
           </div>
           <div className="hub-header-actions">
+            <DeviceIndicator />
             <div className="hub-status-group">
               <Suspense fallback={null}>
                 <OperationsCenter compact onOpenProject={onOpen} />
@@ -1426,6 +1434,15 @@ export function ProjectHub({
                       </>
                     )}
                     <div className="worker-panel-actions">
+                      {(local || user?.instanceRole === "admin") && worker?.control?.canStop ? (
+                        <button
+                          type="button"
+                          disabled={workerBusy || workerActionBusy}
+                          onClick={() => setStopWorkerArmed(true)}
+                        >
+                          停止生成服务
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         disabled={workerBusy}
@@ -1452,6 +1469,43 @@ export function ProjectHub({
                         </button>
                       ) : null}
                     </div>
+                    {stopWorkerArmed ? (
+                      <fieldset className="worker-stop-confirm" aria-label="确认停止生成服务">
+                        <p>
+                          停止当前设备的
+                          ComfyUI？项目文件会保留；存在生成任务或无法确认服务归属时不会停止。
+                        </p>
+                        <button
+                          type="button"
+                          disabled={workerActionBusy}
+                          onClick={() => setStopWorkerArmed(false)}
+                        >
+                          取消
+                        </button>
+                        <button
+                          type="button"
+                          disabled={workerActionBusy}
+                          onClick={() => {
+                            setWorkerActionBusy(true);
+                            setWorkerActionError(null);
+                            void projectApi
+                              .stopWorker()
+                              .then(async () => {
+                                setStopWorkerArmed(false);
+                                await onRefreshWorker();
+                              })
+                              .catch((cause) =>
+                                setWorkerActionError(
+                                  cause instanceof Error ? cause.message : "无法停止生成服务",
+                                ),
+                              )
+                              .finally(() => setWorkerActionBusy(false));
+                          }}
+                        >
+                          {workerActionBusy ? "检查并停止中…" : "确认停止"}
+                        </button>
+                      </fieldset>
+                    ) : null}
                     {workerFormOpen && user?.instanceRole === "admin" ? (
                       <div className="worker-add-form">
                         <label>
@@ -1789,14 +1843,14 @@ export function ProjectHub({
             aria-labelledby="new-project-title"
             onSubmit={(event) => {
               event.preventDefault();
-              void onCreate({ title });
+              if (projectLocationValid) void onCreate({ title, ...projectLocation });
             }}
           >
             <div className="modal-title">
               <div>
                 <span className="section-kicker">NEW WORKSPACE</span>
-                <h2 id="new-project-title">建立一张工作画板</h2>
-                <p>先给作品命名。脚本、素材、镜头和成片会在画布中自然生长。</p>
+                <h2 id="new-project-title">新建项目</h2>
+                <p>设置名称和保存位置，即可开始创作。</p>
               </div>
               <button type="button" aria-label="关闭新建项目" onClick={() => setCreating(false)}>
                 ×
@@ -1813,25 +1867,14 @@ export function ProjectHub({
                 placeholder="未命名作品"
               />
             </label>
-            <div className="project-start-card">
-              <span className="project-start-mark" aria-hidden="true">
-                ∞
-              </span>
-              <div>
-                <strong>空白画布</strong>
-                <p>不预设镜头，也不锁定全局画幅。</p>
-              </div>
-              <span className="project-start-badge">默认</span>
-            </div>
-            <div className="project-start-paths">
-              <span>脚本与 Brief</span>
-              <span>人物 / 场景资产</span>
-              <span>独立画幅的镜头</span>
-            </div>
+            <ProjectLocationPicker
+              onChange={setProjectLocation}
+              onValid={setProjectLocationValid}
+            />
             {error ? <p className="form-error">{error}</p> : null}
             <div className="modal-actions">
-              <span>创建 1 张空白工作画板 · 本地保存</span>
-              <button type="submit" disabled={busy || !title.trim()}>
+              <span>创建空白画布 · 保存到所选设备</span>
+              <button type="submit" disabled={busy || !title.trim() || !projectLocationValid}>
                 {busy ? "正在创建…" : "进入画布 →"}
               </button>
             </div>

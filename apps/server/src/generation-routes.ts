@@ -22,6 +22,7 @@ import {
 } from "@takeboard/executor-comfy";
 import type { FastifyInstance } from "fastify";
 import { createImageProxy, inspectImage, inspectVideo } from "./asset-inspection.js";
+import { projectDirectory } from "./project-locations.js";
 import { projectKey } from "./project-routes.js";
 import { ProjectStore } from "./storage/project-store.js";
 import {
@@ -257,7 +258,7 @@ export function registerGenerationRoutes(
     const safeExtension = extname(basename(upload.filename)).toLowerCase().slice(0, 12);
     const storagePath = `assets/originals/${assetId}${safeExtension}`;
     const proxyStoragePath = imageInfo ? `assets/proxies/${assetId}.jpg` : null;
-    const directory = join(root, key);
+    const directory = projectDirectory(root, key);
     const store = ProjectStore.openExisting(directory);
     if (!store) return await reply.code(404).send({ error: "项目不存在" });
     let committed = false;
@@ -357,7 +358,7 @@ export function registerGenerationRoutes(
     async (request, reply) => {
       const key = projectKey(request.params.key);
       if (!key) return await reply.code(400).send({ error: "项目标识无效" });
-      const directory = join(root, key);
+      const directory = projectDirectory(root, key);
       const store = ProjectStore.openExisting(directory);
       if (!store) return await reply.code(404).send({ error: "项目不存在" });
       try {
@@ -433,7 +434,7 @@ export function registerGenerationRoutes(
         typeof request.body === "object" && request.body !== null
           ? (request.body as Record<string, unknown>)
           : {};
-      const directory = join(root, key);
+      const directory = projectDirectory(root, key);
       const store = ProjectStore.openExisting(directory);
       if (!store) return await reply.code(404).send({ error: "项目不存在" });
       try {
@@ -486,51 +487,66 @@ export function registerGenerationRoutes(
     },
   );
 
-  app.get<{ Params: { key: string; assetId: string }; Querystring: { proxy?: string } }>(
-    "/api/projects/:key/assets/:assetId/content",
-    async (request, reply) => {
-      const key = projectKey(request.params.key);
-      if (!key) return await reply.code(400).send({ error: "项目标识无效" });
-      const directory = join(root, key);
-      const store = ProjectStore.openExisting(directory);
-      if (!store) return await reply.code(404).send({ error: "项目不存在" });
-      try {
-        const current = store.loadCurrent();
-        const asset = current?.snapshot.assets.find((item) => item.id === request.params.assetId);
-        if (!asset) return await reply.code(404).send({ error: "素材不存在" });
-        const useProxy = request.query.proxy === "1" && asset.proxyPath;
-        const filePath = join(directory, useProxy || asset.storagePath);
-        const info = await stat(filePath);
-        const rangeHeader = request.headers.range;
-        reply
-          .header("accept-ranges", "bytes")
-          .header("cache-control", "private, max-age=31536000, immutable")
-          .type(useProxy ? "image/jpeg" : asset.mimeType);
-        if (rangeHeader) {
-          const range = parseByteRange(rangeHeader, info.size);
-          if (!range) {
-            return await reply.code(416).header("content-range", `bytes */${info.size}`).send();
-          }
-          const length = range.end - range.start + 1;
-          return await reply
-            .code(206)
-            .header("content-length", length)
-            .header("content-range", `bytes ${range.start}-${range.end}/${info.size}`)
-            .send(createReadStream(filePath, range));
-        }
-        return await reply.header("content-length", info.size).send(createReadStream(filePath));
-      } finally {
-        store.close();
+  app.get<{
+    Params: { key: string; assetId: string };
+    Querystring: { proxy?: string; download?: string };
+  }>("/api/projects/:key/assets/:assetId/content", async (request, reply) => {
+    const key = projectKey(request.params.key);
+    if (!key) return await reply.code(400).send({ error: "项目标识无效" });
+    const directory = projectDirectory(root, key);
+    const store = ProjectStore.openExisting(directory);
+    if (!store) return await reply.code(404).send({ error: "项目不存在" });
+    try {
+      const current = store.loadCurrent();
+      const asset = current?.snapshot.assets.find((item) => item.id === request.params.assetId);
+      if (!asset) return await reply.code(404).send({ error: "素材不存在" });
+      const useProxy =
+        request.query.download !== "1" && request.query.proxy === "1" && asset.proxyPath;
+      const filePath = join(directory, useProxy || asset.storagePath);
+      const info = await stat(filePath);
+      const rangeHeader = request.headers.range;
+      reply
+        .header("accept-ranges", "bytes")
+        .header("cache-control", "private, max-age=31536000, immutable")
+        .type(useProxy ? "image/jpeg" : asset.mimeType);
+      if (request.query.download === "1") {
+        const filename =
+          [...asset.originalName]
+            .map((character) =>
+              character.charCodeAt(0) < 32 || character === "/" || character === "\\"
+                ? "_"
+                : character,
+            )
+            .join("") || "takeboard-asset";
+        reply.header(
+          "content-disposition",
+          `attachment; filename="takeboard-asset"; filename*=UTF-8''${encodeURIComponent(filename).replace(/['()*]/g, (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`)}`,
+        );
       }
-    },
-  );
+      if (rangeHeader) {
+        const range = parseByteRange(rangeHeader, info.size);
+        if (!range) {
+          return await reply.code(416).header("content-range", `bytes */${info.size}`).send();
+        }
+        const length = range.end - range.start + 1;
+        return await reply
+          .code(206)
+          .header("content-length", length)
+          .header("content-range", `bytes ${range.start}-${range.end}/${info.size}`)
+          .send(createReadStream(filePath, range));
+      }
+      return await reply.header("content-length", info.size).send(createReadStream(filePath));
+    } finally {
+      store.close();
+    }
+  });
 
   app.post<{ Params: { key: string; runId: string } }>(
     "/api/projects/:key/runs/:runId/cancel",
     async (request, reply) => {
       const key = projectKey(request.params.key);
       if (!key) return await reply.code(400).send({ error: "项目标识无效" });
-      const directory = join(root, key);
+      const directory = projectDirectory(root, key);
       const store = ProjectStore.openExisting(directory);
       if (!store) return await reply.code(404).send({ error: "项目不存在" });
       try {
@@ -625,7 +641,7 @@ export function registerGenerationRoutes(
     async (request, reply) => {
       const key = projectKey(request.params.key);
       if (!key) return await reply.code(400).send({ error: "项目标识无效" });
-      const directory = join(root, key);
+      const directory = projectDirectory(root, key);
       const store = ProjectStore.openExisting(directory);
       if (!store) return await reply.code(404).send({ error: "项目不存在" });
       let submittedPromptId: string | null = null;
@@ -1356,7 +1372,7 @@ export function registerGenerationRoutes(
 
   // Called under the project lock by either the HTTP route or the background worker.
   async function reconcileRun(key: string, runId: string) {
-    const directory = join(root, key);
+    const directory = projectDirectory(root, key);
     const store = ProjectStore.openExisting(directory);
     if (!store) throw Object.assign(new Error("项目不存在"), { statusCode: 404 });
     try {

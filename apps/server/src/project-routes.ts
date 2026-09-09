@@ -27,6 +27,14 @@ import {
   importProjectArchive,
   ProjectArchiveError,
 } from "./project-archive.js";
+import {
+  isLocatedProject,
+  linkProjectDirectory,
+  locatedProjectSummary,
+  projectDirectory,
+  storageFolder,
+  updateLocatedProjectSummary,
+} from "./project-locations.js";
 import { ProjectService } from "./project-service.js";
 import { ProjectStore } from "./storage/project-store.js";
 import type { WorkerPool } from "./worker-pool.js";
@@ -234,8 +242,34 @@ export function registerProjectRoutes(
         .map(async (entry) => {
           const originalKey = originalKeyFromTrashEntry(entry.name);
           if (!originalKey) return null;
-          const directory = join(trashRoot, entry.name);
-          const opened = await service.open(directory).catch(() => null);
+          let directory: string;
+          let opened: Awaited<ReturnType<typeof service.open>> | null;
+          try {
+            directory = projectDirectory(trashRoot, entry.name);
+            opened = await service.open(directory);
+          } catch {
+            const cached = locatedProjectSummary(trashRoot, entry.name);
+            if (
+              !cached ||
+              (context &&
+                !options.auth.hasProjectRole(
+                  cached.projectId,
+                  context.user.id,
+                  "owner",
+                  context.user.instanceRole,
+                ))
+            )
+              return null;
+            const information = await stat(join(trashRoot, entry.name)).catch(() => null);
+            return {
+              trashKey: entry.name,
+              originalKey,
+              title: cached.title,
+              shotCount: 0,
+              deletedAt: information?.mtime.toISOString() ?? cached.updatedAt,
+              unavailable: true,
+            };
+          }
           if (!opened) return null;
           if (
             context &&
@@ -273,7 +307,7 @@ export function registerProjectRoutes(
       const originalKey = originalKeyFromTrashEntry(archiveKey);
       if (!originalKey) return await reply.code(400).send({ error: "无法识别项目原始位置" });
       const source = join(root, ".trash", archiveKey);
-      const store = ProjectStore.openExisting(source);
+      const store = ProjectStore.openExisting(projectDirectory(join(root, ".trash"), archiveKey));
       if (!store) return await reply.code(404).send({ error: "回收区项目不存在" });
       let title = "恢复的项目";
       let projectId = "";
@@ -328,7 +362,32 @@ export function registerProjectRoutes(
       entries
         .filter((entry) => entry.isDirectory() && projectKey(entry.name))
         .map(async (entry) => {
-          const opened = await service.open(join(root, entry.name));
+          let opened: Awaited<ReturnType<typeof service.open>>;
+          try {
+            opened = await service.open(projectDirectory(root, entry.name));
+          } catch {
+            const cached = locatedProjectSummary(root, entry.name);
+            if (!cached || (accessible && !accessible.has(cached.projectId))) return null;
+            const role = context
+              ? options.auth.projectRole(cached.projectId, context.user.id)
+              : "owner";
+            return {
+              key: entry.name,
+              revision: 0,
+              id: cached.projectId,
+              title: cached.title,
+              aspectRatio: "位置不可用",
+              sceneCount: 0,
+              shotCount: 0,
+              activeRunCount: 0,
+              updatedAt: cached.updatedAt,
+              role: role ?? "owner",
+              membershipRole: role,
+              accessSource: role ? "membership" : "instance_admin",
+              boards: [],
+              unavailable: true,
+            };
+          }
           if (opened && accessible && !accessible.has(opened.snapshot.project.id)) return null;
           return opened
             ? {
@@ -451,30 +510,83 @@ export function registerProjectRoutes(
     await mkdir(root, { recursive: true });
     const suffix = `${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
     const key = `${slugify(title)}-${suffix}.takeboard`;
-    const created = await service.create({
-      projectDirectory: join(root, key),
-      title,
-      defaultAspectRatio: (ratio as AspectRatio | undefined) ?? "16:9",
-      // Older clients sent shot fields as part of project creation. Keep that
-      // route compatible while the current UI starts with a genuinely blank board.
-      createStarterShot:
-        typeof ratio === "string" ||
-        typeof body.sceneTitle === "string" ||
-        typeof body.firstShotIntent === "string",
-      ...(typeof body.sceneTitle === "string" ? { sceneTitle: body.sceneTitle } : {}),
-      ...(typeof body.firstShotIntent === "string"
-        ? { firstShotIntent: body.firstShotIntent }
-        : {}),
-    });
-    const context = authContext(request);
-    if (context) options.auth.grantProjectOwner(created.snapshot.project.id, context.user.id);
+    let destination = join(root, key);
+    if (body.storageRootId !== undefined || body.storageFolder !== undefined) {
+      const context = authContext(request);
+      if (context && !context.local && context.user.instanceRole !== "admin")
+        return await reply.code(403).send({ error: "自定义项目位置需要设备管理权限" });
+      if (
+        typeof body.storageRootId !== "string" ||
+        (body.storageFolder !== undefined && typeof body.storageFolder !== "string")
+      )
+        return await reply.code(400).send({ error: "项目位置无效" });
+      try {
+        const selected = await storageFolder(
+          root,
+          body.storageRootId,
+          (body.storageFolder as string | undefined) ?? "",
+        );
+        const safeTitle =
+          [...title]
+            .map((character) =>
+              character.charCodeAt(0) < 32 || '<>:"/\\|?*'.includes(character) ? "_" : character,
+            )
+            .join("")
+            .replace(/[. ]+$/, "") || "项目";
+        let folderTitle = "";
+        for (const character of safeTitle) {
+          if (Buffer.byteLength(folderTitle + character, "utf8") > 180) break;
+          folderTitle += character;
+        }
+        destination = join(selected.path, `${folderTitle} (${suffix}).takeboard`);
+      } catch (cause) {
+        return await reply
+          .code(400)
+          .send({ error: cause instanceof Error ? cause.message : "项目位置不可用" });
+      }
+    }
+    // Reserve an exclusive folder. Never let project creation overwrite an existing directory.
+    await mkdir(destination, { mode: 0o700 });
+    let created: Awaited<ReturnType<typeof service.create>>;
+    let publishedIndex = false;
+    try {
+      created = await service.create({
+        projectDirectory: destination,
+        title,
+        defaultAspectRatio: (ratio as AspectRatio | undefined) ?? "16:9",
+        // Older clients sent shot fields as part of project creation. Keep that
+        // route compatible while the current UI starts with a genuinely blank board.
+        createStarterShot:
+          typeof ratio === "string" ||
+          typeof body.sceneTitle === "string" ||
+          typeof body.firstShotIntent === "string",
+        ...(typeof body.sceneTitle === "string" ? { sceneTitle: body.sceneTitle } : {}),
+        ...(typeof body.firstShotIntent === "string"
+          ? { firstShotIntent: body.firstShotIntent }
+          : {}),
+      });
+      await linkProjectDirectory(root, key, destination, {
+        projectId: created.snapshot.project.id,
+        title,
+        updatedAt: created.snapshot.project.updatedAt,
+      });
+      publishedIndex = resolve(destination) !== resolve(root, key);
+      const context = authContext(request);
+      if (context) options.auth.grantProjectOwner(created.snapshot.project.id, context.user.id);
+    } catch (error) {
+      // This request exclusively reserved both paths; rollback only its new,
+      // unpublished project. Existing folders and projects are never overwritten.
+      if (publishedIndex) await rm(join(root, key), { recursive: true, force: true });
+      await rm(destination, { recursive: true, force: true });
+      throw error;
+    }
     return await reply.code(201).send({ key, ...created });
   });
 
   app.get<{ Params: { key: string } }>("/api/projects/:key/export", async (request, reply) => {
     const key = projectKey(request.params.key);
     if (!key) return await reply.code(400).send({ error: "项目标识无效" });
-    const directory = join(root, key);
+    const directory = projectDirectory(root, key);
     const store = ProjectStore.openExisting(directory);
     if (!store) return await reply.code(404).send({ error: "项目不存在" });
     let current: ReturnType<ProjectStore["loadCurrent"]>;
@@ -521,7 +633,7 @@ export function registerProjectRoutes(
     if (!key || !allowedRatios.has(ratio as AspectRatio)) {
       return await reply.code(400).send({ error: key ? "镜头画幅无效" : "项目标识无效" });
     }
-    const store = ProjectStore.openExisting(join(root, key));
+    const store = ProjectStore.openExisting(projectDirectory(root, key));
     if (!store) return await reply.code(404).send({ error: "项目不存在" });
     try {
       const current = store.loadCurrent();
@@ -590,7 +702,7 @@ export function registerProjectRoutes(
     async (request, reply) => {
       const key = projectKey(request.params.key);
       if (!key) return await reply.code(400).send({ error: "项目标识无效" });
-      const store = ProjectStore.openExisting(join(root, key));
+      const store = ProjectStore.openExisting(projectDirectory(root, key));
       if (!store) return await reply.code(404).send({ error: "项目不存在" });
       try {
         const current = store.loadCurrent();
@@ -651,7 +763,7 @@ export function registerProjectRoutes(
         ? (request.body as Record<string, unknown>)
         : {};
     if (!key) return await reply.code(400).send({ error: "项目标识无效" });
-    const store = ProjectStore.openExisting(join(root, key));
+    const store = ProjectStore.openExisting(projectDirectory(root, key));
     if (!store) return await reply.code(404).send({ error: "项目不存在" });
     try {
       const current = store.loadCurrent();
@@ -705,7 +817,7 @@ export function registerProjectRoutes(
   app.get<{ Params: { key: string } }>("/api/projects/:key", async (request, reply) => {
     const key = projectKey(request.params.key);
     if (!key) return await reply.code(400).send({ error: "项目标识无效" });
-    const opened = await service.open(join(root, key));
+    const opened = await service.open(projectDirectory(root, key));
     if (!opened) return await reply.code(404).send({ error: "项目不存在" });
     return { key, ...opened };
   });
@@ -713,7 +825,7 @@ export function registerProjectRoutes(
   app.get<{ Params: { key: string } }>("/api/projects/:key/sync", async (request, reply) => {
     const key = projectKey(request.params.key);
     if (!key) return await reply.code(400).send({ error: "项目标识无效" });
-    const store = ProjectStore.openExisting(join(root, key));
+    const store = ProjectStore.openExisting(projectDirectory(root, key));
     if (!store) return await reply.code(404).send({ error: "项目不存在" });
     try {
       const currentRevision = store.currentRevision();
@@ -737,7 +849,7 @@ export function registerProjectRoutes(
     const title = typeof body.title === "string" ? body.title.trim().slice(0, 200) : "";
     if (!key || !title) return await reply.code(400).send({ error: "项目名称无效" });
 
-    const store = ProjectStore.openExisting(join(root, key));
+    const store = ProjectStore.openExisting(projectDirectory(root, key));
     if (!store) return await reply.code(404).send({ error: "项目不存在" });
     try {
       const current = store.loadCurrent();
@@ -750,6 +862,16 @@ export function registerProjectRoutes(
         type: "project.renamed",
         payload: { title },
       });
+      await updateLocatedProjectSummary(root, key, {
+        projectId: current.snapshot.project.id,
+        title,
+        updatedAt: timestamp,
+      }).catch(() => {
+        request.log.warn(
+          { code: "PROJECT_LOCATION_CACHE_STALE" },
+          "项目已重命名，但离线目录摘要未能更新",
+        );
+      });
       return { key, ...saved };
     } finally {
       store.close();
@@ -760,7 +882,7 @@ export function registerProjectRoutes(
     const key = projectKey(request.params.key);
     if (!key) return await reply.code(400).send({ error: "项目标识无效" });
 
-    const source = join(root, key);
+    const source = projectDirectory(root, key);
     const store = ProjectStore.openExisting(source);
     if (!store) return await reply.code(404).send({ error: "项目不存在" });
     const current = store.loadCurrent();
@@ -851,7 +973,12 @@ export function registerProjectRoutes(
     const trashRoot = join(root, ".trash");
     await mkdir(trashRoot, { recursive: true });
     const archivedName = `${key}.${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
-    await rename(source, join(trashRoot, archivedName));
+    // External projects retain their original files. Recycling only moves the
+    // catalog entry, so there is no cross-disk move or unintended data deletion.
+    await rename(
+      isLocatedProject(root, key) ? join(root, key) : source,
+      join(trashRoot, archivedName),
+    );
     return {
       key,
       deleted: true as const,
@@ -880,7 +1007,7 @@ export function registerProjectRoutes(
         return await reply.code(400).send({ error: "连线参数无效" });
       }
 
-      const store = ProjectStore.openExisting(join(root, key));
+      const store = ProjectStore.openExisting(projectDirectory(root, key));
       if (!store) return await reply.code(404).send({ error: "项目不存在" });
       try {
         const current = store.loadCurrent();
@@ -1002,7 +1129,7 @@ export function registerProjectRoutes(
         return await reply.code(400).send({ error: "连线参数无效" });
       }
 
-      const store = ProjectStore.openExisting(join(root, key));
+      const store = ProjectStore.openExisting(projectDirectory(root, key));
       if (!store) return await reply.code(404).send({ error: "项目不存在" });
       try {
         const current = store.loadCurrent();
@@ -1043,7 +1170,7 @@ export function registerProjectRoutes(
     async (request, reply) => {
       const key = projectKey(request.params.key);
       if (!key) return await reply.code(400).send({ error: "项目标识无效" });
-      const store = ProjectStore.openExisting(join(root, key));
+      const store = ProjectStore.openExisting(projectDirectory(root, key));
       if (!store) return await reply.code(404).send({ error: "项目不存在" });
       try {
         const current = store.loadCurrent();
@@ -1090,7 +1217,7 @@ export function registerProjectRoutes(
         return await reply.code(400).send({ error: "画布位置无效" });
       }
 
-      const store = ProjectStore.openExisting(join(root, key));
+      const store = ProjectStore.openExisting(projectDirectory(root, key));
       if (!store) return await reply.code(404).send({ error: "项目不存在" });
       try {
         const current = store.loadCurrent();
@@ -1130,7 +1257,7 @@ export function registerProjectRoutes(
       ) {
         return await reply.code(400).send({ error: "节点来源无效" });
       }
-      const store = ProjectStore.openExisting(join(root, key));
+      const store = ProjectStore.openExisting(projectDirectory(root, key));
       if (!store) return await reply.code(404).send({ error: "项目不存在" });
       try {
         const current = store.loadCurrent();
@@ -1197,7 +1324,7 @@ export function registerProjectRoutes(
         typeof request.body === "object" && request.body !== null
           ? (request.body as Record<string, unknown>)
           : {};
-      const store = ProjectStore.openExisting(join(root, key));
+      const store = ProjectStore.openExisting(projectDirectory(root, key));
       if (!store) return await reply.code(404).send({ error: "项目不存在" });
       try {
         const current = store.loadCurrent();
@@ -1238,7 +1365,7 @@ export function registerProjectRoutes(
         typeof request.body === "object" && request.body !== null
           ? (request.body as Record<string, unknown>)
           : {};
-      const store = ProjectStore.openExisting(join(root, key));
+      const store = ProjectStore.openExisting(projectDirectory(root, key));
       if (!store) return await reply.code(404).send({ error: "项目不存在" });
       try {
         const current = store.loadCurrent();
@@ -1336,7 +1463,7 @@ export function registerProjectRoutes(
     async (request, reply) => {
       const key = projectKey(request.params.key);
       if (!key) return await reply.code(400).send({ error: "项目标识无效" });
-      const store = ProjectStore.openExisting(join(root, key));
+      const store = ProjectStore.openExisting(projectDirectory(root, key));
       if (!store) return await reply.code(404).send({ error: "项目不存在" });
       try {
         const current = store.loadCurrent();
@@ -1374,7 +1501,7 @@ export function registerProjectRoutes(
           : {};
       const reason = typeof body.reason === "string" ? body.reason.trim().slice(0, 200) : "";
       if (!key || !reason) return await reply.code(400).send({ error: "淘汰原因无效" });
-      const store = ProjectStore.openExisting(join(root, key));
+      const store = ProjectStore.openExisting(projectDirectory(root, key));
       if (!store) return await reply.code(404).send({ error: "项目不存在" });
       try {
         const current = store.loadCurrent();
@@ -1410,7 +1537,7 @@ export function registerProjectRoutes(
     }
     const key = projectKey(request.params.key);
     if (!key) return await reply.code(400).send({ error: "项目标识无效" });
-    const store = ProjectStore.openExisting(join(root, key));
+    const store = ProjectStore.openExisting(projectDirectory(root, key));
     if (!store) return await reply.code(404).send({ error: "项目不存在" });
     try {
       const current = store.loadCurrent();
@@ -1443,7 +1570,7 @@ export function registerProjectRoutes(
           error: parsed.error.issues[0]?.message ?? "批量批准内容无效",
         });
       }
-      const store = ProjectStore.openExisting(join(root, key));
+      const store = ProjectStore.openExisting(projectDirectory(root, key));
       if (!store) return await reply.code(404).send({ error: "项目不存在" });
       try {
         const current = store.loadCurrent();
@@ -1486,7 +1613,7 @@ export function registerProjectRoutes(
           error: parsed.error.issues[0]?.message ?? "批量批准内容无效",
         });
       }
-      const store = ProjectStore.openExisting(join(root, key));
+      const store = ProjectStore.openExisting(projectDirectory(root, key));
       if (!store) return await reply.code(404).send({ error: "项目不存在" });
       try {
         const current = store.loadCurrent();
@@ -1561,7 +1688,7 @@ export function registerProjectRoutes(
           ? (request.body as Record<string, unknown>)
           : {};
       const reason = typeof body.reason === "string" ? body.reason.trim().slice(0, 2_000) : null;
-      const store = ProjectStore.openExisting(join(root, key));
+      const store = ProjectStore.openExisting(projectDirectory(root, key));
       if (!store) return await reply.code(404).send({ error: "项目不存在" });
       try {
         const current = store.loadCurrent();

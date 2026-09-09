@@ -18,7 +18,11 @@ function applyStatus(payload) {
   if (payload?.state === "ready" && payload.url) {
     status.textContent = "服务已就绪，正在进入…";
     if (unlisten) unlisten();
-    window.location.replace(payload.url);
+    const destination = new URL(payload.url);
+    destination.hash = new URLSearchParams({
+      "tb-device": JSON.stringify({ kind: "local", address: "" }),
+    }).toString();
+    window.location.replace(destination.href);
     return;
   }
   if (payload?.state === "failed") showFailure(payload.message || "TakeBoard 无法启动");
