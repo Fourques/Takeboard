@@ -15,13 +15,23 @@ without weakening ownership of local media and ComfyUI infrastructure.
 
 ## Development setup
 
+Just want to use TakeBoard? Start with [packaged downloads](docs/downloads.en.md); this section is for
+source development. User guides and deployment references are in the [documentation index](docs/README.md).
+
 Use Node.js 24 LTS and the exact pnpm version declared in `package.json`.
 
 ```bash
+git clone https://github.com/Fourques/Takeboard.git
+cd Takeboard
 corepack enable
 pnpm install --frozen-lockfile
 pnpm verify
 ```
+
+For cross-platform development, run `pnpm dev` and open `http://127.0.0.1:48110`.
+Linux operators using the managed systemd service can use `./scripts/takeboard dev` to coordinate it
+with their stable instance. See [source configuration](docs/source-guide.md) for desktop builds,
+ComfyUI settings and service management.
 
 For browser journeys, install Chromium once and run the release gate:
 
@@ -60,3 +70,14 @@ Product, security, persistence and architecture changes require a concise entry 
 The pull request template asks for the affected journey, test evidence, data/security impact and
 screenshots where layout changes. CI runs install, lint, typecheck, unit/integration tests and builds on
 Linux, macOS and Windows, followed by a production Chromium journey.
+
+## Documentation and distribution
+
+- Keep the Chinese and English README focused on download, first use and honest product boundaries.
+  Put operational details in linked guides instead of requiring every user to read developer setup.
+- Update both download guides when publishing packages. Confirm actual Release assets; a configured
+  build job or successful compile is not proof of a downloadable or clean-machine-tested installer.
+- Identify whether a feature is in a published version or only on `main`. Keep Actions test artifacts
+  distinct from versioned Releases, and signing/attestation distinct from runtime test evidence.
+- Keep source contributions under [Apache-2.0](LICENSE). Never commit private signing keys, user data,
+  models or generated installation artifacts into the source tree.

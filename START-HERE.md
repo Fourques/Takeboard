@@ -1,20 +1,17 @@
 # TakeBoard 从这里开始
 
-更新时间：2026-08-30
-当前阶段：0.1.0 Public Preview
+更新时间：2026-09-09
+当前阶段：公开预览；已发布安装文件与当前开发功能以[下载指南](docs/downloads.md)区分。
 
 TakeBoard 是面向 ComfyUI 创作者的开源、本地优先 AI 影像工作台。它已经从早期 M0 验证进入公开预览：核心项目闭环、跨平台启动、账号权限、Workflow Binding、生成恢复、数据迁移和运行诊断均已落地；正式版仍需要陌生用户任务测试、真实 GPU 兼容矩阵和签名桌面安装。
 
 ## 我只是想开始使用
 
-| 系统 | 操作 |
-| --- | --- |
-| macOS | 右键打开 `START-TAKEBOARD.command` |
-| Windows | 双击 `START-TAKEBOARD.cmd` |
-| Linux | 首次运行 `npm run easy:setup`，以后运行 `npm run easy` |
+从[下载与安装](docs/downloads.md)选择系统对应的包，不需要先安装开发工具。
+英文用户可直接查看 [Download and installation](docs/downloads.en.md)。
 
-启动失败时运行 `npm run easy:doctor`。远程使用运行
-`npm run easy:remote -- your-server`；它使用标准 SSH、自动探测端口，并在退出时释放隧道。
+已经克隆源码的用户请看[源码运行与配置](docs/source-guide.md)，不要把源码启动命令套用到便携包。
+远程访问请看[连接指南](docs/remote-access.md)，根据自己的版本选择桌面连接菜单或标准 SSH。
 
 完整说明见 [README](README.md)、[创作工作站指南](docs/creator-workstation.md)、[远程访问](docs/remote-access.md)和[自托管部署](docs/self-hosting.md)。
 
@@ -27,7 +24,7 @@ TakeBoard 是面向 ComfyUI 创作者的开源、本地优先 AI 影像工作台
   → 选择内置 Recipe，或诊断并显式绑定自己的 Workflow
   → 生成 1–4 个独立候选
   → 比较、淘汰并批准一个 Take
-  → 在分镜墙与只读粗剪中检查顺序
+  → 在分镜墙检查顺序（粗剪预览为可选扩展）
   → 下载完整项目包和脱敏运行诊断
   → 关闭、重开并确认来源和批准状态仍在
 ```

@@ -6,6 +6,14 @@ before moving production work to a newer minor version.
 
 ## Unreleased
 
+### Documentation
+
+- Reorganized both repository home pages around packaged downloads and creator journeys, retaining
+  source setup and operational detail in dedicated guides. Added bilingual download guides and a
+  task-based documentation index, with verified public-Release versus Actions-preview boundaries.
+- Corrected the English overview's outdated mandatory-local-login claim for current main; explicitly
+  distinguish older published packages from newer optional-login and desktop-connection features.
+
 ### Added
 
 - A self-hosted TakeBoard Portal with real accounts, one-time workstation pairing, outbound-only

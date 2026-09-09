@@ -1,5 +1,11 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Download and install / 下载与安装
+    url: https://github.com/Fourques/Takeboard/blob/main/docs/downloads.md
+    about: Choose your platform and distinguish published packages from temporary test builds. English guide linked inside.
+  - name: Documentation / 使用文档
+    url: https://github.com/Fourques/Takeboard/blob/main/docs/README.md
+    about: Find creation, remote access, accounts, backup and developer guides.
   - name: Security vulnerability / 安全漏洞
     url: https://github.com/Fourques/Takeboard/security/advisories/new
     about: Report credentials, access-control bypasses and other vulnerabilities privately.

@@ -3,184 +3,95 @@
 <p align="right">English · <a href="README.md">简体中文</a></p>
 
 <p align="center">
-  <strong>Assets, shots, workflows and every generation run—on one director's board.</strong><br />
+  <strong>From a reference image to a sequence of shots.</strong><br />
   An open-source, local-first AI filmmaking workspace for ComfyUI creators.
+</p>
+
+<p align="center">
+  <a href="docs/downloads.en.md"><strong>Download</strong></a> ·
+  <a href="docs/README.md">Documentation</a> ·
+  <a href="CONTRIBUTING.md">Contribute</a>
 </p>
 
 <p align="center">
   <a href="https://github.com/Fourques/Takeboard/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Fourques/Takeboard/actions/workflows/ci.yml/badge.svg" /></a>
   <a href="LICENSE"><img alt="Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-315EFB.svg" /></a>
-  <a href="https://github.com/Fourques/Takeboard/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/Fourques/Takeboard?include_prereleases&label=public%20preview&color=D99A46" /></a>
+  <a href="https://github.com/Fourques/Takeboard/releases"><img alt="Public preview release" src="https://img.shields.io/github/v/release/Fourques/Takeboard?include_prereleases&label=public%20preview&color=D99A46" /></a>
 </p>
 
 ![TakeBoard project hub](docs/assets/takeboard-home.webp)
 
-TakeBoard does not replace ComfyUI's node editor. It adds the production layer around it: projects,
-assets, semantic shot inputs, reproducible runs, candidate takes and approvals. Optional studio tools,
-including a read-only rough cut, stay out of the core workspace until you enable them. Models,
-workflows, media and project files stay on infrastructure you control.
+Keep reference media, generated shots and workflows on one canvas. Connect inputs, adjust parameters,
+compare results and keep the takes you want. TakeBoard complements ComfyUI's node editor with a
+project workspace and traceable generation history.
 
-## What works today
+## Download and start
 
-- A visual project hub and per-project React Flow canvas.
-- Original image/video ingest without destructive cropping or resolution changes.
-- First-frame, last-frame, reference-image, reference-video and reference-audio connections.
-- Built-in Recipes plus explicit, content-hash-bound mappings for trusted custom ComfyUI workflows.
-- Text-to-image, image-to-image, text/image-to-video and first/last-frame video execution paths.
-- Real ComfyUI node progress when available, honest indeterminate states otherwise, cancellation,
-  reconnect reconciliation and output provenance.
-- Core Run/Take review, rejection, single-shot approval and storyboard coverage.
-- Local, SSH-tunnel and HTTPS ComfyUI workers with explainable privacy, speed, cost, quality and
-  per-run budget policies.
-- Bundled, disabled-by-default extensions for rough-cut playback, exact/estimated/unknown cost
-  summaries, atomic cross-shot approval and delivery QC.
-- A declarative extension library for controlled workspace features, team QC rules and external tool
-  links; third-party code is not executed.
-- Recoverable project deletion, integrity-checked project import/export and pre-migration backups.
-- Accounts, device sessions, instance admins and project Owner/Editor/Viewer roles.
-- An account-side Access & Install center that reports real local, SSH and team-HTTPS readiness.
-- An optional self-hosted account portal with one-time pairing, outbound workstation connections,
-  revocation and local authorization enforcement.
-- A Tauri 2 native desktop preview and an installable Web App alongside six OS/CPU portable bundles.
-- Cross-project task/storage center and a redacted downloadable support report.
-- Optional scheduled off-volume instance backups with retention and isolated restore drills.
-- User-selectable type scaling without changing canvas coordinates or generation resolution.
+**You do not need to read the source or install developer tools to use a packaged build.**
 
-## Quick start
+Follow the [download guide](docs/downloads.en.md) for your platform. Portable and desktop previews
+include Node.js; no separate Node.js, pnpm or Rust installation is needed.
+**ComfyUI, models and Custom Nodes are not bundled.** You can organize projects and media without
+ComfyUI; generation requires a working local or remote ComfyUI environment.
 
-For the lowest-friction preview, download a native DMG, MSI/NSIS, AppImage/Deb installer from
-[Releases](https://github.com/Fourques/Takeboard/releases) when available. Otherwise download the
-`takeboard-*.tar.gz` matching your OS and CPU. Both forms include a matching Node.js runtime; for a
-portable archive, extract it and open `START-TAKEBOARD.command` on macOS,
-`START-TAKEBOARD.cmd` on Windows, or `./start-takeboard.sh` on Linux. They include SHA-256 checksums
-and GitHub build-provenance attestations, but are not yet Apple-notarized or Windows code-signed.
+> [!IMPORTANT]
+> As of September 9, 2026, the public Release is the `v0.2.0-beta.1` portable preview.
+> Newer desktop previews are Actions artifacts, not an equivalent published installer release.
+> This README describes current `main`, not every feature in the older Release.
+> Previews are not Apple-notarized or commercially Windows-code-signed.
 
-```bash
-gh attestation verify takeboard-*.tar.gz --repo Fourques/Takeboard
-```
+1. **Open the workspace:** download and extract or install the appropriate package.
+2. **Create a project:** name it and add your images, videos and reference media.
+3. **Connect ComfyUI:** check its status, choose an available workflow, connect inputs and generate.
 
-The source launcher requires Node.js `>=22.12 <27`; ComfyUI is optional until you want real
-generation.
+Current development builds allow local use without registration. Login is optional, with separate
+authorization for device projects and account projects. Older releases may require login.
+Projects default to `~/TakeBoardData`; back them up before upgrading.
 
-| Platform | First and daily start |
+## One canvas, from inputs to results
+
+- **Media and shots:** preserve original images and videos; connect first frames, last frames and references.
+- **Workflows and generation:** built-in Recipes and explicit bindings for trusted custom workflows,
+  actual node progress when available, cancellation and output recovery.
+- **Review and provenance:** candidate takes, approval, storyboard ordering and saved generation parameters.
+- **Project ownership:** self-contained data, recoverable deletion, project import/export and optional backups.
+- **Remote access:** standard SSH, HTTPS and an optional self-hosted Portal; Tailscale is not required.
+- **Optional extensions:** rough-cut preview, cost insights, batch review and delivery QC stay disabled until enabled.
+
+Importing a workflow does not automatically make it executable. Dependency checks, parameter bindings
+and explicit trust are required. Generation depends on your ComfyUI installation, models, nodes and
+hardware. See the [creator guide](docs/creator-workstation.md) and
+[compatibility evidence](docs/compatibility-matrix.md) (Chinese).
+
+## Choose your path
+
+| What you need | Start here |
 | --- | --- |
-| macOS | Right-click `START-TAKEBOARD.command` and choose Open |
-| Windows | Double-click `START-TAKEBOARD.cmd` |
-| Linux | Run `npm run easy:setup`, then `npm run easy` |
+| Use a packaged application | [Download and installation](docs/downloads.en.md) |
+| Connect to a GPU server | [Remote access](docs/remote-access.md) (Chinese) |
+| Manage login and project roles | [Accounts and access](docs/access-control.md) (Chinese) |
+| Run a persistent server | [Self-hosting](docs/self-hosting.md) (Chinese) |
+| Access paired devices through a portal | [Portal self-hosting](docs/portal-self-hosting.md) (Chinese) |
+| Configure workflows or extensions | [Creator guide](docs/creator-workstation.md) · [Extension protocol](docs/extensions.md) (Chinese) |
+| Build from source or contribute | [Contributing](CONTRIBUTING.md) · [Source configuration](docs/source-guide.md) (Chinese) |
 
-The easy launcher installs dependencies, rebuilds stale sources, selects a free local port, starts the
-service in the background and opens the browser. Projects default to `~/TakeBoardData`. Diagnose a
-failed start with:
+The server defaults to loopback. Public deployments require mandatory authentication, HTTPS and access
+restrictions. Never expose ComfyUI's port directly. Portal is self-hosted software, not an operated
+official cloud. Data stays on infrastructure you choose; remote generation transfers authorized inputs.
 
-```bash
-npm run easy:doctor
-```
+## Documentation and feedback
 
-Developer setup:
+[Documentation index](docs/README.md) · [Changelog](CHANGELOG.md) ·
+[Roadmap](docs/roadmap.md) · [Security](SECURITY.md)
 
-```bash
-git clone https://github.com/Fourques/Takeboard.git
-cd Takeboard
-corepack enable
-pnpm install --frozen-lockfile
-./scripts/takeboard dev
-```
+For problems, check the task center's runtime diagnostics and use the
+[issue chooser](https://github.com/Fourques/Takeboard/issues/new/choose).
+Do not upload private media, credentials or API keys. Report vulnerabilities privately.
 
-Open <http://127.0.0.1:48110>.
+## Open source and license
 
-## Remote use
+TakeBoard keeps its source public while making packaged downloads a separate entry for everyday users.
+Core local creation does not require an official cloud account or a hosted-service subscription.
 
-Keep TakeBoard and ComfyUI on loopback. From a Mac, Windows or Linux client, create a standard SSH
-tunnel with the helper:
-
-```bash
-npm run easy:remote -- your-server
-```
-
-The helper detects the remote TakeBoard port, selects a free local port, opens the correct URL and
-releases the tunnel when it exits. A Tailscale hostname works because the transport is still ordinary
-SSH; Tailscale is not required. See [remote access](docs/remote-access.md).
-
-The account center's **Access & Install** view shows the current server port and verifies account
-mode, loopback binding, HTTPS, secure cookies and Host/Origin allowlists. It can also pair a
-workstation with the optional self-hosted Portal. The workstation opens the outbound connection, so
-home-router port forwarding is not required; the Portal account is explicitly mapped to a local
-account and local project roles remain authoritative. See the Chinese
-[Portal self-hosting guide](docs/portal-self-hosting.md) and
-[account portal and distribution strategy](docs/access-and-distribution-strategy.md). This is a
-self-hosted preview, not an OpenAI- or TakeBoard-operated public cloud.
-
-## Custom workflows: an explicit trust boundary
-
-A ComfyUI UI Workflow JSON is not automatically an executable API Prompt. TakeBoard imports and
-diagnoses arbitrary UI workflows, but direct execution requires an explicit Binding that identifies
-prompt, media, seed, size, duration and output nodes. The Binding is tied to the Workflow SHA-256;
-editing the graph invalidates stale trust. Missing models/nodes and unsupported inputs are blocked
-before a generation is queued.
-
-This is intentional: third-party Custom Nodes can execute arbitrary Python and workflows may perform
-file or network operations. TakeBoard never auto-installs them.
-
-## Workers, costs and extensions
-
-Instance administrators can add remote ComfyUI workers from the home-page compute panel. Plain HTTP
-is accepted only through a loopback SSH tunnel; direct remote connections require HTTPS. New workers
-cannot receive image, video or audio inputs until an administrator explicitly grants that permission.
-The standard ComfyUI API has no portable endpoint for deleting uploaded inputs, so remote workers
-should use an isolated input directory with their own retention and cleanup policy. Every
-run records the selected worker, all considered candidates and the reason for each inclusion or
-rejection. A configured hourly rate produces an estimate; missing rates remain unknown rather than
-being reported as zero, and currencies are never silently combined.
-
-Run provenance is always retained, but rough-cut preview, cost insights, batch review and delivery QC
-are bundled opt-in extensions and are disabled by default. Enabling cost insights exposes honest
-exact, estimated and unknown totals; enabling batch review adds revision-checked atomic decisions
-across shots. When disabled, those views and service endpoints stay out of the core workflow. The
-extension library accepts only validated, content-hash-confirmed declarative manifests for controlled
-workspace features, QC rules and HTTP(S) links. Imported extensions are disabled by default and
-cannot run JavaScript, Python or shell commands. See
-[extension development and trust](docs/extensions.md).
-
-## Data and security boundary
-
-Each project is a self-contained `.takeboard` directory containing SQLite state, original assets,
-renders, runs, Recipes, logs and backups. Full project archives are streamed with file sizes and
-SHA-256 integrity checks.
-
-Administrators can optionally schedule full-instance copies to a mounted external disk or NAS.
-TakeBoard verifies each copy, applies daily/weekly/monthly retention, and periodically performs a
-real isolated restore that opens the identity database and every project. Automation is disabled
-until an out-of-data-root destination is explicitly configured.
-
-Authentication is required by default and the server listens on `127.0.0.1`. Trusted teams can deploy
-behind an HTTPS reverse proxy with strict Host/Origin configuration. The 0.x preview is not a managed
-multi-tenant SaaS identity platform: MFA, SSO/SCIM, email recovery, quotas and managed security
-operations are out of scope. Never expose the ComfyUI port publicly. See [security](SECURITY.md) and
-[self-hosting](docs/self-hosting.md).
-
-## Quality gates
-
-```bash
-pnpm verify       # lint + typecheck + build + unit/integration tests
-pnpm test:e2e     # production Playwright journeys
-pnpm gate:release # full release gate, including 40-run and 500-node checks
-pnpm gate:gpu     # one private real-GPU end-to-end check against a running instance
-```
-
-The CI matrix installs and verifies on Linux, macOS and Windows, then runs the production browser
-journey on Chromium.
-
-## Project status
-
-TakeBoard is a public preview suitable for individual creators and trusted self-hosted teams. It is
-not yet a signed desktop application or a hosted public SaaS. See the honest
-[maturity assessment](docs/maturity-audit-2026-08-30.md), [roadmap](docs/roadmap.md) and
-[changelog](CHANGELOG.md).
-
-Use the [issue chooser](https://github.com/Fourques/Takeboard/issues/new/choose) for bugs, feature
-requests and Workflow compatibility reports. Read [CONTRIBUTING.md](CONTRIBUTING.md) before a larger
-change and report vulnerabilities privately under [SECURITY.md](SECURITY.md).
-
-## License
-
-[Apache License 2.0](LICENSE)
+Code is licensed under [Apache License 2.0](LICENSE). Models, Custom Nodes and dependencies retain
+their own licenses; TakeBoard's license does not grant additional rights to them.
