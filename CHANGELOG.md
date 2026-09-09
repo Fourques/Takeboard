@@ -6,6 +6,12 @@ before moving production work to a newer minor version.
 
 ## Unreleased
 
+- New installations start with the soft-color theme. Explicit theme choices are retained using a
+  host-scoped preference cookie and localStorage fallback, including after desktop service ports change.
+  Multiple theme controls remain synchronized and blocked storage no longer aborts theme initialization.
+- Loopback ComfyUI connections no longer claim to be physical local hardware: forwarded services
+  display their actual reported GPU with clearer connection labels. Existing custom worker names remain intact.
+
 ## 0.2.0-beta.2 — 2026-09-09
 
 - Native installers become the only public application downloads: macOS DMG, Windows NSIS and

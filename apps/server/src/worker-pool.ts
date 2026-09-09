@@ -66,7 +66,7 @@ function defaultWorker(endpoint: string): WorkerDefinition {
   const loopback = loopbackEndpoint(endpoint);
   return workerDefinitionSchema.parse({
     id: deterministicWorkerId(endpoint),
-    name: loopback ? "本机 ComfyUI" : "默认远程 ComfyUI",
+    name: loopback ? "默认 ComfyUI" : "默认远程 ComfyUI",
     endpoint: normalizeEndpoint(endpoint),
     kind: loopback ? "local" : "remote",
     transport: loopback ? "loopback" : endpoint.startsWith("https://") ? "https" : "direct_http",
@@ -151,7 +151,13 @@ export class WorkerPool {
     const existing = this.workers.find((worker) => worker.id === primary.id);
     if (existing) {
       this.workers = this.workers.map((worker) =>
-        worker.id === primary.id ? { ...worker, endpoint: primary.endpoint } : worker,
+        worker.id === primary.id
+          ? {
+              ...worker,
+              endpoint: primary.endpoint,
+              name: worker.name === "本机 ComfyUI" ? primary.name : worker.name,
+            }
+          : worker,
       );
     } else {
       this.workers.unshift(primary);

@@ -1267,7 +1267,12 @@ export function ProjectHub({
                                     : (entry.error ?? "当前离线")}
                               </span>
                               <small>
-                                {entry.worker.kind === "local" ? "本机" : "远程"} ·{" "}
+                                {entry.worker.transport === "loopback"
+                                  ? "本地地址（可能经转发）"
+                                  : entry.worker.transport === "ssh_tunnel"
+                                    ? "SSH 转发"
+                                    : "远程连接"}
+                                {" · "}
                                 {entry.worker.qualityTier} ·{" "}
                                 {entry.worker.hourlyRate === null
                                   ? "成本未知"
@@ -1399,6 +1404,7 @@ export function ProjectHub({
                         </span>
                         <small>
                           {worker.version ? `ComfyUI ${worker.version}` : "连接状态正常"}
+                          {" · 已连接服务返回的设备，非当前电脑硬件检测"}
                         </small>
                       </div>
                     ) : (
@@ -1856,8 +1862,8 @@ export function ProjectHub({
                 <span>01</span>
                 <strong>本机打开</strong>
                 <p>
-                  双击项目根目录里的 <code>START-TAKEBOARD</code>
-                  。首次会自动安装，之后自动启动并打开浏览器。
+                  安装 TakeBoard 后，从“应用程序”或开始菜单打开即可。默认无需注册，
+                  新建项目后就能导入素材；生成需要连接 ComfyUI。
                 </p>
               </article>
               <article>

@@ -4,12 +4,17 @@ import { App } from "./App";
 import { AppErrorBoundary } from "./app-error-boundary";
 import { AuthGate } from "./auth-ui";
 import { resolveDisplayScale } from "./display-scale";
+import { readThemePreference, rememberTheme } from "./theme-preferences";
 import "./styles.css";
 
-const savedTheme = window.localStorage.getItem("takeboard.theme");
-document.documentElement.dataset.theme =
-  savedTheme === "light" || savedTheme === "chroma" ? savedTheme : "noir";
-const displayScale = resolveDisplayScale(window.localStorage.getItem("takeboard.display-scale"));
+rememberTheme(readThemePreference());
+let savedDisplayScale: string | null = null;
+try {
+  savedDisplayScale = window.localStorage.getItem("takeboard.display-scale");
+} catch {
+  // Blocked browser storage must not break first paint or theme recovery.
+}
+const displayScale = resolveDisplayScale(savedDisplayScale);
 document.documentElement.style.setProperty("--ui-scale", String(displayScale));
 document.documentElement.style.setProperty("--ui-scale-inverse", String(1 / displayScale));
 document.documentElement.dataset.displayScale = String(displayScale).replace(".", "-");

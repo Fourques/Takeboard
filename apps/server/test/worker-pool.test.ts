@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -36,6 +36,26 @@ function runtimeFetch(input: string | URL | Request) {
 }
 
 describe("WorkerPool", () => {
+  it("does not claim loopback is physical local hardware, and preserves custom worker names", async () => {
+    const root = await mkdtemp(join(tmpdir(), "takeboard-worker-name-"));
+    cleanup.push(root);
+    const path = join(root, "workers.json");
+    const endpoint = "http://127.0.0.1:8188";
+    const original = new WorkerPool(path, endpoint, runtimeFetch as typeof fetch).definitions()[0];
+    expect(original.name).toBe("默认 ComfyUI");
+    expect(original.transport).toBe("loopback");
+    await writeFile(
+      path,
+      JSON.stringify({ version: 1, workers: [{ ...original, name: "本机 ComfyUI" }] }),
+    );
+    expect(new WorkerPool(path, endpoint).definitions()[0].name).toBe("默认 ComfyUI");
+    await writeFile(
+      path,
+      JSON.stringify({ version: 1, workers: [{ ...original, name: "我的远程工作站" }] }),
+    );
+    expect(new WorkerPool(path, endpoint).definitions()[0].name).toBe("我的远程工作站");
+  });
+
   it("persists stable workers and explains policy decisions", async () => {
     const root = await mkdtemp(join(tmpdir(), "takeboard-workers-"));
     cleanup.push(root);
