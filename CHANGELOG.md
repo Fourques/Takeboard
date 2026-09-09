@@ -6,6 +6,14 @@ before moving production work to a newer minor version.
 
 ## Unreleased
 
+## 0.2.0-beta.2 — 2026-09-09
+
+- Native installers become the only public application downloads: macOS DMG, Windows NSIS and
+  Debian/Ubuntu DEB. Portable archives are retired from public distribution. Runtime helpers shared
+  with the desktop app remain in source; source builds stay available for developers.
+- The six-platform preview pipeline checks the runtime from the final mounted DMG or installed
+  NSIS/DEB before exposing artifacts. Preview signing limitations remain explicit.
+
 ### Documentation
 
 - Simplified public downloads to application packages, with platform-labelled Release links;
