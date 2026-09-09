@@ -39,7 +39,7 @@ fn set_startup(app: &tauri::AppHandle, status: StartupEvent) {
     if let Ok(mut current) = app.state::<DesktopStartup>().0.lock() {
         *current = status.clone();
     }
-    let _ = app.emit("takeboard-startup", status);
+    let _ = app.emit_to("main", "takeboard-startup", status);
 }
 
 fn stop_server(app: &tauri::AppHandle) {
@@ -252,7 +252,15 @@ fn start_server(app: &tauri::AppHandle) -> Result<(u16, u64), String> {
 }
 
 #[tauri::command]
-fn desktop_status(startup: State<'_, DesktopStartup>) -> StartupEvent {
+fn desktop_status(
+    startup: State<'_, DesktopStartup>,
+    window: tauri::WebviewWindow,
+) -> StartupEvent {
+    if window.label() != "main" {
+        return StartupEvent::Failed {
+            message: "只能从本机启动窗口读取服务状态。".into(),
+        };
+    }
     startup
         .0
         .lock()
@@ -263,7 +271,14 @@ fn desktop_status(startup: State<'_, DesktopStartup>) -> StartupEvent {
 }
 
 #[tauri::command]
-fn restart_server(app: tauri::AppHandle) -> StartupEvent {
+fn restart_server(app: tauri::AppHandle, window: tauri::WebviewWindow) -> StartupEvent {
+    // Explicitly guard application commands too; remote pages must never control
+    // the local launcher, independently of the framework's capability defaults.
+    if window.label() != "main" {
+        return StartupEvent::Failed {
+            message: "只能从本机启动窗口重启服务。".into(),
+        };
+    }
     stop_server(&app);
     set_startup(&app, StartupEvent::Starting);
     match start_server(&app) {
