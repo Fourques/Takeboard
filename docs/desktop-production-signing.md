@@ -7,12 +7,17 @@ TakeBoard 将桌面产物分成两条互不混用的通道：
 - `Preview bundles` 只能手动运行，生成未签名预览和 GitHub Artifact Attestation，不会发布 Release；
 - `Desktop check` 在相关提交后检查 Linux 原生窗口生命周期，同时构建 Mac ARM64 / Windows x64 预览包，
   验证打包运行时的启动、免登录创建项目、重启后会话与数据保留、退出清理。Windows 从实际 NSIS 安装后的
-  目录运行；Mac 从构建出的 `.app` 运行时目录运行。预览产物保存 14 天，不自动发布 Release，也不代表
+  目录运行；Mac 挂载最终 DMG 后从其中的 `.app` 运行。预览产物保存 14 天，不自动发布 Release，也不代表
   Mac/Windows 原生 UI、Gatekeeper 或 SmartScreen 已验收；
 - `Signed production release` 只接受仓库中已经存在的版本 Tag，使用受保护的
   `production-release` Environment，并且只会发布通过系统签名验证的安装器。
 
 GitHub 构建来源证明不能替代操作系统代码签名。不要把 Preview 的 DMG、NSIS 或 Deb 改名为正式版。
+
+macOS 打包保留 Hardened Runtime，并为内置 Node 声明 JIT 与原生扩展库加载权限（`entitlements.plist`）。
+不启用调试注入、DYLD 环境注入或全局关闭内存页保护。Tauri 会重新签署 sidecar，不能假定复制进来的
+Node 仍保留原签名权限；参考 [Tauri 签名实现](https://github.com/tauri-apps/tauri/blob/tauri-cli-v2.11.4/crates/tauri-bundler/src/bundle/macos/sign.rs)
+和 [Node 权限配置](https://github.com/nodejs/node/blob/main/tools/osx-entitlements.plist)。最终 DMG 内的运行时仍须通过真实启动测试。
 
 ## 一、配置 GitHub 发布环境
 

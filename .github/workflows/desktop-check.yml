@@ -56,8 +56,6 @@ jobs:
             platform: macos-arm64
             bundles: dmg
             extension: dmg
-            node: apps/desktop/src-tauri/target/release/bundle/macos/TakeBoard.app/Contents/MacOS/takeboard-node
-            resources: apps/desktop/src-tauri/target/release/bundle/macos/TakeBoard.app/Contents/Resources/TakeBoard
           - os: windows-latest
             platform: windows-x64
             bundles: nsis
@@ -80,9 +78,16 @@ jobs:
         run: pnpm --filter @takeboard/desktop exec tauri build --bundles ${{ matrix.bundles }} --ci -- --locked
         env:
           APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && '-' || '' }}
-      - name: Verify bundled runtime and real restart persistence
+      - name: Mount final DMG and verify runtime restart persistence
         if: runner.os == 'macOS'
-        run: node scripts/verify-desktop-runtime.mjs "${{ matrix.node }}" "${{ matrix.resources }}"
+        shell: bash
+        run: |
+          images=(apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg)
+          test "${#images[@]}" -eq 1 && test -f "${images[0]}"
+          mount=$(mktemp -d "$RUNNER_TEMP/takeboard-dmg.XXXXXX")
+          trap 'hdiutil detach "$mount" -quiet || true' EXIT
+          hdiutil attach -readonly -nobrowse -mountpoint "$mount" "${images[0]}"
+          node scripts/verify-desktop-runtime.mjs "$mount/TakeBoard.app/Contents/MacOS/takeboard-node" "$mount/TakeBoard.app/Contents/Resources/TakeBoard"
       - name: Install Windows preview and verify the installed runtime
         if: runner.os == 'Windows'
         shell: pwsh

@@ -37,6 +37,9 @@
       "icons/icon.ico"
     ],
     "category": "Productivity",
+    "macOS": {
+      "entitlements": "entitlements.plist"
+    },
     "copyright": "Copyright © TakeBoard contributors",
     "shortDescription": "Local-first AI filmmaking workspace",
     "longDescription": "Organize assets, shots, ComfyUI workflows, generation runs and approved takes in one local-first workspace.",
