@@ -40,9 +40,9 @@ function inspectPublicUrl(raw: string | null | undefined) {
   if (!raw?.trim()) return { url: null, error: null };
   try {
     const url = new URL(raw.trim());
-    if (url.protocol !== "https:") return { url: null, error: "团队入口必须使用 HTTPS" };
+    if (url.protocol !== "https:") return { url: null, error: "公开入口必须使用 HTTPS" };
     if (url.username || url.password || url.search || url.hash) {
-      return { url: null, error: "团队入口不能包含账号、密码、查询参数或片段" };
+      return { url: null, error: "公开入口不能包含账号、密码、查询参数或片段" };
     }
     url.pathname = url.pathname.replace(/\/+$/, "") || "/";
     return { url, error: null };
@@ -77,7 +77,8 @@ export function buildRemoteAccessStatus(
   );
   const originAllowed = Boolean(publicOrigin && allowedOrigins.has(publicOrigin));
   const secureCookies = options.secureCookies ?? process.env.TAKEBOARD_SECURE_COOKIES === "1";
-  const accountReady = options.auth.mode === "required" && options.auth.configured();
+  const accountReady =
+    ["required", "optional"].includes(options.auth.mode) && options.auth.configured();
   const checks: RemoteAccessCheck[] = [
     {
       id: "identity",
@@ -90,10 +91,10 @@ export function buildRemoteAccessStatus(
     {
       id: "accounts",
       label: "账号保护",
-      status: accountReady ? "pass" : "blocked",
+      status: accountReady ? "pass" : options.auth.mode === "optional" ? "warning" : "blocked",
       detail: accountReady
         ? "服务端账号与会话验证已启用"
-        : "远程访问必须启用 required 账号模式并完成首位管理员设置",
+        : "此设备可经可信 SSH 使用；账号项目与门户功能需要登录",
     },
     {
       id: "binding",
@@ -106,12 +107,21 @@ export function buildRemoteAccessStatus(
   ];
 
   let httpsState: RemoteAccessStatus["https"]["state"] = "not_configured";
-  let httpsDetail = "尚未配置团队 HTTPS 入口；个人远程使用可继续采用 SSH";
+  let httpsDetail = "尚未配置固定 HTTPS 入口；远程使用可继续采用 SSH";
   if (publicUrlResult.error) {
     httpsState = "blocked";
     httpsDetail = publicUrlResult.error;
   } else if (publicUrlResult.url) {
     const httpsChecks: RemoteAccessCheck[] = [
+      {
+        id: "public-auth",
+        label: "公开访问认证",
+        status: options.auth.mode === "required" ? "pass" : "blocked",
+        detail:
+          options.auth.mode === "required"
+            ? "公开访问必须登录账号"
+            : "公开入口需要 TAKEBOARD_AUTH_MODE=required，不能使用可选登录策略",
+      },
       {
         id: "https",
         label: "传输加密",
@@ -124,7 +134,7 @@ export function buildRemoteAccessStatus(
         status: secureCookies ? "pass" : "blocked",
         detail: secureCookies
           ? "会话 Cookie 仅通过安全连接发送"
-          : "配置团队入口时必须设置 TAKEBOARD_SECURE_COOKIES=1",
+          : "配置公开入口时必须设置 TAKEBOARD_SECURE_COOKIES=1",
       },
       {
         id: "allowlist",
@@ -138,7 +148,13 @@ export function buildRemoteAccessStatus(
     ];
     checks.push(...httpsChecks);
     httpsState =
-      accountReady && secureCookies && hostAllowed && originAllowed ? "ready" : "blocked";
+      accountReady &&
+      options.auth.mode === "required" &&
+      secureCookies &&
+      hostAllowed &&
+      originAllowed
+        ? "ready"
+        : "blocked";
     httpsDetail =
       httpsState === "ready"
         ? "这个实例已具备通过受控 HTTPS 反向代理访问的必要配置"
@@ -146,7 +162,7 @@ export function buildRemoteAccessStatus(
   } else {
     checks.push({
       id: "https",
-      label: "团队入口",
+      label: "固定入口",
       status: "warning",
       detail: "未配置，不影响本机与 SSH 使用",
     });
@@ -156,7 +172,8 @@ export function buildRemoteAccessStatus(
   const currentOrigin = requestOrigin(request);
   const currentIsLoopback = isLoopbackHostname(hostname);
   const currentIsHttps = request.protocol === "https" || currentOrigin.startsWith("https://");
-  const sshReady = accountReady && isLoopbackHostname(bindHost);
+  const sshReady =
+    (accountReady || options.auth.mode === "optional") && isLoopbackHostname(bindHost);
 
   return {
     instance: {

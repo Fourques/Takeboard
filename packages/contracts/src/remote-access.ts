@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const remoteAccessCheckSchema = z.object({
-  id: z.enum(["identity", "accounts", "binding", "https", "cookies", "allowlist"]),
+  id: z.enum(["identity", "accounts", "binding", "https", "cookies", "allowlist", "public-auth"]),
   label: z.string(),
   status: z.enum(["pass", "warning", "blocked"]),
   detail: z.string(),

@@ -7,6 +7,7 @@ import { pipeline } from "node:stream/promises";
 import { createGunzip, createGzip } from "node:zlib";
 import BetterSqlite3 from "better-sqlite3";
 import { extract, type Header, pack } from "tar-stream";
+import { countLoginAccounts } from "./auth-account-count.js";
 import type { AuthService } from "./auth-service.js";
 import { acquireInstanceLease } from "./instance-lease.js";
 import {
@@ -171,7 +172,7 @@ export async function createInstanceBackup(
       });
     }
     const usersDatabase = new BetterSqlite3(identityPath, { readonly: true, fileMustExist: true });
-    const users = usersDatabase.prepare("SELECT COUNT(*) FROM auth_users").pluck().get() as number;
+    const users = countLoginAccounts(usersDatabase);
     usersDatabase.close();
     const relativeFiles = [
       identityName,
@@ -472,7 +473,7 @@ export async function stageInstanceRestore(
     try {
       if (identity.pragma("quick_check", { simple: true }) !== "ok")
         throw new Error("identity database quick_check failed");
-      const users = identity.prepare("SELECT COUNT(*) FROM auth_users").pluck().get() as number;
+      const users = countLoginAccounts(identity);
       if (users !== manifest.users) throw new Error("identity user count mismatch");
     } finally {
       identity.close();

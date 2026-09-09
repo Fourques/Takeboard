@@ -958,7 +958,7 @@ export function ProjectHub({
   worker: WorkerStatus | null;
   workerBusy: boolean;
 }) {
-  const { user } = useAuth();
+  const { user, local, accountsConfigured, openAccount } = useAuth();
   const [creating, setCreating] = useState(false);
   const [renaming, setRenaming] = useState<ProjectCatalogItem | null>(null);
   const [deleting, setDeleting] = useState<ProjectCatalogItem | null>(null);
@@ -1427,7 +1427,7 @@ export function ProjectHub({
                       >
                         {workerBusy ? "检查中…" : "重新检测"}
                       </button>
-                      {user?.instanceRole === "admin" && worker?.status !== "ready" ? (
+                      {(local || user?.instanceRole === "admin") && worker?.status !== "ready" ? (
                         <button
                           className="worker-safe-start"
                           type="button"
@@ -1695,7 +1695,7 @@ export function ProjectHub({
       <section className={`hub-projects ${projectsVisible ? "is-visible" : ""}`} ref={projectsRef}>
         <div className="hub-section-heading">
           <div>
-            <span className="section-kicker">你的项目</span>
+            <span className="section-kicker">{local ? "此设备项目" : "你的项目"}</span>
             <h2>继续创作</h2>
           </div>
           <div className="project-library-tools">
@@ -1728,6 +1728,13 @@ export function ProjectHub({
           </div>
         </div>
         <div className="project-grid">
+          {local && accountsConfigured ? (
+            <button className="no-projects" type="button" onClick={() => openAccount()}>
+              <span>↗</span>
+              <strong>查看账号项目</strong>
+              <small>已有项目未删除，登录后按账号权限显示</small>
+            </button>
+          ) : null}
           {visibleProjects.map((project, index) => (
             <ProjectCard
               busy={busy}

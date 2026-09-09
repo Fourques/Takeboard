@@ -11,9 +11,42 @@ test("unauthenticated visitors see the login boundary and can sign in", async ({
     await expect(page.getByRole("heading", { name: "回到你的创作空间" })).toBeVisible();
     await page.getByLabel("邮箱").fill("e2e@takeboard.local");
     await page.getByLabel("密码").fill("takeboard e2e private passphrase");
+    await expect(page.getByRole("checkbox", { name: /保持登录/ })).toBeChecked();
     await page.getByRole("button", { name: "进入 TakeBoard" }).click();
     await expect(page.getByText("FILMMAKING WORKSPACE")).toBeVisible();
     await expect(page.locator(".account-button").first()).toBeVisible();
+    const saved = await context.storageState();
+    const session = saved.cookies.find((cookie) => cookie.name.startsWith("takeboard_session_"));
+    expect(session?.httpOnly).toBe(true);
+    expect(session?.expires).toBeGreaterThan(Date.now() / 1000 + 29 * 86400);
+    const restored = await browser.newContext({ baseURL, storageState: saved });
+    try {
+      const reopened = await restored.newPage();
+      await reopened.goto("/");
+      await expect(reopened.locator(".account-button").first()).toBeVisible();
+      await expect(reopened.getByRole("heading", { name: "回到你的创作空间" })).toHaveCount(0);
+    } finally {
+      await restored.close();
+    }
+  } finally {
+    await context.close();
+  }
+});
+
+test("login persistence can be disabled on a shared device", async ({ browser, baseURL }) => {
+  const context = await browser.newContext({ baseURL, storageState: { cookies: [], origins: [] } });
+  try {
+    const page = await context.newPage();
+    await page.goto("/");
+    await page.getByLabel("邮箱").fill("e2e@takeboard.local");
+    await page.getByLabel("密码").fill("takeboard e2e private passphrase");
+    await page.getByRole("checkbox", { name: /保持登录/ }).uncheck();
+    await page.getByRole("button", { name: "进入 TakeBoard" }).click();
+    await expect(page.locator(".account-button").first()).toBeVisible();
+    const session = (await context.cookies()).find((cookie) =>
+      cookie.name.startsWith("takeboard_session_"),
+    );
+    expect(session?.expires).toBe(-1);
   } finally {
     await context.close();
   }

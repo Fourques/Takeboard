@@ -42,7 +42,7 @@ function originAllowed(origin: string, configuredOrigins: Set<string>) {
 export function assertSafeBindHost(
   host: string,
   allowNonLoopback = false,
-  authMode: "required" | "trusted_local" | "off" = "off",
+  authMode: "optional" | "required" | "trusted_local" | "off" = "off",
 ) {
   if (isLoopbackHostname(host)) return;
   if (allowNonLoopback && authMode === "required") return;

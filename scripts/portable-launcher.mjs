@@ -250,7 +250,7 @@ async function start() {
     cwd: serverRoot,
     env: {
       ...process.env,
-      TAKEBOARD_AUTH_MODE: process.env.TAKEBOARD_AUTH_MODE || "required",
+      TAKEBOARD_AUTH_MODE: process.env.TAKEBOARD_AUTH_MODE || "optional",
       TAKEBOARD_DATA_ROOT: dataRoot,
       TAKEBOARD_HOST: "127.0.0.1",
       TAKEBOARD_INSTANCE_ID: instanceId,

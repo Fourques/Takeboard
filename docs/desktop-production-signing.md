@@ -1,10 +1,14 @@
 # 桌面正式签名与发行
 
-更新时间：2026-09-04
+更新时间：2026-09-09
 
 TakeBoard 将桌面产物分成两条互不混用的通道：
 
 - `Preview bundles` 只能手动运行，生成未签名预览和 GitHub Artifact Attestation，不会发布 Release；
+- `Desktop check` 在相关提交后检查 Linux 原生窗口生命周期，同时构建 Mac ARM64 / Windows x64 预览包，
+  验证打包运行时的启动、免登录创建项目、重启后会话与数据保留、退出清理。Windows 从实际 NSIS 安装后的
+  目录运行；Mac 从构建出的 `.app` 运行时目录运行。预览产物保存 14 天，不自动发布 Release，也不代表
+  Mac/Windows 原生 UI、Gatekeeper 或 SmartScreen 已验收；
 - `Signed production release` 只接受仓库中已经存在的版本 Tag，使用受保护的
   `production-release` Environment，并且只会发布通过系统签名验证的安装器。
 

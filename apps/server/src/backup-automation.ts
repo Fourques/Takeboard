@@ -19,6 +19,7 @@ import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { pipeline } from "node:stream/promises";
 import BetterSqlite3 from "better-sqlite3";
 import type { FastifyInstance, FastifyReply } from "fastify";
+import { countLoginAccounts } from "./auth-account-count.js";
 import { authContext } from "./auth-routes.js";
 import type { AuthService } from "./auth-service.js";
 import {
@@ -562,7 +563,7 @@ async function executeRestoreDrill(destination: string, record: ExternalBackupRe
       if (identity.pragma("quick_check", { simple: true }) !== "ok") {
         throw new Error("恢复演练身份数据库完整性检查失败");
       }
-      users = identity.prepare("SELECT COUNT(*) FROM auth_users").pluck().get() as number;
+      users = countLoginAccounts(identity);
     } finally {
       identity.close();
     }

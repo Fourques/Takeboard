@@ -1,0 +1,235 @@
+use crate::OwnedLauncher;
+use serde_json::{json, Value};
+use std::{
+    sync::{
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        Arc, Mutex,
+    },
+    thread,
+    time::{Duration, Instant},
+};
+use tauri::{Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri_plugin_shell::{process::CommandEvent, ShellExt};
+
+pub struct Connections {
+    operation: tauri::async_runtime::Mutex<()>,
+    child: Mutex<Option<OwnedLauncher>>,
+    generation: AtomicU64,
+    status: Mutex<Value>,
+}
+impl Default for Connections {
+    fn default() -> Self {
+        Self {
+            operation: tauri::async_runtime::Mutex::new(()),
+            child: Mutex::new(None),
+            generation: AtomicU64::new(0),
+            status: Mutex::new(json!({"state":"idle"})),
+        }
+    }
+}
+fn publish(app: &tauri::AppHandle, value: Value) {
+    if let Ok(mut status) = app.state::<Connections>().status.lock() {
+        *status = value.clone();
+    }
+    let _ = app.emit_to("connections", "takeboard-connection", value);
+}
+fn trusted(window: &WebviewWindow) -> Result<(), String> {
+    if window.label() != "connections" {
+        return Err("连接管理仅允许从桌面连接窗口操作".into());
+    }
+    Ok(())
+}
+pub async fn open(app: tauri::AppHandle) -> tauri::Result<()> {
+    let state = app.state::<Connections>();
+    let _guard = state.operation.lock().await;
+    if let Some(window) = app.get_webview_window("connections") {
+        window.show()?;
+        window.set_focus()?;
+    } else {
+        WebviewWindowBuilder::new(
+            &app,
+            "connections",
+            WebviewUrl::App("connections.html".into()),
+        )
+        .title("TakeBoard · 连接设备")
+        .inner_size(680.0, 720.0)
+        .min_inner_size(380.0, 440.0)
+        .build()?;
+    }
+    Ok(())
+}
+pub fn remote_window_closed(app: tauri::AppHandle) {
+    let generation = app.state::<Connections>().generation.load(Ordering::SeqCst);
+    tauri::async_runtime::spawn(async move {
+        let state = app.state::<Connections>();
+        let _guard = state.operation.lock().await;
+        // A delayed close event must never tear down a newer connection.
+        if state.generation.load(Ordering::SeqCst) == generation {
+            let stopping = app.clone();
+            let _ = tauri::async_runtime::spawn_blocking(move || stop(&stopping)).await;
+        }
+    });
+}
+pub fn stop(app: &tauri::AppHandle) {
+    let state = app.state::<Connections>();
+    state.generation.fetch_add(1, Ordering::SeqCst);
+    if let Ok(mut owned) = state.child.lock() {
+        if let Some(mut child) = owned.take() {
+            let _ = child.process.write(b"takeboard.launcher.shutdown\n");
+            let deadline = Instant::now() + Duration::from_secs(4);
+            while !child.exited.load(Ordering::SeqCst) && Instant::now() < deadline {
+                thread::sleep(Duration::from_millis(30));
+            }
+            if !child.exited.load(Ordering::SeqCst) {
+                let _ = child.process.kill();
+            }
+        }
+    }
+    publish(app, json!({"state":"idle"}));
+}
+#[tauri::command]
+pub fn connection_status(app: tauri::AppHandle, window: WebviewWindow) -> Result<Value, String> {
+    trusted(&window)?;
+    let value = app
+        .state::<Connections>()
+        .status
+        .lock()
+        .map_err(|_| "连接状态不可用")?
+        .clone();
+    Ok(value)
+}
+#[tauri::command]
+pub async fn disconnect_remote(app: tauri::AppHandle, window: WebviewWindow) -> Result<(), String> {
+    trusted(&window)?;
+    let state = app.state::<Connections>();
+    let _guard = state.operation.lock().await;
+    // An HTTPS window would otherwise remain fully usable after "disconnect".
+    if let Some(remote) = app.get_webview_window("remote-workspace") {
+        remote.close().map_err(|error| error.to_string())?;
+    }
+    let stopping = app.clone();
+    tauri::async_runtime::spawn_blocking(move || stop(&stopping))
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+#[tauri::command]
+pub async fn connect_remote(
+    app: tauri::AppHandle,
+    window: WebviewWindow,
+    target: Value,
+) -> Result<(), String> {
+    trusted(&window)?;
+    let state = app.state::<Connections>();
+    let _guard = state.operation.lock().await;
+    let payload = serde_json::to_string(&target).map_err(|error| error.to_string())?;
+    if payload.len() > 4096 {
+        return Err("连接信息过长".into());
+    }
+    if let Some(remote) = app.get_webview_window("remote-workspace") {
+        remote.close().map_err(|error| error.to_string())?;
+    }
+    let stopping = app.clone();
+    tauri::async_runtime::spawn_blocking(move || stop(&stopping))
+        .await
+        .map_err(|error| error.to_string())?;
+    let generation = state.generation.fetch_add(1, Ordering::SeqCst) + 1;
+    let root = app
+        .path()
+        .resource_dir()
+        .map_err(|error| error.to_string())?
+        .join("TakeBoard");
+    let script = root.join("desktop-connection.mjs");
+    if !script.is_file() {
+        return Err("安装包缺少连接模块，请更新 TakeBoard".into());
+    }
+    let (mut events, child) = app
+        .shell()
+        .sidecar("takeboard-node")
+        .map_err(|error| error.to_string())?
+        .args([script.to_string_lossy().to_string(), payload])
+        .current_dir(root)
+        .spawn()
+        .map_err(|error| error.to_string())?;
+    let exited = Arc::new(AtomicBool::new(false));
+    *state.child.lock().map_err(|_| "连接进程不可用")? = Some(OwnedLauncher {
+        process: child,
+        exited: exited.clone(),
+    });
+    publish(&app, json!({"state":"connecting"}));
+    let event_app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let app = event_app;
+        while let Some(event) = events.recv().await {
+            if matches!(event, CommandEvent::Terminated(_)) {
+                exited.store(true, Ordering::SeqCst);
+            }
+            if app.state::<Connections>().generation.load(Ordering::SeqCst) != generation {
+                continue;
+            }
+            match event {
+                CommandEvent::Stdout(bytes) => {
+                    if let Ok(value) = serde_json::from_slice::<Value>(&bytes) {
+                        if matches!(value["state"].as_str(), Some("ready" | "failed")) {
+                            publish(&app, value);
+                        }
+                    }
+                }
+                CommandEvent::Terminated(_) => {
+                    let failed = app
+                        .state::<Connections>()
+                        .status
+                        .lock()
+                        .map(|status| status["state"] == "failed")
+                        .unwrap_or(false);
+                    if !failed {
+                        publish(
+                            &app,
+                            json!({"state":"failed","message":"连接进程已退出，请重新连接。服务器任务不会被停止。"}),
+                        );
+                    }
+                }
+                _ => {}
+            }
+        }
+        exited.store(true, Ordering::SeqCst);
+    });
+    Ok(())
+}
+#[tauri::command]
+pub async fn open_remote_workspace(
+    app: tauri::AppHandle,
+    window: WebviewWindow,
+) -> Result<(), String> {
+    trusted(&window)?;
+    let state = app.state::<Connections>();
+    let _guard = state.operation.lock().await;
+    let value = app
+        .state::<Connections>()
+        .status
+        .lock()
+        .map_err(|_| "连接状态不可用")?
+        .clone();
+    if value["state"] != "ready" {
+        return Err("请先建立并验证连接".into());
+    }
+    let url = value["url"]
+        .as_str()
+        .ok_or("连接地址缺失")?
+        .parse()
+        .map_err(|_| "连接地址无效")?;
+    if let Some(remote) = app.get_webview_window("remote-workspace") {
+        remote.navigate(url).map_err(|error| error.to_string())?;
+        remote.show().map_err(|error| error.to_string())?;
+        remote.set_focus().map_err(|error| error.to_string())?;
+    } else {
+        // No capabilities are assigned to this remote-content window.
+        WebviewWindowBuilder::new(&app, "remote-workspace", WebviewUrl::External(url))
+            .title("TakeBoard · 远程设备")
+            .inner_size(1440.0, 900.0)
+            .min_inner_size(720.0, 520.0)
+            .build()
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}

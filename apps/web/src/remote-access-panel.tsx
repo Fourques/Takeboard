@@ -14,7 +14,7 @@ function portalStateLabel(state: PortalConnectorStatus["state"]) {
 }
 
 function accessKindLabel(kind: RemoteAccessStatus["currentAccess"]["kind"]) {
-  if (kind === "https_proxy") return "HTTPS 团队入口";
+  if (kind === "https_proxy") return "HTTPS 访问";
   if (kind === "private_network") return "受限网络地址";
   return "本机或 SSH 隧道";
 }
@@ -115,7 +115,7 @@ export default function RemoteAccessPanel() {
           <div className="remote-method-grid">
             <article className="remote-method-card recommended">
               <header>
-                <span>个人远程</span>
+                <span>直接连接</span>
                 <i className={status.ssh.state}>{status.ssh.state === "ready" ? "可用" : "检查"}</i>
               </header>
               <h4>SSH 安全连接</h4>
@@ -128,7 +128,7 @@ export default function RemoteAccessPanel() {
 
             <article className="remote-method-card">
               <header>
-                <span>固定团队入口</span>
+                <span>固定网址</span>
                 <i className={status.https.state}>
                   {status.https.state === "ready"
                     ? "已就绪"
@@ -140,7 +140,7 @@ export default function RemoteAccessPanel() {
               <h4>HTTPS 反向代理</h4>
               <p>{status.https.detail}</p>
               {status.https.publicUrl ? <code>{status.https.publicUrl}</code> : null}
-              <small>适合可信团队；ComfyUI 端口仍不应公开。</small>
+              <small>通过固定网址安全访问；不公开 ComfyUI 端口。</small>
             </article>
 
             <article

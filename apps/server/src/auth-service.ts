@@ -20,7 +20,7 @@ import {
 } from "@takeboard/identity";
 import BetterSqlite3 from "better-sqlite3";
 
-export type AuthMode = "required" | "trusted_local" | "off";
+export type AuthMode = "optional" | "required" | "trusted_local" | "off";
 
 type UserRow = {
   id: string;
@@ -45,6 +45,7 @@ type SessionRow = {
   expires_at: string;
   user_agent: string | null;
   ip_address: string | null;
+  remembered: number;
 };
 
 type InvitationRow = {
@@ -71,6 +72,8 @@ type RecoveryCodeRow = {
 
 const absoluteSessionMilliseconds = 7 * 24 * 60 * 60 * 1000;
 const idleSessionMilliseconds = 24 * 60 * 60 * 1000;
+const rememberedSessionMilliseconds = 30 * 24 * 60 * 60 * 1000;
+const rememberedIdleMilliseconds = 7 * 24 * 60 * 60 * 1000;
 const roleWeight: Record<ProjectRole, number> = { viewer: 1, editor: 2, owner: 3 };
 
 function nowIso() {
@@ -127,6 +130,7 @@ export class AuthService {
   private readonly client: BetterSqlite3.Database;
   private readonly databasePath: string;
   readonly mode: AuthMode;
+  readonly sessionCookieName: string;
 
   constructor(databasePath: string, mode: AuthMode) {
     const resolved = databasePath === ":memory:" ? databasePath : resolve(databasePath);
@@ -138,6 +142,11 @@ export class AuthService {
     this.client.pragma("foreign_keys = ON");
     this.client.pragma("busy_timeout = 5000");
     this.migrate();
+    const namespace = this.client
+      .prepare("SELECT value FROM auth_settings WHERE key = 'cookie_namespace'")
+      .pluck()
+      .get() as string;
+    this.sessionCookieName = `takeboard_session_${namespace}`;
   }
 
   private migrate() {
@@ -217,7 +226,24 @@ export class AuthService {
       );
       CREATE INDEX IF NOT EXISTS auth_recovery_codes_user_idx
         ON auth_recovery_codes(user_id, used_at);
+      CREATE TABLE IF NOT EXISTS auth_settings (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL);
     `);
+    this.client
+      .prepare("INSERT OR IGNORE INTO auth_settings (key, value) VALUES ('cookie_namespace', ?)")
+      .run(randomBytes(12).toString("hex"));
+    // Existing sessions keep their original lifetime; only a new login may opt in.
+    const columns = this.client.pragma("table_info(auth_sessions)") as Array<{ name: string }>;
+    if (!columns.some((column) => column.name === "remembered")) {
+      this.client.exec(
+        "ALTER TABLE auth_sessions ADD COLUMN remembered INTEGER NOT NULL DEFAULT 0",
+      );
+    }
+    const userColumns = this.client.pragma("table_info(auth_users)") as Array<{ name: string }>;
+    if (!userColumns.some((column) => column.name === "local_identity")) {
+      this.client.exec(
+        "ALTER TABLE auth_users ADD COLUMN local_identity INTEGER NOT NULL DEFAULT 0",
+      );
+    }
   }
 
   close() {
@@ -238,13 +264,48 @@ export class AuthService {
   }
 
   configured() {
-    return (this.client.prepare("SELECT COUNT(*) FROM auth_users").pluck().get() as number) > 0;
+    return (
+      (this.client
+        .prepare("SELECT COUNT(*) FROM auth_users WHERE local_identity = 0")
+        .pluck()
+        .get() as number) > 0
+    );
+  }
+
+  isLocalIdentity(userId: string) {
+    return (
+      this.client
+        .prepare("SELECT local_identity FROM auth_users WHERE id = ?")
+        .pluck()
+        .get(userId) === 1
+    );
+  }
+
+  localIdentity() {
+    return this.client.transaction(() => {
+      const existing = this.client
+        .prepare("SELECT * FROM auth_users WHERE local_identity = 1 LIMIT 1")
+        .get() as UserRow | undefined;
+      if (existing) return toAccount(existing);
+      const id = randomUUID();
+      const timestamp = nowIso();
+      // This is an ACL principal for the trusted device, not a login account.
+      // It has no usable password and is excluded from account discovery.
+      this.client
+        .prepare(`INSERT INTO auth_users
+        (id, email, name, password_hash, instance_role, status, created_at, updated_at, local_identity)
+        VALUES (?, ?, '此设备', '', 'member', 'active', ?, ?, 1)`)
+        .run(id, `${id}@device.invalid`, timestamp, timestamp);
+      return this.requireUser(id);
+    })();
   }
 
   listUsers() {
     return (
       this.client
-        .prepare("SELECT * FROM auth_users ORDER BY name COLLATE NOCASE, email")
+        .prepare(
+          "SELECT * FROM auth_users WHERE local_identity = 0 ORDER BY name COLLATE NOCASE, email",
+        )
         .all() as UserRow[]
     ).map(toAccount);
   }
@@ -264,7 +325,7 @@ export class AuthService {
 
   private userRowByEmail(email: string) {
     return this.client
-      .prepare("SELECT * FROM auth_users WHERE email = ?")
+      .prepare("SELECT * FROM auth_users WHERE email = ? AND local_identity = 0")
       .get(normalizeEmail(email)) as UserRow | undefined;
   }
 
@@ -578,17 +639,21 @@ export class AuthService {
     return { user: this.getUser(row.id), rateLimited: false } as const;
   }
 
-  createSession(userId: string, userAgent: string | null, ip: string | null) {
+  createSession(userId: string, userAgent: string | null, ip: string | null, remember = false) {
     const id = randomUUID();
     const token = randomBytes(32).toString("base64url");
     const now = Date.now();
     const createdAt = new Date(now).toISOString();
-    const idleExpiresAt = new Date(now + idleSessionMilliseconds).toISOString();
-    const expiresAt = new Date(now + absoluteSessionMilliseconds).toISOString();
+    const idleExpiresAt = new Date(
+      now + (remember ? rememberedIdleMilliseconds : idleSessionMilliseconds),
+    ).toISOString();
+    const expiresAt = new Date(
+      now + (remember ? rememberedSessionMilliseconds : absoluteSessionMilliseconds),
+    ).toISOString();
     this.client
       .prepare(`INSERT INTO auth_sessions
-      (id, user_id, token_hash, created_at, last_seen_at, idle_expires_at, expires_at, user_agent, ip_address)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      (id, user_id, token_hash, created_at, last_seen_at, idle_expires_at, expires_at, user_agent, ip_address, remembered)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(
         id,
         userId,
@@ -599,6 +664,7 @@ export class AuthService {
         expiresAt,
         userAgent?.slice(0, 500) ?? null,
         ip,
+        remember ? 1 : 0,
       );
     return { id, token, csrfToken: csrfForSessionToken(token), expiresAt };
   }
@@ -619,7 +685,10 @@ export class AuthService {
     if (now - Date.parse(row.last_seen_at) > 5 * 60 * 1000) {
       const timestamp = new Date(now).toISOString();
       const idle = new Date(
-        Math.min(now + idleSessionMilliseconds, Date.parse(row.expires_at)),
+        Math.min(
+          now + (row.remembered === 1 ? rememberedIdleMilliseconds : idleSessionMilliseconds),
+          Date.parse(row.expires_at),
+        ),
       ).toISOString();
       this.client
         .prepare("UPDATE auth_sessions SET last_seen_at = ?, idle_expires_at = ? WHERE id = ?")
@@ -699,6 +768,7 @@ export class AuthService {
     ip: string | null,
   ) {
     this.client.transaction(() => {
+      if (this.isLocalIdentity(userId)) throw new Error("此设备身份不能转换为登录账号");
       const current = this.getUser(userId);
       if (!current) throw new Error("成员不存在");
       if (actorId === userId && input.status === "disabled") {
@@ -792,6 +862,7 @@ export class AuthService {
     ip: string | null,
   ) {
     const user = this.getUser(userId);
+    if (this.isLocalIdentity(userId)) throw new Error("此设备不是可邀请的账号");
     if (!user) throw new Error("成员不存在");
     if (user.status !== "active") throw new Error("不能把已停用账号加入项目");
     this.client.transaction(() => {

@@ -12,6 +12,8 @@ import { setTimeout as delay } from "node:timers/promises";
 assert.equal(process.platform, "linux");
 assert.notEqual(process.getuid(), 0, "Desktop smoke must run as an ordinary user");
 assert.equal(process.env.TAKEBOARD_DESKTOP_SMOKE, "1", "Requires an explicitly disposable session");
+// Xlib cannot match Chinese window titles under the minimal container's C locale.
+process.env.LC_ALL = "C.UTF-8";
 assert.ok(
   process.env.DISPLAY && process.env.DBUS_SESSION_BUS_ADDRESS,
   "Needs X11 and session D-Bus",
@@ -94,7 +96,7 @@ async function windowId(entry) {
     assert.ok(running(entry), entry.log);
     return execFileSync(
       "xdotool",
-      ["search", "--onlyvisible", "--pid", String(entry.child.pid), "--name", "TakeBoard"],
+      ["search", "--all", "--onlyvisible", "--pid", String(entry.child.pid), "--name", "TakeBoard"],
       { encoding: "utf8" },
     )
       .trim()
@@ -154,12 +156,73 @@ try {
   assert.equal(auth.enabled, true);
   assert.equal(auth.configured, false);
   assert.equal(auth.user, null);
+  assert.equal(auth.access, "local", "A fresh desktop must support creation without signup");
   const page = await fetch(`http://127.0.0.1:${record.port}/`).then((response) => response.text());
   assert.match(page, /<div id="root"><\/div>/);
   const id = await windowId(desktop);
   // Rendering gets its own artifact; this is not a claim of automatic visual approval.
   await delay(5_000);
   capture(id, "first-launch");
+  execFileSync("xdotool", ["windowactivate", "--sync", id]);
+  execFileSync("xdotool", ["key", "--clearmodifiers", "ctrl+shift+k"]);
+  const connectionId = await until(
+    "native connection window",
+    () =>
+      execFileSync(
+        "xdotool",
+        [
+          "search",
+          "--all",
+          "--onlyvisible",
+          "--pid",
+          String(desktop.child.pid),
+          "--name",
+          "TakeBoard · 连接设备",
+        ],
+        { encoding: "utf8" },
+      )
+        .trim()
+        .split("\n")[0],
+  );
+  await delay(1000);
+  capture(connectionId, "connection-manager");
+  // The bundled connection form focuses its transport selector on open.
+  execFileSync("xdotool", ["windowactivate", "--sync", connectionId]);
+  execFileSync("xdotool", ["key", "--clearmodifiers", "Down", "Tab"]);
+  execFileSync("xdotool", ["type", "--clearmodifiers", `http://127.0.0.1:${record.port}`]);
+  execFileSync("xdotool", ["key", "--clearmodifiers", "Tab", "Return"]);
+  const remoteId = await until(
+    "verified remote workspace window",
+    () =>
+      execFileSync(
+        "xdotool",
+        [
+          "search",
+          "--all",
+          "--onlyvisible",
+          "--pid",
+          String(desktop.child.pid),
+          "--name",
+          "^TakeBoard",
+        ],
+        { encoding: "utf8" },
+      )
+        .trim()
+        .split("\n")
+        .find((window) => window !== id && window !== connectionId),
+    20000,
+  );
+  await delay(5000);
+  capture(remoteId, "remote-workspace");
+  execFileSync("xdotool", ["windowactivate", "--sync", remoteId]);
+  execFileSync("xdotool", ["key", "--clearmodifiers", "alt+F4"]);
+  assert.equal(
+    (await health(record.port))?.instanceId,
+    record.instanceId,
+    "Closing a remote window must not stop the connected server",
+  );
+  execFileSync("xdotool", ["windowactivate", "--sync", connectionId]);
+  execFileSync("xdotool", ["key", "--clearmodifiers", "alt+F4"]);
   await closeWindow(desktop, id);
   await until(
     "owned server stopped and lease released",
@@ -168,7 +231,7 @@ try {
     15_000,
   );
   console.log(
-    "PASS: installed native host, embedded runtime, first-run auth, window close and owned service cleanup",
+    "PASS: installed native host, optional login, native connection form, verified remote window and owned service cleanup",
   );
 
   const external = start(

@@ -9,8 +9,8 @@ afterEach(() => {
   for (const service of services.splice(0)) service.close();
 });
 
-function configuredAuth() {
-  const auth = new AuthService(":memory:", "required");
+function configuredAuth(mode: "required" | "optional" = "required") {
+  const auth = new AuthService(":memory:", mode);
   auth.createBootstrap(
     {
       name: "Owner",
@@ -80,5 +80,20 @@ describe("remote access readiness", () => {
     });
     expect(status.https).toMatchObject({ state: "blocked", publicUrl: null });
     expect(status.https.detail).toContain("HTTPS");
+  });
+
+  it("never marks optional login as safe for a public HTTPS entry point", () => {
+    const status = buildRemoteAccessStatus(request("https", "studio.example.com"), {
+      auth: configuredAuth("optional"),
+      publicUrl: "https://studio.example.com",
+      secureCookies: true,
+      allowedHosts: ["studio.example.com"],
+      allowedOrigins: ["https://studio.example.com"],
+    });
+    expect(status.ssh.state).toBe("ready");
+    expect(status.https.state).toBe("blocked");
+    expect(status.checks).toContainEqual(
+      expect.objectContaining({ id: "public-auth", status: "blocked" }),
+    );
   });
 });

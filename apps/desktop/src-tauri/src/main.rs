@@ -1,4 +1,5 @@
 use serde::Serialize;
+mod connections;
 use std::{
     io::{Read, Write},
     net::{SocketAddr, TcpListener, TcpStream},
@@ -288,13 +289,54 @@ fn main() {
             }
         }))
         .plugin(tauri_plugin_shell::init())
+        .manage(connections::Connections::default())
         .manage(DesktopRuntime {
             child: Mutex::new(None),
             generation: AtomicU64::new(0),
         })
         .manage(DesktopStartup(Mutex::new(StartupEvent::Starting)))
-        .invoke_handler(tauri::generate_handler![desktop_status, restart_server])
+        .invoke_handler(tauri::generate_handler![
+            desktop_status,
+            restart_server,
+            connections::connection_status,
+            connections::connect_remote,
+            connections::disconnect_remote,
+            connections::open_remote_workspace
+        ])
+        .on_menu_event(|app, event| {
+            if event.id().as_ref() == "connect-device" {
+                // WebView2 creation from a synchronous menu callback deadlocks on Windows.
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(error) = connections::open(app).await {
+                        eprintln!("Could not open connection manager: {error}");
+                    }
+                });
+            }
+        })
+        .on_window_event(|window, event| {
+            if window.label() == "remote-workspace"
+                && matches!(event, tauri::WindowEvent::Destroyed)
+            {
+                connections::remote_window_closed(window.app_handle().clone());
+            }
+        })
         .setup(|app| {
+            let menu = tauri::menu::Menu::default(app.handle())?;
+            let connect = tauri::menu::MenuItem::with_id(
+                app,
+                "connect-device",
+                "连接设备…",
+                true,
+                Some("CmdOrCtrl+Shift+K"),
+            )?;
+            menu.append(&tauri::menu::Submenu::with_items(
+                app,
+                "连接",
+                true,
+                &[&connect],
+            )?)?;
+            app.set_menu(menu)?;
             match start_server(app.handle()) {
                 Ok((port, generation)) => wait_for_server(app.handle().clone(), port, generation),
                 Err(message) => {
@@ -308,6 +350,7 @@ fn main() {
 
     app.run(|handle, event| {
         if matches!(event, tauri::RunEvent::Exit) {
+            connections::stop(handle);
             stop_server(handle);
         }
     });

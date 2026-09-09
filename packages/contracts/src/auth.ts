@@ -28,7 +28,9 @@ export type ProjectMember = z.infer<typeof projectMemberSchema>;
 export type AuthStatus = {
   enabled: boolean;
   configured: boolean;
-  mode: "required" | "trusted_local" | "off";
+  mode: "optional" | "required" | "trusted_local" | "off";
+  access?: "local" | "account" | "none";
+  localAvailable?: boolean;
   user: Account | null;
   csrfToken: string | null;
 };

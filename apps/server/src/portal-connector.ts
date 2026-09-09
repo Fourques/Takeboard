@@ -442,7 +442,10 @@ export class PortalConnector {
       const headers = new Headers(request.headers);
       headers.delete("content-length");
       headers.set("accept-encoding", "identity");
-      headers.set("cookie", `takeboard_session=${encodeURIComponent(this.localSession.token)}`);
+      headers.set(
+        "cookie",
+        `${this.options.auth.sessionCookieName}=${encodeURIComponent(this.localSession.token)}`,
+      );
       headers.set("origin", this.options.localOrigin);
       if (["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) {
         headers.set("x-takeboard-csrf", this.localSession.csrfToken);

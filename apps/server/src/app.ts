@@ -43,10 +43,18 @@ export type AppOptions = {
 
 export function authModeFromEnvironment(): AuthMode {
   const configured = process.env.TAKEBOARD_AUTH_MODE;
-  if (configured === "off" || configured === "trusted_local" || configured === "required") {
+  if (
+    configured === "off" ||
+    configured === "trusted_local" ||
+    configured === "required" ||
+    configured === "optional"
+  ) {
     return configured;
   }
-  return process.env.NODE_ENV === "test" ? "off" : "required";
+  if (configured?.trim()) {
+    throw new Error("TAKEBOARD_AUTH_MODE 无效；请选择 optional、required、trusted_local 或 off");
+  }
+  return process.env.NODE_ENV === "test" ? "off" : "optional";
 }
 
 export function buildApp(options: AppOptions = {}): FastifyInstance {

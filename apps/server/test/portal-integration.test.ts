@@ -71,203 +71,207 @@ async function remoteGet(port: number, host: string, path: string, cookie: strin
 }
 
 describe.sequential("TakeBoard portal end-to-end", () => {
-  it("pairs, authorizes a remote local-account request, and revokes immediately", async () => {
-    const root = await mkdtemp(join(tmpdir(), "takeboard-portal-e2e-"));
-    const portalPort = await availablePort();
-    const localPort = await availablePort();
-    const portalOrigin = `http://127.0.0.1:${portalPort}`;
-    const portal = buildPortal({
-      databasePath: join(root, "portal", "portal.db"),
-      hostname: "127.0.0.1",
-      publicOrigin: portalOrigin,
-      webRoot: null,
-      secureCookies: false,
-      allowRegistration: false,
-    });
-    await portal.listen({ host: "127.0.0.1", port: portalPort });
+  it.each(["required", "optional"] as const)(
+    "pairs, authorizes and revokes a remote account in %s mode",
+    async (mode) => {
+      const root = await mkdtemp(join(tmpdir(), "takeboard-portal-e2e-"));
+      const portalPort = await availablePort();
+      const localPort = await availablePort();
+      const portalOrigin = `http://127.0.0.1:${portalPort}`;
+      const portal = buildPortal({
+        databasePath: join(root, "portal", "portal.db"),
+        hostname: "127.0.0.1",
+        publicOrigin: portalOrigin,
+        webRoot: null,
+        secureCookies: false,
+        allowRegistration: false,
+      });
+      await portal.listen({ host: "127.0.0.1", port: portalPort });
 
-    const previousPort = process.env.TAKEBOARD_PORT;
-    const previousInstance = process.env.TAKEBOARD_INSTANCE_ID;
-    const previousName = process.env.TAKEBOARD_INSTANCE_NAME;
-    process.env.TAKEBOARD_PORT = String(localPort);
-    process.env.TAKEBOARD_INSTANCE_ID = "instance-portal-e2e-123456";
-    process.env.TAKEBOARD_INSTANCE_NAME = "Portal test workstation";
-    const local = buildApp({
-      projectsRoot: join(root, "local", "projects"),
-      webRoot: null,
-      auth: { mode: "required", databasePath: join(root, "local", "auth.db") },
-      backupAutomation: false,
-    });
-    if (previousPort === undefined) delete process.env.TAKEBOARD_PORT;
-    else process.env.TAKEBOARD_PORT = previousPort;
-    if (previousInstance === undefined) delete process.env.TAKEBOARD_INSTANCE_ID;
-    else process.env.TAKEBOARD_INSTANCE_ID = previousInstance;
-    if (previousName === undefined) delete process.env.TAKEBOARD_INSTANCE_NAME;
-    else process.env.TAKEBOARD_INSTANCE_NAME = previousName;
-    await local.listen({ host: "127.0.0.1", port: localPort });
-    cleanup.push(async () => {
-      await local.close();
-      await portal.close();
-      await rm(root, { recursive: true, force: true });
-    });
+      const previousPort = process.env.TAKEBOARD_PORT;
+      const previousInstance = process.env.TAKEBOARD_INSTANCE_ID;
+      const previousName = process.env.TAKEBOARD_INSTANCE_NAME;
+      process.env.TAKEBOARD_PORT = String(localPort);
+      process.env.TAKEBOARD_INSTANCE_ID = "instance-portal-e2e-123456";
+      process.env.TAKEBOARD_INSTANCE_NAME = "Portal test workstation";
+      const local = buildApp({
+        projectsRoot: join(root, "local", "projects"),
+        webRoot: null,
+        auth: { mode, databasePath: join(root, "local", "auth.db") },
+        backupAutomation: false,
+      });
+      if (previousPort === undefined) delete process.env.TAKEBOARD_PORT;
+      else process.env.TAKEBOARD_PORT = previousPort;
+      if (previousInstance === undefined) delete process.env.TAKEBOARD_INSTANCE_ID;
+      else process.env.TAKEBOARD_INSTANCE_ID = previousInstance;
+      if (previousName === undefined) delete process.env.TAKEBOARD_INSTANCE_NAME;
+      else process.env.TAKEBOARD_INSTANCE_NAME = previousName;
+      await local.listen({ host: "127.0.0.1", port: localPort });
+      cleanup.push(async () => {
+        await local.close();
+        await portal.close();
+        await rm(root, { recursive: true, force: true });
+      });
 
-    const localBootstrap = await local.inject({
-      method: "POST",
-      url: "/api/auth/bootstrap",
-      payload: {
-        name: "Local owner",
-        email: "local@example.com",
-        password: "local owner password is secure",
-      },
-    });
-    expect(localBootstrap.statusCode, localBootstrap.body).toBe(201);
-    const localSession = session(localBootstrap);
+      const localBootstrap = await local.inject({
+        method: "POST",
+        url: "/api/auth/bootstrap",
+        payload: {
+          name: "Local owner",
+          email: "local@example.com",
+          password: "local owner password is secure",
+        },
+      });
+      expect(localBootstrap.statusCode, localBootstrap.body).toBe(201);
+      const localSession = session(localBootstrap);
 
-    const portalRegister = await portal.inject({
-      method: "POST",
-      url: "/__portal/api/auth/register",
-      headers: { host: `127.0.0.1:${portalPort}` },
-      payload: {
-        name: "Portal owner",
-        email: "portal@example.com",
-        password: "portal owner password is secure",
-      },
-    });
-    expect(portalRegister.statusCode, portalRegister.body).toBe(201);
-    const portalSession = session(portalRegister);
+      const portalRegister = await portal.inject({
+        method: "POST",
+        url: "/__portal/api/auth/register",
+        headers: { host: `127.0.0.1:${portalPort}` },
+        payload: {
+          name: "Portal owner",
+          email: "portal@example.com",
+          password: "portal owner password is secure",
+        },
+      });
+      expect(portalRegister.statusCode, portalRegister.body).toBe(201);
+      const portalSession = session(portalRegister);
 
-    const pairing = await local.inject({
-      method: "POST",
-      url: "/api/admin/portal/pairing",
-      headers: {
-        cookie: localSession.cookie,
-        "x-takeboard-csrf": localSession.csrf,
-      },
-      payload: { portalUrl: portalOrigin },
-    });
-    expect(pairing.statusCode, pairing.body).toBe(201);
-    expect(pairing.json()).toMatchObject({ state: "pairing", canManage: true });
-    const code = pairing.json().pairing.userCode as string;
+      const pairing = await local.inject({
+        method: "POST",
+        url: "/api/admin/portal/pairing",
+        headers: {
+          cookie: localSession.cookie,
+          "x-takeboard-csrf": localSession.csrf,
+        },
+        payload: { portalUrl: portalOrigin },
+      });
+      expect(pairing.statusCode, pairing.body).toBe(201);
+      expect(pairing.json()).toMatchObject({ state: "pairing", canManage: true });
+      const code = pairing.json().pairing.userCode as string;
 
-    const claim = await portal.inject({
-      method: "POST",
-      url: "/__portal/api/pairings/claim",
-      headers: {
-        host: `127.0.0.1:${portalPort}`,
-        cookie: portalSession.cookie,
-        "x-takeboard-portal-csrf": portalSession.csrf,
-      },
-      payload: { code },
-    });
-    expect(claim.statusCode, claim.body).toBe(200);
+      const claim = await portal.inject({
+        method: "POST",
+        url: "/__portal/api/pairings/claim",
+        headers: {
+          host: `127.0.0.1:${portalPort}`,
+          cookie: portalSession.cookie,
+          "x-takeboard-portal-csrf": portalSession.csrf,
+        },
+        payload: { code },
+      });
+      expect(claim.statusCode, claim.body).toBe(200);
 
-    const connected = await waitFor(
-      async () =>
-        (
-          await local.inject({
-            method: "GET",
-            url: "/api/portal/status",
-            headers: { cookie: localSession.cookie },
-          })
-        ).json() as { state: string },
-      (value) => value.state === "connected",
-    );
-    expect(connected.state).toBe("connected");
+      const connected = await waitFor(
+        async () =>
+          (
+            await local.inject({
+              method: "GET",
+              url: "/api/portal/status",
+              headers: { cookie: localSession.cookie },
+            })
+          ).json() as { state: string },
+        (value) => value.state === "connected",
+      );
+      expect(connected.state).toBe("connected");
 
-    const deviceList = await portal.inject({
-      method: "GET",
-      url: "/__portal/api/devices",
-      headers: { host: `127.0.0.1:${portalPort}`, cookie: portalSession.cookie },
-    });
-    expect(deviceList.statusCode, deviceList.body).toBe(200);
-    const device = deviceList.json().devices[0] as { id: string; slug: string; online: boolean };
-    expect(device.online).toBe(true);
+      const deviceList = await portal.inject({
+        method: "GET",
+        url: "/__portal/api/devices",
+        headers: { host: `127.0.0.1:${portalPort}`, cookie: portalSession.cookie },
+      });
+      expect(deviceList.statusCode, deviceList.body).toBe(200);
+      const device = deviceList.json().devices[0] as { id: string; slug: string; online: boolean };
+      expect(device.online).toBe(true);
 
-    const remote = await remoteGet(
-      portalPort,
-      `${device.slug}.127.0.0.1:${portalPort}`,
-      "/api/projects",
-      portalSession.cookie,
-    );
-    expect(remote.status, remote.body).toBe(200);
-    expect(JSON.parse(remote.body)).toEqual({ projects: [] });
+      const remote = await remoteGet(
+        portalPort,
+        `${device.slug}.127.0.0.1:${portalPort}`,
+        "/api/projects",
+        portalSession.cookie,
+      );
+      expect(remote.status, remote.body).toBe(200);
+      expect(JSON.parse(remote.body)).toEqual({ projects: [] });
 
-    const revoked = await portal.inject({
-      method: "DELETE",
-      url: `/__portal/api/devices/${device.id}`,
-      headers: {
-        host: `127.0.0.1:${portalPort}`,
-        cookie: portalSession.cookie,
-        "x-takeboard-portal-csrf": portalSession.csrf,
-      },
-    });
-    expect(revoked.statusCode, revoked.body).toBe(200);
-    const localRevoked = await waitFor(
-      async () =>
-        (
-          await local.inject({
-            method: "GET",
-            url: "/api/portal/status",
-            headers: { cookie: localSession.cookie },
-          })
-        ).json() as { state: string },
-      (value) => value.state === "revoked",
-    );
-    expect(localRevoked.state).toBe("revoked");
+      const revoked = await portal.inject({
+        method: "DELETE",
+        url: `/__portal/api/devices/${device.id}`,
+        headers: {
+          host: `127.0.0.1:${portalPort}`,
+          cookie: portalSession.cookie,
+          "x-takeboard-portal-csrf": portalSession.csrf,
+        },
+      });
+      expect(revoked.statusCode, revoked.body).toBe(200);
+      const localRevoked = await waitFor(
+        async () =>
+          (
+            await local.inject({
+              method: "GET",
+              url: "/api/portal/status",
+              headers: { cookie: localSession.cookie },
+            })
+          ).json() as { state: string },
+        (value) => value.state === "revoked",
+      );
+      expect(localRevoked.state).toBe("revoked");
 
-    const secondPairing = await local.inject({
-      method: "POST",
-      url: "/api/admin/portal/pairing",
-      headers: {
-        cookie: localSession.cookie,
-        "x-takeboard-csrf": localSession.csrf,
-      },
-      payload: { portalUrl: portalOrigin },
-    });
-    expect(secondPairing.statusCode, secondPairing.body).toBe(201);
-    const secondClaim = await portal.inject({
-      method: "POST",
-      url: "/__portal/api/pairings/claim",
-      headers: {
-        host: `127.0.0.1:${portalPort}`,
-        cookie: portalSession.cookie,
-        "x-takeboard-portal-csrf": portalSession.csrf,
-      },
-      payload: { code: secondPairing.json().pairing.userCode },
-    });
-    expect(secondClaim.statusCode, secondClaim.body).toBe(200);
-    const reconnected = await waitFor(
-      async () =>
-        (
-          await local.inject({
-            method: "GET",
-            url: "/api/portal/status",
-            headers: { cookie: localSession.cookie },
-          })
-        ).json() as { state: string },
-      (value) => value.state === "connected",
-    );
-    expect(reconnected.state).toBe("connected");
+      const secondPairing = await local.inject({
+        method: "POST",
+        url: "/api/admin/portal/pairing",
+        headers: {
+          cookie: localSession.cookie,
+          "x-takeboard-csrf": localSession.csrf,
+        },
+        payload: { portalUrl: portalOrigin },
+      });
+      expect(secondPairing.statusCode, secondPairing.body).toBe(201);
+      const secondClaim = await portal.inject({
+        method: "POST",
+        url: "/__portal/api/pairings/claim",
+        headers: {
+          host: `127.0.0.1:${portalPort}`,
+          cookie: portalSession.cookie,
+          "x-takeboard-portal-csrf": portalSession.csrf,
+        },
+        payload: { code: secondPairing.json().pairing.userCode },
+      });
+      expect(secondClaim.statusCode, secondClaim.body).toBe(200);
+      const reconnected = await waitFor(
+        async () =>
+          (
+            await local.inject({
+              method: "GET",
+              url: "/api/portal/status",
+              headers: { cookie: localSession.cookie },
+            })
+          ).json() as { state: string },
+        (value) => value.state === "connected",
+      );
+      expect(reconnected.state).toBe("connected");
 
-    const localDisconnect = await local.inject({
-      method: "DELETE",
-      url: "/api/admin/portal",
-      headers: {
-        cookie: localSession.cookie,
-        "x-takeboard-csrf": localSession.csrf,
-      },
-    });
-    expect(localDisconnect.statusCode, localDisconnect.body).toBe(200);
-    expect(localDisconnect.json()).toMatchObject({ state: "not_configured", lastError: null });
-    const afterLocalDisconnect = await portal.inject({
-      method: "GET",
-      url: "/__portal/api/devices",
-      headers: { host: `127.0.0.1:${portalPort}`, cookie: portalSession.cookie },
-    });
-    expect(afterLocalDisconnect.json().devices[0]).toMatchObject({
-      id: device.id,
-      online: false,
-    });
-    expect(afterLocalDisconnect.json().devices[0].revokedAt).toBeTruthy();
-  }, 20_000);
+      const localDisconnect = await local.inject({
+        method: "DELETE",
+        url: "/api/admin/portal",
+        headers: {
+          cookie: localSession.cookie,
+          "x-takeboard-csrf": localSession.csrf,
+        },
+      });
+      expect(localDisconnect.statusCode, localDisconnect.body).toBe(200);
+      expect(localDisconnect.json()).toMatchObject({ state: "not_configured", lastError: null });
+      const afterLocalDisconnect = await portal.inject({
+        method: "GET",
+        url: "/__portal/api/devices",
+        headers: { host: `127.0.0.1:${portalPort}`, cookie: portalSession.cookie },
+      });
+      expect(afterLocalDisconnect.json().devices[0]).toMatchObject({
+        id: device.id,
+        online: false,
+      });
+      expect(afterLocalDisconnect.json().devices[0].revokedAt).toBeTruthy();
+    },
+    20_000,
+  );
 });

@@ -17,6 +17,7 @@ import { createServer } from "node:net";
 import { homedir, platform } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { connectRemote, validateRemoteHost } from "./remote-connection.mjs";
 
 const repoDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const applicationVersion = JSON.parse(readFileSync(join(repoDir, "package.json"), "utf8")).version;
@@ -553,102 +554,98 @@ async function doctor() {
 }
 
 async function remote(host) {
-  if (!host || host.startsWith("-")) {
-    console.error("用法：npm run easy:remote -- 你的SSH主机");
-    process.exit(2);
+  const profileFile = join(stateDir, "remote-connections.json");
+  let profiles = [];
+  try {
+    const saved = JSON.parse(readFileSync(profileFile, "utf8"));
+    if (Array.isArray(saved))
+      profiles = saved.filter((entry) => typeof entry?.host === "string").slice(0, 20);
+  } catch {
+    // A missing or damaged preference file must not block a new connection.
   }
-  if (
-    spawnSync(platform() === "win32" ? "ssh.exe" : "ssh", ["-V"], { stdio: "ignore" }).status !== 0
-  ) {
-    console.error("没有找到 SSH。Windows 请安装“可选功能 → OpenSSH 客户端”。");
-    process.exit(1);
-  }
-  let comfyPort = 48188;
-  while (!(await portAvailable(comfyPort)) && comfyPort < 48208) comfyPort += 1;
-  if (!(await portAvailable(comfyPort))) throw new Error("48188–48208 没有可用的 ComfyUI 本地端口");
+  const target = validateRemoteHost(host || profiles[0]?.host);
+  const previous = profiles.find((entry) => entry.host === target);
   const configuredRemotePort = runtimeEnvironment.TAKEBOARD_REMOTE_PORT;
   const remoteTakeBoardPorts = configuredRemotePort
     ? [Number(configuredRemotePort)]
     : Array.from({ length: 20 }, (_, index) => 48120 + index);
-  const remoteComfyPort = Number(runtimeEnvironment.COMFY_REMOTE_PORT || 8188);
-  if (
-    [...remoteTakeBoardPorts, remoteComfyPort].some(
-      (port) => !Number.isSafeInteger(port) || port < 1 || port > 65535,
-    )
-  ) {
-    throw new Error("远端端口配置无效");
+  if (remoteTakeBoardPorts.includes(previous?.remotePort)) {
+    remoteTakeBoardPorts.splice(remoteTakeBoardPorts.indexOf(previous.remotePort), 1);
+    remoteTakeBoardPorts.unshift(previous.remotePort);
   }
-  const appMappings = [];
-  let localCandidate = 48230;
-  for (const remotePort of remoteTakeBoardPorts) {
-    while (!(await portAvailable(localCandidate)) && localCandidate < 48400) localCandidate += 1;
-    if (localCandidate >= 48400) throw new Error("没有足够的本地空闲端口用于自动发现远端服务");
-    appMappings.push({ localPort: localCandidate, remotePort });
-    localCandidate += 1;
-  }
-  let connectionError = null;
-  const ssh = spawn(
-    platform() === "win32" ? "ssh.exe" : "ssh",
-    [
-      "-N",
-      "-o",
-      "ExitOnForwardFailure=yes",
-      "-o",
-      "ServerAliveInterval=30",
-      "-o",
-      "ServerAliveCountMax=3",
-      ...appMappings.flatMap(({ localPort, remotePort }) => [
-        "-L",
-        `${localPort}:127.0.0.1:${remotePort}`,
-      ]),
-      "-L",
-      `${comfyPort}:127.0.0.1:${remoteComfyPort}`,
-      host,
-    ],
-    { stdio: "inherit" },
-  );
-  ssh.once("error", (error) => {
-    connectionError = error;
-  });
-  let closed = false;
-  const close = () => {
-    if (closed) return;
-    closed = true;
-    ssh.kill("SIGTERM");
-    console.log("\n远程连接已关闭，本地端口已经释放。");
-  };
-  process.once("SIGINT", close);
-  process.once("SIGTERM", close);
-  let selectedMapping = null;
-  for (let attempt = 0; attempt < 24 && !selectedMapping; attempt += 1) {
-    if (ssh.exitCode !== null) break;
-    for (const mapping of appMappings) {
-      if (await health(mapping.localPort, 500)) {
-        selectedMapping = mapping;
-        break;
+  const controller = new AbortController();
+  const disconnect = () => controller.abort();
+  const signals = ["SIGINT", "SIGTERM", "SIGHUP"];
+  for (const signal of signals) process.once(signal, disconnect);
+  let connection;
+  try {
+    console.log(`正在连接 ${target}，自动检查 TakeBoard 服务…`);
+    console.log("首次连接请核实 SSH 指纹；需要时在此输入服务器密码。按 Ctrl-C 可取消。");
+    connection = await connectRemote({
+      host: target,
+      remotePorts: remoteTakeBoardPorts,
+      preferredLocalPort:
+        Number.isInteger(previous?.localPort) &&
+        previous.localPort >= 1024 &&
+        previous.localPort <= 65535
+          ? previous.localPort
+          : 48230,
+      comfyRemotePort:
+        runtimeEnvironment.COMFY_REMOTE_PORT === "off"
+          ? null
+          : Number(runtimeEnvironment.COMFY_REMOTE_PORT || 8188),
+      signal: controller.signal,
+      onStderr: (message) =>
+        process.stderr.write(
+          message.replace(/^channel \d+: open failed: connect failed:.*\r?\n/gm, ""),
+        ),
+    });
+    if (previous?.instanceId && previous.instanceId !== connection.instanceId) {
+      throw new Error(
+        "这个地址对应的 TakeBoard 实例已变化。为避免打开错误的项目，已断开连接。确认服务器后，请移除连接记录再连接：" +
+          profileFile,
+      );
+    }
+    try {
+      await mkdir(stateDir, { recursive: true, mode: 0o700 });
+      const updated = [
+        {
+          host: target,
+          localPort: connection.localPort,
+          remotePort: connection.remotePort,
+          instanceId: connection.instanceId,
+        },
+        ...profiles.filter((entry) => entry.host !== target),
+      ].slice(0, 20);
+      const temporary = `${profileFile}.${process.pid}.tmp`;
+      try {
+        writeFileSync(temporary, JSON.stringify(updated), { mode: 0o600, flag: "wx" });
+        renameSync(temporary, profileFile);
+      } finally {
+        rmSync(temporary, { force: true });
       }
+    } catch {
+      console.warn("连接成功，但无法保存连接记录。下次仍可输入 SSH 主机连接。");
     }
-    if (!selectedMapping) await new Promise((resolveWait) => setTimeout(resolveWait, 500));
+    console.log(`远程 TakeBoard 已连接：${connection.url}`);
+    console.log(`已验证实例：${connection.instanceId}（服务端口 ${connection.remotePort}）`);
+    if (connection.comfyUrl)
+      console.log(
+        `ComfyUI 编辑器转发地址：${connection.comfyUrl}（是否在线请在 TakeBoard 中检查）`,
+      );
+    console.log("下次可直接运行 npm run easy:remote，或在双击入口留空以连接上次服务器。");
+    console.log("关闭此窗口或按 Ctrl-C 即可断开；不会停止服务器上的生成任务。");
+    openBrowser(connection.url);
+    await connection.closed;
+    if (!controller.signal.aborted)
+      throw new Error("远程连接已中断。请重新运行连接入口；不会自动重试或重复提交生成任务。");
+  } catch (error) {
+    if (!controller.signal.aborted) throw error;
+  } finally {
+    await connection?.close();
+    for (const signal of signals) process.removeListener(signal, disconnect);
+    console.log("远程连接已关闭，已释放本次连接占用的端口。");
   }
-  if (!selectedMapping) {
-    close();
-    if (connectionError) {
-      console.error(`SSH 启动失败：${connectionError.message}`);
-      process.exit(1);
-    }
-    console.error(
-      `SSH 已连接，但远端 ${remoteTakeBoardPorts[0]}–${remoteTakeBoardPorts.at(-1)} 没有发现 TakeBoard。请在服务器运行 npm run easy:doctor。`,
-    );
-    process.exit(1);
-  }
-  const appPort = selectedMapping.localPort;
-  const url = `http://127.0.0.1:${appPort}`;
-  console.log(`远程 TakeBoard 已连接：${url}`);
-  console.log(`已自动发现远端服务端口：${selectedMapping.remotePort}`);
-  console.log(`远程 ComfyUI：http://127.0.0.1:${comfyPort}`);
-  console.log("关闭此窗口或按 Ctrl-C 即可断开，不会长期占用端口。");
-  openBrowser(url);
-  if (ssh.exitCode === null) await new Promise((resolveExit) => ssh.once("exit", resolveExit));
 }
 
 async function restore(archive, confirmation) {

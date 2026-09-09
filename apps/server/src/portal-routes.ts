@@ -18,8 +18,10 @@ export function registerPortalRoutes(app: FastifyInstance, connector: PortalConn
   });
 
   app.post("/api/admin/portal/pairing", async (request, reply) => {
-    if (connector.authMode() !== "required") {
-      return await reply.code(409).send({ error: "账号门户需要先启用 required 账号模式" });
+    if (!["required", "optional"].includes(connector.authMode())) {
+      return await reply
+        .code(409)
+        .send({ error: "账号门户需要启用账号功能，并由管理员登录后配对" });
     }
     const context = requireAuthContext(request);
     const portalUrl = bodyObject(request).portalUrl;
@@ -38,8 +40,10 @@ export function registerPortalRoutes(app: FastifyInstance, connector: PortalConn
   });
 
   app.delete("/api/admin/portal", async (request, reply) => {
-    if (connector.authMode() !== "required") {
-      return await reply.code(409).send({ error: "账号门户需要先启用 required 账号模式" });
+    if (!["required", "optional"].includes(connector.authMode())) {
+      return await reply
+        .code(409)
+        .send({ error: "账号门户需要启用账号功能，并由管理员登录后操作" });
     }
     const context = requireAuthContext(request);
     return { ...(await connector.disconnect(context.user.id)), canManage: true };

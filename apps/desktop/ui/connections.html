@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /><title>TakeBoard · 连接设备</title><link rel="stylesheet" href="connections.css" /></head>
+<body><main>
+  <header><span class="mark">T</span><div><p>TAKEBOARD</p><h1>连接设备</h1></div></header>
+  <p class="intro">本机项目留在原窗口。连接远端后，在独立窗口继续创作。</p>
+  <form id="connect-form">
+    <label>连接方式<select id="kind"><option value="ssh">SSH 服务器 · IP 或主机别名</option><option value="https">TakeBoard HTTPS 地址</option><option value="portal">Portal · 我的已配对设备</option></select></label>
+    <label><span id="address-label">SSH 主机</span><input id="address" autocomplete="off" autocapitalize="off" spellcheck="false" required maxlength="2048" placeholder="user@192.168.1.10 或 SSH 别名" /></label>
+    <p id="help" class="hint">使用系统已配置的 SSH 密钥和可信主机记录。不需要手动建立隧道，也不会保存 SSH 密码。首次配置可使用 Portal，或先通过系统 SSH 完成密钥与指纹确认。</p>
+    <details id="advanced"><summary>自定义服务端口</summary><label>TakeBoard 服务端口<input id="port" inputmode="numeric" pattern="[0-9]*" placeholder="自动检测 48120–48139" /></label><p class="hint">不是 SSH 端口。本地映射端口自动选择；SSH 用户、端口与跳板机沿用系统 SSH 配置。</p></details>
+    <div class="actions"><button id="connect" type="submit">连接并打开</button><button id="disconnect" type="button" class="secondary" hidden>断开连接</button></div>
+  </form>
+  <section class="status" aria-live="polite"><span id="status">选择服务器，或从下方打开最近连接。</span><button id="reopen" class="secondary" type="button" hidden>打开远程窗口</button></section>
+  <section aria-labelledby="recent-title"><h2 id="recent-title">最近连接</h2><div id="recent"></div></section>
+  <footer>Portal 需要你或服务提供者部署，并完成首次配对；相同邮箱不会自动授予设备权限。关闭远程窗口会释放本次 SSH 连接，不会取消服务器上的生成任务。</footer>
+</main><script src="connections.js"></script></body></html>

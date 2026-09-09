@@ -65,6 +65,8 @@ Project → Scene → Shot → Run → Take → Approved Take
 两种形式都内置匹配的 Node.js 运行时，不需要安装 pnpm；桌面版会自动启动本机服务并在同一窗口进入
 TakeBoard，重复打开只会聚焦已有窗口。
 
+本机默认无需注册，右上角登录是附加功能；此设备项目与账号项目有独立权限边界。桌面菜单“连接 → 连接设备…”可打开 SSH 服务器、HTTPS 服务或自托管 Portal，并保存最近连接。不绕过服务器认证；公网部署请显式启用强制登录，详见[账号与权限](docs/access-control.md)及[远程访问](docs/remote-access.md)。
+
 | 系统 | 解压后打开 |
 | --- | --- |
 | macOS | 右键打开 `START-TAKEBOARD.command` |

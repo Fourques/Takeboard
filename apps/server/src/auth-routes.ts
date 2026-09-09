@@ -16,9 +16,10 @@ import {
   stageInstanceRestore,
 } from "./instance-backup.js";
 import { projectKey } from "./project-routes.js";
+import { isLoopbackHostname } from "./request-security.js";
 import { ProjectStore } from "./storage/project-store.js";
 
-const sessionCookieName = "takeboard_session";
+const legacySessionCookieName = "takeboard_session";
 const unsafeMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const authContexts = new WeakMap<FastifyRequest, AuthRequestContext>();
 
@@ -26,6 +27,7 @@ export type AuthRequestContext = {
   user: Account;
   sessionId: string;
   csrfToken: string;
+  local?: boolean;
 };
 
 export type AuthOptions = {
@@ -61,19 +63,19 @@ function cookies(value: string | undefined) {
   return parsed;
 }
 
-function sessionCookie(token: string, secure: boolean, maxAgeSeconds = 7 * 24 * 60 * 60) {
+function sessionCookie(name: string, token: string, secure: boolean, maxAgeSeconds?: number) {
   return [
-    `${sessionCookieName}=${encodeURIComponent(token)}`,
+    `${name}=${encodeURIComponent(token)}`,
     "Path=/",
     "HttpOnly",
     "SameSite=Lax",
-    `Max-Age=${maxAgeSeconds}`,
+    ...(maxAgeSeconds === undefined ? [] : [`Max-Age=${maxAgeSeconds}`]),
     ...(secure ? ["Secure"] : []),
   ].join("; ");
 }
 
-function clearSessionCookie(secure: boolean) {
-  return sessionCookie("", secure, 0);
+function clearSessionCookie(name: string, secure: boolean) {
+  return sessionCookie(name, "", secure, 0);
 }
 
 function bodyObject(request: FastifyRequest) {
@@ -113,6 +115,7 @@ async function existingProjectIds(root: string) {
 function publicAuthRoute(route: string, method: string) {
   if (route === "/api/health") return true;
   if (route === "/api/auth/status" && method === "GET") return true;
+  if (route === "/api/auth/local" && method === "POST") return true;
   if (route === "/api/auth/invitations/:token" && (method === "GET" || method === "POST"))
     return true;
   if (route === "/api/auth/recover" && method === "POST") return true;
@@ -152,27 +155,88 @@ export function registerAuth(app: FastifyInstance, options: AuthOptions) {
     options.mode,
   );
   const secureCookies = options.secureCookies ?? process.env.TAKEBOARD_SECURE_COOKIES === "1";
+  const sessionCookieName = auth.sessionCookieName;
+  const accountsEnabled = options.mode === "required" || options.mode === "optional";
+  function localAvailable(request: FastifyRequest) {
+    const address = request.raw.socket.remoteAddress ?? request.ip;
+    return (
+      options.mode === "optional" &&
+      (isLoopbackHostname(address) || address === "::ffff:127.0.0.1") &&
+      isLoopbackHostname(request.hostname) &&
+      !Object.keys(request.headers).some(
+        (name) => name === "forwarded" || name.startsWith("x-forwarded-"),
+      )
+    );
+  }
+  async function establishLocal(request: FastifyRequest, reply: FastifyReply) {
+    const user = auth.localIdentity();
+    if (!auth.configured()) {
+      const projects = await existingProjectIds(root);
+      if (!auth.configured()) for (const id of projects) auth.grantProjectOwner(id, user.id);
+    }
+    const session = auth.createSession(
+      user.id,
+      request.headers["user-agent"] ?? null,
+      request.ip,
+      true,
+    );
+    reply.header(
+      "set-cookie",
+      sessionCookie(sessionCookieName, session.token, secureCookies, 30 * 86400),
+    );
+    return {
+      enabled: true,
+      configured: auth.configured(),
+      mode: options.mode,
+      user: null,
+      csrfToken: session.csrfToken,
+      access: "local" as const,
+      localAvailable: true,
+    };
+  }
+  function requestSessionToken(request: FastifyRequest) {
+    const values = cookies(request.headers.cookie);
+    // Accept old cookies until their existing sessions expire. Never replace a
+    // present instance-scoped cookie with a different legacy identity.
+    return values.get(sessionCookieName) ?? values.get(legacySessionCookieName);
+  }
   app.addHook("onClose", async () => auth.close());
 
   app.addHook("preHandler", async (request, reply) => {
     if (!request.url.startsWith("/api/")) return;
     const route = request.routeOptions.url ?? request.url.split("?", 1)[0] ?? request.url;
-    if (options.mode !== "required" || publicAuthRoute(route, request.method)) return;
-    if (!auth.configured()) {
+    if (!accountsEnabled || publicAuthRoute(route, request.method)) return;
+    if (options.mode === "required" && !auth.configured()) {
       return await reply
         .code(428)
         .send({ error: "请先完成 TakeBoard 管理员设置", code: "SETUP_REQUIRED" });
     }
-    const token = cookies(request.headers.cookie).get(sessionCookieName);
+    const token = requestSessionToken(request);
     const session = token ? auth.resolveSession(token) : null;
     if (!session) {
-      if (token) reply.header("set-cookie", clearSessionCookie(secureCookies));
+      // In optional mode, removing an expired cookie would make the next status
+      // request look like a first visit and silently switch an account to device access.
+      // Keep the marker until the user logs in or explicitly continues locally.
+      if (token && options.mode !== "optional")
+        reply.header("set-cookie", clearSessionCookie(sessionCookieName, secureCookies));
       return await reply.code(401).send({ error: "登录已过期，请重新登录", code: "AUTH_REQUIRED" });
+    }
+    const local = auth.isLocalIdentity(session.user.id);
+    if (
+      local &&
+      (!localAvailable(request) ||
+        (route.startsWith("/api/auth/") && route !== "/api/auth/logout") ||
+        route.startsWith("/api/admin/") ||
+        route.includes("/members") ||
+        route.startsWith("/api/portal/"))
+    ) {
+      return await reply.code(401).send({ error: "请登录账号后使用此功能", code: "AUTH_REQUIRED" });
     }
     const context: AuthRequestContext = {
       user: session.user,
       sessionId: session.sessionId,
       csrfToken: session.csrfToken,
+      local,
     };
     authContexts.set(request, context);
     if (unsafeMethods.has(request.method)) {
@@ -202,7 +266,7 @@ export function registerAuth(app: FastifyInstance, options: AuthOptions) {
         code: "PASSWORD_CHANGE_REQUIRED",
       });
     }
-    if (adminOnly(route, request.method) && session.user.instanceRole !== "admin") {
+    if (adminOnly(route, request.method) && session.user.instanceRole !== "admin" && !local) {
       auth.audit(
         session.user.id,
         "authorization.denied",
@@ -239,8 +303,9 @@ export function registerAuth(app: FastifyInstance, options: AuthOptions) {
     }
   });
 
-  app.get("/api/auth/status", async (request): Promise<AuthStatus> => {
-    if (options.mode !== "required") {
+  app.get("/api/auth/status", async (request, reply): Promise<AuthStatus> => {
+    reply.header("cache-control", "no-store");
+    if (!accountsEnabled) {
       return {
         enabled: false,
         configured: auth.configured(),
@@ -249,30 +314,61 @@ export function registerAuth(app: FastifyInstance, options: AuthOptions) {
         csrfToken: null,
       };
     }
-    const token = cookies(request.headers.cookie).get(sessionCookieName);
+    const token = requestSessionToken(request);
     const session = token ? auth.resolveSession(token) : null;
+    const available = localAvailable(request);
+    if (!token && available) return await establishLocal(request, reply);
+    const local = session ? auth.isLocalIdentity(session.user.id) : false;
+    const usable = session && (!local || available) ? session : null;
     return {
       enabled: true,
       configured: auth.configured(),
       mode: options.mode,
-      user: session?.user ?? null,
-      csrfToken: session?.csrfToken ?? null,
+      user: local ? null : (usable?.user ?? null),
+      csrfToken: usable?.csrfToken ?? null,
+      access: usable ? (local ? "local" : "account") : "none",
+      localAvailable: available,
     };
   });
 
+  app.post("/api/auth/local", async (request, reply) => {
+    reply.header("cache-control", "no-store");
+    if (!localAvailable(request))
+      return await reply.code(403).send({ error: "此设备入口只允许本机或可信 SSH 连接" });
+    const token = requestSessionToken(request);
+    const session = token ? auth.resolveSession(token) : null;
+    if (session && !auth.isLocalIdentity(session.user.id))
+      return await reply.code(409).send({ error: "请先退出当前账号，再使用此设备入口" });
+    return await establishLocal(request, reply);
+  });
+
   async function establishSession(user: Account, request: FastifyRequest, reply: FastifyReply) {
+    const remember = bodyObject(request).remember === true;
+    const legacyToken = cookies(request.headers.cookie).get(legacySessionCookieName);
+    const legacySession = legacyToken ? auth.resolveSession(legacyToken) : null;
+    if (legacySession) auth.revokeSession(legacySession.user.id, legacySession.sessionId);
     const session = auth.createSession(
       user.id,
       request.headers["user-agent"] ?? null,
       request.ip ?? null,
+      remember,
     );
-    reply.header("set-cookie", sessionCookie(session.token, secureCookies));
+    reply.header(
+      "set-cookie",
+      sessionCookie(
+        sessionCookieName,
+        session.token,
+        secureCookies,
+        remember
+          ? Math.max(0, Math.floor((Date.parse(session.expiresAt) - Date.now()) / 1000))
+          : undefined,
+      ),
+    );
     return { user: safeAccountPayload(user), csrfToken: session.csrfToken };
   }
 
   app.post("/api/auth/bootstrap", async (request, reply) => {
-    if (options.mode !== "required")
-      return await reply.code(409).send({ error: "当前未启用账号模式" });
+    if (!accountsEnabled) return await reply.code(409).send({ error: "当前未启用账号模式" });
     const body = bodyObject(request);
     try {
       const user = auth.createBootstrap(
@@ -291,8 +387,7 @@ export function registerAuth(app: FastifyInstance, options: AuthOptions) {
   });
 
   app.post("/api/auth/login", async (request, reply) => {
-    if (options.mode !== "required")
-      return await reply.code(409).send({ error: "当前未启用账号模式" });
+    if (!accountsEnabled) return await reply.code(409).send({ error: "当前未启用账号模式" });
     const body = bodyObject(request);
     const result = auth.authenticate(
       cleanText(body.email, 254),
@@ -310,8 +405,7 @@ export function registerAuth(app: FastifyInstance, options: AuthOptions) {
   });
 
   app.get<{ Params: { token: string } }>("/api/auth/invitations/:token", async (request, reply) => {
-    if (options.mode !== "required")
-      return await reply.code(409).send({ error: "当前未启用账号模式" });
+    if (!accountsEnabled) return await reply.code(409).send({ error: "当前未启用账号模式" });
     const invitation = auth.invitationForToken(request.params.token);
     if (!invitation) return await reply.code(404).send({ error: "邀请不存在、已使用或已经过期" });
     return {
@@ -327,8 +421,7 @@ export function registerAuth(app: FastifyInstance, options: AuthOptions) {
   app.post<{ Params: { token: string } }>(
     "/api/auth/invitations/:token",
     async (request, reply) => {
-      if (options.mode !== "required")
-        return await reply.code(409).send({ error: "当前未启用账号模式" });
+      if (!accountsEnabled) return await reply.code(409).send({ error: "当前未启用账号模式" });
       try {
         const user = auth.acceptInvitation(
           request.params.token,
@@ -347,8 +440,7 @@ export function registerAuth(app: FastifyInstance, options: AuthOptions) {
   );
 
   app.post("/api/auth/recover", async (request, reply) => {
-    if (options.mode !== "required")
-      return await reply.code(409).send({ error: "当前未启用账号模式" });
+    if (!accountsEnabled) return await reply.code(409).send({ error: "当前未启用账号模式" });
     const body = bodyObject(request);
     try {
       const result = auth.recoverPassword(
@@ -384,7 +476,7 @@ export function registerAuth(app: FastifyInstance, options: AuthOptions) {
       request.ip ?? null,
     );
     return await reply
-      .header("set-cookie", clearSessionCookie(secureCookies))
+      .header("set-cookie", clearSessionCookie(sessionCookieName, secureCookies))
       .send({ loggedOut: true });
   });
 
@@ -400,7 +492,7 @@ export function registerAuth(app: FastifyInstance, options: AuthOptions) {
       const revoked = auth.revokeSession(context.user.id, request.params.sessionId);
       if (!revoked) return await reply.code(404).send({ error: "会话不存在" });
       const current = request.params.sessionId === context.sessionId;
-      if (current) reply.header("set-cookie", clearSessionCookie(secureCookies));
+      if (current) reply.header("set-cookie", clearSessionCookie(sessionCookieName, secureCookies));
       return await reply.send({ revoked: true, current });
     },
   );

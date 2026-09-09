@@ -91,6 +91,7 @@ async function apiFetch(path: string, options?: RequestInit) {
     response = await fetch(path, { credentials: "same-origin", ...options, headers });
   } catch (cause) {
     const timedOut = isTimeoutFailure(cause);
+    if (!options?.signal?.aborted) window.dispatchEvent(new Event("takeboard:connection-lost"));
     throw new TakeBoardApiError(
       timedOut
         ? "TakeBoard 请求超时。请保持页面打开，检查服务器或 SSH 连接后重试。"
@@ -101,7 +102,8 @@ async function apiFetch(path: string, options?: RequestInit) {
       cause,
     );
   }
-  if (response.status === 401) window.dispatchEvent(new Event("takeboard:auth-required"));
+  if (response.status === 401 && !path.startsWith("/api/auth/"))
+    window.dispatchEvent(new Event("takeboard:auth-required"));
   return response;
 }
 
@@ -942,25 +944,30 @@ export const extensionApi = {
 };
 
 export const authApi = {
-  status: () => jsonRequest<AuthStatus>("/api/auth/status"),
-  bootstrap: (input: { name: string; email: string; password: string }) =>
+  status: () =>
+    jsonRequest<AuthStatus>("/api/auth/status", {
+      signal: AbortSignal.timeout(10000),
+      cache: "no-store",
+    }),
+  local: () => jsonRequest<AuthStatus>("/api/auth/local", { method: "POST" }),
+  bootstrap: (input: { name: string; email: string; password: string; remember?: boolean }) =>
     jsonRequest<{ user: Account; csrfToken: string }>("/api/auth/bootstrap", {
       method: "POST",
       body: JSON.stringify(input),
     }),
-  login: (email: string, password: string) =>
+  login: (email: string, password: string, remember = true) =>
     jsonRequest<{ user: Account; csrfToken: string }>("/api/auth/login", {
       method: "POST",
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, password, remember }),
     }),
   invitation: (token: string) =>
     jsonRequest<{ invitation: PublicInvitation }>(
       `/api/auth/invitations/${encodeURIComponent(token)}`,
     ),
-  acceptInvitation: (token: string, password: string) =>
+  acceptInvitation: (token: string, password: string, remember = true) =>
     jsonRequest<{ user: Account; csrfToken: string }>(
       `/api/auth/invitations/${encodeURIComponent(token)}`,
-      { method: "POST", body: JSON.stringify({ password }) },
+      { method: "POST", body: JSON.stringify({ password, remember }) },
     ),
   recover: (email: string, code: string, newPassword: string) =>
     jsonRequest<{ recovered: true; revokedSessions: true }>("/api/auth/recover", {

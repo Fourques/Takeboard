@@ -73,19 +73,22 @@ tunnel_active() {
 }
 
 healthy() {
-  curl --fail --silent --max-time 3 "http://127.0.0.1:${tunnel_port}/api/health" >/dev/null 2>&1
+  local response
+  local service_pattern='"service"[[:space:]]*:[[:space:]]*"takeboard-server"'
+  local status_pattern='"status"[[:space:]]*:[[:space:]]*"ok"'
+  response=$(curl --noproxy '*' --fail --silent --max-time 2 --max-filesize 16384 "http://127.0.0.1:${tunnel_port}/api/health") || return 1
+  [[ $response =~ $service_pattern && $response =~ $status_pattern ]]
 }
 
 wait_for_health() {
-  local attempt=0
+  local deadline=$((SECONDS + 20))
   until healthy; do
     if [[ -n ${tunnel_pid:-} ]] && ! kill -0 "$tunnel_pid" >/dev/null 2>&1; then
       echo "SSH exited before the TakeBoard tunnel became healthy." >&2
       return 1
     fi
-    attempt=$((attempt + 1))
-    if ((attempt >= 20)); then
-      echo "TakeBoard did not respond on local port ${tunnel_port} within 10 seconds." >&2
+    if ((SECONDS >= deadline)); then
+      echo "TakeBoard did not respond on local port ${tunnel_port} within 20 seconds." >&2
       return 1
     fi
     sleep 0.5
@@ -144,8 +147,17 @@ connect_tunnel() {
   chmod 700 "$state_dir"
 
   if tunnel_active; then
+    if [[ $host != "$tunnel_host" ]]; then
+      echo "A different managed server is connected (${tunnel_host}). Stop it explicitly before switching." >&2
+      return 1
+    fi
+    if ! healthy; then
+      echo "The managed SSH connection exists, but TakeBoard is not responding. Check the server, or stop and reconnect." >&2
+      return 1
+    fi
     echo "A managed TakeBoard tunnel is already active."
     echo "URL: http://127.0.0.1:${tunnel_port}"
+    open_url "http://127.0.0.1:${tunnel_port}"
     return
   fi
   rm -f "$control_socket" "$state_file"
@@ -165,15 +177,15 @@ connect_tunnel() {
   if ((selected_port != requested_port)); then
     echo "Local port ${requested_port} is occupied; using ${selected_port} instead."
   fi
-  if ((selected_port == comfy_local_port)); then
-    echo "TakeBoard and ComfyUI cannot use the same local port: ${selected_port}" >&2
-    exit 1
-  fi
-  if port_in_use "$comfy_local_port"; then
-    echo "ComfyUI local port ${comfy_local_port} is already occupied." >&2
-    echo "Stop that listener, or set COMFY_LOCAL_PORT to another free port." >&2
-    exit 1
-  fi
+  local last_comfy_port=$((comfy_local_port + 20))
+  if ((last_comfy_port > 65535)); then last_comfy_port=65535; fi
+  while ((comfy_local_port == selected_port)) || port_in_use "$comfy_local_port"; do
+    comfy_local_port=$((comfy_local_port + 1))
+    if ((comfy_local_port > last_comfy_port)); then
+      echo "No free editor-forwarding port; choose another COMFY_LOCAL_PORT. Existing listeners were not changed." >&2
+      return 1
+    fi
+  done
 
   tunnel_host=$host
   tunnel_port=$selected_port
@@ -181,19 +193,21 @@ connect_tunnel() {
   tunnel_ready=0
 
   ssh -M -S "$control_socket" -N \
+    -o ControlPersist=no \
+    -o ForkAfterAuthentication=no \
     -o ConnectTimeout=10 \
     -o ExitOnForwardFailure=yes \
     -o ServerAliveInterval=30 \
     -o ServerAliveCountMax=3 \
-    -L "${selected_port}:127.0.0.1:${remote_port}" \
-    -L "${comfy_local_port}:127.0.0.1:${comfy_remote_port}" \
+    -L "127.0.0.1:${selected_port}:127.0.0.1:${remote_port}" \
+    -L "127.0.0.1:${comfy_local_port}:127.0.0.1:${comfy_remote_port}" \
     "$host" &
   tunnel_pid=$!
+  trap cleanup_tunnel EXIT
+  trap 'exit 130' INT TERM HUP
 
   printf '%s\t%s\t%s\t%s\n' "$host" "$selected_port" "$comfy_local_port" "$tunnel_pid" > "$state_file"
   chmod 600 "$state_file"
-  trap cleanup_tunnel EXIT
-  trap 'exit 130' INT TERM HUP
 
   wait_for_health
   tunnel_ready=1

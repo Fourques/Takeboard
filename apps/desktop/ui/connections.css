@@ -1,0 +1,165 @@
+:root {
+  color-scheme: dark;
+  font:
+    14px / 1.6 ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  color: #e9e6df;
+  background: #121715;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+main {
+  max-width: 680px;
+  margin: auto;
+  padding: 28px clamp(18px, 5vw, 36px);
+}
+header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+header p {
+  margin: 0;
+  color: #c8b28d;
+  font-size: 11px;
+  letter-spacing: 0.15em;
+}
+h1 {
+  font-size: 28px;
+  font-weight: 600;
+  margin: 2px 0;
+}
+.mark {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: #d9c399;
+  color: #151916;
+  font:
+    700 28px Georgia,
+    serif;
+}
+.intro,
+.hint,
+footer {
+  color: #a9b2ac;
+}
+.intro {
+  margin: 18px 0 24px;
+}
+form {
+  display: grid;
+  gap: 16px;
+}
+label {
+  display: grid;
+  gap: 7px;
+}
+input,
+select,
+button {
+  font: inherit;
+  color: inherit;
+  border: 1px solid #3c4740;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #1c241f;
+  min-width: 0;
+}
+input,
+select {
+  width: 100%;
+}
+input:focus-visible,
+select:focus-visible,
+button:focus-visible,
+summary:focus-visible {
+  outline: 2px solid #d9c399;
+  outline-offset: 3px;
+}
+button {
+  cursor: pointer;
+}
+button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+button[type="submit"] {
+  background: #dac7a2;
+  border-color: #dac7a2;
+  color: #172019;
+  font-weight: 650;
+}
+.secondary {
+  background: transparent;
+}
+.actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.hint {
+  font-size: 12px;
+  margin: 0;
+}
+details label {
+  margin-top: 12px;
+}
+summary {
+  cursor: pointer;
+  color: #c7d0c9;
+}
+.status {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  margin: 22px 0;
+  background: #1b241e;
+  border-radius: 12px;
+  overflow-wrap: anywhere;
+}
+.status.error {
+  color: #ffb7a7;
+  background: #30241f;
+}
+h2 {
+  font-size: 16px;
+  font-weight: 550;
+}
+.recent-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.recent-row button:first-child {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.recent-row small {
+  display: block;
+  color: #a9b2ac;
+}
+footer {
+  margin-top: 24px;
+  font-size: 12px;
+}
+[hidden] {
+  display: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  button {
+    transition: background 0.15s ease;
+  }
+}

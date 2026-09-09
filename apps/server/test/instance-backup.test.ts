@@ -61,6 +61,8 @@ describe("TakeBoard instance backups", () => {
       firstShotIntent: "A verified frame",
     });
     auth.grantProjectOwner(created.snapshot.project.id, admin.id);
+    // Device ACL principals belong in the backup but are not login accounts.
+    auth.localIdentity();
     const sessionBeforeBackup = auth.createSession(admin.id, "backup-test", "127.0.0.1");
 
     const backup = await createInstanceBackup(dataRoot, auth);
