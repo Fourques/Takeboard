@@ -10,7 +10,7 @@ TakeBoard 是面向 ComfyUI 创作者的开源、本地优先 AI 影像工作台
 从[下载与安装](docs/downloads.md)选择系统对应的包，不需要先安装开发工具。
 英文用户可直接查看 [Download and installation](docs/downloads.en.md)。
 
-已经克隆源码的用户请看[源码运行与配置](docs/source-guide.md)，不要把源码启动命令套用到便携包。
+已经克隆源码的用户请看[源码运行与配置](docs/source-guide.md)，安装版用户无需执行开发命令。
 远程访问请看[连接指南](docs/remote-access.md)，根据自己的版本选择桌面连接菜单或标准 SSH。
 
 完整说明见 [README](README.md)、[创作工作站指南](docs/creator-workstation.md)、[远程访问](docs/remote-access.md)和[自托管部署](docs/self-hosting.md)。

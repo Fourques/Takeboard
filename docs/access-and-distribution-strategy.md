@@ -18,9 +18,9 @@ TakeBoard 应同时保留三种入口，但三者解决的问题不同：
 - Admin / Member 与项目 Owner / Editor / Viewer 两层授权；
 - 稳定实例标识、回环监听、Host / Origin 白名单和安全 Cookie；
 - SSH 自动探测、端口避让、健康检查和退出后清理；
-- Linux x64/arm64、macOS Intel/Apple Silicon、Windows x64/arm64 便携包；
+- 面向 Linux x64/arm64、macOS Intel/Apple Silicon、Windows x64/arm64 的原生安装构建；
 - 复用同一业务实现的 Tauri 2 桌面壳、内置 Node sidecar、启动状态机与单实例保护；
-- DMG、NSIS、Deb 的六平台原生 CI 构建、运行时自检和 SHA-256，并配套六架构便携包；
+- DMG、NSIS、Deb 的六平台原生 CI 构建、安装后运行时自检和 SHA-256；
 - 构建校验、原生依赖启动冒烟、SHA-256 与 GitHub Artifact Attestation；
 - Web App Manifest，可从支持的浏览器添加为独立应用窗口；
 - 独立 Portal 服务、一次性设备配对、出站 Connector、设备目录与撤销审计；
@@ -120,12 +120,12 @@ Tailscale Serve 提供身份化的私网服务入口，Funnel 则面向更广互
 
 ### 现在
 
-继续发布便携包，同时提供 Tauri 2 原生安装预览，并把 Web App Manifest 作为最低成本的独立窗口入口：
+自 v0.2.0-beta.2 起只分发 Tauri 2 原生安装包，停止便携版分发；Web App Manifest 保留为浏览器独立窗口入口：
 
 - 不需要用户安装 Node.js 或 pnpm；
 - 原生壳随机选择回环端口，真实查询启动状态，失败后可以重新拉起服务；
 - 关闭应用会回收它拥有的 launcher，重复打开会聚焦已有窗口；
-- 桌面版与便携版共用 `~/TakeBoardData`，升级或切换入口不复制项目；
+- 桌面版沿用 `~/TakeBoardData`，旧便携用户备份并停止旧实例后可以迁移使用；
 - GitHub Actions 在六种 OS/CPU 原生 Runner 上准备 sidecar、执行 `doctor`、编译并产出安装包；
 - 尚无 Apple/Windows 商业签名凭据，因此仍明确标为未签名预览，自动更新也保持关闭。
 
@@ -163,13 +163,13 @@ Electron 与现有 TypeScript 团队技能匹配，也有成熟更新机制，�
 - [x] SSH 命令可复制，端口来自真实运行配置；
 - [x] HTTPS URL、Secure Cookie、Host / Origin 白名单联合检查；
 - [x] 安装型 Web App 元数据；
-- [x] 六平台便携构建和启动冒烟。
+- [x] 六平台运行时构建和启动冒烟（历史便携发行已停止）。
 
 ### Gate B：桌面安装器
 
 - [x] 建立最小 Tauri sidecar 原型；
 - [x] 单实例锁、真实启动状态、重试和退出回收；
-- [x] 保留现有 `~/TakeBoardData`，桌面版与便携版可逆切换；
+- [x] 保留现有 `~/TakeBoardData`，从旧启动方式迁移到桌面版；
 - [x] 六种原生 Runner 的 DMG、NSIS、Deb 构建、校验和与来源证明；
 - [ ] macOS / Windows 签名凭据；
 - [ ] 三种真实净机上的安装、升级与卸载人工验收；

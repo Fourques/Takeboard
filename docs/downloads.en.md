@@ -2,89 +2,61 @@
 
 [Home](../README.en.md) · [简体中文](downloads.md)
 
-## Choose a channel
+## Download TakeBoard
 
-Status checked on September 9, 2026. Published packages and development builds are not interchangeable.
+**v0.2.0-beta.2 desktop preview** provides native installers only. Choose your computer and download
+one file. No portable folder to manage and no separate Node.js, pnpm or Rust installation.
 
-| Channel | Available packages | Audience |
-| --- | --- | --- |
-| [Public v0.2.0-beta.1](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.1) | Portable previews with an embedded runtime for six OS/CPU combinations; not native installers | Users trying a published preview |
-| [Desktop check](https://github.com/Fourques/Takeboard/actions/workflows/desktop-check.yml) | Newer Mac ARM64 DMG and Windows x64 NSIS test installers; retained for 14 days | Testers seeking recent changes |
-| [Source main](../CONTRIBUTING.md) | Development code requiring developer tools | Contributors and advanced users |
-
-The public portable release predates recent optional-login and desktop connection-menu changes.
-See [Unreleased](../CHANGELOG.md#unreleased) for newer functionality. If no recent package matches your
-device, wait for a release or use source setup; building a desktop app is not a prerequisite for trying TakeBoard.
-
-## Portable download
-
-Open the public Release's **Assets** section and choose the matching file. GitHub's automatically
-generated **Source code (zip / tar.gz)** downloads are source archives, not ready-to-run packages.
-
-| Device | Filename |
+| Your computer | Download |
 | --- | --- |
-| Mac, Apple silicon (M series) | `takeboard-v0.2.0-beta.1-macos-arm64.tar.gz` |
-| Mac, Intel | `takeboard-v0.2.0-beta.1-macos-x64.tar.gz` |
-| Windows, Intel / AMD 64-bit | `takeboard-v0.2.0-beta.1-windows-x64.tar.gz` |
-| Windows, ARM64 | `takeboard-v0.2.0-beta.1-windows-arm64.tar.gz` |
-| Linux, Intel / AMD 64-bit | `takeboard-v0.2.0-beta.1-linux-x64.tar.gz` |
-| Linux, ARM64 | `takeboard-v0.2.0-beta.1-linux-arm64.tar.gz` |
+| Mac · Apple 芯片 / Apple silicon | [DMG](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.2/TakeBoard-v0.2.0-beta.2-macos-arm64.dmg) |
+| Mac · Intel | [DMG](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.2/TakeBoard-v0.2.0-beta.2-macos-x64.dmg) |
+| Windows · Intel / AMD | [EXE](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.2/TakeBoard-v0.2.0-beta.2-windows-x64.exe) |
+| Windows · ARM64 | [EXE](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.2/TakeBoard-v0.2.0-beta.2-windows-arm64.exe) |
+| Debian / Ubuntu · Intel / AMD | [DEB](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.2/TakeBoard-v0.2.0-beta.2-linux-x64.deb) |
+| Debian / Ubuntu · ARM64 | [DEB](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.2/TakeBoard-v0.2.0-beta.2-linux-arm64.deb) |
 
-Check **About This Mac** or Windows **Settings → System → About** if unsure of your processor.
-Build availability does not prove every GPU/workflow combination is tested; see the
-[compatibility evidence](compatibility-matrix.md) (Chinese).
+Check **About This Mac** or Windows **Settings → System → About** for your processor.
+DEB packages target Debian/Ubuntu, not every Linux distribution. Other environments can use
+[source setup](../CONTRIBUTING.md). All installers are also on the
+[Release page](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.2).
+**Source code** at the bottom is for developers, not an installer.
 
-Extract the entire archive, preserve its folder structure, and open:
+## Install and open
 
-| Platform | Launcher |
-| --- | --- |
-| macOS | `START-TAKEBOARD.command` |
-| Windows | `START-TAKEBOARD.cmd` |
-| Linux | `./start-takeboard.sh` |
+- **Mac:** open the DMG, drag TakeBoard into Applications, then launch it from Applications.
+- **Windows:** run the EXE setup wizard, then launch TakeBoard from Start.
+- **Debian / Ubuntu:** open the DEB with your software installer and launch from the applications menu.
+  Without a graphical installer, run `sudo apt install ./TakeBoard-v0.2.0-beta.2-linux-x64.deb`
+  in the download directory; use the ARM64 filename on ARM devices.
 
-The portable launcher starts a local service and opens your browser. Keep its window open and follow
-its shutdown instructions when finished. Node.js, pnpm and Rust do not need separate installation.
-ComfyUI, models and Custom Nodes are not included; generation requires a working ComfyUI environment.
+The app starts its local service automatically. Local use needs no registration; login is optional,
+and account projects retain authorization. Generation requires separately configured **ComfyUI,
+models and Custom Nodes**. Projects, media and the canvas can be used without ComfyUI.
 
-## Recent desktop test builds
+> [!IMPORTANT]
+> This preview is not Apple-notarized or commercially Windows-code-signed. Your OS may warn or block it.
+> Do not globally disable Gatekeeper, antivirus or other protections. Stop if you cannot verify the source.
+> Installer format is not OS trust certification; runtime checks are not exhaustive GPU/workflow validation.
 
-1. Open Desktop check and choose an entirely successful **main** run. Check its commit and date.
-2. Sign in to GitHub and download `takeboard-preview-macos-arm64` or
-   `takeboard-preview-windows-x64` from **Artifacts** at the bottom of the run.
-3. Extract the Artifact archive, then open the enclosed DMG or NSIS `.exe` installer.
-4. If artifacts are missing or expired, use a published preview or wait for a new successful build.
-   Do not substitute packages from failed runs.
+## Connect a server
 
-Linux screenshot artifacts are not installers. The separate maintainer-triggered
-[Preview bundles](https://github.com/Fourques/Takeboard/actions/workflows/portable-bundles.yml)
-pipeline can build six platforms, but its existence does not mean packages are currently available.
+Use **Connection → Connect device…** for SSH, HTTPS or a self-hosted Portal. SSH needs a reachable
+server, system OpenSSH, configured keys and a trusted host fingerprint; Tailscale is not required.
+Portal needs deployment and explicit pairing, not just a matching email address. There is no operated
+official cloud. See [remote access](remote-access.md) (Chinese).
 
-The desktop app starts its local service automatically. Recent builds include **Connection → Connect
-device…** for SSH, HTTPS and a self-hosted Portal. SSH needs a reachable server, system OpenSSH,
-configured keys and a trusted host fingerprint. Matching email addresses do not automatically pair
-devices. See [remote access](remote-access.md) (Chinese).
+## Upgrades and support
 
-## Safety and upgrades
+- Projects default to `~/TakeBoardData` (the user-profile `TakeBoardData` folder on Windows), outside the app.
+- Export important projects, stop the old service and back up the full data directory before upgrading.
+  Never run two writers against the same data directory.
+- Portable packages are retired. An old extracted app folder is not the project data directory;
+  check your configured data location before removing old files.
+- Roll back using a separate pre-upgrade backup, not by opening migrated data in an older app.
+- No separate checksum downloads are needed. Build verification and provenance remain in the
+  [release process](desktop-production-signing.md) (Chinese).
 
-- Previews are not Apple-notarized or commercially Windows-code-signed. Operating systems may warn or
-  block them. Do not globally disable Gatekeeper, antivirus or other protection. Stop if you cannot verify the source.
-- Release downloads contain application packages only; no separate checksum download is needed.
-  Build integrity checks and provenance remain part of the pipeline. Technical verification is
-  documented in the [release guide](desktop-production-signing.md); everyday use needs no verification commands.
-- Projects default to `~/TakeBoardData` (the `TakeBoardData` folder in your Windows user directory),
-  outside the installation directory. Export important projects before upgrading and back up the full
-  data directory with the service stopped. Never run two writers against the same data directory.
-- Do not open newly migrated data with an older app. Roll back using a separate pre-upgrade backup.
-- Current main allows local use without registration; account projects retain their authorization.
-  Public deployments require mandatory login and HTTPS. Never expose a login-optional local service publicly.
-
-For support, include OS, CPU, version/commit, package name, connection method and the error in the
-[issue chooser](https://github.com/Fourques/Takeboard/issues/new/choose). Omit private media and credentials.
-
-## Release policy
-
-GitHub Releases is the long-lived user download channel; Actions is for testing. Future releases
-should identify preview/stable status, source commit, platform, signing state, upgrade
-instructions and limitations. Do not silently replace old tags or reuse an installer name for changed
-code. Checksums and test demos stay in CI artifacts, not the public download list. GitHub's automatic
-source archives remain available. See the [signing and release guide](desktop-production-signing.md) (Chinese).
+For [support](https://github.com/Fourques/Takeboard/issues/new/choose), include OS, processor, app
+version, connection method and the error. Omit private media and credentials.
+For development, see [Contributing](../CONTRIBUTING.md) and the [documentation index](README.md).

@@ -29,18 +29,17 @@ project workspace and traceable generation history.
 
 **You do not need to read the source or install developer tools to use a packaged build.**
 
-Follow the [download guide](docs/downloads.en.md) for your platform. Portable and desktop previews
+Follow the [download guide](docs/downloads.en.md) for your platform. Native desktop installers
 include Node.js; no separate Node.js, pnpm or Rust installation is needed.
 **ComfyUI, models and Custom Nodes are not bundled.** You can organize projects and media without
 ComfyUI; generation requires a working local or remote ComfyUI environment.
 
 > [!IMPORTANT]
-> As of September 9, 2026, the public Release is the `v0.2.0-beta.1` portable preview.
-> Newer desktop previews are Actions artifacts, not an equivalent published installer release.
-> This README describes current `main`, not every feature in the older Release.
+> The public desktop preview is `v0.2.0-beta.2`: Mac DMG, Windows EXE and Debian/Ubuntu DEB.
+> Portable downloads are retired. This README describes current `main`; see the changelog for later changes.
 > Previews are not Apple-notarized or commercially Windows-code-signed.
 
-1. **Open the workspace:** download and extract or install the appropriate package.
+1. **Open the workspace:** install TakeBoard and launch it from Applications or Start.
 2. **Create a project:** name it and add your images, videos and reference media.
 3. **Connect ComfyUI:** check its status, choose an available workflow, connect inputs and generate.
 

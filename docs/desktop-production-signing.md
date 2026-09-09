@@ -2,9 +2,11 @@
 
 更新时间：2026-09-09
 
-TakeBoard 将桌面产物分成两条互不混用的通道：
+TakeBoard 将预览与正式签名产物明确区分：
 
-- `Preview bundles` 只能手动运行，生成未签名预览和 GitHub Artifact Attestation，不会发布 Release；
+- `Native installer previews` 只能手动运行，为六个平台生成原生安装包、运行最终包内运行时检查和
+  GitHub Artifact Attestation；不再构建或发布便携包。工作流本身不会自动发布 Release，维护者核对
+  CI、各平台安装验证与校验和后，可手动发布明确标记未签名边界的预览版（Prerelease）；
 - `Desktop check` 在相关提交后检查 Linux 原生窗口生命周期，同时构建 Mac ARM64 / Windows x64 预览包，
   验证打包运行时的启动、免登录创建项目、重启后会话与数据保留、退出清理。Windows 从实际 NSIS 安装后的
   目录运行；Mac 挂载最终 DMG 后从其中的 `.app` 运行。预览产物保存 14 天，不自动发布 Release，也不代表
@@ -16,7 +18,8 @@ GitHub 构建来源证明不能替代操作系统代码签名。不要把 Previe
 
 ## 下载区保持简单
 
-公开 Release 只上传程序包，不上传单独的 `.sha256`、`SHA256SUMS.txt` 或演示素材。
+公开 Release 只上传原生安装包（DMG、NSIS EXE、DEB），不再提供便携包，
+不上传单独的 `.sha256`、`SHA256SUMS.txt` 或演示素材。
 校验文件仍随 CI Artifact 保存；正式发布前再次验证每个安装包的校验和，再按程序格式白名单上传。
 缺少校验文件或摘要不一致会阻断发布；已存在的同名包不会被自动覆盖。
 GitHub 自动展示的源码归档与文件摘要不属于我们上传的附件，无需用户下载或操作。
