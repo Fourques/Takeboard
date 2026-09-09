@@ -14,6 +14,16 @@ TakeBoard 将桌面产物分成两条互不混用的通道：
 
 GitHub 构建来源证明不能替代操作系统代码签名。不要把 Preview 的 DMG、NSIS 或 Deb 改名为正式版。
 
+## 下载区保持简单
+
+公开 Release 只上传程序包，不上传单独的 `.sha256`、`SHA256SUMS.txt` 或演示素材。
+校验文件仍随 CI Artifact 保存；正式发布前再次验证每个安装包的校验和，再按程序格式白名单上传。
+缺少校验文件或摘要不一致会阻断发布；已存在的同名包不会被自动覆盖。
+GitHub 自动展示的源码归档与文件摘要不属于我们上传的附件，无需用户下载或操作。
+
+技术用户仍可通过 `gh attestation verify <下载文件路径> --repo Fourques/Takeboard` 检查支持来源证明的包。
+校验和检查完整性，来源证明绑定构建来源，两者都不等于操作系统签名或完整安全审计。
+
 macOS 打包保留 Hardened Runtime，并为内置 Node 声明 JIT 与原生扩展库加载权限（`entitlements.plist`）。
 不启用调试注入、DYLD 环境注入或全局关闭内存页保护。Tauri 会重新签署 sidecar，不能假定复制进来的
 Node 仍保留原签名权限；参考 [Tauri 签名实现](https://github.com/tauri-apps/tauri/blob/tauri-cli-v2.11.4/crates/tauri-bundler/src/bundle/macos/sign.rs)

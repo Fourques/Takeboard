@@ -8,6 +8,10 @@ before moving production work to a newer minor version.
 
 ### Documentation
 
+- Simplified public downloads to application packages, with platform-labelled Release links;
+  separate checksum and demo attachments are removed from the current preview after backup.
+  CI retains checksums and attestations, and signed publishing verifies checksums before uploading
+  installers only, without silently replacing existing packages.
 - Reorganized both repository home pages around packaged downloads and creator journeys, retaining
   source setup and operational detail in dedicated guides. Added bilingual download guides and a
   task-based documentation index, with verified public-Release versus Actions-preview boundaries.

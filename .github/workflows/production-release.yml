@@ -300,9 +300,23 @@ jobs:
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ inputs.tag }}
         run: |
+          # Checksums stay in CI artifacts, not in the user-facing download list.
+          # Verify every installer before creating or modifying a public release.
+          installers=()
+          while IFS= read -r -d '' installer; do
+            (
+              cd "$(dirname "$installer")"
+              sha256sum --check "$(basename "$installer").sha256"
+            )
+            installers+=("$installer")
+          done < <(find release -type f \( -name '*.dmg' -o -name '*.exe' \) -print0)
+          test "${#installers[@]}" -gt 0 || {
+            echo "No verified installers to publish" >&2
+            exit 1
+          }
           if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             extra=""
             case "$RELEASE_TAG" in *-*) extra="--prerelease";; esac
             gh release create "$RELEASE_TAG" --verify-tag --generate-notes $extra
           fi
-          gh release upload "$RELEASE_TAG" release/* --clobber
+          gh release upload "$RELEASE_TAG" "${installers[@]}"

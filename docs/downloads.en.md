@@ -68,9 +68,9 @@ devices. See [remote access](remote-access.md) (Chinese).
 
 - Previews are not Apple-notarized or commercially Windows-code-signed. Operating systems may warn or
   block them. Do not globally disable Gatekeeper, antivirus or other protection. Stop if you cannot verify the source.
-- Public portable packages have adjacent `.sha256` files. Checksums check integrity, not publisher
-  identity or security. Advanced users can verify supported build attestations with
-  `gh attestation verify <downloaded-file> --repo Fourques/Takeboard`.
+- Release downloads contain application packages only; no separate checksum download is needed.
+  Build integrity checks and provenance remain part of the pipeline. Technical verification is
+  documented in the [release guide](desktop-production-signing.md); everyday use needs no verification commands.
 - Projects default to `~/TakeBoardData` (the `TakeBoardData` folder in your Windows user directory),
   outside the installation directory. Export important projects before upgrading and back up the full
   data directory with the service stopped. Never run two writers against the same data directory.
@@ -84,6 +84,7 @@ For support, include OS, CPU, version/commit, package name, connection method an
 ## Release policy
 
 GitHub Releases is the long-lived user download channel; Actions is for testing. Future releases
-should identify preview/stable status, source commit, platform, signing state, checksums, upgrade
+should identify preview/stable status, source commit, platform, signing state, upgrade
 instructions and limitations. Do not silently replace old tags or reuse an installer name for changed
-code. See the [signing and release guide](desktop-production-signing.md) (Chinese).
+code. Checksums and test demos stay in CI artifacts, not the public download list. GitHub's automatic
+source archives remain available. See the [signing and release guide](desktop-production-signing.md) (Chinese).
