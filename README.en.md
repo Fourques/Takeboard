@@ -35,7 +35,7 @@ include Node.js; no separate Node.js, pnpm or Rust installation is needed.
 ComfyUI; generation requires a working local or remote ComfyUI environment.
 
 > [!IMPORTANT]
-> The public desktop preview is `v0.2.0-beta.2`: Mac DMG, Windows EXE and Debian/Ubuntu DEB.
+> The public desktop preview is `v0.2.0-beta.3`: Mac DMG, Windows EXE and Debian/Ubuntu DEB.
 > Portable downloads are retired. This README describes current `main`; see the changelog for later changes.
 > Previews are not Apple-notarized or commercially Windows-code-signed.
 
@@ -43,9 +43,13 @@ ComfyUI; generation requires a working local or remote ComfyUI environment.
 2. **Create a project:** name it and add your images, videos and reference media.
 3. **Connect ComfyUI:** check its status, choose an available workflow, connect inputs and generate.
 
-Current development builds allow local use without registration. Login is optional, with separate
+Local use needs no registration. Login is optional, with separate
 authorization for device projects and account projects. Older releases may require login.
 Projects default to `~/TakeBoardData`; back them up before upgrading.
+
+Use settings to choose the connected device's default project folder and adjust appearance.
+Desktop update reminders match installers to your computer; they do not install or restart anything
+automatically. Upgrade from `0.2.0-beta.2` manually once to get the new update menu.
 
 ## One canvas, from inputs to results
 
