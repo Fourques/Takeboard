@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
+import { waitForRun } from "./run-fixture.js";
 
 const roots: string[] = [];
 
@@ -111,12 +112,8 @@ describe("release reliability gates", () => {
       const before = await recoveringApp.inject({ method: "GET", url: `/api/projects/${key}` });
       expect(before.json().snapshot.runs).toHaveLength(40);
       for (const runId of runIds) {
-        const recovered = await recoveringApp.inject({
-          method: "GET",
-          url: `/api/projects/${key}/runs/${runId}`,
-        });
-        expect(recovered.statusCode, recovered.body).toBe(200);
-        expect(recovered.json().status).toBe("completed");
+        const recovered = await waitForRun(recoveringApp, key, runId);
+        expect(recovered.status).toBe("completed");
       }
       const final = await recoveringApp.inject({ method: "GET", url: `/api/projects/${key}` });
       const snapshot = final.json().snapshot as {

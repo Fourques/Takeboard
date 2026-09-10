@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
 import { ProjectStore } from "../src/storage/project-store.js";
+import { waitForRun } from "./run-fixture.js";
 
 const cleanup: Array<() => Promise<void>> = [];
 
@@ -128,8 +129,12 @@ describe("real generation routes", () => {
     const { app, root, key, runId, calls } = await transferFixture(() =>
       failed ? new Response("offline", { status: 503 }) : new Response(validPng()),
     );
-    const first = await app.inject({ method: "GET", url: `/api/projects/${key}/runs/${runId}` });
-    expect(first.json()).toMatchObject({
+    const first = await waitForRun(app, key, runId, (result) =>
+      result.snapshot.runs.some(
+        (run) => run.id === runId && run.errorCode === "OUTPUT_TRANSFER_FAILED",
+      ),
+    );
+    expect(first).toMatchObject({
       status: "collecting_outputs",
       snapshot: {
         runs: [
@@ -147,18 +152,15 @@ describe("real generation routes", () => {
         ],
       },
     });
-    expect(first.json().progress.label).toContain("待下载");
+    expect(first.progress?.label).toContain("待下载");
     await app.close();
     const resumed = buildApp({ projectsRoot: root, comfyUrl: "https://comfy.test", webRoot: null });
     cleanup.push(() => resumed.close());
     failed = false;
     const now = Date.now();
     vi.spyOn(Date, "now").mockReturnValue(now + 31_000);
-    const result = await resumed.inject({
-      method: "GET",
-      url: `/api/projects/${key}/runs/${runId}`,
-    });
-    expect(result.json()).toMatchObject({
+    const result = await waitForRun(resumed, key, runId);
+    expect(result).toMatchObject({
       status: "completed",
       snapshot: {
         assets: [
@@ -174,6 +176,29 @@ describe("real generation routes", () => {
         .filter((url) => url.includes("/view?"))
         .every((url) => url.includes("subfolder=custom-workflow%2Fresults")),
     ).toBe(true);
+  });
+
+  it("persists the result after an observable asynchronous transfer without submitting again", async () => {
+    let output!: ReadableStreamDefaultController<Uint8Array>;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        output = controller;
+      },
+    });
+    const { app, key, runId, calls } = await transferFixture(() => new Response(stream));
+    const pending = await app.inject({ method: "GET", url: `/api/projects/${key}/runs/${runId}` });
+    expect(pending.statusCode, pending.body).toBe(200);
+    expect(pending.json().status).toBe("collecting_outputs");
+    expect(pending.json().snapshot.assets).toHaveLength(0);
+    output.enqueue(validPng());
+    output.close();
+    const completed = await waitForRun(app, key, runId);
+    expect(completed.snapshot.assets).toEqual([
+      expect.objectContaining({ originalName: "original.png", byteSize: validPng().length }),
+    ]);
+    expect(completed.snapshot.takes).toHaveLength(1);
+    expect(calls.filter((url) => url.endsWith("/prompt"))).toHaveLength(1);
+    expect(calls.filter((url) => url.includes("/view?"))).toHaveLength(1);
   });
 
   it("keeps a stalled transfer observable, blocks device switching, and cancels it before deleting the project", async () => {
