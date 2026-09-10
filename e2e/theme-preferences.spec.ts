@@ -2,12 +2,7 @@ import { createServer, request as httpRequest } from "node:http";
 import type { AddressInfo } from "node:net";
 import { expect, test } from "./fixtures";
 
-test("fresh themes and explicit choices survive reload and desktop port changes", async ({
-  page,
-  context,
-  browser,
-  baseURL,
-}) => {
+test("fresh theme and explicit display choices survive reload", async ({ page, context }) => {
   await context.clearCookies({ name: "takeboard_theme" });
   await page.goto("/");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "chroma");
@@ -22,6 +17,26 @@ test("fresh themes and explicit choices survive reload and desktop port changes"
   );
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "noir");
+  await expect(page.locator("html")).toHaveAttribute("data-display-scale", "1-24");
+});
+
+test("desktop restart preserves display choices across a real port change", async ({
+  page,
+  context,
+  browser,
+  baseURL,
+}) => {
+  await test.step("save actual UI choices and close the original desktop page", async () => {
+    await page.goto("/");
+    await page.getByRole("button", { name: "打开工作区选项" }).click();
+    await page.getByRole("button", { name: "黑曜主题" }).click();
+    await page.getByRole("button", { name: "显示大小：清晰" }).click();
+    await page.getByRole("button", { name: /大字/ }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "noir");
+    await expect(page.locator("html")).toHaveAttribute("data-display-scale", "1-24");
+    // A restart does not leave the old 3D page rendering alongside the new one.
+    await page.close();
+  });
 
   // Use a real second loopback port, not mocked preference getters. Carry only
   // persistent cookies into a fresh browser context, just like a desktop restart.
@@ -45,6 +60,7 @@ test("fresh themes and explicit choices survive reload and desktop port changes"
   const restarted = await browser.newContext({
     storageState: { cookies: await context.cookies(), origins: [] },
   });
+  let cleanup: PromiseSettledResult<void>[] = [];
   try {
     await new Promise<void>((resolve, reject) => {
       proxy.once("error", reject);
@@ -53,16 +69,25 @@ test("fresh themes and explicit choices survive reload and desktop port changes"
     const newPort = (proxy.address() as AddressInfo).port;
     expect(newPort).not.toBe(Number(upstream.port));
     const newPage = await restarted.newPage();
-    await newPage.goto(`http://127.0.0.1:${newPort}`);
-    await expect(newPage.locator("html")).toHaveAttribute("data-theme", "noir");
-    await expect(newPage.locator("html")).toHaveAttribute("data-display-scale", "1-24");
-    await newPage.getByRole("button", { name: "打开工作区选项" }).click();
-    await newPage.getByRole("button", { name: "柔彩主题" }).click();
-    await newPage.reload();
-    await expect(newPage.locator("html")).toHaveAttribute("data-theme", "chroma");
+    await test.step("restore persistent cookies without carrying local storage", async () => {
+      await newPage.goto(`http://127.0.0.1:${newPort}`);
+      await expect(newPage.locator("html")).toHaveAttribute("data-theme", "noir");
+      await expect(newPage.locator("html")).toHaveAttribute("data-display-scale", "1-24");
+    });
+    await test.step("save another theme on the new port and reload", async () => {
+      await newPage.getByRole("button", { name: "打开工作区选项" }).click();
+      await newPage.getByRole("button", { name: "柔彩主题" }).click();
+      await newPage.reload();
+      await expect(newPage.locator("html")).toHaveAttribute("data-theme", "chroma");
+    });
   } finally {
-    await restarted.close();
     proxy.closeAllConnections();
-    await new Promise<void>((resolve) => proxy.close(() => resolve()));
+    cleanup = await Promise.allSettled([
+      restarted.close(),
+      new Promise<void>((resolve) => proxy.close(() => resolve())),
+    ]);
+    // A timed-out test may already have had its context closed by Playwright.
+    // Preserve the original assertion/step failure; cleanup must still run.
   }
+  for (const result of cleanup) if (result.status === "rejected") throw result.reason;
 });
