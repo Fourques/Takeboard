@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /><title>TakeBoard · 应用更新</title><link rel="stylesheet" href="connections.css" /></head>
+<body><main>
+  <header><span class="mark">T</span><div><p>TAKEBOARD</p><h1>应用更新</h1></div></header>
+  <p class="intro" id="installed">正在读取当前 App…</p>
+  <p class="hint">仅检查此电脑的桌面 App，不修改远程服务。不会自动下载安装或中断生成。</p>
+  <label><input id="automatic" type="checkbox" /> 启动后在后台检查新版本</label>
+  <label>更新频道<select id="channel"><option value="stable">稳定版</option><option value="beta">稳定版与测试版</option></select></label>
+  <p class="hint">检查时会连接 GitHub，GitHub 会收到网络请求的 IP；不上传账号、项目、素材或设备名称。测试版可能仍有未解决的问题。</p>
+  <div class="actions"><button id="save" type="button">保存提醒设置</button><button id="check" class="secondary" type="button">检查更新</button></div>
+  <p id="status" class="status" role="status" aria-live="polite"></p>
+  <section id="release" hidden><h2 id="version">新版本</h2><p id="filename" class="hint"></p>
+    <div class="actions"><button id="download" type="button">下载此电脑的安装包</button><button id="notes" class="secondary" type="button">发布说明</button></div>
+    <details><summary>更新内容</summary><pre id="notes-text"></pre></details>
+    <button id="skip" class="secondary" type="button">跳过这个版本的启动提醒</button>
+    <p class="hint">下载完成后，等待本机任务结束并关闭旧 App，再使用安装包更新。项目数据保留在原位置；重要项目建议先备份。</p>
+  </section>
+  <button id="unskip" class="secondary" type="button" hidden>恢复已跳过版本的提醒</button>
+  <footer>此阶段提供检查与下载提醒，不是应用内安装器。关闭此窗口可稍后处理；手动检查始终显示已跳过的新版本。Linux 下载适用于 Debian / Ubuntu。</footer>
+</main><script src="updates.js"></script></body></html>

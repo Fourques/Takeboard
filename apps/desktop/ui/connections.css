@@ -16,6 +16,11 @@
 body {
   margin: 0;
 }
+pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+}
 main {
   max-width: 680px;
   margin: auto;

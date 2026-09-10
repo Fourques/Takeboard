@@ -115,6 +115,7 @@ async function main() {
     ),
     ...[
       "desktop-connection.mjs",
+      "desktop-updates.mjs",
       "remote-connection.mjs",
       "remote-bootstrap.mjs",
       "remote-service.mjs",

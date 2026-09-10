@@ -1,4 +1,14 @@
-import { chmod, mkdir, mkdtemp, readdir, readFile, rename, rm, symlink } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -22,6 +32,104 @@ async function fixture() {
 }
 
 describe("device-scoped project folders", () => {
+  it("persists authoritative defaults across restarts, without migrating existing projects or remembering one-off choices", async () => {
+    const { app, root, external } = await fixture();
+    const before = await app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: { title: "原项目" },
+    });
+    const added = await app.inject({
+      method: "POST",
+      url: "/api/storage/roots",
+      payload: { path: external },
+    });
+    const projectLocation = { storageRootId: added.json().root.id, storageFolder: "" };
+    const saved = await app.inject({
+      method: "PUT",
+      url: "/api/device/settings",
+      payload: { revision: 0, projectLocation },
+    });
+    expect(saved.statusCode, saved.body).toBe(200);
+    expect(
+      (
+        await app.inject({
+          method: "PUT",
+          url: "/api/device/settings",
+          payload: { revision: 0, projectLocation },
+        })
+      ).statusCode,
+    ).toBe(409);
+    expect(projectDirectory(root, before.json().key)).toBe(join(root, before.json().key));
+    const oneOff = await app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: { title: "单次位置", storageRootId: "instance" },
+    });
+    expect(projectDirectory(root, oneOff.json().key)).not.toContain(external);
+    await app.close();
+    const restarted = buildApp({ projectsRoot: root, webRoot: null, runReconciliation: false });
+    cleanup.push(() => restarted.close());
+    expect((await restarted.inject("/api/device/settings")).json()).toMatchObject({
+      revision: 1,
+      projectLocation,
+      path: external,
+      available: true,
+    });
+    const created = await restarted.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: { title: "默认位置" },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    expect(projectDirectory(root, created.json().key)).toContain(external);
+    await rename(external, `${external}-offline`);
+    expect((await restarted.inject("/api/device/settings")).json()).toMatchObject({
+      available: false,
+      projectLocation,
+    });
+    const catalogBefore = await readdir(root);
+    const blocked = await restarted.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: { title: "不得静默替代" },
+    });
+    expect(blocked.statusCode).toBe(400);
+    expect(await readdir(root)).toEqual(catalogBefore);
+    const reset = await restarted.inject({
+      method: "PUT",
+      url: "/api/device/settings",
+      payload: { revision: 1, projectLocation: { storageRootId: "instance", storageFolder: "" } },
+    });
+    expect(reset.statusCode).toBe(200);
+  });
+
+  it("rejects invalid, inaccessible and corrupt defaults without replacing the configuration", async () => {
+    const { app, root } = await fixture();
+    for (const projectLocation of [
+      null,
+      { storageRootId: "instance", storageFolder: "../" },
+      { storageRootId: "instance", storageFolder: "missing" },
+    ]) {
+      expect(
+        (
+          await app.inject({
+            method: "PUT",
+            url: "/api/device/settings",
+            payload: { revision: 0, projectLocation },
+          })
+        ).statusCode,
+      ).toBe(400);
+    }
+    expect((await app.inject("/api/device/settings")).json().revision).toBe(0);
+    await mkdir(join(root, ".system"), { recursive: true });
+    await writeFile(join(root, ".system", "device-settings.json"), "{broken");
+    expect(
+      (await app.inject({ method: "POST", url: "/api/projects", payload: { title: "不能回退" } }))
+        .statusCode,
+    ).toBe(500);
+    expect((await readdir(root)).filter((name) => name.endsWith(".takeboard"))).toEqual([]);
+  });
   it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
     "rolls back a newly reserved external project when POSIX catalog write permission is revoked",
     async () => {

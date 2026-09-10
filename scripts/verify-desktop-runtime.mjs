@@ -105,6 +105,27 @@ async function stop() {
   await until("owned lease released", () => !existsSync(lease));
 }
 try {
+  const build = JSON.parse(await readFile(join(resources, "BUILD.json"), "utf8"));
+  const preferencesFile = join(root, "client", "update-preferences.json");
+  const updates = async (operation, input = {}) => {
+    const { stdout } = await promisify(execFile)(
+      binary,
+      [
+        join(resources, "desktop-updates.mjs"),
+        preferencesFile,
+        build.applicationVersion,
+        operation,
+        JSON.stringify(input),
+      ],
+      { timeout: 6000, maxBuffer: 65536, windowsHide: true },
+    );
+    return JSON.parse(stdout);
+  };
+  assert.equal((await updates("status")).currentVersion, build.applicationVersion);
+  await updates("save", { channel: "stable", autoCheck: false, skippedVersion: null });
+  assert.equal((await updates("status")).autoCheck, false);
+  // No GitHub request in the offline packaged-runtime gate.
+  assert.equal((await updates("automatic")).status, "idle");
   const first = await start();
   const remoteInspection = await inspectPackagedService();
   assert.equal(remoteInspection.state, "running");
@@ -120,6 +141,34 @@ try {
   assert.equal(status.access, "local");
   assert.equal(status.configured, false);
   const cookie = response.headers.get("set-cookie").split(";", 1)[0];
+  const headers = {
+    cookie,
+    "content-type": "application/json",
+    "x-takeboard-csrf": status.csrfToken,
+  };
+  assert.equal(
+    (
+      await fetch(`${first.origin}/api/storage/folders`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ rootId: "instance", folder: "", name: "Films" }),
+      })
+    ).status,
+    201,
+  );
+  assert.equal(
+    (
+      await fetch(`${first.origin}/api/device/settings`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({
+          revision: 0,
+          projectLocation: { storageRootId: "instance", storageFolder: "Films" },
+        }),
+      })
+    ).status,
+    200,
+  );
   const created = await fetch(`${first.origin}/api/projects`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json", "x-takeboard-csrf": status.csrfToken },
@@ -129,6 +178,14 @@ try {
   await stop();
   assert.equal((await inspectPackagedService()).state, "stopped");
   const second = await start();
+  assert.equal(
+    (
+      await fetch(`${second.origin}/api/device/settings`, { headers: { cookie } }).then((r) =>
+        r.json(),
+      )
+    ).projectLocation.storageFolder,
+    "Films",
+  );
   assert.equal(second.instanceId, first.instanceId);
   const restored = await fetch(`${second.origin}/api/auth/status`, { headers: { cookie } }).then(
     (r) => r.json(),
@@ -146,7 +203,7 @@ try {
   assert.equal(list.projects[0].title, "Packaged runtime verification");
   await stop();
   console.log(
-    "PASS: packaged runtime starts, remote helper verifies/reuses its actual port, creates a project without signup, restores the session/data and releases its owned lease",
+    "PASS: packaged update preferences persist offline; runtime starts, remote helper reuses its actual port, project defaults and login survive restart, and the owned lease is released",
   );
 } finally {
   await stop().catch(() => {

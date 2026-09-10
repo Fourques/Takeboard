@@ -6,10 +6,13 @@ before moving production work to a newer minor version.
 
 ## Unreleased
 
+- Added a unified Settings dialog on the homepage and canvas, with explicit browser/device scope. Default new-project locations now persist on the selected TakeBoard server, support conflict-aware save/reset, and remain separate from one-off folder choices. Existing projects are never migrated implicitly.
+- Desktop apps can check official GitHub Releases, choose stable/beta reminders, skip a version and open an exact OS/CPU installer in the system browser. Startup checks are non-blocking and optional; download/install/restart are never automatic. Update preferences live in the native client configuration directory, not a remote server.
+- Display size and scene quality survive desktop port changes; blocked optional browser storage no longer prevents the homepage or task center from opening.
 - Unified local/remote device indicator shows the selected TakeBoard identity, address and project folder separately from ComfyUI hardware. The connection manager can return to the local workspace or request consent to start an installed remote runtime over SSH; disconnect does not stop remote jobs.
 - New projects support device-scoped folders, a local native folder picker and permission-scoped remote browsing. External projects retain stable keys, recoverable deletion and complete archive/backup support; unavailable disks do not become empty replacement projects.
 - Asset downloads explicitly deliver original files to the current computer. Managed ComfyUI shutdown checks process ownership, active project runs and the real queue, with generation/start/stop concurrency protection.
-- Native automatic updates remain disabled. See the [device workflow guide](docs/device-workflow.md) for installation, ownership and release boundaries.
+- Native automatic installation remains disabled. See the [settings and updates guide](docs/settings-and-updates.md) for current checks and future signed-update boundaries.
 - Soft-color secondary text, save state, shot progress and destructive actions meet the existing serious WCAG contrast gate; theme layout and the 3D homepage remain intact.
 - New installations start with the soft-color theme. Explicit theme choices are retained using a
   host-scoped preference cookie and localStorage fallback, including after desktop service ports change.

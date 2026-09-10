@@ -1,6 +1,7 @@
 use serde::Serialize;
 mod connections;
 mod local_files;
+mod updates;
 use std::{
     io::{Read, Write},
     net::{SocketAddr, TcpListener, TcpStream},
@@ -307,6 +308,7 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(connections::Connections::default())
+        .manage(updates::Updates::default())
         .manage(DesktopRuntime {
             child: Mutex::new(None),
             generation: AtomicU64::new(0),
@@ -319,9 +321,16 @@ fn main() {
             connections::connect_remote,
             connections::disconnect_remote,
             connections::open_remote_workspace,
-            connections::open_local_workspace
+            connections::open_local_workspace,
+            updates::update_action
         ])
         .on_menu_event(|app, event| {
+            if event.id().as_ref() == "check-updates" {
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = updates::open(app).await;
+                });
+            }
             if event.id().as_ref() == "connect-device" {
                 // WebView2 creation from a synchronous menu callback deadlocks on Windows.
                 let app = app.clone();
@@ -352,7 +361,21 @@ fn main() {
                 true,
                 &[&connect],
             )?)?;
+            let updates = tauri::menu::MenuItem::with_id(
+                app,
+                "check-updates",
+                "检查更新…",
+                true,
+                None::<&str>,
+            )?;
+            menu.append(&tauri::menu::Submenu::with_items(
+                app,
+                "更新",
+                true,
+                &[&updates],
+            )?)?;
             app.set_menu(menu)?;
+            updates::automatic(app.handle().clone());
             match start_server(app.handle()) {
                 Ok((port, generation)) => wait_for_server(app.handle().clone(), port, generation),
                 Err(message) => {

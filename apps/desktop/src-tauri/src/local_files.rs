@@ -47,6 +47,13 @@ pub fn navigation(app: &tauri::AppHandle, source: &str, url: &tauri::Url) -> boo
     if url.scheme() != "takeboard-desktop" {
         return true;
     }
+    if url.host_str() == Some("updates") {
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            let _ = crate::updates::open(app).await;
+        });
+        return false;
+    }
     if url.host_str() == Some("connections") {
         let app = app.clone();
         tauri::async_runtime::spawn(async move {

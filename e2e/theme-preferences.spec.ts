@@ -13,6 +13,8 @@ test("fresh themes and explicit choices survive reload and desktop port changes"
   await expect(page.locator("html")).toHaveAttribute("data-theme", "chroma");
   await page.getByRole("button", { name: "打开工作区选项" }).click();
   await page.getByRole("button", { name: "黑曜主题" }).click();
+  await page.getByRole("button", { name: "显示大小：清晰" }).click();
+  await page.getByRole("button", { name: /大字/ }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "noir");
   await expect(page.getByRole("button", { name: "黑曜主题" })).toHaveAttribute(
     "aria-pressed",
@@ -53,6 +55,7 @@ test("fresh themes and explicit choices survive reload and desktop port changes"
     const newPage = await restarted.newPage();
     await newPage.goto(`http://127.0.0.1:${newPort}`);
     await expect(newPage.locator("html")).toHaveAttribute("data-theme", "noir");
+    await expect(newPage.locator("html")).toHaveAttribute("data-display-scale", "1-24");
     await newPage.getByRole("button", { name: "打开工作区选项" }).click();
     await newPage.getByRole("button", { name: "柔彩主题" }).click();
     await newPage.reload();

@@ -7,9 +7,13 @@ export type ProjectLocationChoice = { storageRootId: string; storageFolder: stri
 export function ProjectLocationPicker({
   onChange,
   onValid,
+  initialChoice,
+  label = "创建到",
 }: {
   onChange: (value: ProjectLocationChoice | null) => void;
   onValid: (value: boolean) => void;
+  initialChoice?: ProjectLocationChoice | undefined;
+  label?: string;
 }) {
   const [device, setDevice] = useState<DeviceInfo | null>(null);
   const [roots, setRoots] = useState<Array<{ id: string; name: string; path: string }>>([]);
@@ -55,8 +59,6 @@ export function ProjectLocationPicker({
       window.removeEventListener("takeboard:folder-picked", picked);
     };
   }, [folderRequest, onValid]);
-  const preference = `takeboard.project-location:${device?.instanceId || window.location.origin}`;
-
   useEffect(() => {
     let active = true;
     onValid(false);
@@ -65,29 +67,21 @@ export function ProjectLocationPicker({
       .then(async (current) => {
         if (!active) return;
         setDevice(current);
+        const settings = await deviceApi.settings();
+        if (!active) return;
         if (!current.canManage) {
           onChange(null);
-          onValid(true);
+          onValid(settings.available);
+          if (!settings.available) setError("设备默认项目位置不可用，请联系设备管理员");
           return;
         }
         const result = await deviceApi.storageRoots();
         if (!active) return;
+        setChoice(
+          initialChoice ??
+            settings.projectLocation ?? { storageRootId: "instance", storageFolder: "" },
+        );
         setRoots(result.roots);
-        try {
-          const saved = JSON.parse(
-            localStorage.getItem(
-              `takeboard.project-location:${current.instanceId || window.location.origin}`,
-            ) ?? "null",
-          );
-          if (
-            saved &&
-            result.roots.some((root) => root.id === saved.storageRootId) &&
-            typeof saved.storageFolder === "string"
-          )
-            setChoice(saved);
-        } catch {
-          /* Unavailable preferences do not prevent creating a project. */
-        }
       })
       .catch((cause) => {
         if (active) setError(cause instanceof Error ? cause.message : "无法读取项目位置");
@@ -95,7 +89,7 @@ export function ProjectLocationPicker({
     return () => {
       active = false;
     };
-  }, [onChange, onValid]);
+  }, [onChange, onValid, initialChoice]);
 
   useEffect(() => {
     if (!device?.canManage || !roots.length) return;
@@ -110,11 +104,6 @@ export function ProjectLocationPicker({
         setListing(result);
         onChange(choice);
         onValid(true);
-        try {
-          localStorage.setItem(preference, JSON.stringify(choice));
-        } catch {
-          /* optional */
-        }
       })
       .catch((cause) => {
         if (active) setError(cause instanceof Error ? cause.message : "位置不可用，请重新选择");
@@ -122,19 +111,20 @@ export function ProjectLocationPicker({
     return () => {
       active = false;
     };
-  }, [choice, device, roots, preference, onChange, onValid]);
+  }, [choice, device, roots, onChange, onValid]);
 
   return (
     <section className="project-location-picker">
       <span>
-        创建到 ·{" "}
+        {label} ·{" "}
         {connection?.kind === "local"
           ? "此电脑"
           : connection?.name || connection?.address || device?.name || "当前设备"}
       </span>
       <div className="project-location-summary">
         <code>
-          {listing?.path || (device?.canManage ? "正在读取保存位置…" : "设备默认项目位置")}
+          {listing?.path ||
+            (error ? "位置不可用" : device?.canManage ? "正在读取保存位置…" : "设备默认项目位置")}
         </code>
         {device?.canManage ? (
           connection?.kind === "local" && "__TAURI__" in window ? (

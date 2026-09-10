@@ -45,7 +45,9 @@ import {
 } from "./api";
 import { AccountButton, useAuth } from "./auth-ui";
 import { type BoardNode, boardNodeTypes } from "./board-nodes";
+import { optionalLocalStorage, optionalSessionStorage } from "./browser-storage";
 import { DeviceIndicator } from "./device-indicator";
+import { DisplaySettings } from "./display-settings";
 import { submitCandidates } from "./generation-session";
 import {
   loadModelPreferences,
@@ -55,6 +57,7 @@ import {
   workflowInputSlots,
 } from "./model-profiles";
 import { NumericInput } from "./numeric-input";
+import { SettingsButton } from "./settings-center";
 import { ThemeSwitcher } from "./theme-switcher";
 import { useRunRecovery } from "./use-run-recovery";
 
@@ -66,9 +69,6 @@ const ExecutionProvenance = lazy(() =>
 );
 const CommandHistory = lazy(() =>
   import("./command-history").then((module) => ({ default: module.CommandHistory })),
-);
-const DisplaySettings = lazy(() =>
-  import("./display-settings").then((module) => ({ default: module.DisplaySettings })),
 );
 const RecipeStudio = lazy(() =>
   import("./recipe-studio").then((module) => ({ default: module.RecipeStudio })),
@@ -2129,7 +2129,7 @@ export function App() {
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 1120);
   const [inspectorOpen, setInspectorOpen] = useState(() => window.innerWidth >= 1040);
   const [comfortableDensity, setComfortableDensity] = useState(
-    () => window.localStorage.getItem("takeboard.density") !== "compact",
+    () => optionalLocalStorage.getItem("takeboard.density") !== "compact",
   );
   const [shotQuery, setShotQuery] = useState("");
   const [shotFilter, setShotFilter] = useState<"all" | "todo" | "approved">("all");
@@ -2356,7 +2356,7 @@ export function App() {
 
   useEffect(() => {
     if (showHub || projectMode !== "demo" || !snapshot) return;
-    window.sessionStorage.setItem("takeboard.resumeDemo", "1");
+    optionalSessionStorage.setItem("takeboard.resumeDemo", "1");
   }, [projectMode, showHub, snapshot]);
 
   useEffect(() => {
@@ -2384,7 +2384,7 @@ export function App() {
   }, [notice]);
 
   useEffect(() => {
-    window.localStorage.setItem(
+    optionalLocalStorage.setItem(
       "takeboard.density",
       comfortableDensity ? "comfortable" : "compact",
     );
@@ -2392,7 +2392,7 @@ export function App() {
 
   useEffect(() => {
     const effectiveWidth = () => {
-      const scale = Number(window.localStorage.getItem("takeboard.display-scale")) || 1;
+      const scale = Number(document.documentElement.style.getPropertyValue("--ui-scale")) || 1.12;
       return window.innerWidth / scale;
     };
     let narrow = effectiveWidth() <= 1120;
@@ -3700,7 +3700,7 @@ export function App() {
         const payload = await projectApi.open(key);
         pendingSyncRef.current = null;
         setSyncStatus("current");
-        window.sessionStorage.removeItem("takeboard.resumeDemo");
+        optionalSessionStorage.removeItem("takeboard.resumeDemo");
         setBlankCanvasGuideOpen(false);
         setProjectKey(key);
         setProjectMode("project");
@@ -3725,11 +3725,11 @@ export function App() {
       setError(null);
       try {
         const payload = await projectApi.create(input);
-        window.sessionStorage.removeItem("takeboard.resumeDemo");
+        optionalSessionStorage.removeItem("takeboard.resumeDemo");
         let showFirstGuide = false;
         try {
-          showFirstGuide = window.localStorage.getItem("takeboard.blankCanvasGuideSeen") !== "1";
-          window.localStorage.setItem("takeboard.blankCanvasGuideSeen", "1");
+          showFirstGuide = optionalLocalStorage.getItem("takeboard.blankCanvasGuideSeen") !== "1";
+          optionalLocalStorage.setItem("takeboard.blankCanvasGuideSeen", "1");
         } catch {
           // Storage may be unavailable in privacy-restricted browser sessions.
         }
@@ -3893,8 +3893,8 @@ export function App() {
   }, [projectKey, projectMode, selectedShot, selectedShotWorkflowPath, snapshot, workflows]);
 
   useEffect(() => {
-    if (window.sessionStorage.getItem("takeboard.resumeDemo") !== "1") return;
-    window.sessionStorage.removeItem("takeboard.resumeDemo");
+    if (optionalSessionStorage.getItem("takeboard.resumeDemo") !== "1") return;
+    optionalSessionStorage.removeItem("takeboard.resumeDemo");
     void openDemo();
   }, [openDemo]);
 
@@ -4607,15 +4607,13 @@ export function App() {
       className={`app-shell ${sidebarOpen ? "sidebar-open" : "sidebar-collapsed"} ${inspectorVisible ? "inspector-open" : "inspector-collapsed"} ${comfortableDensity ? "density-comfortable" : "density-compact"}`}
     >
       <header className="topbar">
-        <DeviceIndicator
-          projectKey={projectMode === "project" ? (projectKey ?? undefined) : undefined}
-        />
         <div className="brand">
-          <span className="brand-mark">T</span>
-          <div>
-            <strong>TakeBoard</strong>
-            <span>OPEN FILMMAKING CANVAS</span>
-          </div>
+          <span className="brand-mark" title="TakeBoard">
+            T
+          </span>
+          <DeviceIndicator
+            projectKey={projectMode === "project" ? (projectKey ?? undefined) : undefined}
+          />
         </div>
         <button
           className={`project-heading ${canEditProject ? "" : "read-only"}`}
@@ -4675,6 +4673,7 @@ export function App() {
             扩展
           </button>
           <ThemeSwitcher compact />
+          <SettingsButton />
           <Suspense fallback={null}>
             <DisplaySettings compact />
           </Suspense>
@@ -4704,7 +4703,7 @@ export function App() {
               generationTokenRef.current += 1;
               setGenerationBusy(false);
               setGenerationProgress(null);
-              window.sessionStorage.removeItem("takeboard.resumeDemo");
+              optionalSessionStorage.removeItem("takeboard.resumeDemo");
               setShowHub(true);
             }}
           >

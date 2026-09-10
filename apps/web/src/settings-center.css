@@ -1,0 +1,84 @@
+.settings-center {
+  width: min(740px, calc(100vw - 24px));
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: clamp(18px, 4vw, 32px);
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: var(--panel);
+  color: var(--text-1);
+  box-shadow: 0 24px 90px #0005;
+  font-size: calc(14px * var(--ui-scale, 1));
+}
+.settings-center::backdrop {
+  background: #10141866;
+  backdrop-filter: blur(6px);
+}
+.settings-center header,
+.settings-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.settings-center header {
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.settings-center header > div {
+  flex: 1;
+}
+.settings-center h2,
+.settings-center h3 {
+  margin: 0;
+}
+.settings-center p {
+  line-height: 1.65;
+}
+.settings-center section {
+  padding: 22px 0;
+  border-bottom: 1px solid var(--line);
+}
+.settings-center fieldset {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+}
+.settings-center code,
+.settings-center p,
+.settings-center small {
+  overflow-wrap: anywhere;
+}
+.settings-center small {
+  font-size: 0.8em;
+  font-weight: 400;
+}
+.settings-center button,
+.settings-center a {
+  font: inherit;
+}
+.settings-center button {
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  color: inherit;
+  cursor: pointer;
+}
+.settings-center button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.settings-center a {
+  color: inherit;
+}
+.settings-center .display-settings-popover {
+  position: fixed;
+  inset: 12px;
+  width: auto;
+  max-width: 430px;
+  max-height: calc(100dvh - 24px);
+  margin: auto;
+  overflow: auto;
+}

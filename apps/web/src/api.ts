@@ -46,6 +46,15 @@ export type DeviceInfo = {
 };
 
 export const deviceApi = {
+  settings: () => jsonRequest<DeviceSettings>("/api/device/settings"),
+  saveSettings: (
+    revision: number,
+    projectLocation: { storageRootId: string; storageFolder: string },
+  ) =>
+    jsonRequest<{ revision: number }>("/api/device/settings", {
+      method: "PUT",
+      body: JSON.stringify({ revision, projectLocation }),
+    }),
   storageRoots: () =>
     jsonRequest<{ roots: Array<{ id: string; name: string; path: string }> }>("/api/storage/roots"),
   addStorageRoot: (path: string, name: string) =>
@@ -71,6 +80,14 @@ export const deviceApi = {
       deviceName: string;
       downloadIsCopy: boolean;
     }>(`/api/projects/${encodeURIComponent(key)}/location`),
+};
+
+export type DeviceSettings = {
+  revision: number;
+  projectLocation: { storageRootId: string; storageFolder: string } | null;
+  path: string | null;
+  available: boolean;
+  canManage: boolean;
 };
 
 export type ProjectCatalogItem = {

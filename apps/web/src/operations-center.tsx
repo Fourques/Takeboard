@@ -7,6 +7,7 @@ import type {
 } from "@takeboard/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { projectApi } from "./api";
+import { optionalLocalStorage } from "./browser-storage";
 
 const operationsCss = `.operations-control {
   position: relative;
@@ -586,7 +587,7 @@ function supportReportWithClient(report: OperationsDiagnostics) {
       language: navigator.language,
       viewport: { width: window.innerWidth, height: window.innerHeight },
       devicePixelRatio: window.devicePixelRatio,
-      displayScale: window.localStorage.getItem("takeboard.display-scale") ?? "default",
+      displayScale: document.documentElement.style.getPropertyValue("--ui-scale") || "default",
       theme: document.documentElement.dataset.theme ?? "noir",
       online: navigator.onLine,
     },
@@ -634,7 +635,7 @@ export function OperationsCenter({
   const [reportNotice, setReportNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(
-    () => window.localStorage.getItem("takeboard.task-notifications") === "1",
+    () => optionalLocalStorage.getItem("takeboard.task-notifications") === "1",
   );
   const previousStatuses = useRef<Map<string, RunStatus> | null>(null);
   const shell = useRef<HTMLDivElement>(null);
@@ -762,7 +763,7 @@ export function OperationsCenter({
     }
     const next = !notificationsEnabled;
     setNotificationsEnabled(next);
-    window.localStorage.setItem("takeboard.task-notifications", next ? "1" : "0");
+    optionalLocalStorage.setItem("takeboard.task-notifications", next ? "1" : "0");
   };
 
   const cancelTask = async (task: OperationTask) => {

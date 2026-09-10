@@ -1,17 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { type DisplayScale, displayScales, resolveDisplayScale } from "./display-scale";
+import { rememberDisplayPreference, savedScale, savedSceneQuality } from "./display-preferences";
+import { type DisplayScale, displayScales } from "./display-scale";
 
 export { resolveDisplayScale } from "./display-scale";
 export type SceneQuality = "auto" | "full" | "lite";
-
-function savedScale(): DisplayScale {
-  return resolveDisplayScale(window.localStorage.getItem("takeboard.display-scale"));
-}
-
-function savedSceneQuality(): SceneQuality {
-  const value = window.localStorage.getItem("takeboard.scene-quality");
-  return value === "full" || value === "lite" ? value : "auto";
-}
 
 export function DisplaySettings({ compact = false }: { compact?: boolean }) {
   const [scale, setScale] = useState<DisplayScale>(savedScale);
@@ -23,17 +15,28 @@ export function DisplaySettings({ compact = false }: { compact?: boolean }) {
     document.documentElement.style.setProperty("--ui-scale", String(scale));
     document.documentElement.style.setProperty("--ui-scale-inverse", String(1 / scale));
     document.documentElement.dataset.displayScale = String(scale).replace(".", "-");
-    window.localStorage.setItem("takeboard.display-scale", String(scale));
+    rememberDisplayPreference("display-scale", String(scale));
     window.dispatchEvent(new CustomEvent("takeboard:display-scale", { detail: scale }));
     window.requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
   }, [scale]);
 
   useEffect(() => {
-    window.localStorage.setItem("takeboard.scene-quality", sceneQuality);
+    rememberDisplayPreference("scene-quality", sceneQuality);
     window.dispatchEvent(
       new CustomEvent<SceneQuality>("takeboard:scene-quality", { detail: sceneQuality }),
     );
   }, [sceneQuality]);
+
+  useEffect(() => {
+    const size = (event: Event) => setScale((event as CustomEvent<DisplayScale>).detail);
+    const quality = (event: Event) => setSceneQuality((event as CustomEvent<SceneQuality>).detail);
+    window.addEventListener("takeboard:display-scale", size);
+    window.addEventListener("takeboard:scene-quality", quality);
+    return () => {
+      window.removeEventListener("takeboard:display-scale", size);
+      window.removeEventListener("takeboard:scene-quality", quality);
+    };
+  }, []);
 
   useEffect(() => {
     if (!open) return;

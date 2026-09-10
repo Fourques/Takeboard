@@ -8,8 +8,10 @@ import type {
 import { projectApi, workerApi } from "./api";
 import { AccountButton, useAuth } from "./auth-ui";
 import { DeviceIndicator } from "./device-indicator";
+import { savedSceneQuality } from "./display-preferences";
 import { DisplaySettings, type SceneQuality } from "./display-settings";
 import { type ProjectLocationChoice, ProjectLocationPicker } from "./project-location-picker";
+import { SettingsButton } from "./settings-center";
 import { ThemeSwitcher } from "./theme-switcher";
 
 const loadStudioUniverse = () =>
@@ -644,11 +646,6 @@ const hubChromeCss = `.hub-header {
     color-mix(in srgb, var(--hub-bg) 68%, transparent)
   );
 }`;
-
-function savedSceneQuality(): SceneQuality {
-  const value = window.localStorage.getItem("takeboard.scene-quality");
-  return value === "full" || value === "lite" ? value : "auto";
-}
 
 const companionMessages = {
   crew: "已打板",
@@ -1663,6 +1660,7 @@ export function ProjectHub({
                     <div className="hub-utility-settings">
                       <ThemeSwitcher />
                       <DisplaySettings />
+                      <SettingsButton />
                     </div>
                   </div>
                 </section>

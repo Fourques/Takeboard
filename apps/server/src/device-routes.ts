@@ -3,6 +3,7 @@ import { hostname } from "node:os";
 import { join, resolve } from "node:path";
 import type { FastifyInstance } from "fastify";
 import { authContext } from "./auth-routes.js";
+import { readDeviceSettings, saveDeviceSettings } from "./device-settings.js";
 import {
   addStorageRoot,
   projectDirectory,
@@ -16,6 +17,63 @@ import { ProjectStore } from "./storage/project-store.js";
 /** Device identity is separate from the GPU returned by ComfyUI. */
 export function registerDeviceRoutes(app: FastifyInstance, projectsRoot: string) {
   const root = resolve(projectsRoot);
+  app.get("/api/device/settings", async (request, reply) => {
+    reply.header("cache-control", "no-store");
+    const context = authContext(request);
+    const canManage = !context || context.local || context.user.instanceRole === "admin";
+    const settings = await readDeviceSettings(root);
+    let path: string | null = null;
+    let available = false;
+    try {
+      path = (
+        await storageFolder(
+          root,
+          settings.projectLocation.storageRootId,
+          settings.projectLocation.storageFolder,
+        )
+      ).path;
+      available = true;
+    } catch {
+      /* Keep the configured location: never silently fall back to another disk. */
+    }
+    return {
+      revision: settings.revision,
+      projectLocation: canManage ? settings.projectLocation : null,
+      path: canManage ? path : null,
+      available,
+      canManage,
+    };
+  });
+  app.put<{
+    Body: {
+      revision?: number;
+      projectLocation?: { storageRootId?: string; storageFolder?: string };
+    };
+  }>("/api/device/settings", async (request, reply) => {
+    const context = authContext(request);
+    if (context && !context.local && context.user.instanceRole !== "admin")
+      return await reply.code(403).send({ error: "只有设备管理员可以修改默认项目位置" });
+    const { revision, projectLocation } = request.body ?? {};
+    if (
+      !Number.isSafeInteger(revision) ||
+      typeof projectLocation?.storageRootId !== "string" ||
+      typeof projectLocation.storageFolder !== "string"
+    )
+      return await reply.code(400).send({ error: "设备设置无效" });
+    const release = await acquireProjectLock(`device-settings:${root}`);
+    try {
+      return await saveDeviceSettings(root, revision as number, {
+        storageRootId: projectLocation.storageRootId,
+        storageFolder: projectLocation.storageFolder,
+      });
+    } catch (cause) {
+      return await reply
+        .code((cause as { statusCode?: number }).statusCode === 409 ? 409 : 400)
+        .send({ error: cause instanceof Error ? cause.message : "无法保存设备设置" });
+    } finally {
+      release();
+    }
+  });
   app.get("/api/storage/roots", async (request, reply) => {
     const context = authContext(request);
     if (context && !context.local && context.user.instanceRole !== "admin")

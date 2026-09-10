@@ -20,6 +20,7 @@ import {
 import type { FastifyInstance } from "fastify";
 import { authContext } from "./auth-routes.js";
 import type { AuthService } from "./auth-service.js";
+import { readDeviceSettings } from "./device-settings.js";
 import type { ExtensionRegistry } from "./extension-registry.js";
 import {
   createProjectArchive,
@@ -511,7 +512,8 @@ export function registerProjectRoutes(
     const suffix = `${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
     const key = `${slugify(title)}-${suffix}.takeboard`;
     let destination = join(root, key);
-    if (body.storageRootId !== undefined || body.storageFolder !== undefined) {
+    const customLocation = body.storageRootId !== undefined || body.storageFolder !== undefined;
+    if (customLocation) {
       const context = authContext(request);
       if (context && !context.local && context.user.instanceRole !== "admin")
         return await reply.code(403).send({ error: "自定义项目位置需要设备管理权限" });
@@ -520,12 +522,16 @@ export function registerProjectRoutes(
         (body.storageFolder !== undefined && typeof body.storageFolder !== "string")
       )
         return await reply.code(400).send({ error: "项目位置无效" });
+    }
+    const location = customLocation
+      ? {
+          storageRootId: body.storageRootId as string,
+          storageFolder: (body.storageFolder as string | undefined) ?? "",
+        }
+      : (await readDeviceSettings(root)).projectLocation;
+    if (customLocation || location.storageRootId !== "instance" || location.storageFolder !== "") {
       try {
-        const selected = await storageFolder(
-          root,
-          body.storageRootId,
-          (body.storageFolder as string | undefined) ?? "",
-        );
+        const selected = await storageFolder(root, location.storageRootId, location.storageFolder);
         const safeTitle =
           [...title]
             .map((character) =>
@@ -540,9 +546,12 @@ export function registerProjectRoutes(
         }
         destination = join(selected.path, `${folderTitle} (${suffix}).takeboard`);
       } catch (cause) {
-        return await reply
-          .code(400)
-          .send({ error: cause instanceof Error ? cause.message : "项目位置不可用" });
+        return await reply.code(400).send({
+          error:
+            customLocation && cause instanceof Error
+              ? cause.message
+              : "默认项目位置不可用，请在设置中检查文件夹；未创建替代项目",
+        });
       }
     }
     // Reserve an exclusive folder. Never let project creation overwrite an existing directory.

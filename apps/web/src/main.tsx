@@ -3,18 +3,13 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { AppErrorBoundary } from "./app-error-boundary";
 import { AuthGate } from "./auth-ui";
-import { resolveDisplayScale } from "./display-scale";
+import { savedScale } from "./display-preferences";
+import { SettingsHost } from "./settings-center";
 import { readThemePreference, rememberTheme } from "./theme-preferences";
 import "./styles.css";
 
 rememberTheme(readThemePreference());
-let savedDisplayScale: string | null = null;
-try {
-  savedDisplayScale = window.localStorage.getItem("takeboard.display-scale");
-} catch {
-  // Blocked browser storage must not break first paint or theme recovery.
-}
-const displayScale = resolveDisplayScale(savedDisplayScale);
+const displayScale = savedScale();
 document.documentElement.style.setProperty("--ui-scale", String(displayScale));
 document.documentElement.style.setProperty("--ui-scale-inverse", String(1 / displayScale));
 document.documentElement.dataset.displayScale = String(displayScale).replace(".", "-");
@@ -30,6 +25,7 @@ createRoot(rootElement).render(
     <AppErrorBoundary>
       <AuthGate>
         <App />
+        <SettingsHost />
       </AuthGate>
     </AppErrorBoundary>
   </StrictMode>,

@@ -203,6 +203,24 @@ describe("TakeBoard authentication and authorization", () => {
       headers: { cookie: member.cookie },
     });
     expect(restrictedDevice.json()).toMatchObject({ canManage: false, projectsDirectory: null });
+    expect(
+      (
+        await app.inject({ url: "/api/device/settings", headers: { cookie: member.cookie } })
+      ).json(),
+    ).toMatchObject({ canManage: false, projectLocation: null, path: null });
+    expect(
+      (
+        await app.inject({
+          method: "PUT",
+          url: "/api/device/settings",
+          headers: { cookie: member.cookie, "x-takeboard-csrf": member.csrf },
+          payload: {
+            revision: 0,
+            projectLocation: { storageRootId: "instance", storageFolder: "" },
+          },
+        })
+      ).statusCode,
+    ).toBe(403);
     const arbitraryLocation = await app.inject({
       method: "POST",
       url: "/api/projects",

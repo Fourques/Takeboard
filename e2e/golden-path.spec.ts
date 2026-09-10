@@ -705,6 +705,19 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
     "双击或右键空白处",
   );
   await page.getByRole("button", { name: "关闭画布操作说明" }).click();
+  const avatar = await page.locator(".topbar .account-button.compact").boundingBox();
+  if (!avatar) throw new Error("Account button is missing");
+  expect(avatar.height).toBeLessThanOrEqual(40);
+  await page.getByRole("button", { name: "设置", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "设置", exact: true });
+  await expect(settings).toBeVisible();
+  await settings.getByRole("button", { name: "关闭设置" }).focus();
+  await page.keyboard.press("Delete");
+  await page.keyboard.press("Control+d");
+  await settings.press("Escape");
+  await expect(settings).not.toBeVisible();
+  await expect(page.locator(".react-flow__node-shot")).toHaveCount(1);
+  await expect(page.getByRole("dialog", { name: /删除/ })).toHaveCount(0);
   await page.getByRole("button", { name: "柔彩主题" }).click();
   await page.locator(".recipe-selector").click();
   await expect(page.getByRole("heading", { name: "工作流与模型" })).toBeVisible();

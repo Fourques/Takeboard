@@ -1047,6 +1047,7 @@ label.auth-remember {
   min-height: 36px;
   padding: 2px;
   grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
 }
 
 .account-button.compact > span {
@@ -2135,7 +2136,7 @@ html[data-theme="chroma"] body {
   box-shadow: 0 0 20px rgb(214 169 95 / 16%);
 }
 
-.brand div,
+.brand > div,
 .project-heading div {
   display: flex;
   flex-direction: column;
@@ -2150,7 +2151,7 @@ html[data-theme="chroma"] body {
   letter-spacing: 0.03em;
 }
 
-.brand div span {
+.brand > div > span {
   color: #6f7773;
   font-size: 7px;
   letter-spacing: 0.18em;
@@ -4115,6 +4116,7 @@ button.save-status {
 /* Creator workstation */
 .theme-switcher {
   display: flex;
+  flex-shrink: 0;
   margin: 0;
   min-width: 0;
   padding: 3px;
@@ -6465,7 +6467,7 @@ html[data-theme="chroma"] .loading-mark {
 }
 .local-badge {
   border-color: color-mix(in srgb, var(--green) 38%, var(--line));
-  color: var(--green);
+  color: var(--text-2);
   background: color-mix(in srgb, var(--surface-2) 88%, var(--green) 8%);
 }
 .generation-console,
@@ -8604,6 +8606,7 @@ a:focus-visible {
   gap: 6px;
 }
 
+.settings-entry,
 .density-button,
 .panel-toggle,
 .focus-toggle {
@@ -8613,6 +8616,7 @@ a:focus-visible {
   cursor: pointer;
 }
 
+.settings-entry,
 .density-button {
   display: flex;
   align-items: center;
