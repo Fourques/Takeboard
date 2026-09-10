@@ -4,11 +4,18 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 import { inspectService, startService } from "./remote-service.mjs";
 
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), "takeboard-service-test-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
+  const cleanup = [];
+  t.after(async () => {
+    // Node after hooks run in registration order. Stop owned services before
+    // removing their working directory (Windows correctly refuses otherwise).
+    for (const close of cleanup.reverse()) await close();
+    await rm(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  });
   const bundle = join(root, "bundle");
   const data = join(root, "data");
   await mkdir(bundle);
@@ -16,11 +23,11 @@ async function fixture(t) {
   await writeFile(join(bundle, "BUILD.json"), JSON.stringify({ applicationVersion: "1.2.3" }));
   await writeFile(join(bundle, "launcher.mjs"), "process.exitCode = 17;");
   await writeFile(join(data, ".takeboard-instance-id"), "service-test-instance");
-  return { bundle, data };
+  return { bundle, data, after: (close) => cleanup.push(close) };
 }
 
 test("inspection is read-only; a reused running server is not stopped or relaunched", async (t) => {
-  const { bundle, data } = await fixture(t);
+  const { bundle, data, after } = await fixture(t);
   assert.equal((await inspectService(bundle, data)).state, "stopped");
   const server = createServer((_request, response) =>
     response.end(
@@ -33,7 +40,7 @@ test("inspection is read-only; a reused running server is not stopped or relaunc
     ),
   );
   await new Promise((done) => server.listen(0, "127.0.0.1", done));
-  t.after(() => {
+  after(() => {
     server.closeAllConnections();
     return new Promise((done) => server.close(done));
   });
@@ -53,10 +60,10 @@ test("inspection is read-only; a reused running server is not stopped or relaunc
 });
 
 test("unresponsive live process and corrupt identity block startup without killing anything", async (t) => {
-  const { bundle, data } = await fixture(t);
+  const { bundle, data, after } = await fixture(t);
   const server = createServer((_request, response) => response.end("x".repeat(20000)));
   await new Promise((done) => server.listen(0, "127.0.0.1", done));
-  t.after(() => {
+  after(() => {
     server.closeAllConnections();
     return new Promise((done) => server.close(done));
   });
@@ -101,11 +108,24 @@ async function fixtureLauncher(bundle, reportedVersion) {
 }
 
 test("authorized detached startup returns a verified port and survives the helper disconnect", async (t) => {
-  const { bundle, data } = await fixture(t);
+  const { bundle, data, after } = await fixture(t);
   await fixtureLauncher(bundle, "1.2.3");
   let port;
-  t.after(async () => {
-    if (port) await fetch(`http://127.0.0.1:${port}/test-shutdown`);
+  after(async () => {
+    if (!port) return;
+    const { pid } = JSON.parse(await readFile(join(data, ".system", "instance.json"), "utf8"));
+    await fetch(`http://127.0.0.1:${port}/test-shutdown`, { signal: AbortSignal.timeout(5000) });
+    const deadline = Date.now() + 5000;
+    while (true) {
+      try {
+        process.kill(pid, 0);
+      } catch (error) {
+        if (error.code === "ESRCH") break;
+        throw error;
+      }
+      assert(Date.now() < deadline, "Owned fixture process did not exit after shutdown");
+      await delay(25);
+    }
   });
   const running = await startService(bundle, data, "service-test-instance");
   port = running.port;
