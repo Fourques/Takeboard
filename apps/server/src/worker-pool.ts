@@ -13,7 +13,7 @@ import { workerDefinitionSchema } from "@takeboard/contracts";
 import { createTakeBoardId, toIsoTimestamp } from "@takeboard/domain";
 import { ComfyClient } from "@takeboard/executor-comfy";
 
-type WorkerFile = { version: 1; workers: WorkerDefinition[] };
+type WorkerFile = { version: 1; workers: WorkerDefinition[]; selectedWorkerId?: string };
 
 export type WorkerSelectionInput = {
   policy: ExecutionPolicy;
@@ -134,7 +134,12 @@ function policyLabel(policy: ExecutionPolicy) {
 }
 
 export class WorkerPool {
-  readonly defaultWorkerId: string;
+  readonly localWorkerId: string;
+  private selectedWorkerId: string | undefined;
+  private readonly managedEndpoints = new Map<string, string | null>();
+  get defaultWorkerId() {
+    return this.selectedWorkerId ?? this.localWorkerId;
+  }
   private workers: WorkerDefinition[];
   private readonly clients = new Map<string, ComfyClient>();
   private readonly runtimeFetch: typeof fetch;
@@ -146,7 +151,7 @@ export class WorkerPool {
   ) {
     this.runtimeFetch = runtimeFetch;
     const primary = defaultWorker(defaultEndpoint);
-    this.defaultWorkerId = primary.id;
+    this.localWorkerId = primary.id;
     this.workers = this.load();
     const existing = this.workers.find((worker) => worker.id === primary.id);
     if (existing) {
@@ -169,6 +174,12 @@ export class WorkerPool {
     try {
       const payload = JSON.parse(readFileSync(this.storagePath, "utf8")) as Partial<WorkerFile>;
       if (payload.version !== 1 || !Array.isArray(payload.workers)) return [];
+      if (
+        payload.workers.some(
+          (worker) => worker.id === payload.selectedWorkerId && !worker.retiredAt,
+        )
+      )
+        this.selectedWorkerId = payload.selectedWorkerId;
       return payload.workers.flatMap((worker) => {
         const parsed = workerDefinitionSchema.safeParse(worker);
         return parsed.success ? [parsed.data] : [];
@@ -183,7 +194,7 @@ export class WorkerPool {
     const temporary = `${this.storagePath}.${process.pid}.${randomUUID()}.tmp`;
     await writeFile(
       temporary,
-      `${JSON.stringify({ version: 1, workers: this.workers } satisfies WorkerFile, null, 2)}\n`,
+      `${JSON.stringify({ version: 1, workers: this.workers, ...(this.selectedWorkerId ? { selectedWorkerId: this.selectedWorkerId } : {}) } satisfies WorkerFile, null, 2)}\n`,
       { flag: "w", mode: 0o600 },
     );
     await rename(temporary, this.storagePath);
@@ -198,6 +209,25 @@ export class WorkerPool {
 
   definition(workerId: string) {
     return this.workers.find((worker) => worker.id === workerId) ?? null;
+  }
+
+  async selectDefault(workerId: string) {
+    const worker = this.definition(workerId);
+    if (!worker || worker.retiredAt || !worker.enabled) throw new Error("生成服务不可用");
+    const previous = this.selectedWorkerId;
+    this.selectedWorkerId = workerId;
+    try {
+      await this.persist();
+    } catch (error) {
+      this.selectedWorkerId = previous;
+      throw error;
+    }
+  }
+
+  /** SSH ports are runtime state, never persisted as the server's identity. */
+  setManagedEndpoint(workerId: string, endpoint: string | null) {
+    this.managedEndpoints.set(workerId, endpoint);
+    this.invalidateClients(workerId);
   }
 
   async add(input: Omit<WorkerDefinition, "id" | "retiredAt" | "createdAt" | "updatedAt">) {
@@ -222,6 +252,11 @@ export class WorkerPool {
     const current = this.definition(workerId);
     if (!current) throw new Error("执行端不存在");
     if (current.retiredAt !== null) throw new Error("执行端已经移除，不能继续修改");
+    if (
+      this.managedEndpoints.has(workerId) &&
+      (patch.endpoint !== undefined || patch.transport !== undefined || patch.kind !== undefined)
+    )
+      throw new Error("SSH 设备地址请在生成服务连接中管理，不能改写任务绑定的执行端");
     const updated = workerDefinitionSchema.parse({
       ...current,
       ...patch,
@@ -247,7 +282,8 @@ export class WorkerPool {
   }
 
   async remove(workerId: string) {
-    if (workerId === this.defaultWorkerId) throw new Error("默认执行端不能删除，可以停用");
+    if (workerId === this.defaultWorkerId || workerId === this.localWorkerId)
+      throw new Error("默认执行端不能删除，可以停用");
     const current = this.definition(workerId);
     if (!current || current.retiredAt !== null) return false;
     const retiredAt = toIsoTimestamp();
@@ -267,20 +303,29 @@ export class WorkerPool {
   }
 
   client(workerId: string | null | undefined, liveProgress = true) {
-    const worker = this.definition(workerId ?? "") ?? this.definition(this.defaultWorkerId);
+    const worker = this.definition(workerId || this.defaultWorkerId);
     if (!worker) throw new Error("没有可用的 ComfyUI 执行端");
     const cacheKey = `${worker.id}:${liveProgress ? "live" : "quiet"}`;
     const cached = this.clients.get(cacheKey);
     if (cached) return cached;
-    const client = new ComfyClient(worker.endpoint, { liveProgress });
+    const endpoint = this.endpoint(worker.id);
+    if (!endpoint) throw new Error("生成服务不存在，请恢复原来的连接；不会改用其他设备");
+    const client = new ComfyClient(endpoint, { liveProgress });
     this.clients.set(cacheKey, client);
     return client;
   }
 
   endpoint(workerId: string | null | undefined) {
-    return (
-      this.definition(workerId ?? "")?.endpoint ?? this.definition(this.defaultWorkerId)?.endpoint
-    );
+    const id = workerId || this.defaultWorkerId;
+    if (this.managedEndpoints.has(id)) {
+      const endpoint = this.managedEndpoints.get(id);
+      if (!endpoint) throw new Error("SSH 连接尚未恢复，等待原生成设备重新连接");
+      return endpoint;
+    }
+    const endpoint = this.definition(id)?.endpoint;
+    if (endpoint?.startsWith("http://127.0.0.1:1/ssh/"))
+      throw new Error("SSH 连接记录尚未恢复，不能使用临时端口或其他设备替代");
+    return endpoint;
   }
 
   async probe(worker: WorkerDefinition): Promise<WorkerHealth> {
@@ -302,7 +347,8 @@ export class WorkerPool {
     }
     const startedAt = performance.now();
     try {
-      const statsResponse = await this.runtimeFetch(`${worker.endpoint}/system_stats`, {
+      const endpoint = this.endpoint(worker.id);
+      const statsResponse = await this.runtimeFetch(`${endpoint}/system_stats`, {
         signal: AbortSignal.timeout(3_000),
       });
       if (!statsResponse.ok) throw new Error(`HTTP ${statsResponse.status}`);
@@ -310,7 +356,7 @@ export class WorkerPool {
         system?: { comfyui_version?: string };
         devices?: Array<{ name?: string; vram_total?: number; vram_free?: number }>;
       };
-      const queueResponse = await this.runtimeFetch(`${worker.endpoint}/queue`, {
+      const queueResponse = await this.runtimeFetch(`${endpoint}/queue`, {
         signal: AbortSignal.timeout(3_000),
       }).catch(() => null);
       const queue =
@@ -357,6 +403,8 @@ export class WorkerPool {
   }
 
   async select(input: WorkerSelectionInput): Promise<WorkerSelection> {
+    if (this.selectedWorkerId && !input.requestedWorkerId && input.policy === "balanced")
+      input = { ...input, requestedWorkerId: this.selectedWorkerId };
     const enabledWorkers = this.workers.filter(
       (worker) => worker.enabled && worker.retiredAt === null,
     );

@@ -272,6 +272,7 @@ export type ProjectBoardPreview = {
 };
 
 export type WorkerStatus = {
+  connection?: GenerationConnection | null;
   control?: { canStop: boolean; message: string };
   status: "ready" | "offline";
   engine: string;
@@ -533,7 +534,7 @@ async function jsonRequest<T>(path: string, options?: RequestInit): Promise<T> {
   return payload;
 }
 
-type CommandResponse = DemoPayload & {
+export type CommandResponse = DemoPayload & {
   key: string;
   commandId: string;
   replayed: boolean;
@@ -564,6 +565,9 @@ async function executeProjectCommand(
     command.type === "canvas.arrange_scene";
   const confirmedPreview =
     preview ?? (requiresPreview ? (await previewProjectCommand(key, command)).preview : null);
+  if (!preview && confirmedPreview?.requiresConfirmation) {
+    throw new Error("此操作会改变已有内容，请先查看影响并确认");
+  }
   return await jsonRequest<CommandResponse>(`/api/projects/${encodeURIComponent(key)}/commands`, {
     method: "POST",
     body: JSON.stringify({
@@ -802,7 +806,7 @@ export const projectApi = {
           percent: number | null;
           nodeId: string | null;
           queueRemaining: number | null;
-          source: "comfy_websocket" | "comfy_history";
+          source: "comfy_websocket" | "comfy_history" | "output_transfer";
           updatedAt: string;
         } | null;
       }
@@ -903,11 +907,12 @@ export const projectApi = {
   assetUrl: (key: string, assetId: string, proxy = false) =>
     `/api/projects/${encodeURIComponent(key)}/assets/${encodeURIComponent(assetId)}/content${proxy ? "?proxy=1" : ""}`,
   worker: async () => {
-    const [worker, fleet] = await Promise.all([
+    const [worker, fleet, connection] = await Promise.all([
       jsonRequest<WorkerStatus>("/api/workers/comfy"),
       jsonRequest<NonNullable<WorkerStatus["fleet"]>>("/api/workers"),
+      generationConnectionApi.status().catch(() => null),
     ]);
-    return { ...worker, fleet } satisfies WorkerStatus;
+    return { ...worker, fleet, connection } satisfies WorkerStatus;
   },
   startWorker: async () => {
     const response = await apiFetch("/api/workers/comfy/start", {
@@ -930,6 +935,28 @@ export const projectApi = {
     jsonRequest<{ stopped: boolean }>("/api/workers/comfy/stop", {
       method: "POST",
       body: JSON.stringify({ action: "safe-stop" }),
+    }),
+};
+
+export type GenerationConnectionTarget =
+  | { kind: "ssh"; host: string; port: number; name: string }
+  | { kind: "url"; url: string; name: string };
+export type GenerationConnection = {
+  workerId: string;
+  localWorkerId: string;
+  name: string;
+  address: string;
+  kind: "ssh" | "url" | "existing";
+  state: "connecting" | "offline" | "configured";
+  error: string | null;
+  profiles: Array<{ workerId: string; target: GenerationConnectionTarget }>;
+};
+export const generationConnectionApi = {
+  status: () => jsonRequest<GenerationConnection>("/api/generation/connection"),
+  connect: (target: GenerationConnectionTarget | { workerId: string }) =>
+    jsonRequest<GenerationConnection>("/api/generation/connection", {
+      method: "POST",
+      body: JSON.stringify(target),
     }),
 };
 

@@ -20,6 +20,35 @@ export function registerProjectCommandRoutes(app: FastifyInstance, projectsRoot:
   const root = resolve(projectsRoot);
   const commands = new ProjectCommandService();
 
+  // Released Web clients already use /commands. Keep only an explicit migration
+  // response for external scripts; never silently translate destructive writes.
+  const retiredRoutes = [
+    ["POST", "shots"],
+    ["DELETE", "shots/:shotId"],
+    ["POST", "text-nodes"],
+    ["POST", "canvas-connections"],
+    ["DELETE", "canvas-connections"],
+    ["DELETE", "canvas-connections/:edgeId"],
+    ["PATCH", "canvas-position"],
+    ["POST", "canvas-items"],
+    ["POST", "canvas-items/:itemId/duplicate"],
+    ["PATCH", "canvas-items/:itemId"],
+    ["DELETE", "canvas-items/:itemId"],
+  ] as const;
+  for (const [method, path] of retiredRoutes) {
+    app.route({
+      method,
+      url: `/api/projects/:key/${path}`,
+      handler: async (_request, reply) =>
+        reply.code(410).send({
+          code: "LEGACY_CANVAS_API_RETIRED",
+          error: "旧画布接口已停用，请使用项目 commands 接口；需要确认的操作请先预览。",
+          replacement: "/api/projects/:key/commands",
+          preview: "/api/projects/:key/commands/preview",
+        }),
+    });
+  }
+
   app.post<{ Params: { key: string } }>(
     "/api/projects/:key/commands/preview",
     async (request, reply) => {

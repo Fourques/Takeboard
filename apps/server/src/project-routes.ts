@@ -101,35 +101,6 @@ function canvasItemLabel(snapshot: ProjectSnapshot, item: { refType: string; ref
   return shot?.label || (item.refType === "take_stack" ? "生成结果" : "镜头");
 }
 
-function canvasSourceAssetId(
-  snapshot: ProjectSnapshot,
-  source: ProjectSnapshot["canvasItems"][number],
-  mediaType: "image" | "video" | "audio",
-) {
-  if (source.refType === "asset") return source.refId;
-  if (source.refType === "entity") {
-    return snapshot.entities
-      .find((entity) => entity.id === source.refId)
-      ?.referenceAssetIds.find((assetId) =>
-        snapshot.assets.some((asset) => asset.id === assetId && asset.mediaType === mediaType),
-      );
-  }
-  if (source.refType === "shot") {
-    const shot = snapshot.shots.find((candidate) => candidate.id === source.refId);
-    const take =
-      snapshot.takes.find((candidate) => candidate.id === shot?.approvedTakeId) ??
-      [...snapshot.takes]
-        .reverse()
-        .find((candidate) => candidate.shotId === source.refId && candidate.status !== "rejected");
-    return snapshot.assets.some(
-      (asset) => asset.id === take?.assetId && asset.mediaType === mediaType,
-    )
-      ? take?.assetId
-      : undefined;
-  }
-  return undefined;
-}
-
 export function projectKey(value: unknown): string | null {
   if (typeof value !== "string" || !/^[a-z0-9][a-z0-9-]{0,80}\.takeboard$/.test(value)) {
     return null;
@@ -205,17 +176,26 @@ function safeChild(root: string, relativePath: string) {
 async function cleanupDeletedProjectRun(
   run: ProjectSnapshot["runs"][number],
   options: ProjectRouteOptions,
+  projectId: string,
 ) {
+  if (run.workerId && run.workerId !== options.workerPool.localWorkerId) return;
   const inputFiles = Array.isArray(run.parameters.comfyInputFiles)
     ? run.parameters.comfyInputFiles.filter((value): value is string => typeof value === "string")
     : [];
   const outputDirectory = run.parameters.comfyOutputDirectory;
   await Promise.allSettled([
     ...inputFiles.flatMap((file) => {
-      const target = options.comfyInputRoot ? safeChild(options.comfyInputRoot, file) : null;
+      const target =
+        options.comfyInputRoot &&
+        file.startsWith(`takeboard_${run.id}_`) &&
+        !file.includes("/") &&
+        !file.includes("\\")
+          ? safeChild(options.comfyInputRoot, file)
+          : null;
       return target ? [unlink(target)] : [];
     }),
-    ...(options.comfyOutputRoot && typeof outputDirectory === "string"
+    ...(options.comfyOutputRoot &&
+    outputDirectory === `takeboard/${projectId}/${run.shotId}/${run.id}`
       ? (() => {
           const target = safeChild(options.comfyOutputRoot, outputDirectory);
           return target ? [rm(target, { recursive: true, force: true })] : [];
@@ -632,197 +612,6 @@ export function registerProjectRoutes(
       .send(archive);
   });
 
-  app.post<{ Params: { key: string } }>("/api/projects/:key/shots", async (request, reply) => {
-    const key = projectKey(request.params.key);
-    const body =
-      typeof request.body === "object" && request.body !== null
-        ? (request.body as Record<string, unknown>)
-        : {};
-    const ratio = typeof body.aspectRatio === "string" ? body.aspectRatio : "16:9";
-    if (!key || !allowedRatios.has(ratio as AspectRatio)) {
-      return await reply.code(400).send({ error: key ? "镜头画幅无效" : "项目标识无效" });
-    }
-    const store = ProjectStore.openExisting(projectDirectory(root, key));
-    if (!store) return await reply.code(404).send({ error: "项目不存在" });
-    try {
-      const current = store.loadCurrent();
-      if (!current) return await reply.code(404).send({ error: "项目不存在" });
-      const scene =
-        (typeof body.sceneId === "string"
-          ? current.snapshot.scenes.find((item) => item.id === body.sceneId)
-          : undefined) ?? current.snapshot.scenes[0];
-      if (!scene) return await reply.code(409).send({ error: "项目还没有可用画板" });
-      const timestamp = toIsoTimestamp();
-      const shotId = createTakeBoardId("shot");
-      const itemId = createTakeBoardId("canvas_item");
-      const order = current.snapshot.shots.filter((shot) => shot.sceneId === scene.id).length;
-      current.snapshot.shots.push({
-        id: shotId,
-        projectId: current.snapshot.project.id,
-        sceneId: scene.id,
-        label:
-          typeof body.label === "string" && body.label.trim()
-            ? body.label.trim().slice(0, 80)
-            : `SH-${String(order + 1).padStart(2, "0")}`,
-        order,
-        intent: typeof body.intent === "string" ? body.intent.slice(0, 20_000) : "",
-        durationSeconds:
-          typeof body.durationSeconds === "number" &&
-          body.durationSeconds > 0 &&
-          body.durationSeconds <= 300
-            ? body.durationSeconds
-            : 5,
-        aspectRatio: ratio as AspectRatio,
-        workflowPath: null,
-        status: "draft",
-        approvedTakeId: null,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      });
-      current.snapshot.canvasItems.push({
-        id: itemId,
-        sceneId: scene.id,
-        refType: "shot",
-        refId: shotId,
-        x: typeof body.x === "number" && Number.isFinite(body.x) ? body.x : 180 + order * 380,
-        y: typeof body.y === "number" && Number.isFinite(body.y) ? body.y : 180,
-        width: 330,
-        height: 190,
-        zIndex: Math.max(0, ...current.snapshot.canvasItems.map((item) => item.zIndex)) + 1,
-        parentGroupId: null,
-        collapsed: false,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      });
-      current.snapshot.project.updatedAt = timestamp;
-      current.snapshot.exportedAt = timestamp;
-      const saved = await store.save(current.snapshot, {
-        type: "shot.created",
-        payload: { shotId, itemId, sceneId: scene.id },
-      });
-      return await reply.code(201).send({ key, shotId, itemId, ...saved });
-    } finally {
-      store.close();
-    }
-  });
-
-  app.delete<{ Params: { key: string; shotId: string } }>(
-    "/api/projects/:key/shots/:shotId",
-    async (request, reply) => {
-      const key = projectKey(request.params.key);
-      if (!key) return await reply.code(400).send({ error: "项目标识无效" });
-      const store = ProjectStore.openExisting(projectDirectory(root, key));
-      if (!store) return await reply.code(404).send({ error: "项目不存在" });
-      try {
-        const current = store.loadCurrent();
-        const shot = current?.snapshot.shots.find(
-          (candidate) => candidate.id === request.params.shotId,
-        );
-        if (!current || !shot) return await reply.code(404).send({ error: "镜头不存在" });
-        if (current.snapshot.runs.some((run) => run.shotId === shot.id)) {
-          return await reply.code(409).send({
-            error: "这个镜头已有生成记录。为保留成片与参数溯源，请先保留镜头或仅移除画布节点。",
-          });
-        }
-
-        const removedItemIds = new Set(
-          current.snapshot.canvasItems
-            .filter(
-              (item) =>
-                item.refId === shot.id &&
-                (item.refType === "shot" || item.refType === "take_stack"),
-            )
-            .map((item) => item.id),
-        );
-        const timestamp = toIsoTimestamp();
-        current.snapshot.shots = current.snapshot.shots.filter(
-          (candidate) => candidate.id !== shot.id,
-        );
-        current.snapshot.shots
-          .filter((candidate) => candidate.sceneId === shot.sceneId)
-          .sort((left, right) => left.order - right.order)
-          .forEach((candidate, order) => {
-            candidate.order = order;
-            candidate.updatedAt = timestamp;
-          });
-        current.snapshot.canvasItems = current.snapshot.canvasItems.filter(
-          (item) => !removedItemIds.has(item.id),
-        );
-        current.snapshot.canvasEdges = current.snapshot.canvasEdges.filter(
-          (edge) =>
-            !removedItemIds.has(edge.sourceItemId) && !removedItemIds.has(edge.targetItemId),
-        );
-        current.snapshot.project.updatedAt = timestamp;
-        current.snapshot.exportedAt = timestamp;
-        const saved = await store.save(current.snapshot, {
-          type: "shot.deleted",
-          payload: { shotId: shot.id, removedItemIds: [...removedItemIds] },
-        });
-        return { key, removedShotId: shot.id, removedItemIds: [...removedItemIds], ...saved };
-      } finally {
-        store.close();
-      }
-    },
-  );
-
-  app.post<{ Params: { key: string } }>("/api/projects/:key/text-nodes", async (request, reply) => {
-    const key = projectKey(request.params.key);
-    const body =
-      typeof request.body === "object" && request.body !== null
-        ? (request.body as Record<string, unknown>)
-        : {};
-    if (!key) return await reply.code(400).send({ error: "项目标识无效" });
-    const store = ProjectStore.openExisting(projectDirectory(root, key));
-    if (!store) return await reply.code(404).send({ error: "项目不存在" });
-    try {
-      const current = store.loadCurrent();
-      const scene =
-        current?.snapshot.scenes.find((item) => item.id === body.sceneId) ??
-        current?.snapshot.scenes[0];
-      if (!current || !scene) return await reply.code(409).send({ error: "项目还没有可用画板" });
-      const timestamp = toIsoTimestamp();
-      const textId = createTakeBoardId("text");
-      const itemId = createTakeBoardId("canvas_item");
-      current.snapshot.textItems.push({
-        id: textId,
-        projectId: current.snapshot.project.id,
-        sceneId: scene.id,
-        kind: "direction_note",
-        title:
-          typeof body.title === "string" && body.title.trim()
-            ? body.title.trim().slice(0, 200)
-            : "新笔记",
-        body: typeof body.body === "string" ? body.body.slice(0, 100_000) : "",
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      });
-      current.snapshot.canvasItems.push({
-        id: itemId,
-        sceneId: scene.id,
-        refType: "text",
-        refId: textId,
-        x: typeof body.x === "number" && Number.isFinite(body.x) ? body.x : 180,
-        y: typeof body.y === "number" && Number.isFinite(body.y) ? body.y : 180,
-        width: 300,
-        height: 180,
-        zIndex: Math.max(0, ...current.snapshot.canvasItems.map((item) => item.zIndex)) + 1,
-        parentGroupId: null,
-        collapsed: false,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      });
-      current.snapshot.project.updatedAt = timestamp;
-      current.snapshot.exportedAt = timestamp;
-      const saved = await store.save(current.snapshot, {
-        type: "canvas.text_created",
-        payload: { textId, itemId },
-      });
-      return await reply.code(201).send({ key, textId, itemId, ...saved });
-    } finally {
-      store.close();
-    }
-  });
-
   app.get<{ Params: { key: string } }>("/api/projects/:key", async (request, reply) => {
     const key = projectKey(request.params.key);
     if (!key) return await reply.code(400).send({ error: "项目标识无效" });
@@ -904,6 +693,8 @@ export function registerProjectRoutes(
     );
     const cancellationResults = await Promise.all(
       activeRuns.map(async (run) => {
+        if (run.status === "collecting_outputs" && run.parameters.remoteExecutionCompleted === true)
+          return { run, confirmed: true, error: null as string | null };
         if (!run.promptId) return { run, confirmed: true, error: null as string | null };
         try {
           const comfy = options.workerPool.client(run.workerId, false);
@@ -960,16 +751,24 @@ export function registerProjectRoutes(
     store.close();
 
     await Promise.allSettled(
-      cancellationResults.flatMap(({ run }) => [
-        ...(run.promptId
-          ? [options.workerPool.client(run.workerId, false).deleteHistory(run.promptId)]
-          : []),
-        cleanupDeletedProjectRun(run, options),
-      ]),
+      cancellationResults
+        .filter(({ run }) => run.parameters.remoteExecutionCompleted !== true)
+        .flatMap(({ run }) => [
+          ...(run.promptId
+            ? [options.workerPool.client(run.workerId, false).deleteHistory(run.promptId)]
+            : []),
+          cleanupDeletedProjectRun(run, options, current.snapshot.project.id),
+        ]),
     );
     if (cancellationResults.length > 0) {
       await Promise.all(
-        [...new Set(cancellationResults.map(({ run }) => run.workerId))].map(
+        [
+          ...new Set(
+            cancellationResults
+              .filter(({ run }) => run.parameters.remoteExecutionCompleted !== true)
+              .map(({ run }) => run.workerId),
+          ),
+        ].map(
           async (workerId) =>
             await options.workerPool
               .client(workerId, false)
@@ -995,510 +794,6 @@ export function registerProjectRoutes(
       stoppedRunCount: cancellationResults.length,
     };
   });
-
-  app.post<{ Params: { key: string } }>(
-    "/api/projects/:key/canvas-connections",
-    async (request, reply) => {
-      const key = projectKey(request.params.key);
-      const body =
-        typeof request.body === "object" && request.body !== null
-          ? (request.body as Record<string, unknown>)
-          : {};
-      const targetSlot = body.targetSlot;
-      if (
-        !key ||
-        typeof body.sourceItemId !== "string" ||
-        typeof body.targetItemId !== "string" ||
-        !["first_frame", "last_frame", "reference", "reference_video", "reference_audio"].includes(
-          String(targetSlot),
-        )
-      ) {
-        return await reply.code(400).send({ error: "连线参数无效" });
-      }
-
-      const store = ProjectStore.openExisting(projectDirectory(root, key));
-      if (!store) return await reply.code(404).send({ error: "项目不存在" });
-      try {
-        const current = store.loadCurrent();
-        if (!current) return await reply.code(404).send({ error: "项目不存在" });
-        const source = current.snapshot.canvasItems.find((item) => item.id === body.sourceItemId);
-        const target = current.snapshot.canvasItems.find((item) => item.id === body.targetItemId);
-        if (
-          !source ||
-          !target ||
-          source.sceneId !== target.sceneId ||
-          !["asset", "entity", "shot"].includes(source.refType) ||
-          source.id === target.id ||
-          target.refType !== "shot"
-        ) {
-          return await reply.code(400).send({
-            error: "图片、视频、实体或其他镜头的生成结果才能连接到镜头输入",
-          });
-        }
-
-        const expectedMediaType =
-          targetSlot === "reference_video"
-            ? "video"
-            : targetSlot === "reference_audio"
-              ? "audio"
-              : "image";
-        const assetId = canvasSourceAssetId(current.snapshot, source, expectedMediaType);
-        const asset = current.snapshot.assets.find(
-          (candidate) => candidate.id === assetId && candidate.mediaType === expectedMediaType,
-        );
-        if (!asset) {
-          return await reply.code(400).send({
-            error: `该节点没有可用的${expectedMediaType === "video" ? "视频" : "图片"}素材`,
-          });
-        }
-
-        const timestamp = toIsoTimestamp();
-        const occupiedEdges = current.snapshot.canvasEdges.filter(
-          (edge) => edge.targetItemId === target.id && edge.targetSlot === targetSlot,
-        );
-        const multipleSlot = ["reference", "reference_video", "reference_audio"].includes(
-          String(targetSlot),
-        );
-        if (multipleSlot && occupiedEdges.some((edge) => edge.sourceItemId === source.id)) {
-          return { key, revision: current.revision, snapshot: current.snapshot };
-        }
-        const capacity = targetSlot === "reference" ? 9 : 3;
-        if (multipleSlot && occupiedEdges.length >= capacity) {
-          return await reply.code(409).send({
-            error:
-              targetSlot === "reference_video"
-                ? "这个工作流最多连接 3 段参考视频"
-                : targetSlot === "reference_audio"
-                  ? "这个工作流最多连接 3 段参考音频"
-                  : "这个工作流最多连接 9 张参考图",
-          });
-        }
-        if (!multipleSlot) {
-          current.snapshot.canvasEdges = current.snapshot.canvasEdges.filter(
-            (edge) =>
-              edge.immutable || edge.targetItemId !== target.id || edge.targetSlot !== targetSlot,
-          );
-        }
-        const targetSlotIndex = multipleSlot
-          ? Math.max(-1, ...occupiedEdges.map((edge) => edge.targetSlotIndex)) + 1
-          : 0;
-        current.snapshot.canvasEdges.push({
-          id: createTakeBoardId("canvas_edge"),
-          sceneId: target.sceneId,
-          sourceItemId: source.id,
-          targetItemId: target.id,
-          relation: "reference",
-          targetSlot: targetSlot as
-            | "first_frame"
-            | "last_frame"
-            | "reference"
-            | "reference_video"
-            | "reference_audio",
-          targetSlotIndex,
-          runId: null,
-          immutable: false,
-          createdAt: timestamp,
-          updatedAt: timestamp,
-        });
-        current.snapshot.project.updatedAt = timestamp;
-        current.snapshot.exportedAt = timestamp;
-        const saved = await store.save(current.snapshot, {
-          type: "canvas.input_connected",
-          payload: { sourceItemId: source.id, targetItemId: target.id, targetSlot, assetId },
-        });
-        return { key, ...saved };
-      } finally {
-        store.close();
-      }
-    },
-  );
-
-  app.delete<{ Params: { key: string } }>(
-    "/api/projects/:key/canvas-connections",
-    async (request, reply) => {
-      const key = projectKey(request.params.key);
-      const body =
-        typeof request.body === "object" && request.body !== null
-          ? (request.body as Record<string, unknown>)
-          : {};
-      const targetSlot = body.targetSlot;
-      if (
-        !key ||
-        typeof body.sourceItemId !== "string" ||
-        typeof body.targetItemId !== "string" ||
-        (targetSlot !== null &&
-          ![
-            "first_frame",
-            "last_frame",
-            "reference",
-            "reference_video",
-            "reference_audio",
-          ].includes(String(targetSlot)))
-      ) {
-        return await reply.code(400).send({ error: "连线参数无效" });
-      }
-
-      const store = ProjectStore.openExisting(projectDirectory(root, key));
-      if (!store) return await reply.code(404).send({ error: "项目不存在" });
-      try {
-        const current = store.loadCurrent();
-        const exactEdge = current?.snapshot.canvasEdges.find(
-          (candidate) =>
-            candidate.sourceItemId === body.sourceItemId &&
-            candidate.targetItemId === body.targetItemId &&
-            candidate.targetSlot === targetSlot,
-        );
-        const targetCandidates = current?.snapshot.canvasEdges.filter(
-          (candidate) => !candidate.immutable && candidate.targetItemId === body.targetItemId,
-        );
-        const edge =
-          exactEdge ?? (targetCandidates?.length === 1 ? targetCandidates[0] : undefined);
-        if (!current || !edge) return await reply.code(404).send({ error: "连线不存在" });
-        if (edge.immutable) {
-          return await reply.code(409).send({ error: "生成溯源连线不能删除" });
-        }
-        current.snapshot.canvasEdges = current.snapshot.canvasEdges.filter(
-          (candidate) => candidate.id !== edge.id,
-        );
-        const timestamp = toIsoTimestamp();
-        current.snapshot.project.updatedAt = timestamp;
-        current.snapshot.exportedAt = timestamp;
-        const saved = await store.save(current.snapshot, {
-          type: "canvas.connection_removed",
-          payload: { edgeId: edge.id, targetSlot: edge.targetSlot },
-        });
-        return { key, removedEdgeId: edge.id, ...saved };
-      } finally {
-        store.close();
-      }
-    },
-  );
-
-  app.delete<{ Params: { key: string; edgeId: string } }>(
-    "/api/projects/:key/canvas-connections/:edgeId",
-    async (request, reply) => {
-      const key = projectKey(request.params.key);
-      if (!key) return await reply.code(400).send({ error: "项目标识无效" });
-      const store = ProjectStore.openExisting(projectDirectory(root, key));
-      if (!store) return await reply.code(404).send({ error: "项目不存在" });
-      try {
-        const current = store.loadCurrent();
-        const edge = current?.snapshot.canvasEdges.find(
-          (candidate) => candidate.id === request.params.edgeId,
-        );
-        if (!current || !edge) return await reply.code(404).send({ error: "连线不存在" });
-        if (edge.immutable) {
-          return await reply.code(409).send({ error: "生成溯源连线不能删除" });
-        }
-        current.snapshot.canvasEdges = current.snapshot.canvasEdges.filter(
-          (candidate) => candidate.id !== edge.id,
-        );
-        const timestamp = toIsoTimestamp();
-        current.snapshot.project.updatedAt = timestamp;
-        current.snapshot.exportedAt = timestamp;
-        const saved = await store.save(current.snapshot, {
-          type: "canvas.connection_removed",
-          payload: { edgeId: edge.id, targetSlot: edge.targetSlot },
-        });
-        return { key, removedEdgeId: edge.id, ...saved };
-      } finally {
-        store.close();
-      }
-    },
-  );
-
-  app.patch<{ Params: { key: string } }>(
-    "/api/projects/:key/canvas-position",
-    async (request, reply) => {
-      const key = projectKey(request.params.key);
-      const body =
-        typeof request.body === "object" && request.body !== null
-          ? (request.body as Record<string, unknown>)
-          : {};
-      if (
-        !key ||
-        typeof body.itemId !== "string" ||
-        typeof body.x !== "number" ||
-        !Number.isFinite(body.x) ||
-        typeof body.y !== "number" ||
-        !Number.isFinite(body.y)
-      ) {
-        return await reply.code(400).send({ error: "画布位置无效" });
-      }
-
-      const store = ProjectStore.openExisting(projectDirectory(root, key));
-      if (!store) return await reply.code(404).send({ error: "项目不存在" });
-      try {
-        const current = store.loadCurrent();
-        if (!current) return await reply.code(404).send({ error: "项目不存在" });
-        const timestamp = toIsoTimestamp();
-        const item = current.snapshot.canvasItems.find((candidate) => candidate.id === body.itemId);
-        if (!item) return await reply.code(404).send({ error: "画布节点不存在" });
-        item.x = body.x;
-        item.y = body.y;
-        item.updatedAt = timestamp;
-        current.snapshot.project.updatedAt = timestamp;
-        current.snapshot.exportedAt = timestamp;
-        const saved = await store.save(current.snapshot, {
-          type: "canvas.item_moved",
-          payload: { itemId: body.itemId },
-        });
-        return { key, ...saved };
-      } finally {
-        store.close();
-      }
-    },
-  );
-
-  app.post<{ Params: { key: string } }>(
-    "/api/projects/:key/canvas-items",
-    async (request, reply) => {
-      const key = projectKey(request.params.key);
-      const body =
-        typeof request.body === "object" && request.body !== null
-          ? (request.body as Record<string, unknown>)
-          : {};
-      const refType = body.refType;
-      if (
-        !key ||
-        typeof body.refId !== "string" ||
-        !["text", "entity", "asset", "shot", "take_stack"].includes(String(refType))
-      ) {
-        return await reply.code(400).send({ error: "节点来源无效" });
-      }
-      const store = ProjectStore.openExisting(projectDirectory(root, key));
-      if (!store) return await reply.code(404).send({ error: "项目不存在" });
-      try {
-        const current = store.loadCurrent();
-        if (!current) return await reply.code(404).send({ error: "项目不存在" });
-        const sourceExists = {
-          text: current.snapshot.textItems.some((item) => item.id === body.refId),
-          entity: current.snapshot.entities.some((item) => item.id === body.refId),
-          asset: current.snapshot.assets.some((item) => item.id === body.refId),
-          shot: current.snapshot.shots.some((item) => item.id === body.refId),
-          take_stack: current.snapshot.shots.some((item) => item.id === body.refId),
-        }[refType as "text" | "entity" | "asset" | "shot" | "take_stack"];
-        if (!sourceExists) return await reply.code(404).send({ error: "节点来源不存在" });
-        const sourceShot = current.snapshot.shots.find((item) => item.id === body.refId);
-        const sceneId =
-          refType === "shot" || refType === "take_stack"
-            ? sourceShot?.sceneId
-            : typeof body.sceneId === "string"
-              ? body.sceneId
-              : current.snapshot.scenes[0]?.id;
-        if (!sceneId || !current.snapshot.scenes.some((scene) => scene.id === sceneId)) {
-          return await reply.code(400).send({ error: "节点场景无效" });
-        }
-        const timestamp = toIsoTimestamp();
-        const itemId = createTakeBoardId("canvas_item");
-        current.snapshot.canvasItems.push({
-          id: itemId,
-          sceneId,
-          refType: refType as "text" | "entity" | "asset" | "shot" | "take_stack",
-          refId: body.refId,
-          x: typeof body.x === "number" && Number.isFinite(body.x) ? body.x : 180,
-          y: typeof body.y === "number" && Number.isFinite(body.y) ? body.y : 180,
-          width:
-            typeof body.width === "number" && body.width >= 180 && body.width <= 1_000
-              ? body.width
-              : refType === "shot"
-                ? 330
-                : 280,
-          height: refType === "shot" ? 190 : 180,
-          zIndex: Math.max(0, ...current.snapshot.canvasItems.map((item) => item.zIndex)) + 1,
-          parentGroupId: null,
-          collapsed: false,
-          createdAt: timestamp,
-          updatedAt: timestamp,
-        });
-        current.snapshot.project.updatedAt = timestamp;
-        current.snapshot.exportedAt = timestamp;
-        const saved = await store.save(current.snapshot, {
-          type: "canvas.item_added",
-          payload: { itemId, refType, refId: body.refId },
-        });
-        return await reply.code(201).send({ key, itemId, ...saved });
-      } finally {
-        store.close();
-      }
-    },
-  );
-
-  app.post<{ Params: { key: string; itemId: string } }>(
-    "/api/projects/:key/canvas-items/:itemId/duplicate",
-    async (request, reply) => {
-      const key = projectKey(request.params.key);
-      if (!key) return await reply.code(400).send({ error: "项目标识无效" });
-      const body =
-        typeof request.body === "object" && request.body !== null
-          ? (request.body as Record<string, unknown>)
-          : {};
-      const store = ProjectStore.openExisting(projectDirectory(root, key));
-      if (!store) return await reply.code(404).send({ error: "项目不存在" });
-      try {
-        const current = store.loadCurrent();
-        const source = current?.snapshot.canvasItems.find(
-          (item) => item.id === request.params.itemId,
-        );
-        if (!current || !source) return await reply.code(404).send({ error: "画布节点不存在" });
-        const timestamp = toIsoTimestamp();
-        const itemId = createTakeBoardId("canvas_item");
-        current.snapshot.canvasItems.push({
-          ...source,
-          id: itemId,
-          x: typeof body.x === "number" && Number.isFinite(body.x) ? body.x : source.x + 36,
-          y: typeof body.y === "number" && Number.isFinite(body.y) ? body.y : source.y + 36,
-          zIndex: Math.max(0, ...current.snapshot.canvasItems.map((item) => item.zIndex)) + 1,
-          createdAt: timestamp,
-          updatedAt: timestamp,
-        });
-        current.snapshot.project.updatedAt = timestamp;
-        current.snapshot.exportedAt = timestamp;
-        const saved = await store.save(current.snapshot, {
-          type: "canvas.item_duplicated",
-          payload: { sourceItemId: source.id, itemId },
-        });
-        return await reply.code(201).send({ key, itemId, ...saved });
-      } finally {
-        store.close();
-      }
-    },
-  );
-
-  app.patch<{ Params: { key: string; itemId: string } }>(
-    "/api/projects/:key/canvas-items/:itemId",
-    async (request, reply) => {
-      const key = projectKey(request.params.key);
-      if (!key) return await reply.code(400).send({ error: "项目标识无效" });
-      const body =
-        typeof request.body === "object" && request.body !== null
-          ? (request.body as Record<string, unknown>)
-          : {};
-      const store = ProjectStore.openExisting(projectDirectory(root, key));
-      if (!store) return await reply.code(404).send({ error: "项目不存在" });
-      try {
-        const current = store.loadCurrent();
-        const item = current?.snapshot.canvasItems.find(
-          (candidate) => candidate.id === request.params.itemId,
-        );
-        if (!current || !item) return await reply.code(404).send({ error: "画布节点不存在" });
-        const timestamp = toIsoTimestamp();
-        if (item.refType === "text") {
-          const text = current.snapshot.textItems.find((candidate) => candidate.id === item.refId);
-          if (!text) return await reply.code(404).send({ error: "文本不存在" });
-          if (typeof body.title === "string") text.title = body.title.trim().slice(0, 200);
-          if (typeof body.body === "string") text.body = body.body.slice(0, 100_000);
-          text.updatedAt = timestamp;
-        } else if (item.refType === "entity") {
-          const entity = current.snapshot.entities.find((candidate) => candidate.id === item.refId);
-          if (!entity) return await reply.code(404).send({ error: "实体不存在" });
-          if (typeof body.title === "string" && body.title.trim()) {
-            entity.name = body.title.trim().slice(0, 200);
-          }
-          if (typeof body.body === "string") entity.description = body.body.slice(0, 10_000);
-          entity.updatedAt = timestamp;
-        } else if (item.refType === "asset") {
-          const asset = current.snapshot.assets.find((candidate) => candidate.id === item.refId);
-          if (!asset) return await reply.code(404).send({ error: "素材不存在" });
-          if (typeof body.title === "string" && body.title.trim()) {
-            asset.originalName = body.title.trim().slice(0, 512);
-          }
-          if (Array.isArray(body.customTags)) {
-            const customTags = [
-              ...new Set(
-                body.customTags.map((tag) => (typeof tag === "string" ? tag.trim() : tag)),
-              ),
-            ].filter(
-              (tag): tag is string => typeof tag === "string" && tag.length > 0 && tag.length <= 40,
-            );
-            if (customTags.length !== body.customTags.length || customTags.length > 24) {
-              return await reply.code(400).send({ error: "自定义标签无效" });
-            }
-            asset.customTags = customTags;
-          }
-          asset.updatedAt = timestamp;
-        } else if (item.refType === "shot") {
-          const shot = current.snapshot.shots.find((candidate) => candidate.id === item.refId);
-          if (!shot) return await reply.code(404).send({ error: "镜头不存在" });
-          if (typeof body.title === "string" && body.title.trim()) {
-            shot.label = body.title.trim().slice(0, 80);
-          }
-          if (typeof body.body === "string") shot.intent = body.body.slice(0, 20_000);
-          if (
-            typeof body.durationSeconds === "number" &&
-            body.durationSeconds > 0 &&
-            body.durationSeconds <= 300
-          ) {
-            shot.durationSeconds = body.durationSeconds;
-          }
-          if (
-            typeof body.aspectRatio === "string" &&
-            allowedRatios.has(body.aspectRatio as AspectRatio)
-          ) {
-            shot.aspectRatio = body.aspectRatio as AspectRatio;
-          }
-          if (typeof body.workflowPath === "string" && body.workflowPath.trim()) {
-            const workflowPath = body.workflowPath.trim().slice(0, 1_000);
-            const runWorkflowPath = [...current.snapshot.runs]
-              .reverse()
-              .find((run) => run.shotId === shot.id)?.parameters.recipePath;
-            const lockedWorkflowPath =
-              shot.workflowPath ?? (typeof runWorkflowPath === "string" ? runWorkflowPath : null);
-            const hasHistory = current.snapshot.runs.some((run) => run.shotId === shot.id);
-            if (hasHistory && lockedWorkflowPath && lockedWorkflowPath !== workflowPath) {
-              return await reply.code(409).send({ error: "这个镜头已有运行记录，工作流已锁定" });
-            }
-            shot.workflowPath = workflowPath;
-          }
-          shot.updatedAt = timestamp;
-        } else {
-          return await reply.code(409).send({ error: "候选组由运行记录管理，不能直接编辑" });
-        }
-        current.snapshot.project.updatedAt = timestamp;
-        current.snapshot.exportedAt = timestamp;
-        const saved = await store.save(current.snapshot, {
-          type: "canvas.item_edited",
-          payload: { itemId: item.id, refType: item.refType, refId: item.refId },
-        });
-        return { key, ...saved };
-      } finally {
-        store.close();
-      }
-    },
-  );
-
-  app.delete<{ Params: { key: string; itemId: string } }>(
-    "/api/projects/:key/canvas-items/:itemId",
-    async (request, reply) => {
-      const key = projectKey(request.params.key);
-      if (!key) return await reply.code(400).send({ error: "项目标识无效" });
-      const store = ProjectStore.openExisting(projectDirectory(root, key));
-      if (!store) return await reply.code(404).send({ error: "项目不存在" });
-      try {
-        const current = store.loadCurrent();
-        const item = current?.snapshot.canvasItems.find(
-          (candidate) => candidate.id === request.params.itemId,
-        );
-        if (!current || !item) return await reply.code(404).send({ error: "画布节点不存在" });
-        const timestamp = toIsoTimestamp();
-        current.snapshot.canvasItems = current.snapshot.canvasItems.filter(
-          (candidate) => candidate.id !== item.id,
-        );
-        current.snapshot.canvasEdges = current.snapshot.canvasEdges.filter(
-          (edge) => edge.sourceItemId !== item.id && edge.targetItemId !== item.id,
-        );
-        current.snapshot.project.updatedAt = timestamp;
-        current.snapshot.exportedAt = timestamp;
-        const saved = await store.save(current.snapshot, {
-          type: "canvas.item_removed",
-          payload: { itemId: item.id, refType: item.refType, refId: item.refId },
-        });
-        return { key, removedItemId: item.id, ...saved };
-      } finally {
-        store.close();
-      }
-    },
-  );
 
   app.post<{ Params: { key: string; takeId: string } }>(
     "/api/projects/:key/takes/:takeId/reject",

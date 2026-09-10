@@ -60,12 +60,157 @@ async function projectFixture(storage?: { inputRoot: string; outputRoot: string 
   });
   return {
     app,
+    root,
     key: created.json().key as string,
     shotId: created.json().snapshot.shots[0].id as string,
   };
 }
 
 describe("real generation routes", () => {
+  async function transferFixture(view: () => Response) {
+    const fixture = await projectFixture();
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const url = String(input);
+        calls.push(url);
+        if (url.endsWith("/object_info"))
+          return Response.json(
+            objectInfo([
+              "UNETLoader",
+              "CLIPLoader",
+              "VAELoader",
+              "CLIPTextEncode",
+              "ModelSamplingAuraFlow",
+              "EmptySD3LatentImage",
+              "KSampler",
+              "VAEDecode",
+              "SaveImage",
+            ]),
+          );
+        if (url.endsWith("/prompt")) return Response.json({ prompt_id: "recoverable-result" });
+        if (url.endsWith("/history/recoverable-result"))
+          return Response.json({
+            "recoverable-result": {
+              status: { completed: true, status_str: "success" },
+              outputs: {
+                save: {
+                  images: [
+                    {
+                      filename: "original.png",
+                      subfolder: "custom-workflow/results",
+                      type: "output",
+                    },
+                  ],
+                },
+              },
+            },
+          });
+        if (url.includes("/view?")) return view();
+        if (url.endsWith("/queue")) return Response.json({ queue_running: [], queue_pending: [] });
+        if (url.endsWith("/cancel")) return Response.json({ cancelled: true });
+        if (url.endsWith("/free") || url.endsWith("/history")) return Response.json({});
+        throw new Error(url);
+      }),
+    );
+    const submitted = await fixture.app.inject({
+      method: "POST",
+      url: `/api/projects/${fixture.key}/shots/${fixture.shotId}/generate`,
+      payload: { recipePath: "Kino/Kino_QwenImage2512_T2I.json", prompt: "传输恢复测试" },
+    });
+    expect(submitted.statusCode, submitted.body).toBe(202);
+    return { ...fixture, runId: submitted.json().runId as string, calls };
+  }
+
+  it("recovers a failed result download after server restart without regenerating or depending on history", async () => {
+    let failed = true;
+    const { app, root, key, runId, calls } = await transferFixture(() =>
+      failed ? new Response("offline", { status: 503 }) : new Response(validPng()),
+    );
+    const first = await app.inject({ method: "GET", url: `/api/projects/${key}/runs/${runId}` });
+    expect(first.json()).toMatchObject({
+      status: "collecting_outputs",
+      snapshot: {
+        runs: [
+          expect.objectContaining({
+            errorCode: "OUTPUT_TRANSFER_FAILED",
+            promptId: "recoverable-result",
+            parameters: expect.objectContaining({
+              remoteOutput: {
+                filename: "original.png",
+                subfolder: "custom-workflow/results",
+                type: "output",
+              },
+            }),
+          }),
+        ],
+      },
+    });
+    expect(first.json().progress.label).toContain("待下载");
+    await app.close();
+    const resumed = buildApp({ projectsRoot: root, comfyUrl: "https://comfy.test", webRoot: null });
+    cleanup.push(() => resumed.close());
+    failed = false;
+    const now = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(now + 31_000);
+    const result = await resumed.inject({
+      method: "GET",
+      url: `/api/projects/${key}/runs/${runId}`,
+    });
+    expect(result.json()).toMatchObject({
+      status: "completed",
+      snapshot: {
+        assets: [
+          expect.objectContaining({ originalName: "original.png", byteSize: validPng().length }),
+        ],
+      },
+    });
+    expect(calls.filter((url) => url.endsWith("/prompt"))).toHaveLength(1);
+    expect(calls.filter((url) => url.endsWith("/history/recoverable-result"))).toHaveLength(1);
+    expect(calls.some((url) => url.endsWith("/history"))).toBe(false);
+    expect(
+      calls
+        .filter((url) => url.includes("/view?"))
+        .every((url) => url.includes("subfolder=custom-workflow%2Fresults")),
+    ).toBe(true);
+  });
+
+  it("keeps a stalled transfer observable, blocks device switching, and cancels it before deleting the project", async () => {
+    let cancelled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(validPng().slice(0, 12));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const { app, key, runId } = await transferFixture(
+      () => new Response(stream, { headers: { "content-length": String(validPng().length) } }),
+    );
+    const polled = await app.inject({ method: "GET", url: `/api/projects/${key}/runs/${runId}` });
+    expect(polled.json().status).toBe("collecting_outputs");
+    const progress = await app.inject({
+      method: "GET",
+      url: `/api/projects/${key}/transfers/${runId}`,
+    });
+    expect(progress.json().progress).toMatchObject({
+      phase: "collecting",
+      source: "output_transfer",
+      percent: Math.floor((12 / validPng().length) * 100),
+    });
+    const switchDevice = await app.inject({
+      method: "POST",
+      url: "/api/generation/connection",
+      payload: { kind: "url", url: "https://another.test", name: "another" },
+    });
+    expect(switchDevice.statusCode).toBe(409);
+    expect(switchDevice.json().error).toContain("待下载");
+    const deleted = await app.inject({ method: "DELETE", url: `/api/projects/${key}` });
+    expect(deleted.statusCode, deleted.body).toBe(200);
+    expect(cancelled).toBe(true);
+  });
   it("blocks generation before contacting ComfyUI when the project disk cannot keep its reserve", async () => {
     const { app, key, shotId } = await projectFixture();
     process.env.TAKEBOARD_MIN_FREE_DISK_GB = "999999999";

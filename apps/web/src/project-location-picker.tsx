@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { type DeviceInfo, deviceApi } from "./api";
+import { requestDesktopAction } from "./desktop-actions";
 import { readConnectionDisplay } from "./device-context";
 
 export type ProjectLocationChoice = { storageRootId: string; storageFolder: string };
@@ -33,7 +34,9 @@ export function ProjectLocationPicker({
     let active = true;
     const picked = (event: Event) => {
       const detail = (event as CustomEvent<{ request: string; path: string | null }>).detail;
-      if (detail?.request !== folderRequest || typeof detail.path !== "string") return;
+      if (detail?.request !== folderRequest) return;
+      setBusy(false);
+      if (typeof detail.path !== "string") return;
       setBusy(true);
       onValid(false);
       setError("");
@@ -132,7 +135,14 @@ export function ProjectLocationPicker({
               type="button"
               disabled={busy}
               onClick={() => {
-                window.location.href = `takeboard-desktop://choose-folder?${new URLSearchParams({ request: folderRequest })}`;
+                setError("");
+                setBusy(true);
+                void requestDesktopAction("choose-folder", { request: folderRequest }).catch(
+                  (cause: unknown) => {
+                    setBusy(false);
+                    setError(cause instanceof Error ? cause.message : "无法打开文件夹选择器");
+                  },
+                );
               }}
             >
               选择文件夹

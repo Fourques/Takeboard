@@ -1,7 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { submitCandidates } from "./generation-session";
+import { batchGenerationProgress, submitCandidates } from "./generation-session";
 
 describe("candidate submission lifecycle", () => {
+  it("counts saved candidates instead of averaging unrelated sampler percentages", () => {
+    const runs = (["completed", "running", "collecting_outputs"] as const).map((status, index) => ({
+      id: String(index),
+      shotId: "shot",
+      status,
+      parameters: { candidateBatchId: "batch", candidateIndex: index + 1 },
+      createdAt: new Date().toISOString(),
+    }));
+    expect(batchGenerationProgress(runs, "shot")).toMatchObject({
+      percent: 33,
+      label: "候选结果 · 1/3 已保存",
+      detail: "1 生成中 · 1 保存中",
+    });
+    expect(batchGenerationProgress(runs, "other")).toBeNull();
+    if (!runs[1]) throw new Error("Missing retry fixture");
+    const retry = { ...runs[1], id: "retry", status: "completed" as const };
+    expect(batchGenerationProgress([...runs, retry], "shot")).toMatchObject({
+      percent: 67,
+      label: "候选结果 · 2/3 已保存",
+    });
+  });
   it("lets an explicit stop await an in-flight identity without submitting the remaining batch", async () => {
     let current = true;
     let acknowledge: (id: string) => void = () => undefined;

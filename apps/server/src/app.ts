@@ -7,6 +7,7 @@ import { resolveAuthDatabasePath } from "./auth-database-path.js";
 import { type AuthOptions, registerAuth } from "./auth-routes.js";
 import type { AuthMode } from "./auth-service.js";
 import { type BackupAutomationConfig, registerBackupAutomation } from "./backup-automation.js";
+import { ComfyConnections, registerComfyConnections } from "./comfy-connection.js";
 import { registerDemoRoutes } from "./demo/routes.js";
 import { registerDeviceRoutes } from "./device-routes.js";
 import { ExtensionRegistry } from "./extension-registry.js";
@@ -25,7 +26,7 @@ import { WorkerPool } from "./worker-pool.js";
 import { registerWorkerRoutes, type WorkerRouteOptions } from "./worker-routes.js";
 import { registerWorkflowRoutes } from "./workflow-routes.js";
 
-export const takeBoardVersion = "0.2.0-beta.3";
+export const takeBoardVersion = "0.2.0-beta.4";
 
 export type AppOptions = {
   demoDirectory?: string;
@@ -144,6 +145,12 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   const extensionRegistry = new ExtensionRegistry(
     resolve(projectsRoot, ".system", "extensions.json"),
   );
+  const comfyConnections = new ComfyConnections(projectsRoot, workerPool);
+  const activeComfyUrl = () => {
+    const endpoint = workerPool.endpoint(workerPool.defaultWorkerId);
+    if (!endpoint) throw new Error("尚未选择生成服务");
+    return endpoint;
+  };
   registerProjectRoutes(app, projectsRoot, {
     comfyUrl,
     comfyInputRoot,
@@ -154,13 +161,14 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   });
   registerOperationsRoutes(app, projectsRoot, auth, {
     version: takeBoardVersion,
-    comfyUrl,
+    comfyUrl: activeComfyUrl,
     webRoot,
     backupAutomation,
   });
   registerProjectCommandRoutes(app, projectsRoot);
   registerExtensionRoutes(app, projectsRoot, extensionRegistry);
   registerWorkerRoutes(app, comfyUrl, options.workerOptions, workerPool, projectsRoot);
+  registerComfyConnections(app, comfyConnections, workerPool);
   const generation = registerGenerationRoutes(app, projectsRoot, workerPool, {
     inputRoot: comfyInputRoot,
     outputRoot: comfyOutputRoot,
@@ -178,8 +186,11 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   }
   registerWorkflowRoutes(
     app,
-    comfyUrl,
-    options.comfyEditorUrl ?? process.env.COMFY_EDITOR_URL ?? "http://127.0.0.1:48188",
+    activeComfyUrl,
+    () =>
+      workerPool.defaultWorkerId === workerPool.localWorkerId
+        ? (options.comfyEditorUrl ?? process.env.COMFY_EDITOR_URL ?? comfyUrl)
+        : activeComfyUrl(),
     projectsRoot,
   );
 

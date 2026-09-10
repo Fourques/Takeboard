@@ -20,6 +20,11 @@ const StudioUniverse = lazy(loadStudioUniverse);
 const OperationsCenter = lazy(() =>
   import("./operations-center").then((module) => ({ default: module.OperationsCenter })),
 );
+const GenerationConnectionPanel = lazy(() =>
+  import("./generation-connection-panel").then((module) => ({
+    default: module.GenerationConnectionPanel,
+  })),
+);
 
 const workerFleetCss = `.worker-fleet-list {
   display: grid;
@@ -590,13 +595,20 @@ const hubChromeCss = `.hub-header {
     font-size: 18px;
   }
 
-  .hub-utility-panel,
-  .worker-panel {
+  .hub-utility-panel {
     top: calc(100% + 8px) !important;
     right: 0 !important;
     left: auto !important;
     width: min(360px, calc(100vw - 16px)) !important;
     max-height: calc(100dvh - 74px) !important;
+  }
+  .worker-panel {
+    position: fixed !important;
+    top: 70px !important;
+    right: 10px !important;
+    left: 10px !important;
+    width: auto !important;
+    max-height: calc(100dvh - 90px) !important;
   }
 }
 
@@ -971,6 +983,16 @@ export function ProjectHub({
   const [projectSort, setProjectSort] = useState<"recent" | "name">("recent");
   const [projectsVisible, setProjectsVisible] = useState(false);
   const [workerPanelOpen, setWorkerPanelOpen] = useState(false);
+  const workerControl = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!workerPanelOpen) return;
+    const dismiss = (event: PointerEvent) => {
+      if (event.target instanceof Node && !workerControl.current?.contains(event.target))
+        setWorkerPanelOpen(false);
+    };
+    window.addEventListener("pointerdown", dismiss);
+    return () => window.removeEventListener("pointerdown", dismiss);
+  }, [workerPanelOpen]);
   const [workerFormOpen, setWorkerFormOpen] = useState(false);
   const [workerName, setWorkerName] = useState("");
   const [workerEndpoint, setWorkerEndpoint] = useState("");
@@ -1206,7 +1228,7 @@ export function ProjectHub({
                 <OperationsCenter compact onOpenProject={onOpen} />
               </Suspense>
               <span className="hub-status-divider" aria-hidden="true" />
-              <div className="worker-control">
+              <div className="worker-control" ref={workerControl}>
                 <button
                   className={`worker-pill worker-${worker?.status ?? "loading"}`}
                   type="button"
@@ -1220,11 +1242,15 @@ export function ProjectHub({
                     <path d="M8 8h4v4H8zM7 2.8v2.1M13 2.8v2.1M7 15.1v2.1M13 15.1v2.1M2.8 7h2.1M15.1 7h2.1M2.8 13h2.1M15.1 13h2.1" />
                   </svg>
                   <div>
-                    <strong>ComfyUI</strong>
+                    <strong title={worker?.connection?.address}>
+                      {worker?.connection?.kind && worker.connection.kind !== "existing"
+                        ? worker.connection.name
+                        : "ComfyUI"}
+                    </strong>
                     <span>
                       {workerBusy
                         ? "检测中"
-                        : readyWorkerCount > 0
+                        : worker?.status === "ready"
                           ? fleetWorkers.length > 1
                             ? `${readyWorkerCount}/${fleetWorkers.length} 可用`
                             : "已连接"
@@ -1239,11 +1265,9 @@ export function ProjectHub({
                   <aside className="worker-panel" aria-label="ComfyUI 连接与安全启动面板">
                     <div className="worker-panel-heading">
                       <div>
-                        <span>COMPUTE FLEET</span>
+                        <span>GENERATION</span>
                         <strong>
-                          {readyWorkerCount > 0
-                            ? `${readyWorkerCount} / ${fleetWorkers.length || 1} 在线`
-                            : "执行端未连接"}
+                          {worker?.status === "ready" ? "生成服务已连接" : "生成服务未连接"}
                         </strong>
                       </div>
                       <button
@@ -1254,118 +1278,66 @@ export function ProjectHub({
                         ×
                       </button>
                     </div>
+                    <Suspense fallback={<p>正在读取生成服务…</p>}>
+                      <GenerationConnectionPanel />
+                    </Suspense>
                     {fleetWorkers.length > 0 ? (
-                      <div className="worker-fleet-list">
-                        {fleetWorkers.map((entry) => (
-                          <article
-                            className={`worker-fleet-card status-${entry.status}`}
-                            key={entry.worker.id}
-                          >
-                            <i />
-                            <div>
-                              <strong>{entry.worker.name}</strong>
-                              <span>
-                                {entry.status === "ready"
-                                  ? `${entry.device ?? "ComfyUI"} · 队列 ${entry.queueRunning + entry.queuePending}`
-                                  : entry.status === "disabled"
-                                    ? "已停用，不参与调度"
-                                    : (entry.error ?? "当前离线")}
-                              </span>
-                              <small>
-                                {entry.worker.transport === "loopback"
-                                  ? "本地地址（可能经转发）"
-                                  : entry.worker.transport === "ssh_tunnel"
-                                    ? "SSH 转发"
-                                    : "远程连接"}
-                                {" · "}
-                                {entry.worker.qualityTier} ·{" "}
-                                {entry.worker.hourlyRate === null
-                                  ? "成本未知"
-                                  : `${entry.worker.hourlyRate} ${entry.worker.currency}/小时`}
-                              </small>
-                            </div>
-                            {user?.instanceRole === "admin" ? (
-                              <div className="worker-fleet-card-actions">
-                                <button
-                                  type="button"
-                                  disabled={workerActionBusy}
-                                  title={
-                                    entry.worker.allowSensitiveInputs
-                                      ? "撤销素材发送权限"
-                                      : "明确授权后，图片和视频才可发往此节点"
-                                  }
-                                  onClick={() => {
-                                    if (
-                                      !entry.worker.allowSensitiveInputs &&
-                                      workerTrustArmed !== entry.worker.id
-                                    ) {
-                                      setWorkerTrustArmed(entry.worker.id);
-                                      setWorkerActionError(
-                                        `再次点击“确认素材权限”，才会允许 ${entry.worker.name} 接收图片、视频和音频。`,
-                                      );
-                                      return;
-                                    }
-                                    void (async () => {
-                                      setWorkerActionBusy(true);
-                                      setWorkerActionError(null);
-                                      try {
-                                        await workerApi.update(entry.worker.id, {
-                                          allowSensitiveInputs: !entry.worker.allowSensitiveInputs,
-                                        });
-                                        setWorkerTrustArmed(null);
-                                        await onRefreshWorker();
-                                      } catch (cause) {
-                                        setWorkerActionError(
-                                          cause instanceof Error
-                                            ? cause.message
-                                            : "无法更新素材权限",
-                                        );
-                                      } finally {
-                                        setWorkerActionBusy(false);
-                                      }
-                                    })();
-                                  }}
-                                >
-                                  {entry.worker.allowSensitiveInputs
-                                    ? "撤销素材权限"
-                                    : workerTrustArmed === entry.worker.id
-                                      ? "确认素材权限"
-                                      : "允许素材"}
-                                </button>
-                                <button
-                                  type="button"
-                                  disabled={workerActionBusy}
-                                  onClick={() => {
-                                    void (async () => {
-                                      setWorkerActionBusy(true);
-                                      setWorkerActionError(null);
-                                      try {
-                                        await workerApi.update(entry.worker.id, {
-                                          enabled: !entry.worker.enabled,
-                                        });
-                                        await onRefreshWorker();
-                                      } catch (cause) {
-                                        setWorkerActionError(
-                                          cause instanceof Error ? cause.message : "无法更新执行端",
-                                        );
-                                      } finally {
-                                        setWorkerActionBusy(false);
-                                      }
-                                    })();
-                                  }}
-                                >
-                                  {entry.worker.enabled ? "停用" : "启用"}
-                                </button>
-                                {entry.worker.id !== worker?.fleet?.defaultWorkerId ? (
+                      <details>
+                        <summary>
+                          多设备调度 · {readyWorkerCount} / {fleetWorkers.length} 在线
+                        </summary>
+                        <div className="worker-fleet-list">
+                          {fleetWorkers.map((entry) => (
+                            <article
+                              className={`worker-fleet-card status-${entry.status}`}
+                              key={entry.worker.id}
+                            >
+                              <i />
+                              <div>
+                                <strong>{entry.worker.name}</strong>
+                                <span>
+                                  {entry.status === "ready"
+                                    ? `${entry.device ?? "ComfyUI"} · 队列 ${entry.queueRunning + entry.queuePending}`
+                                    : entry.status === "disabled"
+                                      ? "已停用，不参与调度"
+                                      : (entry.error ?? "当前离线")}
+                                </span>
+                                <small>
+                                  {entry.worker.transport === "loopback"
+                                    ? "本地地址（可能经转发）"
+                                    : entry.worker.transport === "ssh_tunnel"
+                                      ? "SSH 转发"
+                                      : "远程连接"}
+                                  {" · "}
+                                  {
+                                    { draft: "预览用途", balanced: "日常用途", final: "终稿用途" }[
+                                      entry.worker.qualityTier
+                                    ]
+                                  }{" "}
+                                  ·{" "}
+                                  {entry.worker.hourlyRate === null
+                                    ? "成本未知"
+                                    : `${entry.worker.hourlyRate} ${entry.worker.currency}/小时`}
+                                </small>
+                              </div>
+                              {user?.instanceRole === "admin" ? (
+                                <div className="worker-fleet-card-actions">
                                   <button
                                     type="button"
-                                    className="danger"
                                     disabled={workerActionBusy}
+                                    title={
+                                      entry.worker.allowSensitiveInputs
+                                        ? "撤销素材发送权限"
+                                        : "明确授权后，图片和视频才可发往此节点"
+                                    }
                                     onClick={() => {
-                                      if (workerRemoveArmed !== entry.worker.id) {
-                                        setWorkerRemoveArmed(entry.worker.id);
+                                      if (
+                                        !entry.worker.allowSensitiveInputs &&
+                                        workerTrustArmed !== entry.worker.id
+                                      ) {
+                                        setWorkerTrustArmed(entry.worker.id);
                                         setWorkerActionError(
-                                          `再次点击“确认移除”将删除 ${entry.worker.name} 的调度配置；运行历史不会删除。`,
+                                          `再次点击“确认素材权限”，才会允许 ${entry.worker.name} 接收图片、视频和音频。`,
                                         );
                                         return;
                                       }
@@ -1373,14 +1345,17 @@ export function ProjectHub({
                                         setWorkerActionBusy(true);
                                         setWorkerActionError(null);
                                         try {
-                                          await workerApi.remove(entry.worker.id);
-                                          setWorkerRemoveArmed(null);
+                                          await workerApi.update(entry.worker.id, {
+                                            allowSensitiveInputs:
+                                              !entry.worker.allowSensitiveInputs,
+                                          });
+                                          setWorkerTrustArmed(null);
                                           await onRefreshWorker();
                                         } catch (cause) {
                                           setWorkerActionError(
                                             cause instanceof Error
                                               ? cause.message
-                                              : "无法移除执行端",
+                                              : "无法更新素材权限",
                                           );
                                         } finally {
                                           setWorkerActionBusy(false);
@@ -1388,14 +1363,79 @@ export function ProjectHub({
                                       })();
                                     }}
                                   >
-                                    {workerRemoveArmed === entry.worker.id ? "确认移除" : "移除"}
+                                    {entry.worker.allowSensitiveInputs
+                                      ? "撤销素材权限"
+                                      : workerTrustArmed === entry.worker.id
+                                        ? "确认素材权限"
+                                        : "允许素材"}
                                   </button>
-                                ) : null}
-                              </div>
-                            ) : null}
-                          </article>
-                        ))}
-                      </div>
+                                  <button
+                                    type="button"
+                                    disabled={workerActionBusy}
+                                    onClick={() => {
+                                      void (async () => {
+                                        setWorkerActionBusy(true);
+                                        setWorkerActionError(null);
+                                        try {
+                                          await workerApi.update(entry.worker.id, {
+                                            enabled: !entry.worker.enabled,
+                                          });
+                                          await onRefreshWorker();
+                                        } catch (cause) {
+                                          setWorkerActionError(
+                                            cause instanceof Error
+                                              ? cause.message
+                                              : "无法更新执行端",
+                                          );
+                                        } finally {
+                                          setWorkerActionBusy(false);
+                                        }
+                                      })();
+                                    }}
+                                  >
+                                    {entry.worker.enabled ? "停用" : "启用"}
+                                  </button>
+                                  {entry.worker.id !== worker?.fleet?.defaultWorkerId ? (
+                                    <button
+                                      type="button"
+                                      className="danger"
+                                      disabled={workerActionBusy}
+                                      onClick={() => {
+                                        if (workerRemoveArmed !== entry.worker.id) {
+                                          setWorkerRemoveArmed(entry.worker.id);
+                                          setWorkerActionError(
+                                            `再次点击“确认移除”将删除 ${entry.worker.name} 的调度配置；运行历史不会删除。`,
+                                          );
+                                          return;
+                                        }
+                                        void (async () => {
+                                          setWorkerActionBusy(true);
+                                          setWorkerActionError(null);
+                                          try {
+                                            await workerApi.remove(entry.worker.id);
+                                            setWorkerRemoveArmed(null);
+                                            await onRefreshWorker();
+                                          } catch (cause) {
+                                            setWorkerActionError(
+                                              cause instanceof Error
+                                                ? cause.message
+                                                : "无法移除执行端",
+                                            );
+                                          } finally {
+                                            setWorkerActionBusy(false);
+                                          }
+                                        })();
+                                      }}
+                                    >
+                                      {workerRemoveArmed === entry.worker.id ? "确认移除" : "移除"}
+                                    </button>
+                                  ) : null}
+                                </div>
+                              ) : null}
+                            </article>
+                          ))}
+                        </div>
+                      </details>
                     ) : null}
                     {workerActionError ? (
                       <p className="worker-action-error" role="status">
@@ -1462,7 +1502,7 @@ export function ProjectHub({
                           type="button"
                           onClick={() => setWorkerFormOpen((current) => !current)}
                         >
-                          {workerFormOpen ? "收起" : "添加远程算力"}
+                          {workerFormOpen ? "收起调度配置" : "注册额外调度设备"}
                         </button>
                       ) : null}
                     </div>
@@ -1531,21 +1571,21 @@ export function ProjectHub({
                           />
                         </label>
                         <label>
-                          <span>质量定位</span>
+                          <span>调度用途</span>
                           <select
                             value={workerQuality}
                             onChange={(event) =>
                               setWorkerQuality(event.target.value as typeof workerQuality)
                             }
                           >
-                            <option value="draft">预览 · 更适合快速试错</option>
-                            <option value="balanced">均衡 · 日常生成</option>
-                            <option value="final">终稿 · 优先最终质量</option>
+                            <option value="draft">预览</option>
+                            <option value="balanced">日常</option>
+                            <option value="final">终稿</option>
                           </select>
                         </label>
                         <p>
-                          普通 HTTP 仅允许 SSH
-                          映射后的本机回环地址；图片、视频和音频默认不会发送到新节点。
+                          仅注册到调度池，不切换当前生成服务。用途是你指定的标签，不代表画质保证。
+                          素材默认不发送到新设备；HTTP 仅允许回环地址，不自动建立 SSH。
                         </p>
                         {workerActionError ? <div role="alert">{workerActionError}</div> : null}
                         <button

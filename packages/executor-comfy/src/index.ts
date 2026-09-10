@@ -1272,16 +1272,21 @@ export class ComfyClient {
     return history[promptId] ?? null;
   }
 
-  async download(file: ComfyOutputFile) {
+  /** Stream large results instead of buffering a complete video in server memory. */
+  async downloadResponse(file: ComfyOutputFile, signal?: AbortSignal) {
     const query = new URLSearchParams({
       filename: file.filename,
       subfolder: file.subfolder,
       type: file.type,
     });
     const response = await fetch(`${this.baseUrl}/view?${query}`, {
-      signal: AbortSignal.timeout(120_000),
+      signal: signal ?? AbortSignal.timeout(30 * 60_000),
     });
     if (!response.ok) throw new Error(`ComfyUI output download failed: ${response.status}`);
-    return new Uint8Array(await response.arrayBuffer());
+    return response;
+  }
+
+  async download(file: ComfyOutputFile) {
+    return new Uint8Array(await (await this.downloadResponse(file)).arrayBuffer());
   }
 }

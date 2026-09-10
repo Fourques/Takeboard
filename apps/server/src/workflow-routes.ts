@@ -485,19 +485,22 @@ function workflowArchiveToken(path: string, hash: string, references: WorkflowRe
 
 export function registerWorkflowRoutes(
   app: FastifyInstance,
-  comfyUrl: string,
-  editorUrl: string,
+  comfyEndpoint: string | (() => string),
+  editorEndpoint: string | (() => string),
   projectsRoot: string,
 ) {
+  const getComfyUrl = () => (typeof comfyEndpoint === "string" ? comfyEndpoint : comfyEndpoint());
+  const getEditorUrl = () =>
+    typeof editorEndpoint === "string" ? editorEndpoint : editorEndpoint();
   const inspectPath = async (path: string) => {
     const [workflow, current, proposal, objectInfo] = await Promise.all([
-      fetchWorkflow(comfyUrl, path),
-      readWorkflowBinding(comfyUrl, path),
-      readWorkflowBindingProposal(comfyUrl, path),
-      fetchComfyObjectInfo(comfyUrl),
+      fetchWorkflow(getComfyUrl(), path),
+      readWorkflowBinding(getComfyUrl(), path),
+      readWorkflowBindingProposal(getComfyUrl(), path),
+      fetchComfyObjectInfo(getComfyUrl()),
     ]);
     const inventory = installedModels(objectInfo);
-    const summary = workflowSummary(path, workflow, editorUrl, inventory, current);
+    const summary = workflowSummary(path, workflow, getEditorUrl(), inventory, current);
     const inspected = inspectWorkflowDocument(workflow, objectInfo, summary.workflowHash);
     const outputMediaType = detectedOutputMediaType(summary.capability, inspected.prompt, current);
     const activeProposal = proposal?.workflowHash === inspected.workflowHash ? proposal : null;
@@ -538,11 +541,11 @@ export function registerWorkflowRoutes(
 
   app.get("/api/workflows", async (_request, reply) => {
     try {
-      const paths = (await listComfyWorkflowPaths(comfyUrl)).filter(
+      const paths = (await listComfyWorkflowPaths(getComfyUrl())).filter(
         (path) => !path.startsWith("TakeBoard/.archive/"),
       );
       let objectInfoError: string | null = null;
-      const objectInfo = await fetchComfyObjectInfo(comfyUrl).catch((error: unknown) => {
+      const objectInfo = await fetchComfyObjectInfo(getComfyUrl()).catch((error: unknown) => {
         objectInfoError = error instanceof Error ? error.message : "ComfyUI 节点目录不可用";
         return null;
       });
@@ -550,10 +553,10 @@ export function registerWorkflowRoutes(
       const detected = await Promise.allSettled(
         paths.map(async (path) => {
           const [workflow, binding] = await Promise.all([
-            fetchWorkflow(comfyUrl, path),
-            readWorkflowBinding(comfyUrl, path),
+            fetchWorkflow(getComfyUrl(), path),
+            readWorkflowBinding(getComfyUrl(), path),
           ]);
-          const summary = workflowSummary(path, workflow, editorUrl, inventory, binding);
+          const summary = workflowSummary(path, workflow, getEditorUrl(), inventory, binding);
           if (!objectInfo) return summary;
           const inspected = inspectWorkflowDocument(workflow, objectInfo, summary.workflowHash);
           const outputMediaType = detectedOutputMediaType(
@@ -612,10 +615,10 @@ export function registerWorkflowRoutes(
             : [],
         ),
       ];
-      return { editorUrl, workflows, warnings, diagnostics };
+      return { editorUrl: getEditorUrl(), workflows, warnings, diagnostics };
     } catch (error) {
       return await reply.code(503).send({
-        editorUrl,
+        editorUrl: getEditorUrl(),
         workflows: [],
         error: error instanceof Error ? error.message : "无法检测 ComfyUI 工作流",
       });
@@ -646,7 +649,7 @@ export function registerWorkflowRoutes(
       return await reply.code(400).send({ error: "工作流路径无效" });
     }
     try {
-      return await fetchWorkflow(comfyUrl, path);
+      return await fetchWorkflow(getComfyUrl(), path);
     } catch (error) {
       return await reply.code(404).send({
         error: error instanceof Error ? error.message : "工作流不存在",
@@ -744,7 +747,7 @@ export function registerWorkflowRoutes(
     const mediaInput =
       body.media && typeof body.media === "object" ? (body.media as Record<string, unknown>) : {};
     try {
-      const inspected = await inspectWorkflowForBinding(comfyUrl, path);
+      const inspected = await inspectWorkflowForBinding(getComfyUrl(), path);
       const compactTargets = (entries: Array<[string, WorkflowBindingTarget[] | undefined]>) =>
         Object.fromEntries(
           entries.filter((entry): entry is [string, WorkflowBindingTarget[]] => Boolean(entry[1])),
@@ -788,7 +791,7 @@ export function registerWorkflowRoutes(
           .code(422)
           .send({ error: `绑定预检失败：${issues.slice(0, 8).join("；")}` });
       }
-      await writeWorkflowBinding(comfyUrl, path, binding);
+      await writeWorkflowBinding(getComfyUrl(), path, binding);
       return { status: "ready", binding };
     } catch (error) {
       return await reply.code(422).send({
@@ -804,12 +807,12 @@ export function registerWorkflowRoutes(
       if (!isWorkflowPath(path)) return await reply.code(400).send({ error: "工作流路径无效" });
       try {
         const [workflow, binding] = await Promise.all([
-          fetchWorkflow(comfyUrl, path),
-          readWorkflowBinding(comfyUrl, path),
+          fetchWorkflow(getComfyUrl(), path),
+          readWorkflowBinding(getComfyUrl(), path),
         ]);
         const hash = workflowHash(workflow);
         const activeBinding = binding?.workflowHash === hash ? binding : null;
-        const summary = workflowSummary(path, workflow, editorUrl, null, activeBinding);
+        const summary = workflowSummary(path, workflow, getEditorUrl(), null, activeBinding);
         const nodes = allNodes(workflow);
         const outputMediaType =
           activeBinding?.outputMediaType ??
@@ -898,9 +901,9 @@ export function registerWorkflowRoutes(
             verifiedAt: new Date().toISOString(),
           }
         : null;
-      if (proposal) await writeWorkflowBindingProposal(comfyUrl, destination, proposal);
+      if (proposal) await writeWorkflowBindingProposal(getComfyUrl(), destination, proposal);
       const saved = await fetch(
-        `${comfyUrl}/api/userdata/${encodeURIComponent(`workflows/${destination}`)}`,
+        `${getComfyUrl()}/api/userdata/${encodeURIComponent(`workflows/${destination}`)}`,
         {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -927,7 +930,7 @@ export function registerWorkflowRoutes(
       } catch (error) {
         return await reply.code(201).send({
           imported: true,
-          ...workflowSummary(destination, workflow, editorUrl, null, null),
+          ...workflowSummary(destination, workflow, getEditorUrl(), null, null),
           recipePackage: {
             format: recipe.manifest.format,
             version: recipe.manifest.version,
@@ -997,7 +1000,7 @@ export function registerWorkflowRoutes(
       .slice(0, 80);
     const suffix = Date.now().toString(36);
     const path = `workflows/TakeBoard/${safeName || "workflow"}-${suffix}.json`;
-    const response = await fetch(`${comfyUrl}/api/userdata/${encodeURIComponent(path)}`, {
+    const response = await fetch(`${getComfyUrl()}/api/userdata/${encodeURIComponent(path)}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(workflow),
@@ -1012,7 +1015,7 @@ export function registerWorkflowRoutes(
     } catch (error) {
       return await reply.code(201).send({
         imported: true,
-        ...workflowSummary(relativePath, workflow, editorUrl, null, null),
+        ...workflowSummary(relativePath, workflow, getEditorUrl(), null, null),
         warning:
           error instanceof Error ? error.message : "工作流已经导入，但当前电脑无法完成节点转换诊断",
       });
@@ -1027,7 +1030,7 @@ export function registerWorkflowRoutes(
         return await reply.code(400).send({ error: "只能归档从 TakeBoard 导入的工作流" });
       }
       try {
-        const workflow = await fetchWorkflow(comfyUrl, path);
+        const workflow = await fetchWorkflow(getComfyUrl(), path);
         const hash = workflowHash(workflow);
         const references = await workflowReferences(projectsRoot, path);
         return {
@@ -1055,7 +1058,7 @@ export function registerWorkflowRoutes(
       return await reply.code(400).send({ error: "归档请求无效" });
     }
     try {
-      const workflow = await fetchWorkflow(comfyUrl, body.path);
+      const workflow = await fetchWorkflow(getComfyUrl(), body.path);
       const hash = workflowHash(workflow);
       const references = await workflowReferences(projectsRoot, body.path);
       if (references.length > 0) {
@@ -1068,7 +1071,7 @@ export function registerWorkflowRoutes(
         return await reply.code(409).send({ error: "工作流或项目引用已经变化，请重新检查" });
       }
       const archivePath = workflowArchivePath(body.path);
-      await moveComfyWorkflow(comfyUrl, body.path, archivePath);
+      await moveComfyWorkflow(getComfyUrl(), body.path, archivePath);
       return { archived: true as const, archivePath, originalPath: body.path };
     } catch (error) {
       return await reply.code(502).send({
@@ -1079,7 +1082,7 @@ export function registerWorkflowRoutes(
 
   app.get("/api/workflows/archives", async (_request, reply) => {
     try {
-      const archives = (await listComfyWorkflowPaths(comfyUrl))
+      const archives = (await listComfyWorkflowPaths(getComfyUrl()))
         .flatMap((path) => archivedWorkflow(path) ?? [])
         .sort((left, right) => right.archivedAt.localeCompare(left.archivedAt));
       return { archives };
@@ -1100,14 +1103,14 @@ export function registerWorkflowRoutes(
       typeof body.archivePath === "string" ? archivedWorkflow(body.archivePath) : null;
     if (!archived) return await reply.code(400).send({ error: "归档路径无效" });
     try {
-      const paths = await listComfyWorkflowPaths(comfyUrl);
+      const paths = await listComfyWorkflowPaths(getComfyUrl());
       if (!paths.includes(archived.archivePath)) {
         return await reply.code(404).send({ error: "归档不存在" });
       }
       if (paths.includes(archived.originalPath)) {
         return await reply.code(409).send({ error: "原位置已有同名工作流，请先处理名称冲突" });
       }
-      await moveComfyWorkflow(comfyUrl, archived.archivePath, archived.originalPath);
+      await moveComfyWorkflow(getComfyUrl(), archived.archivePath, archived.originalPath);
       return { restored: true as const, path: archived.originalPath };
     } catch (error) {
       return await reply.code(502).send({

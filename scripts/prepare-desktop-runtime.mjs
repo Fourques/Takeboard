@@ -109,10 +109,7 @@ async function main() {
   ]);
   await Promise.all([
     cp(join(repositoryRoot, "apps", "web", "dist"), join(resourceRoot, "web"), { recursive: true }),
-    cp(
-      join(repositoryRoot, "scripts", "portable-launcher.mjs"),
-      join(resourceRoot, "launcher.mjs"),
-    ),
+    cp(join(repositoryRoot, "scripts", "runtime-launcher.mjs"), join(resourceRoot, "launcher.mjs")),
     ...[
       "desktop-connection.mjs",
       "desktop-updates.mjs",

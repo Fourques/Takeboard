@@ -1,6 +1,30 @@
 use tauri::{Manager, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
 
+pub const ACTION_CAPABILITY: &str = "window.__takeboardNativeActions = 2;";
+
+fn action_name(url: &tauri::Url) -> Option<&str> {
+    if url.scheme() == "takeboard-desktop" {
+        return url.host_str();
+    }
+    if url.scheme() == "https"
+        && url.host_str() == Some("takeboard-desktop.invalid")
+        && url.port().is_none()
+        && url.username().is_empty()
+        && url.password().is_none()
+    {
+        return Some(url.path().trim_start_matches('/'));
+    }
+    None
+}
+
+fn acknowledge(app: &tauri::AppHandle, source: &str, action_id: &str, error: Option<String>) {
+    if let Some(window) = app.get_webview_window(source) {
+        let payload = serde_json::json!({"actionId": action_id, "error": error});
+        let _ = window.eval(&format!("window.dispatchEvent(new CustomEvent('takeboard:desktop-action',{{detail:{payload}}}));"));
+    }
+}
+
 // GTK requires a registered download handler to explicitly choose a destination.
 // Keep downloads on the client; never accept a server-supplied absolute path.
 pub fn download(webview: tauri::Webview, event: tauri::webview::DownloadEvent<'_>) -> bool {
@@ -44,40 +68,66 @@ pub fn download(webview: tauri::Webview, event: tauri::webview::DownloadEvent<'_
 
 // Remote content can open the connection UI, but cannot select or reveal local files.
 pub fn navigation(app: &tauri::AppHandle, source: &str, url: &tauri::Url) -> bool {
-    if url.scheme() != "takeboard-desktop" {
+    let Some(action) = action_name(url) else {
         return true;
-    }
-    if url.host_str() == Some("updates") {
-        let app = app.clone();
-        tauri::async_runtime::spawn(async move {
-            let _ = crate::updates::open(app).await;
-        });
+    };
+    let action_id = url
+        .query_pairs()
+        .find(|(key, _)| key == "actionId")
+        .map(|(_, value)| value.into_owned())
+        .unwrap_or_default();
+    if action_id.len() > 64 {
         return false;
     }
-    if url.host_str() == Some("connections") {
+    if action == "updates" || action == "connections" {
         let app = app.clone();
+        let source = source.to_owned();
+        let updates = action == "updates";
         tauri::async_runtime::spawn(async move {
-            let _ = crate::connections::open(app).await;
+            let result = if updates {
+                crate::updates::open(app.clone()).await
+            } else {
+                crate::connections::open(app.clone()).await
+            };
+            acknowledge(
+                &app,
+                &source,
+                &action_id,
+                result.err().map(|error| error.to_string()),
+            );
         });
         return false;
     }
     if source != "main" {
+        acknowledge(
+            app,
+            source,
+            &action_id,
+            Some("远程项目的目录位于服务器，不能在当前电脑的文件管理器中打开。".into()),
+        );
         return false;
     }
     let Some(window) = app.get_webview_window("main") else {
         return false;
     };
     if !is_local_workspace(app, &window) {
+        acknowledge(
+            app,
+            source,
+            &action_id,
+            Some("只能从此电脑的项目页面访问本地文件夹。".into()),
+        );
         return false;
     }
-    match url.host_str() {
-        Some("choose-folder") => {
+    match action {
+        "choose-folder" => {
             let request = url
                 .query_pairs()
                 .find(|(key, _)| key == "request")
                 .map(|(_, value)| value.into_owned())
                 .unwrap_or_default();
             if request.len() > 64 {
+                acknowledge(app, source, &action_id, Some("文件夹选择请求无效。".into()));
                 return false;
             }
             let callback_app = app.clone();
@@ -87,8 +137,9 @@ pub fn navigation(app: &tauri::AppHandle, source: &str, url: &tauri::Url) -> boo
                 let payload = serde_json::json!({"request": request, "path": path});
                 let _ = window.eval(&format!("window.dispatchEvent(new CustomEvent('takeboard:folder-picked',{{detail:{payload}}}));"));
             });
+            acknowledge(app, source, &action_id, None);
         }
-        Some("reveal-folder") => {
+        "reveal-folder" => {
             let path = url
                 .query_pairs()
                 .find(|(key, _)| key == "path")
@@ -96,26 +147,66 @@ pub fn navigation(app: &tauri::AppHandle, source: &str, url: &tauri::Url) -> boo
                 .unwrap_or_default();
             let path = std::path::PathBuf::from(path);
             if !path.is_absolute() || !path.is_dir() {
+                acknowledge(
+                    app,
+                    source,
+                    &action_id,
+                    Some("文件夹不存在或当前不可访问，请检查磁盘连接与项目位置。".into()),
+                );
                 return false;
             }
             #[cfg(target_os = "macos")]
-            {
-                let _ = std::process::Command::new("open").arg(&path).spawn();
-            }
+            let mut command = std::process::Command::new("open");
             #[cfg(target_os = "windows")]
-            {
-                let _ = std::process::Command::new("explorer.exe")
-                    .arg(&path)
-                    .spawn();
-            }
+            let mut command = std::process::Command::new("explorer.exe");
             #[cfg(all(unix, not(target_os = "macos")))]
-            {
-                let _ = std::process::Command::new("xdg-open").arg(&path).spawn();
-            }
+            let mut command = std::process::Command::new("xdg-open");
+            let result = command.arg(&path).spawn();
+            acknowledge(
+                app,
+                source,
+                &action_id,
+                result
+                    .err()
+                    .map(|error| format!("无法打开文件管理器：{error}")),
+            );
         }
-        _ => {}
+        _ => acknowledge(
+            app,
+            source,
+            &action_id,
+            Some("当前安装包不支持此操作，请检查更新。".into()),
+        ),
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn native_action_origin_is_exact_and_legacy_links_still_work() {
+        for (url, expected) in [
+            (
+                "https://takeboard-desktop.invalid/connections?actionId=abc",
+                Some("connections"),
+            ),
+            (
+                "takeboard-desktop://reveal-folder?path=/tmp",
+                Some("reveal-folder"),
+            ),
+            (
+                "https://takeboard-desktop.invalid.attacker.test/connections",
+                None,
+            ),
+            ("https://takeboard-desktop.invalid:8443/connections", None),
+            ("https://user@takeboard-desktop.invalid/connections", None),
+            ("http://takeboard-desktop.invalid/connections", None),
+        ] {
+            let url = tauri::Url::parse(url).unwrap();
+            assert_eq!(action_name(&url), expected);
+        }
+    }
 }
 
 fn is_local_workspace(app: &tauri::AppHandle, window: &WebviewWindow) -> bool {

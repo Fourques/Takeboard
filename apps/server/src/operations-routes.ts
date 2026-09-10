@@ -127,7 +127,7 @@ export function registerOperationsRoutes(
   auth: AuthService,
   options: {
     version: string;
-    comfyUrl: string;
+    comfyUrl: string | (() => string);
     webRoot: string | null;
     backupAutomation: BackupAutomation | null;
   },
@@ -358,9 +358,15 @@ export function registerOperationsRoutes(
       action: webReady ? null : "运行 pnpm build 后重启 TakeBoard。",
     });
 
-    const workerReady = await fetch(`${options.comfyUrl.replace(/\/$/, "")}/system_stats`, {
-      signal: AbortSignal.timeout(1_500),
-    })
+    const workerReady = await Promise.resolve()
+      .then(() =>
+        fetch(
+          `${(typeof options.comfyUrl === "string" ? options.comfyUrl : options.comfyUrl()).replace(/\/$/, "")}/system_stats`,
+          {
+            signal: AbortSignal.timeout(1_500),
+          },
+        ),
+      )
       .then((response) => response.ok)
       .catch(() => false);
     addCheck({

@@ -322,10 +322,15 @@ export function registerWorkerRoutes(
   app.addHook("onRoute", (route) => {
     const control =
       route.method === "POST" &&
-      ["/api/workers/comfy/start", "/api/workers/comfy/stop"].includes(route.url);
+      [
+        "/api/workers/comfy/start",
+        "/api/workers/comfy/stop",
+        "/api/generation/connection",
+      ].includes(route.url);
     const generation =
       route.method === "POST" && route.url === "/api/projects/:key/shots/:shotId/generate";
-    if (!control && !generation) return;
+    const workflow = route.url.startsWith("/api/workflows");
+    if (!control && !generation && !workflow) return;
     const handler = route.handler;
     route.handler = async function (request, reply) {
       if (lifecycleBusy || (control && submissions > 0))
@@ -342,7 +347,9 @@ export function registerWorkerRoutes(
   });
   const controlStatus = async () => {
     const canStop =
-      localEndpoint(comfyUrl) && (await launcher.canStop?.().catch(() => false)) === true;
+      workerPool.defaultWorkerId === workerPool.localWorkerId &&
+      localEndpoint(comfyUrl) &&
+      (await launcher.canStop?.().catch(() => false)) === true;
     return {
       canStop,
       message: canStop
@@ -476,6 +483,26 @@ export function registerWorkerRoutes(
   );
 
   app.get("/api/workers/comfy", async () => {
+    if (workerPool.defaultWorkerId !== workerPool.localWorkerId) {
+      const selected = workerPool.definition(workerPool.defaultWorkerId);
+      const health = selected ? await workerPool.probe(selected) : null;
+      return {
+        status: health?.status === "ready" ? "ready" : "offline",
+        engine: "ComfyUI",
+        device: health?.device ?? undefined,
+        version: health?.version ?? undefined,
+        error: health?.error ?? undefined,
+        vramTotal: health?.vramTotal ?? undefined,
+        vramFree: health?.vramFree ?? undefined,
+        startup: blockedStartup(
+          platform,
+          launcher,
+          [],
+          "当前使用独立连接的生成服务；不会在项目设备上代启或关闭它",
+        ),
+        control: { canStop: false, message: "仅管理连接，不会停止远端 ComfyUI 或其他用户的任务" },
+      };
+    }
     const worker = await probeWorker(runtime, comfyUrl, platform, launcher);
     if (worker) return { ...worker, control: await controlStatus() };
     const startup = await preflight(runtime, comfyUrl, launcher, options);
@@ -544,6 +571,10 @@ export function registerWorkerRoutes(
   });
 
   app.post<{ Body: { action?: string } }>("/api/workers/comfy/start", async (request, reply) => {
+    if (workerPool.defaultWorkerId !== workerPool.localWorkerId)
+      return await reply
+        .code(409)
+        .send({ error: "当前连接的是独立生成服务，不会在本机误启动 ComfyUI" });
     if (!request.headers["content-type"]?.includes("application/json")) {
       return await reply.code(415).send({ error: "需要 JSON 启动确认" });
     }

@@ -1,11 +1,18 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { type DeviceInfo, type DeviceSettings, deviceApi } from "./api";
+import { DesktopActionButton } from "./desktop-actions";
 import { readConnectionDisplay } from "./device-context";
 import { DisplaySettings } from "./display-settings";
 import { type ProjectLocationChoice, ProjectLocationPicker } from "./project-location-picker";
 import { ThemeSwitcher } from "./theme-switcher";
 import "./settings-center.css";
+
+const GenerationConnectionPanel = lazy(() =>
+  import("./generation-connection-panel").then((module) => ({
+    default: module.GenerationConnectionPanel,
+  })),
+);
 
 export function SettingsButton() {
   const [update, setUpdate] = useState(() =>
@@ -180,14 +187,17 @@ function SettingsCenter({ onClose }: { onClose: () => void }) {
         )}
       </section>
       <section>
-        <h3>设备与连接</h3>
+        <Suspense fallback={<p>正在读取生成服务…</p>}>
+          <GenerationConnectionPanel />
+        </Suspense>
+        <h3>远程项目</h3>
         <p>{connection?.address || window.location.origin}</p>
         <p>
-          项目与生成结果保存在当前连接设备，下载的副本保存在这台电脑。ComfyUI
-          的连接与启停仍在顶栏服务面板中管理。
+          仅需远程生成，请使用上方“生成服务”。如果希望项目和素材也保存在服务器， 可另行打开远程
+          TakeBoard，并在那里选择项目文件夹；需要的文件可下载到当前电脑。
         </p>
         {desktop ? (
-          <a href="takeboard-desktop://connections">管理连接设备</a>
+          <DesktopActionButton action="connections">打开远程项目 / 管理连接</DesktopActionButton>
         ) : (
           <p>使用桌面 App 可管理 SSH、HTTPS 和 Portal 连接。</p>
         )}
@@ -196,7 +206,7 @@ function SettingsCenter({ onClose }: { onClose: () => void }) {
         <h3>版本与更新</h3>
         <p>检查当前电脑上的 App，不会更新或重启远程 TakeBoard，也不会中断生成。</p>
         {desktop ? (
-          <a href="takeboard-desktop://updates">检查更新与提醒设置</a>
+          <DesktopActionButton action="updates">检查更新与提醒设置</DesktopActionButton>
         ) : (
           <a href="https://github.com/Fourques/Takeboard/releases" target="_blank" rel="noreferrer">
             查看官方发布 · 浏览器不能安装更新

@@ -1,0 +1,41 @@
+.generation-connection-panel {
+  padding: 12px 0;
+  overflow-wrap: anywhere;
+}
+.generation-connection-panel :is(fieldset, label, .generation-recent, button, div:first-child) {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.generation-connection-panel :is(input, select, button) {
+  padding: 8px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+}
+.generation-connection-panel fieldset {
+  margin: 0;
+  padding: 12px 0;
+  border: 0;
+}
+.generation-connection-panel :is(p, small, code) {
+  font-size: 0.85em;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.generation-connection-panel summary {
+  cursor: pointer;
+  padding: 8px 0;
+}
+.hub-header .worker-pill > div {
+  min-width: 0;
+  max-width: min(180px, 24vw);
+}
+.hub-header .worker-pill strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

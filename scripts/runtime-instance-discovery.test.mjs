@@ -4,7 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 // Exercise the exact bundled, dependency-free selector with controlled endpoints.
-const source = await readFile(new URL("./portable-launcher.mjs", import.meta.url), "utf8");
+const source = await readFile(new URL("./runtime-launcher.mjs", import.meta.url), "utf8");
 const selector = source.slice(
   source.indexOf("async function selectPort("),
   source.indexOf("function openBrowser("),
@@ -29,7 +29,7 @@ test("finds a later existing instance before choosing an earlier free port", asy
   const choose = fixture(null, new Map([[48121, { instanceId: "same-instance", version: "v1" }]]));
   assert.deepEqual(await choose("same-instance", "v1", "/unused"), { port: 48121, existing: true });
 });
-test("discovers a desktop instance outside the portable range", async () => {
+test("discovers a desktop instance outside the fallback port range", async () => {
   const record = { port: 51234, instanceId: "same-instance" };
   const choose = fixture(record, new Map([[51234, { ...record, version: "v1" }]]));
   assert.deepEqual(await choose("same-instance", "v1", "/unused"), { port: 51234, existing: true });

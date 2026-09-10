@@ -5,6 +5,7 @@ import { createTakeBoardId, toIsoTimestamp } from "@takeboard/domain";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
 import { ProjectStore } from "../src/storage/project-store.js";
+import { executeTestCommand } from "./command-fixture.js";
 
 const cleanup: Array<() => Promise<void>> = [];
 
@@ -25,10 +26,10 @@ describe("production accounting and cross-shot approval routes", () => {
     });
     const key = created.json().key as string;
     const firstShotId = created.json().snapshot.shots[0].id as string;
-    const second = await app.inject({
-      method: "POST",
-      url: `/api/projects/${key}/shots`,
-      payload: { label: "SH-002", durationSeconds: 5 },
+    const second = await executeTestCommand(app, key, {
+      type: "canvas.create_shot",
+      label: "SH-002",
+      durationSeconds: 5,
     });
     const secondShotId = second.json().shotId as string;
     const store = ProjectStore.openExisting(join(root, key));

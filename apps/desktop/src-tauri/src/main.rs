@@ -344,6 +344,7 @@ fn main() {
         .setup(|app| {
             let handle = app.handle().clone();
             tauri::WebviewWindowBuilder::from_config(app, &app.config().app.windows[0])?
+                .initialization_script(local_files::ACTION_CAPABILITY)
                 .on_navigation(move |url| local_files::navigation(&handle, "main", url))
                 .on_download(local_files::download)
                 .build()?;

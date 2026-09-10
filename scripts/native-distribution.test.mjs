@@ -17,8 +17,6 @@ test("desktop release versions match the server, native host and workspace manif
     "packages/executor-comfy/package.json",
     "packages/identity/package.json",
     "packages/portal-protocol/package.json",
-    "packages/recipe/package.json",
-    "packages/test-fixtures/package.json",
   ]) {
     assert.equal(JSON.parse(await read(path)).version, version, path);
   }
@@ -35,7 +33,7 @@ test("desktop release versions match the server, native host and workspace manif
 });
 
 test("public preview pipeline builds only native installers and checks final packaged runtimes", async () => {
-  const workflow = await read(".github/workflows/portable-bundles.yml");
+  const workflow = await read(".github/workflows/desktop-preview.yml");
   assert.doesNotMatch(workflow, /bundle:portable|release\/\*\.tar\.gz|demo:capture/);
   assert.equal((workflow.match(/platform: /g) ?? []).length, 6);
   assert.equal((workflow.match(/node scripts\/verify-desktop-runtime.mjs/g) ?? []).length, 3);

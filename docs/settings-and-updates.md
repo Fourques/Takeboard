@@ -51,5 +51,5 @@
 - Windows、macOS、Linux 的完整质量门禁 `pnpm verify`、32 条功能浏览器回归，以及独立的 500 节点画布性能检查。
 - 六种原生安装包构建；从挂载的 DMG 或已安装的 EXE/DEB 运行真正打包的 Node/服务，验证更新偏好、默认项目位置和登录状态跨进程重启保持、安全释放服务端口。
 - 实际读取 GitHub 公开发布，核对六个平台/架构的安装包匹配。更新窗口 DOM 测试使用明确标注的 IPC 替身，不等于 Mac/Windows 原生更新窗口的人工交互验收。
-- 平台安装器构建及包内运行时检查结果见对应版本的 [Actions 记录](https://github.com/Fourques/Takeboard/actions/workflows/portable-bundles.yml)；不将这些检查说成原生窗口交互或全部 GPU 工作流的验收。
+- 平台安装器构建及包内运行时检查结果见对应版本的 [Actions 记录](https://github.com/Fourques/Takeboard/actions/workflows/desktop-preview.yml)；不将这些检查说成原生窗口交互或全部 GPU 工作流的验收。
 - 没有新增 GPU 兼容性证明，也未改变原有上游 Linux 依赖告警的处理边界。

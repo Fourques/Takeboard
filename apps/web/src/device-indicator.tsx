@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { type DeviceInfo, deviceApi } from "./api";
+import { DesktopActionButton } from "./desktop-actions";
 import { readConnectionDisplay } from "./device-context";
 import "./device-indicator.css";
 
@@ -52,9 +53,10 @@ export function DeviceIndicator({ projectKey }: { projectKey?: string | undefine
     };
   }, [connection, projectKey, revision]);
 
+  if (connection?.kind === "local" && !projectKey) return null;
   const label =
     connection?.kind === "local"
-      ? "此电脑"
+      ? "项目文件"
       : connection?.kind === "portal"
         ? device?.name || "远程设备"
         : connection?.name ||
@@ -87,7 +89,15 @@ export function DeviceIndicator({ projectKey }: { projectKey?: string | undefine
       </summary>
       <div className="device-indicator-panel">
         <strong>{label}</strong>
-        <span>{error ? "需要检查连接" : device ? "TakeBoard 已连接" : "正在检测 TakeBoard…"}</span>
+        <span>
+          {error
+            ? "需要检查连接"
+            : connection?.kind === "local"
+              ? "保存在此电脑，不随生成服务切换"
+              : device
+                ? "远程项目"
+                : "正在读取项目位置…"}
+        </span>
         <dl>
           <dt>{connection?.kind === "portal" ? "门户入口" : "连接地址"}</dt>
           <dd>{address}</dd>
@@ -138,14 +148,14 @@ export function DeviceIndicator({ projectKey }: { projectKey?: string | undefine
         ) : null}
         {notice ? <p role="status">{notice}</p> : null}
         {"__TAURI__" in window ? (
-          <a href="takeboard-desktop://connections">切换设备 / 管理连接</a>
+          <DesktopActionButton action="connections">打开远程项目 / 管理连接</DesktopActionButton>
         ) : (
           <p>桌面应用中可从“连接 → 连接设备”切换或断开远程连接。</p>
         )}
         {directory && connection?.kind === "local" && "__TAURI__" in window ? (
-          <a href={`takeboard-desktop://reveal-folder?${new URLSearchParams({ path: directory })}`}>
+          <DesktopActionButton action="reveal-folder" parameters={{ path: directory }}>
             在文件夹中显示
-          </a>
+          </DesktopActionButton>
         ) : null}
       </div>
     </details>

@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { mkdir, readdir, readFile, rm, stat, unlink, writeFile } from "node:fs/promises";
-import { basename, dirname, extname, join, resolve, sep } from "node:path";
+import { readdir, readFile, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { basename, extname, join, resolve, sep } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import {
   executionPolicySchema,
   type ProjectSnapshot,
@@ -16,12 +17,19 @@ import {
   buildWan22FirstLastPrompt,
   buildWan22I2VPrompt,
   type ComfyClient,
+  type ComfyOutputFile,
   type ComfyPrompt,
   miniMaxH3Resolution,
   qwenImage2512Resolution,
 } from "@takeboard/executor-comfy";
 import type { FastifyInstance } from "fastify";
 import { createImageProxy, inspectImage, inspectVideo } from "./asset-inspection.js";
+import {
+  cleanupInterruptedOutput,
+  readMediaMetadata,
+  saveOutputResponse,
+  type TransferProgress,
+} from "./output-transfer.js";
 import { projectDirectory } from "./project-locations.js";
 import { projectKey } from "./project-routes.js";
 import { ProjectStore } from "./storage/project-store.js";
@@ -145,7 +153,7 @@ async function cleanupComfyRunFiles(
     const entries = await readdir(inputRoot, { withFileTypes: true }).catch(() => []);
     await Promise.all(
       entries
-        .filter((entry) => entry.isFile() && entry.name.includes(runId))
+        .filter((entry) => entry.isFile() && entry.name.startsWith(`takeboard_${runId}_`))
         .map((entry) => unlink(join(inputRoot, entry.name)).catch(() => undefined)),
     );
   }
@@ -165,8 +173,63 @@ export function registerGenerationRoutes(
   storage: GenerationStorageOptions = { inputRoot: null, outputRoot: null },
 ) {
   const root = resolve(projectsRoot);
-  const liveProgress = (run: ProjectSnapshot["runs"][number]) => {
+  const localStorageFor = (workerId: string | null) =>
+    workerId === workerPool.localWorkerId ? storage : { inputRoot: null, outputRoot: null };
+  const transfers = new Map<string, TransferProgress>();
+  type DownloadJob = {
+    key: string;
+    abort: AbortController;
+    promise: Promise<void>;
+    result?: Awaited<ReturnType<typeof saveOutputResponse>>;
+    error?: unknown;
+  };
+  const downloads = new Map<string, DownloadJob>();
+  let transfersClosing = false;
+  const stopDownloads = async (key?: string, runId?: string) => {
+    for (const [id, job] of downloads) {
+      if ((key && job.key !== key) || (runId && id !== `${key}:${runId}`)) continue;
+      job.abort.abort();
+      await job.promise;
+      downloads.delete(id);
+      transfers.delete(id);
+    }
+  };
+  // Transfers never hold the project lock while waiting on the network.
+  app.addHook("preHandler", async (request) => {
+    const params = request.params as { key?: string; runId?: string };
+    if (
+      params.key &&
+      ((request.method === "DELETE" && request.routeOptions.url === "/api/projects/:key") ||
+        request.routeOptions.url === "/api/projects/:key/runs/:runId/cancel")
+    )
+      await stopDownloads(params.key, params.runId);
+  });
+  app.addHook("preClose", async () => {
+    transfersClosing = true;
+    await stopDownloads();
+  });
+  const liveProgress = (run: ProjectSnapshot["runs"][number], key: string) => {
     if (!run.promptId) return null;
+    if (run.status === "collecting_outputs") {
+      const transfer = transfers.get(`${key}:${run.id}`);
+      return {
+        phase: "collecting" as const,
+        label:
+          run.errorCode === "OUTPUT_TRANSFER_FAILED"
+            ? "结果待下载 · 将自动重试"
+            : "正在保存生成结果",
+        detail:
+          run.errorMessage ||
+          (transfer
+            ? `已接收 ${(transfer.receivedBytes / 1024 / 1024).toFixed(1)} MB${transfer.totalBytes ? ` / ${(transfer.totalBytes / 1024 / 1024).toFixed(1)} MB` : ""}`
+            : "生成已完成，文件完整写入项目后才会标记完成"),
+        percent: transfer?.percent ?? null,
+        nodeId: null,
+        queueRemaining: null,
+        source: "output_transfer" as const,
+        updatedAt: run.updatedAt,
+      };
+    }
     const comfy = workerPool.client(run.workerId, process.env.NODE_ENV !== "test");
     const clientId = run.parameters.comfyClientId;
     if (typeof clientId === "string" && !terminalRunStatuses.has(run.status)) {
@@ -176,9 +239,8 @@ export function registerGenerationRoutes(
       comfy.progress(run.promptId) ??
       (!terminalRunStatuses.has(run.status)
         ? {
-            phase: run.status === "collecting_outputs" ? "collecting" : "running",
-            label:
-              run.status === "collecting_outputs" ? "正在回收生成文件" : "ComfyUI 正在执行工作流",
+            phase: "running",
+            label: "ComfyUI 正在执行工作流",
             detail: "当前节点未提供实时步进；任务状态来自执行端 History",
             percent: null,
             nodeId: null,
@@ -570,6 +632,29 @@ export function registerGenerationRoutes(
           }
           return { key, runId: run.id, status: run.status, cancelled: false, ...current };
         }
+        if (
+          run.status === "collecting_outputs" &&
+          run.parameters.remoteExecutionCompleted === true
+        ) {
+          run.status = "cancelled";
+          run.errorCode = null;
+          run.errorMessage = null;
+          run.updatedAt = toIsoTimestamp();
+          refreshShotStatus(current.snapshot, run.shotId, run.updatedAt);
+          const saved = await store.save(current.snapshot, {
+            type: "run.download_cancelled",
+            payload: { runId: run.id },
+          });
+          return {
+            key,
+            runId: run.id,
+            status: run.status,
+            cancelled: true,
+            resourcesReleased: false,
+            warning: "已停止保存结果；远端生成已完成，原文件仍保留。",
+            ...saved,
+          };
+        }
         const comfy = workerPool.client(run.workerId, process.env.NODE_ENV !== "test");
         let dispatched = run.promptId === null;
         let dispatchError: string | null = null;
@@ -610,7 +695,12 @@ export function registerGenerationRoutes(
 
         await Promise.allSettled([
           ...(run.promptId ? [comfy.deleteHistory(run.promptId)] : []),
-          cleanupComfyRunFiles(storage, current.snapshot.project.id, run.shotId, run.id),
+          cleanupComfyRunFiles(
+            localStorageFor(run.workerId),
+            current.snapshot.project.id,
+            run.shotId,
+            run.id,
+          ),
         ]);
         if (run.promptId) comfy.forgetProgress(run.promptId);
         let resourcesReleased = false;
@@ -650,6 +740,7 @@ export function registerGenerationRoutes(
       let preparedShotId: string | null = null;
       let submissionStarted = false;
       let comfy: ComfyClient | null = null;
+      let selectedWorkerId: string | null = null;
       try {
         const current = store.loadCurrent();
         if (!current) return await reply.code(404).send({ error: "项目不存在" });
@@ -929,7 +1020,7 @@ export function registerGenerationRoutes(
               path: directory,
               reserveBytes: projectStorageReserveBytes(),
             },
-            ...(storage.outputRoot
+            ...(storage.outputRoot && workerPool.defaultWorkerId === workerPool.localWorkerId
               ? [
                   {
                     label: "ComfyUI 输出盘",
@@ -987,6 +1078,7 @@ export function registerGenerationRoutes(
           throw error;
         }
         comfy = workerPool.client(selection.worker.id, process.env.NODE_ENV !== "test");
+        selectedWorkerId = selection.worker.id;
         const selectedComfy = comfy;
         if (boundWorkflow && selection.worker.id !== workerPool.defaultWorkerId) {
           boundWorkflow = await loadExecutableWorkflow(selection.worker.endpoint, recipePath);
@@ -1128,12 +1220,22 @@ export function registerGenerationRoutes(
             qualityProfile: wanPreview ? "preview" : "quality",
           });
         } else {
-          await cleanupComfyRunFiles(storage, current.snapshot.project.id, shot.id, runId);
+          await cleanupComfyRunFiles(
+            localStorageFor(selection.worker.id),
+            current.snapshot.project.id,
+            shot.id,
+            runId,
+          );
           return await reply.code(409).send({ error: "当前 Recipe 需要一张起始帧" });
         }
         const preflightErrors = await comfy.preflightPrompt(prompt);
         if (preflightErrors.length > 0) {
-          await cleanupComfyRunFiles(storage, current.snapshot.project.id, shot.id, runId);
+          await cleanupComfyRunFiles(
+            localStorageFor(selection.worker.id),
+            current.snapshot.project.id,
+            shot.id,
+            runId,
+          );
           return await reply.code(422).send({
             error: `Recipe 预检失败：${preflightErrors.slice(0, 5).join("；")}`,
           });
@@ -1320,7 +1422,7 @@ export function registerGenerationRoutes(
           candidateBatchId,
           candidateIndex,
           candidateCount,
-          progress: liveProgress(preparedRun),
+          progress: liveProgress(preparedRun, key),
           ...saved,
         });
       } catch (error) {
@@ -1332,7 +1434,12 @@ export function registerGenerationRoutes(
           comfy?.forgetProgress(submittedPromptId);
         }
         if (remoteCancellationConfirmed && preparedProjectId && preparedShotId && preparedRunId) {
-          await cleanupComfyRunFiles(storage, preparedProjectId, preparedShotId, preparedRunId);
+          await cleanupComfyRunFiles(
+            localStorageFor(selectedWorkerId),
+            preparedProjectId,
+            preparedShotId,
+            preparedRunId,
+          );
         }
         if (preparedRunId) {
           try {
@@ -1405,7 +1512,18 @@ export function registerGenerationRoutes(
 
       const comfy = workerPool.client(run.workerId, process.env.NODE_ENV !== "test");
 
-      const history = await comfy.history(run.promptId);
+      const retainedOutput = run.parameters.remoteOutput as ComfyOutputFile | undefined;
+      const validRetainedOutput =
+        retainedOutput &&
+        typeof retainedOutput.filename === "string" &&
+        typeof retainedOutput.subfolder === "string" &&
+        typeof retainedOutput.type === "string";
+      const history = validRetainedOutput
+        ? {
+            outputs: { retained: { images: [retainedOutput], videos: [retainedOutput] } },
+            status: { completed: true, status_str: "success" },
+          }
+        : await comfy.history(run.promptId);
       if (!history) {
         // History is not the queue: a restart/pruned history must not leave a
         // phantom running task forever. Transport failures throw without declaring loss.
@@ -1459,7 +1577,9 @@ export function registerGenerationRoutes(
             runId: run.id,
             status: run.status,
             progress:
-              run.status === "orphaned" || run.status === "cancelled" ? null : liveProgress(run),
+              run.status === "orphaned" || run.status === "cancelled"
+                ? null
+                : liveProgress(run, key),
             ...saved,
           };
         }
@@ -1467,7 +1587,7 @@ export function registerGenerationRoutes(
           key,
           runId: run.id,
           status: run.status,
-          progress: run.status === "orphaned" ? null : liveProgress(run),
+          progress: run.status === "orphaned" ? null : liveProgress(run, key),
           ...current,
         };
       }
@@ -1485,7 +1605,12 @@ export function registerGenerationRoutes(
         });
         await Promise.allSettled([
           comfy.deleteHistory(run.promptId),
-          cleanupComfyRunFiles(storage, current.snapshot.project.id, run.shotId, run.id),
+          cleanupComfyRunFiles(
+            localStorageFor(run.workerId),
+            current.snapshot.project.id,
+            run.shotId,
+            run.id,
+          ),
         ]);
         comfy.forgetProgress(run.promptId);
         return { key, runId: run.id, status: run.status, progress: null, ...saved };
@@ -1510,7 +1635,7 @@ export function registerGenerationRoutes(
             key,
             runId: run.id,
             status: run.status,
-            progress: liveProgress(run),
+            progress: liveProgress(run, key),
             ...current,
           };
         }
@@ -1528,21 +1653,115 @@ export function registerGenerationRoutes(
         });
         await Promise.allSettled([
           comfy.deleteHistory(run.promptId),
-          cleanupComfyRunFiles(storage, current.snapshot.project.id, run.shotId, run.id),
+          cleanupComfyRunFiles(
+            localStorageFor(run.workerId),
+            current.snapshot.project.id,
+            run.shotId,
+            run.id,
+          ),
         ]);
         comfy.forgetProgress(run.promptId);
         return { key, runId: run.id, status: run.status, progress: null, ...saved };
       }
-      const bytes = await comfy.download(output);
       const plannedAssetId = run.parameters.outputAssetId;
       const assetId =
-        typeof plannedAssetId === "string" && plannedAssetId.startsWith("asset_")
+        typeof plannedAssetId === "string" && /^asset_[a-f0-9-]{36}$/i.test(plannedAssetId)
           ? plannedAssetId
           : createTakeBoardId("asset");
       const extension = extname(output.filename) || (expectsImage ? ".png" : ".mp4");
       const storagePath = `renders/${run.shotId}/${run.id}/${assetId}${extension}`;
-      await mkdir(dirname(join(directory, storagePath)), { recursive: true });
-      await writeFile(join(directory, storagePath), bytes, { mode: 0o600 });
+      const retryAfter = run.parameters.outputRetryAfter;
+      if (typeof retryAfter === "number" && retryAfter > Date.now())
+        return {
+          key,
+          runId: run.id,
+          status: run.status,
+          progress: liveProgress(run, key),
+          ...current,
+        };
+      // Durable output identity survives browser/app restarts and pruned ComfyUI history.
+      run.parameters.remoteOutput = output;
+      run.parameters.remoteExecutionCompleted = history.status?.completed === true;
+      run.parameters.outputAssetId = assetId;
+      run.status = "collecting_outputs";
+      run.errorCode = null;
+      run.errorMessage = null;
+      let job = downloads.get(`${key}:${run.id}`);
+      if (!job) {
+        if (transfersClosing)
+          return {
+            key,
+            runId: run.id,
+            status: run.status,
+            progress: liveProgress(run, key),
+            ...current,
+          };
+        await store.save(current.snapshot, { type: "run.collecting", payload: { runId: run.id } });
+        if (downloads.size >= 3)
+          return {
+            key,
+            runId: run.id,
+            status: run.status,
+            progress: liveProgress(run, key),
+            ...(store.loadCurrent() ?? current),
+          };
+        const abort = new AbortController();
+        job = { key, abort, promise: Promise.resolve() };
+        const ownedJob = job;
+        ownedJob.promise = (async () => {
+          try {
+            await cleanupInterruptedOutput(join(directory, storagePath));
+            const response = await comfy.downloadResponse(
+              output,
+              AbortSignal.any([abort.signal, AbortSignal.timeout(30 * 60_000)]),
+            );
+            ownedJob.result = await saveOutputResponse(
+              response,
+              join(directory, storagePath),
+              (progress) => transfers.set(`${key}:${run.id}`, progress),
+              abort.signal,
+            );
+          } catch (error) {
+            ownedJob.error = error;
+          }
+        })();
+        downloads.set(`${key}:${run.id}`, job);
+      }
+      // Small files finish immediately; large downloads leave the UI and edits responsive.
+      await Promise.race([job.promise, delay(50)]);
+      if (!job.result && !job.error)
+        return {
+          key,
+          runId: run.id,
+          status: run.status,
+          progress: liveProgress(run, key),
+          ...(store.loadCurrent() ?? current),
+        };
+      let downloaded: Awaited<ReturnType<typeof saveOutputResponse>>;
+      try {
+        if (job.error) throw job.error;
+        if (!job.result) throw new Error("下载状态不可用");
+        downloaded = job.result;
+      } catch (cause) {
+        downloads.delete(`${key}:${run.id}`);
+        transfers.delete(`${key}:${run.id}`);
+        run.errorCode = "OUTPUT_TRANSFER_FAILED";
+        run.parameters.outputRetryAfter = Date.now() + 30_000;
+        run.errorMessage = `生成已完成，保存失败：${cause instanceof Error ? cause.message : "连接中断"}。恢复连接或释放项目磁盘空间后会重新下载，不会重新生成。`;
+        run.updatedAt = toIsoTimestamp();
+        const saved = await store.save(current.snapshot, {
+          type: "run.transfer_deferred",
+          payload: { runId: run.id },
+        });
+        return {
+          key,
+          runId: run.id,
+          status: run.status,
+          progress: liveProgress(run, key),
+          ...saved,
+        };
+      }
+      const bytes = await readMediaMetadata(join(directory, storagePath), !expectsImage);
       const normalizedExtension = extension.toLowerCase();
       const mimeType = expectsImage
         ? normalizedExtension === ".webp"
@@ -1568,8 +1787,8 @@ export function registerGenerationRoutes(
           mediaType: expectsImage ? "image" : "video",
           originalName: basename(output.filename).slice(0, 512),
           mimeType,
-          byteSize: bytes.byteLength,
-          sha256: sha256(bytes),
+          byteSize: downloaded.byteSize,
+          sha256: downloaded.sha256,
           storagePath,
           proxyPath,
           width: imageInfo?.width ?? videoInfo?.width ?? null,
@@ -1586,7 +1805,7 @@ export function registerGenerationRoutes(
       }
       const plannedTakeId = run.parameters.outputTakeId;
       const takeId =
-        typeof plannedTakeId === "string" && plannedTakeId.startsWith("take_")
+        typeof plannedTakeId === "string" && /^take_[a-f0-9-]{36}$/i.test(plannedTakeId)
           ? plannedTakeId
           : createTakeBoardId("take");
       if (!current.snapshot.takes.some((take) => take.id === takeId)) {
@@ -1602,6 +1821,7 @@ export function registerGenerationRoutes(
         });
       }
       run.status = "completed";
+      delete run.parameters.outputRetryAfter;
       run.errorCode = null;
       run.errorMessage = null;
       delete run.parameters.missingFromWorkerSince;
@@ -1639,10 +1859,9 @@ export function registerGenerationRoutes(
         type: "run.completed",
         payload: { runId: run.id, takeId, assetId },
       });
-      await Promise.allSettled([
-        comfy.deleteHistory(run.promptId),
-        cleanupComfyRunFiles(storage, current.snapshot.project.id, run.shotId, run.id),
-      ]);
+      // Keep the remote original and task history. Archiving is not consent to delete them.
+      downloads.delete(`${key}:${run.id}`);
+      transfers.delete(`${key}:${run.id}`);
       comfy.forgetProgress(run.promptId);
       return { key, runId: run.id, status: run.status, progress: null, ...saved };
     } finally {
@@ -1650,6 +1869,23 @@ export function registerGenerationRoutes(
     }
   }
 
+  app.get<{ Params: { key: string; runId: string } }>(
+    "/api/projects/:key/transfers/:runId",
+    async (request, reply) => {
+      const key = projectKey(request.params.key);
+      if (!key) return await reply.code(400).send({ error: "项目标识无效" });
+      const store = ProjectStore.openExisting(projectDirectory(root, key));
+      try {
+        const run = store
+          ?.loadCurrent()
+          ?.snapshot.runs.find((item) => item.id === request.params.runId);
+        if (!run) return await reply.code(404).send({ error: "运行记录不存在" });
+        return { progress: run.status === "collecting_outputs" ? liveProgress(run, key) : null };
+      } finally {
+        store?.close();
+      }
+    },
+  );
   app.get<{ Params: { key: string; runId: string } }>(
     "/api/projects/:key/runs/:runId",
     async (request, reply) => {

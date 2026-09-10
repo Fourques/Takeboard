@@ -275,6 +275,7 @@ describe("TakeBoard authentication and authorization", () => {
       "/api/workflows/raw?path=TakeBoard%2Fprivate.json",
       "/api/workflows/archive-preview?path=TakeBoard%2Fprivate.json",
       "/api/workflows/archives",
+      "/api/generation/connection",
     ]) {
       const deniedWorkflowAdministration = await app.inject({
         method: "GET",

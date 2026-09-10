@@ -65,6 +65,7 @@ TakeBoard 不替代 ComfyUI 的节点编辑器，而是让创作过程更连贯�
 | --- | --- |
 | 在自己的电脑使用 | [下载与安装](docs/downloads.md) |
 | 在 Mac / Windows 上连接 GPU 服务器 | [远程访问](docs/remote-access.md) |
+| 本机保存项目、远程 ComfyUI 生成（开发版） | [生成设备与项目位置](docs/generation-and-storage.md) |
 | 管理登录、共享与项目权限 | [账号与权限](docs/access-control.md) |
 | 部署长期运行的服务 | [自托管部署](docs/self-hosting.md) |
 | 通过账号门户访问已配对设备 | [Portal 自托管](docs/portal-self-hosting.md) |

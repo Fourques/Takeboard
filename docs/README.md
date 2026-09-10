@@ -15,6 +15,7 @@
 
 ## 远程、账号与数据
 
+- [生成设备与项目位置](generation-and-storage.md)：本机项目连接远程 ComfyUI，与远程 TakeBoard 项目的区别。
 - [此电脑与远程设备](device-workflow.md)：设备选择、预构建安装、授权启动、项目文件夹与下载的完整流程。
 - [远程访问](remote-access.md)：桌面连接、标准 SSH、HTTPS、端口和会话排障。
 - [账号与权限](access-control.md)：可选登录、设备项目、账号项目与共享边界。
@@ -27,6 +28,8 @@
 
 - [贡献指南 (English)](../CONTRIBUTING.md)：开发环境、测试与提交约定。
 - [技术架构](architecture.md)：模块、数据流和权限边界。
+- [工作区状态边界](workspace-state.md)：选择、草稿、生成会话与恢复的归属和验收标准。
+- [画布 API 迁移](canvas-api-migration.md)：11 个旧写接口的停用响应、命令映射与确认规则。
 - [扩展协议](extensions.md)：声明式扩展与信任模型，不执行任意第三方代码。
 - [设计决策](decisions.md)：重要行为和架构取舍。
 - [发布门槛](release-gates.md) · [桌面签名与发行](desktop-production-signing.md)：维护者验证与发行流程。
@@ -35,6 +38,7 @@
 
 - [路线图](roadmap.md) · [产品策略](product-strategy.md) · [分发与门户策略](access-and-distribution-strategy.md)。
 - [易用性审计](usability-audit.md) · [2026-08-30 成熟度评估](maturity-audit-2026-08-30.md)。
+- [2026-09-10 全项目删减审计](simplification-review-2026-09-10.md)：删除依据、保留理由与待验证边界。
 - [本次发布说明](releases/v0.2.0-beta.3.md) · [历史发布说明](releases/v0.2.0-beta.1.md) · [演示指南](demo-guide.md) · [推广素材](launch-kit.md)。
 
 历史审计、计划和旧发布说明记录当时状态；当前下载能力以下载指南及对应 Release 的附件为准。

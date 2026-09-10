@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// Shared installed runtime for the desktop app and authorized remote service startup.
 
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";

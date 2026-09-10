@@ -114,7 +114,7 @@ Artifact Signing 配置步骤：
 5. 检查 macOS `spctl` 与 Windows “数字签名”发布者名称；
 6. 使用同一个 Tag 再运行工作流并设 `publish=true`。
 
-目前 Linux Tauri 只在 Preview 提供，原因和退出条件见 [Security policy](../SECURITY.md)。Web/便携版不受
+目前 Linux Tauri 只在 Preview 提供，原因和退出条件见 [Security policy](../SECURITY.md)。Web 版不受
 Linux GTK 链影响。
 
 ## 五、凭据轮换与事故处理

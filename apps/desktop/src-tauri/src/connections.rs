@@ -246,6 +246,7 @@ pub async fn open_remote_workspace(
         // No capabilities are assigned to this remote-content window.
         let navigation_app = app.clone();
         let remote = WebviewWindowBuilder::new(&app, "remote-workspace", WebviewUrl::External(url))
+            .initialization_script(crate::local_files::ACTION_CAPABILITY)
             .on_navigation(move |url| {
                 crate::local_files::navigation(&navigation_app, "remote-workspace", url)
             })

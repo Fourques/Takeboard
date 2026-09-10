@@ -131,6 +131,7 @@ function publicAuthRoute(route: string, method: string) {
 }
 
 function adminOnly(route: string, method: string) {
+  if (route === "/api/generation/connection") return true;
   if (route.startsWith("/api/admin/")) return true;
   if (route === "/api/workers/comfy/start" || route === "/api/workers/comfy/stop") return true;
   if (

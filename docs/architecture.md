@@ -1,7 +1,7 @@
 # TakeBoard 技术架构
 
 状态：持续演进的实现边界
-更新时间：2026-09-02
+更新时间：2026-09-10
 
 ## 1. 技术选型结论
 
@@ -10,7 +10,7 @@
 | 语言 | TypeScript，Node.js 22+ LTS | 前后端共享契约；项目不执行模型推理，无需为首版引入 Python 服务 |
 | Web | React + Vite | 生态成熟，适合复杂交互和后续桌面封装 |
 | 画布 | React Flow (`@xyflow/react`) | MIT；内置拖放、缩放、多选、节点/边和分组；适合语义图而非通用手绘白板 |
-| 本地 API | Fastify + WebSocket | 轻量、类型友好；REST 处理命令，WS 推送 Run 状态 |
+| 本地 API | Fastify | REST 处理命令与状态查询；后台通过 ComfyUI WebSocket 和 History 对账 |
 | 校验/契约 | Zod + JSON Schema | 同一份类型用于 API、Recipe、项目快照和运行时校验 |
 | 数据库 | SQLite + Drizzle | 单机、可迁移、事务可靠；不在 M0 引入 Redis/Postgres |
 | 文件 | 项目目录 + 内容 hash | 媒体不进数据库；去重、代理和完整导出更容易 |
@@ -28,7 +28,7 @@ Browser UI
 ├── Run drawer
 ├── Cross-project operations center
 └── Project/scene navigation
-        │ REST commands + WebSocket events
+        │ REST commands + status polling
         ▼
 Local TakeBoard Server (127.0.0.1)
 ├── Project service
@@ -51,11 +51,13 @@ ComfyUI Worker
 
 可选的账号门户不改变这条边界：Portal 负责门户账号、设备目录和临时中继，工作站 Connector 只建立出站 WebSocket。Portal 会剥离门户 Cookie / Authorization，再把门户 Subject 交给 Connector；Connector 只接受配对时保存的显式 `portal subject → local user id` 映射，并创建独立本地会话。最终的项目角色、CSRF、账号状态和 API 输入仍由本地 Server 判定。Portal 不读取 ComfyUI 端口，也不保存项目载荷。
 
-桌面版不复制任何业务规则。Tauri 只选择空闲回环端口、启动便携 launcher sidecar、等待真实健康检查并加载同一套 Web UI；项目仍写入 `~/TakeBoardData`。应用退出只终止自己拥有的 launcher，单实例插件阻止重复服务。浏览器、便携版和桌面版因此共享相同 API、迁移和权限边界。
+桌面版不复制业务规则。Tauri 启动内置运行时、等待真实健康检查并加载同一套 Web UI；默认数据根目录是 `~/TakeBoardData`，项目可另选文件夹。应用退出只终止自己拥有的 launcher，单实例插件阻止重复服务。浏览器和桌面版共享相同 API、迁移和权限边界。源码中的 `scripts/runtime-launcher.mjs` 在安装包内仍叫 `launcher.mjs`，不改变旧安装与远程启动协议。
+
+项目所在设备与生成设备独立：默认使用本机项目，可通过 SSH / HTTPS 连接远程 ComfyUI；只有用户选择“远程项目”时，才连接远程 TakeBoard 并在那里保存文件。详见[生成设备与项目位置](generation-and-storage.md)。
 
 跨项目任务中心只聚合当前账号可访问的项目。它通过项目级 Run API 获取实时进度和执行停止，因此不会建立一条绕过 Owner / Editor 权限的新控制通道。存储扫描忽略符号链接，普通成员只能看到自己可访问的项目；系统数据占用仅向实例管理员返回。
 
-## 3. 推荐仓库结构
+## 3. 当前仓库结构
 
 ```text
 takeboard/
@@ -69,12 +71,8 @@ takeboard/
 │   ├── domain/                 # Project/Shot/Run/Take/Approval 规则
 │   ├── executor-comfy/         # ComfyUI Adapter
 │   ├── identity/               # 本地与 Portal 共享的密码/令牌原语
-│   ├── portal-protocol/        # 有界、版本化的 Connector 中继帧
-│   ├── recipe/                 # Manifest、注入、预检
-│   └── test-fixtures/          # 假 Worker、样例 Workflow/媒体
-├── examples/
-│   ├── starter-project/
-│   └── recipes/
+│   └── portal-protocol/        # 有界、版本化的 Connector 中继帧
+├── e2e/                       # 浏览器场景与测试夹具
 ├── docs/
 ├── scripts/
 ├── pnpm-workspace.yaml
@@ -126,6 +124,8 @@ CanvasEdge {
 
 浏览器的结构化画布写操作统一提交到 `POST /api/projects/:key/commands`，不直接拼装项目快照。共享契约定义在 `packages/contracts/src/command.ts`，服务端规则集中在 `apps/server/src/project-command-service.ts`。
 
+旧画布写接口的重复实现已删除，保留明确的 410 停用响应；接口对照与确认规则见[迁移说明](canvas-api-migration.md)。已发布版本的客户端调用方式经过标签检查，但不推断未知外部脚本的兼容性。
+
 ```text
 UI intent
   → POST /commands/preview       # 纯预览，不写项目
@@ -146,22 +146,23 @@ UI intent
 - `requestId` 防止网络重试重复执行，`expectedRevision` 防止基于旧画面覆盖新状态；
 - `event_log` 用于领域调试，`command_log` 保存用户可读摘要、影响、逆操作和撤销状态，两者职责不同。
 
+### 4.4 前端状态与投影
+
+- `use-project-document.ts` 是项目 snapshot/revision 的共同提交边界；异步回调读取同一份当前文档，不另存一份“最新快照”。普通响应只能推进当前项目版本；打开项目必须显式激活，并通过导航序号拒绝迟到结果。
+- `canvas-projection.ts` 根据文档与编辑状态生成节点、连线和轻量对齐结果，不执行项目写入。连线解析只认真实 ID 或完整端点/槽位匹配，不猜测其它连线。
+- `workspace-inspector.tsx` 持有检查器表单的本地草稿，以回调表达用户意图；不另建项目数据源，按需加载，不阻塞首页。
+- `generation-model.ts` 提供共享生成视图类型、离线预设和进度投影；离线预设不是硬件检测结果。`use-shot-generation.ts` 组合设备发现、镜头草稿和生成会话；首次运行与恢复共用 `use-run-recovery.ts` 的订阅，不再各自轮询。
+- `use-canvas-connection.ts` 统一拖线与资产库连接的预览/确认。确认限于当前项目和原预览版本，切换项目或退出画布会废弃未提交的确认。已提交的服务请求不伪装成被撤销。
+
+选择由 `editor-selection.ts` 的原子转换维护，右键操作对象直接从选择派生。App 不再拥有选择、生成草稿或任务生命周期状态，也不直接调用生成服务。完整归属、失败边界和验收标准见[工作区状态说明](workspace-state.md)；不引入第二套全局状态框架。
+
 ## 5. 最小数据库对象
 
-实施顺序：`TB-004` 先用一个经过完整 Zod 校验的 project aggregate 行、revision 和 event log
-跑通事务保存与重开；到 `TB-007`—`TB-010` 出现独立队列写入时，再把 Run/Take 等高频对象迁移为下表的
-规范化记录。开放快照契约不随内部拆表改变。
+项目目前使用聚合快照，并未按每一种领域对象拆成表。结构以 `apps/server/src/storage/schema.ts` 为准；没有实际查询或并发瓶颈证据前，不为早期规划增加一套规范化存储。
 
 | 表 | 关键字段 |
 | --- | --- |
-| projects/scenes | ID、标题、规格、schema version |
-| text_items/entities/assets/shots | 内容、URI/hash、镜头意图与状态 |
-| canvas_items/canvas_edges | 布局与可视关系 |
-| recipes/recipe_versions | Manifest、Workflow hash、绑定和依赖 |
-| workers | 类型、URL、能力、最后健康状态；不含明文 Secret |
-| runs | prompt_id、状态、输入快照、参数、Workflow hash、错误、成本 |
-| takes | run_id、asset_id、状态、淘汰原因 |
-| approvals | shot_id、take_id、操作者、时间、原因、撤销事件 |
+| project_state | 完整项目快照、schema version、revision 与更新时间；含素材、镜头、运行、候选和采用关系 |
 | event_log | 领域事件，用于调试和恢复，不承担通用 event sourcing |
 | command_log | 用户修改命令、幂等键、影响预览、逆操作与撤销状态 |
 
@@ -185,27 +186,9 @@ SQLite 是运行时事务源；每次保存会完整校验 Project Snapshot，�
 
 ## 7. Recipe Contract
 
-Recipe 是 Workflow API JSON 加一个稳定外壳：
+当前执行依据为真实 Workflow 与显式 Binding，分别由 `apps/server/src/workflow-bindings.ts` 和 `packages/executor-comfy` 处理。Binding v1 包含内容哈希、能力、输出类型、`parameters` / `media` 的 `nodeId` / `input` 映射及用户信任确认。
 
-```yaml
-recipe_version: 0.1
-id: wan-i2v
-version: 1.0.0
-workflow_sha256: "..."
-workflow: workflow_api.json
-
-inputs:
-  prompt: { node: "6", field: text, type: text, required: true }
-  first_frame: { node: "12", field: image, type: image, required: true }
-  seed: { node: "21", field: seed, type: integer, strategy: random_each_run }
-
-outputs:
-  video: { node: "42", type: video, required: true }
-
-requirements:
-  node_classes: [LoadImage, CLIPTextEncode, SaveVideo]
-  models: []
-```
+可移植 Recipe 是 `takeboard.workflow-recipe` v1 归档，含 `takeboard-recipe.json`、`workflow.json` 与可选 `binding.json`，定义见 `apps/server/src/workflow-recipe-package.ts`。旧规划中的 Recipe 0.1 YAML 和未接入业务的 `packages/recipe` 已删除，不再维护另一套协议。
 
 执行预检：
 

@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
 import { acquireProjectLock } from "../src/project-request-lock.js";
 import { ProjectStore } from "../src/storage/project-store.js";
+import { executeTestCommand } from "./command-fixture.js";
 
 const cleanup: Array<() => Promise<void>> = [];
 
@@ -94,10 +95,9 @@ describe("TakeBoard project API", () => {
       payload: { title: "正在生成的项目" },
     });
     const key = created.json().key as string;
-    const shotResponse = await app.inject({
-      method: "POST",
-      url: `/api/projects/${key}/shots`,
-      payload: { label: "删除安全测试" },
+    const shotResponse = await executeTestCommand(app, key, {
+      type: "canvas.create_shot",
+      label: "删除安全测试",
     });
     const store = ProjectStore.openExisting(join(root, key));
     expect(store).not.toBeNull();
@@ -115,7 +115,8 @@ describe("TakeBoard project API", () => {
       recipeId: createTakeBoardId("recipe"),
       recipeVersion: "test@1",
       workflowSha256: "1".repeat(64),
-      workerId: createTakeBoardId("worker"),
+      // Bind the fixture to its actual executor; an unknown worker must fail closed.
+      workerId: (await app.inject({ method: "GET", url: "/api/workers" })).json().defaultWorkerId,
       promptId: "prompt-delete-project",
       status: "running",
       inputs: [],
@@ -199,10 +200,9 @@ describe("TakeBoard project API", () => {
       payload: { title: "不能误删" },
     });
     const key = created.json().key as string;
-    const shotResponse = await app.inject({
-      method: "POST",
-      url: `/api/projects/${key}/shots`,
-      payload: { label: "保留安全测试" },
+    const shotResponse = await executeTestCommand(app, key, {
+      type: "canvas.create_shot",
+      label: "保留安全测试",
     });
     const store = ProjectStore.openExisting(join(root, key));
     const current = store?.loadCurrent();
@@ -351,12 +351,11 @@ describe("TakeBoard project API", () => {
       shotCount: 0,
     });
 
-    const shot = await app.inject({
-      method: "POST",
-      url: `/api/projects/${key}/shots`,
-      payload: { aspectRatio: "9:16" },
+    const shot = await executeTestCommand(app, key, {
+      type: "canvas.create_shot",
+      aspectRatio: "9:16",
     });
-    expect(shot.statusCode, shot.body).toBe(201);
+    expect(shot.statusCode, shot.body).toBe(200);
     expect(shot.json().snapshot.shots).toEqual([
       expect.objectContaining({ label: "SH-01", intent: "", aspectRatio: "9:16" }),
     ]);
@@ -364,12 +363,14 @@ describe("TakeBoard project API", () => {
       expect.objectContaining({ refType: "shot", refId: shot.json().shotId }),
     ]);
 
-    const note = await app.inject({
-      method: "POST",
-      url: `/api/projects/${key}/text-nodes`,
-      payload: { title: "运镜备注", body: "缓慢推进", x: 240, y: 360 },
+    const note = await executeTestCommand(app, key, {
+      type: "canvas.create_text",
+      title: "运镜备注",
+      body: "缓慢推进",
+      x: 240,
+      y: 360,
     });
-    expect(note.statusCode, note.body).toBe(201);
+    expect(note.statusCode, note.body).toBe(200);
     expect(note.json().snapshot.textItems).toEqual([
       expect.objectContaining({ title: "运镜备注", body: "缓慢推进" }),
     ]);
@@ -396,14 +397,11 @@ describe("TakeBoard project API", () => {
       .json()
       .snapshot.canvasItems.find((item: { refType: string }) => item.refType === "shot");
     expect(videoItem).toMatchObject({ x: 20, y: 40 });
-    const connectedVideo = await app.inject({
-      method: "POST",
-      url: `/api/projects/${key}/canvas-connections`,
-      payload: {
-        sourceItemId: videoItem.id,
-        targetItemId: shotItem.id,
-        targetSlot: "reference_video",
-      },
+    const connectedVideo = await executeTestCommand(app, key, {
+      type: "canvas.connect_items",
+      sourceItemId: videoItem.id,
+      targetItemId: shotItem.id,
+      targetSlot: "reference_video",
     });
     expect(connectedVideo.statusCode, connectedVideo.body).toBe(200);
     expect(connectedVideo.json().snapshot.canvasEdges).toContainEqual(
@@ -487,24 +485,26 @@ describe("TakeBoard project API", () => {
     }>;
     const sourceItemId = items.find((item) => item.refType === "asset")?.id;
     const targetItemId = items.find((item) => item.refType === "shot")?.id;
-    const tagged = await app.inject({
-      method: "PATCH",
-      url: `/api/projects/${key}/canvas-items/${sourceItemId}`,
-      payload: { customTags: ["夜景", "冷色"] },
+    if (!sourceItemId || !targetItemId) throw new Error("Missing canvas fixture nodes");
+    const tagged = await executeTestCommand(app, key, {
+      type: "canvas.edit_item",
+      itemId: sourceItemId,
+      customTags: ["夜景", "冷色"],
     });
     expect(tagged.statusCode, tagged.body).toBe(200);
     expect(tagged.json().snapshot.assets[0].customTags).toEqual(["夜景", "冷色"]);
-    const untagged = await app.inject({
-      method: "PATCH",
-      url: `/api/projects/${key}/canvas-items/${sourceItemId}`,
-      payload: { customTags: [] },
+    const untagged = await executeTestCommand(app, key, {
+      type: "canvas.edit_item",
+      itemId: sourceItemId,
+      customTags: [],
     });
     expect(untagged.statusCode, untagged.body).toBe(200);
     expect(untagged.json().snapshot.assets[0].customTags).toEqual([]);
-    const connected = await app.inject({
-      method: "POST",
-      url: `/api/projects/${key}/canvas-connections`,
-      payload: { sourceItemId, targetItemId, targetSlot: "first_frame" },
+    const connected = await executeTestCommand(app, key, {
+      type: "canvas.connect_items",
+      sourceItemId,
+      targetItemId,
+      targetSlot: "first_frame",
     });
     expect(connected.statusCode).toBe(200);
     expect(connected.json().snapshot.canvasEdges).toEqual([
@@ -516,9 +516,9 @@ describe("TakeBoard project API", () => {
       }),
     ]);
     const edgeId = connected.json().snapshot.canvasEdges[0].id as string;
-    const disconnected = await app.inject({
-      method: "DELETE",
-      url: `/api/projects/${key}/canvas-connections/${edgeId}`,
+    const disconnected = await executeTestCommand(app, key, {
+      type: "canvas.disconnect",
+      edgeId: edgeId,
     });
     expect(disconnected.statusCode, disconnected.body).toBe(200);
     expect(disconnected.json().snapshot.canvasEdges).toEqual([]);
@@ -560,10 +560,11 @@ describe("TakeBoard project API", () => {
       payload: { title: "镜头结果复用", aspectRatio: "16:9" },
     });
     const key = created.json().key as string;
-    const secondShot = await app.inject({
-      method: "POST",
-      url: `/api/projects/${key}/shots`,
-      payload: { aspectRatio: "16:9", x: 700, y: 180 },
+    const secondShot = await executeTestCommand(app, key, {
+      type: "canvas.create_shot",
+      aspectRatio: "16:9",
+      x: 700,
+      y: 180,
     });
     const uploaded = await app.inject({
       method: "POST",
@@ -639,14 +640,11 @@ describe("TakeBoard project API", () => {
       (item: { refType: string; refId: string }) =>
         item.refType === "shot" && item.refId === targetShot.id,
     );
-    const connected = await app.inject({
-      method: "POST",
-      url: `/api/projects/${key}/canvas-connections`,
-      payload: {
-        sourceItemId: sourceItem.id,
-        targetItemId: targetItem.id,
-        targetSlot: "first_frame",
-      },
+    const connected = await executeTestCommand(app, key, {
+      type: "canvas.connect_items",
+      sourceItemId: sourceItem.id,
+      targetItemId: targetItem.id,
+      targetSlot: "first_frame",
     });
     expect(connected.statusCode, connected.body).toBe(200);
     expect(connected.json().snapshot.canvasEdges).toContainEqual(
@@ -657,14 +655,11 @@ describe("TakeBoard project API", () => {
       }),
     );
 
-    const selfConnection = await app.inject({
-      method: "POST",
-      url: `/api/projects/${key}/canvas-connections`,
-      payload: {
-        sourceItemId: sourceItem.id,
-        targetItemId: sourceItem.id,
-        targetSlot: "reference",
-      },
+    const selfConnection = await executeTestCommand(app, key, {
+      type: "canvas.connect_items",
+      sourceItemId: sourceItem.id,
+      targetItemId: sourceItem.id,
+      targetSlot: "reference",
     });
     expect(selfConnection.statusCode).toBe(400);
   });
@@ -683,10 +678,12 @@ describe("TakeBoard project API", () => {
     const shotId = created.json().snapshot.shots[0].id as string;
     const itemId = created.json().snapshot.canvasItems[0].id as string;
 
-    const edited = await app.inject({
-      method: "PATCH",
-      url: `/api/projects/${key}/canvas-items/${itemId}`,
-      payload: { title: "S010", body: "雨夜车站，人物缓慢抬头。", durationSeconds: 7.5 },
+    const edited = await executeTestCommand(app, key, {
+      type: "canvas.edit_item",
+      itemId: itemId,
+      title: "S010",
+      body: "雨夜车站，人物缓慢抬头。",
+      durationSeconds: 7.5,
     });
     expect(edited.statusCode, edited.body).toBe(200);
     expect(edited.json().snapshot.shots[0]).toMatchObject({
@@ -695,28 +692,36 @@ describe("TakeBoard project API", () => {
       durationSeconds: 7.5,
     });
 
-    const duplicated = await app.inject({
-      method: "POST",
-      url: `/api/projects/${key}/canvas-items/${itemId}/duplicate`,
-      payload: { x: 620, y: 330 },
+    const duplicated = await executeTestCommand(app, key, {
+      type: "canvas.duplicate_item",
+      itemId: itemId,
+      x: 620,
+      y: 330,
     });
-    expect(duplicated.statusCode, duplicated.body).toBe(201);
+    expect(duplicated.statusCode, duplicated.body).toBe(200);
+    expect(duplicated.json().copyMode).toBe("independent");
+    expect(duplicated.json().shotId).not.toBe(shotId);
+    expect(duplicated.json().snapshot.shots).toHaveLength(2);
     expect(duplicated.json().snapshot.canvasItems).toHaveLength(2);
 
-    const removed = await app.inject({
-      method: "DELETE",
-      url: `/api/projects/${key}/canvas-items/${itemId}`,
-    });
+    const removed = await executeTestCommand(
+      app,
+      key,
+      { type: "canvas.remove_item", itemId: itemId },
+      { confirm: true },
+    );
     expect(removed.statusCode, removed.body).toBe(200);
-    expect(removed.json().snapshot.shots).toHaveLength(1);
+    expect(removed.json().snapshot.shots).toHaveLength(2);
     expect(removed.json().snapshot.canvasItems).toHaveLength(1);
 
-    const restored = await app.inject({
-      method: "POST",
-      url: `/api/projects/${key}/canvas-items`,
-      payload: { refType: "shot", refId: shotId, x: 180, y: 180 },
+    const restored = await executeTestCommand(app, key, {
+      type: "canvas.add_item",
+      refType: "shot",
+      refId: shotId,
+      x: 180,
+      y: 180,
     });
-    expect(restored.statusCode, restored.body).toBe(201);
+    expect(restored.statusCode, restored.body).toBe(200);
     expect(restored.json().snapshot.canvasItems).toEqual(
       expect.arrayContaining([expect.objectContaining({ refType: "shot", refId: shotId })]),
     );
@@ -733,16 +738,18 @@ describe("TakeBoard project API", () => {
       payload: { title: "镜头删除一致性" },
     });
     const key = created.json().key as string;
-    const first = await app.inject({ method: "POST", url: `/api/projects/${key}/shots` });
-    const second = await app.inject({ method: "POST", url: `/api/projects/${key}/shots` });
+    const first = await executeTestCommand(app, key, { type: "canvas.create_shot" });
+    const second = await executeTestCommand(app, key, { type: "canvas.create_shot" });
     const firstShotId = first.json().shotId as string;
     const firstItemId = first.json().itemId as string;
     const secondShotId = second.json().shotId as string;
 
-    const deleted = await app.inject({
-      method: "DELETE",
-      url: `/api/projects/${key}/shots/${firstShotId}`,
-    });
+    const deleted = await executeTestCommand(
+      app,
+      key,
+      { type: "shot.delete", shotId: firstShotId },
+      { confirm: true },
+    );
 
     expect(deleted.statusCode, deleted.body).toBe(200);
     expect(deleted.json()).toMatchObject({
@@ -798,10 +805,12 @@ describe("TakeBoard project API", () => {
     await store.save(current.snapshot, { type: "test.completed_run", payload: {} });
     store.close();
 
-    const historyProtected = await app.inject({
-      method: "DELETE",
-      url: `/api/projects/${key}/shots/${secondShotId}`,
-    });
+    const historyProtected = await executeTestCommand(
+      app,
+      key,
+      { type: "shot.delete", shotId: secondShotId },
+      { confirm: true },
+    );
     expect(historyProtected.statusCode).toBe(409);
     expect(historyProtected.json().error).toContain("生成记录");
     const reopened = await app.inject({ method: "GET", url: `/api/projects/${key}` });

@@ -6,6 +6,16 @@ before moving production work to a newer minor version.
 
 ## Unreleased
 
+## 0.2.0-beta.4 — 2026-09-10
+
+- Separate project storage from the selected local/remote ComfyUI generation service; clarify native folder actions and retain explicit remote TakeBoard access for server-hosted projects.
+- Finish the App selection/generation boundary refactor: atomic target/context/inspector/menu transitions, shot/workflow-scoped drafts, document-derived media inputs and shared initial/retry validation. Generation acknowledgements no longer change editor selection.
+- New submissions and reopened tasks share one run subscription. Explicit stop waits for pending acknowledgement and only targets the chosen shot; navigation detaches the view without cancelling accepted work. Batch progress counts saved candidates and deduplicates retries.
+- Retire 11 duplicate legacy canvas mutation handlers with explicit HTTP 410 migration responses. Current canvas commands retain confirmation, revision, idempotency, audit and undo protections; see the [API migration guide](docs/canvas-api-migration.md).
+- Commit project snapshots and revisions through one frontend boundary, reject stale cross-project responses and navigation results, and extract pure canvas projections plus on-demand inspectors without redesigning the workspace.
+- Canvas gestures and asset-library connections share explicit replacement approval. Cancel keeps existing inputs; conflicts never silently renew approval. Edge deletion no longer guesses a different source or slot.
+- Remove unused Recipe/test-fixture workspaces and obsolete portable/personal deployment scripts; preserve desktop runtime helpers, project data and documented recovery boundaries. See the [removal audit](docs/simplification-review-2026-09-10.md).
+
 ## 0.2.0-beta.3 — 2026-09-10
 
 - Canonicalize project locations consistently across native Windows paths and junctions; cross-platform folder tests use real filesystem paths, including macOS temporary-directory aliases.

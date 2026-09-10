@@ -177,14 +177,6 @@ importers:
         specifier: 4.4.3
         version: 4.4.3
 
-  packages/recipe:
-    dependencies:
-      zod:
-        specifier: 4.4.3
-        version: 4.4.3
-
-  packages/test-fixtures: {}
-
 packages:
 
   '@axe-core/playwright@4.11.1':

@@ -40,6 +40,19 @@ describe("optional accounts with device-scoped project authorization", () => {
       localAvailable: true,
     });
     const local = session(status);
+    const connection = await app.inject({
+      method: "GET",
+      url: "/api/generation/connection",
+      headers: local,
+    });
+    expect(connection.statusCode, connection.body).toBe(200);
+    const unconfirmedConnection = await app.inject({
+      method: "POST",
+      url: "/api/generation/connection",
+      headers: { cookie: local.cookie },
+      payload: { kind: "ssh", host: "example", port: 8188 },
+    });
+    expect(unconfirmedConnection.statusCode).toBe(403);
     const denied = await app.inject({
       method: "POST",
       url: "/api/projects",

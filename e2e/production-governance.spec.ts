@@ -137,8 +137,16 @@ test("cost ledger and cross-shot approval preview apply as one visible decision"
   const key = created.key;
   const firstShotId = created.snapshot.shots[0]?.id;
   if (!firstShotId) throw new Error("E2E project did not create its starter shot");
-  const secondShotResponse = await request.post(`/api/projects/${key}/shots`, {
-    data: { label: "SH-02", durationSeconds: 6, aspectRatio: "16:9" },
+  const secondShotResponse = await request.post(`/api/projects/${key}/commands`, {
+    data: {
+      requestId: `e2e:${crypto.randomUUID()}`,
+      command: {
+        type: "canvas.create_shot",
+        label: "SH-02",
+        durationSeconds: 6,
+        aspectRatio: "16:9",
+      },
+    },
   });
   expect(secondShotResponse.ok(), await secondShotResponse.text()).toBeTruthy();
 
