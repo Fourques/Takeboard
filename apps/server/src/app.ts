@@ -25,7 +25,7 @@ import { WorkerPool } from "./worker-pool.js";
 import { registerWorkerRoutes, type WorkerRouteOptions } from "./worker-routes.js";
 import { registerWorkflowRoutes } from "./workflow-routes.js";
 
-export const takeBoardVersion = "0.2.0-beta.2";
+export const takeBoardVersion = "0.2.0-beta.3";
 
 export type AppOptions = {
   demoDirectory?: string;

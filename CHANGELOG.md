@@ -6,6 +6,9 @@ before moving production work to a newer minor version.
 
 ## Unreleased
 
+## 0.2.0-beta.3 — 2026-09-10
+
+- Canonicalize project locations consistently across native Windows paths and junctions; cross-platform folder tests use real filesystem paths, including macOS temporary-directory aliases.
 - Added a unified Settings dialog on the homepage and canvas, with explicit browser/device scope. Default new-project locations now persist on the selected TakeBoard server, support conflict-aware save/reset, and remain separate from one-off folder choices. Existing projects are never migrated implicitly.
 - Desktop apps can check official GitHub Releases, choose stable/beta reminders, skip a version and open an exact OS/CPU installer in the system browser. Startup checks are non-blocking and optional; download/install/restart are never automatic. Update preferences live in the native client configuration directory, not a remote server.
 - Display size and scene quality survive desktop port changes; blocked optional browser storage no longer prevents the homepage or task center from opening.

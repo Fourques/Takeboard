@@ -47,7 +47,9 @@ export function projectDirectory(root: string, key: string): string {
   // Resolve links on every access, including after a disk was remounted.
   let target: string;
   try {
-    target = realpathSync(value.path);
+    // Match fs.promises.realpath used when registering roots. Windows short
+    // names/junctions must not mix legacy JS and native canonicalization.
+    target = realpathSync.native(value.path);
   } catch {
     throw Object.assign(new Error("项目文件夹不可用，请连接原存储设备后重试；没有创建替代项目"), {
       statusCode: 409,
@@ -57,7 +59,7 @@ export function projectDirectory(root: string, key: string): string {
   const baseRoot = root.endsWith(`${sep}.trash`) ? resolve(root, "..") : root;
   const allowed = storageRoots(baseRoot).some((entry) => {
     try {
-      const base = realpathSync(entry.path);
+      const base = realpathSync.native(entry.path);
       return (
         target !== base && contained(base, target) && !contained(join(base, ".system"), target)
       );

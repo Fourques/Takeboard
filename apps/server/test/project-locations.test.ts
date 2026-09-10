@@ -4,6 +4,7 @@ import {
   mkdtemp,
   readdir,
   readFile,
+  realpath,
   rename,
   rm,
   symlink,
@@ -20,7 +21,7 @@ afterEach(async () => {
   for (const fn of cleanup.splice(0).reverse()) await fn();
 });
 async function fixture() {
-  const base = await mkdtemp(join(tmpdir(), "takeboard-locations-"));
+  const base = await realpath(await mkdtemp(join(tmpdir(), "takeboard-locations-")));
   cleanup.push(() => rm(base, { recursive: true, force: true }));
   const root = join(base, "instance");
   const external = join(base, "films");
@@ -32,6 +33,30 @@ async function fixture() {
 }
 
 describe("device-scoped project folders", () => {
+  it("resolves registered directory aliases consistently without weakening containment", async () => {
+    const { app, root, external, base } = await fixture();
+    const alias = join(base, "film-alias");
+    await symlink(external, alias, process.platform === "win32" ? "junction" : "dir");
+    const added = await app.inject({
+      method: "POST",
+      url: "/api/storage/roots",
+      payload: { path: alias },
+    });
+    expect(added.statusCode).toBe(200);
+    expect(added.json().root.path).toBe(await realpath(external));
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: { title: "Alias project", storageRootId: added.json().root.id },
+    });
+    expect(created.statusCode).toBe(201);
+    const directory = projectDirectory(root, created.json().key);
+    expect(directory).toBe(await realpath(directory));
+    expect(directory.startsWith(`${external}${process.platform === "win32" ? "\\" : "/"}`)).toBe(
+      true,
+    );
+    expect((await app.inject(`/api/projects/${created.json().key}`)).statusCode).toBe(200);
+  });
   it("persists authoritative defaults across restarts, without migrating existing projects or remembering one-off choices", async () => {
     const { app, root, external } = await fixture();
     const before = await app.inject({
