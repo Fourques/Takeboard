@@ -34,7 +34,7 @@ TakeBoard 不替代 ComfyUI 的节点编辑器，而是让创作过程更连贯�
 未连接 ComfyUI 时，可以先整理项目、素材和画布，生成则需要可用的本机或远程 ComfyUI。
 
 > [!IMPORTANT]
-> 当前提供 `v0.2.0-beta.3` 桌面预览：Mac DMG、Windows 安装 EXE 和 Debian/Ubuntu DEB。
+> 当前提供 `v0.2.0-beta.4` 桌面预览：Mac DMG、Windows 安装 EXE 和 Debian/Ubuntu DEB。
 > 不再分发便携包。本页面向当前 `main`，后续开发变化以版本记录为准。
 > 预览包尚无 Apple 公证 / Windows 商业代码签名，下载指南列出具体边界。
 

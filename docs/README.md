@@ -39,7 +39,7 @@
 - [路线图](roadmap.md) · [产品策略](product-strategy.md) · [分发与门户策略](access-and-distribution-strategy.md)。
 - [易用性审计](usability-audit.md) · [2026-08-30 成熟度评估](maturity-audit-2026-08-30.md)。
 - [2026-09-10 全项目删减审计](simplification-review-2026-09-10.md)：删除依据、保留理由与待验证边界。
-- [本次发布说明](releases/v0.2.0-beta.3.md) · [历史发布说明](releases/v0.2.0-beta.1.md) · [演示指南](demo-guide.md) · [推广素材](launch-kit.md)。
+- [本次发布说明](releases/v0.2.0-beta.4.md) · [历史发布说明](releases/v0.2.0-beta.1.md) · [演示指南](demo-guide.md) · [推广素材](launch-kit.md)。
 
 历史审计、计划和旧发布说明记录当时状态；当前下载能力以下载指南及对应 Release 的附件为准。
 遇到问题请使用[反馈表单](https://github.com/Fourques/Takeboard/issues/new/choose)；漏洞与敏感信息按

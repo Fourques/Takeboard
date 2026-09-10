@@ -4,22 +4,22 @@
 
 ## Download TakeBoard
 
-**v0.2.0-beta.3 desktop preview** provides native installers only. Choose your computer and download
+**v0.2.0-beta.4 desktop preview** provides native installers only. Choose your computer and download
 one file. No portable folder to manage and no separate Node.js, pnpm or Rust installation.
 
 | Your computer | Download |
 | --- | --- |
-| Mac · Apple 芯片 / Apple silicon | [DMG](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.3/TakeBoard-v0.2.0-beta.3-macos-arm64.dmg) |
-| Mac · Intel | [DMG](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.3/TakeBoard-v0.2.0-beta.3-macos-x64.dmg) |
-| Windows · Intel / AMD | [EXE](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.3/TakeBoard-v0.2.0-beta.3-windows-x64.exe) |
-| Windows · ARM64 | [EXE](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.3/TakeBoard-v0.2.0-beta.3-windows-arm64.exe) |
-| Debian / Ubuntu · Intel / AMD | [DEB](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.3/TakeBoard-v0.2.0-beta.3-linux-x64.deb) |
-| Debian / Ubuntu · ARM64 | [DEB](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.3/TakeBoard-v0.2.0-beta.3-linux-arm64.deb) |
+| Mac · Apple 芯片 / Apple silicon | [DMG](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.4/TakeBoard-v0.2.0-beta.4-macos-arm64.dmg) |
+| Mac · Intel | [DMG](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.4/TakeBoard-v0.2.0-beta.4-macos-x64.dmg) |
+| Windows · Intel / AMD | [EXE](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.4/TakeBoard-v0.2.0-beta.4-windows-x64.exe) |
+| Windows · ARM64 | [EXE](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.4/TakeBoard-v0.2.0-beta.4-windows-arm64.exe) |
+| Debian / Ubuntu · Intel / AMD | [DEB](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.4/TakeBoard-v0.2.0-beta.4-linux-x64.deb) |
+| Debian / Ubuntu · ARM64 | [DEB](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.4/TakeBoard-v0.2.0-beta.4-linux-arm64.deb) |
 
 Check **About This Mac** or Windows **Settings → System → About** for your processor.
 DEB packages target Debian/Ubuntu, not every Linux distribution. Other environments can use
 [source setup](../CONTRIBUTING.md). All installers are also on the
-[Release page](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.3).
+[Release page](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.4).
 **Source code** at the bottom is for developers, not an installer.
 
 ## Install and open
@@ -27,7 +27,7 @@ DEB packages target Debian/Ubuntu, not every Linux distribution. Other environme
 - **Mac:** open the DMG, drag TakeBoard into Applications, then launch it from Applications.
 - **Windows:** run the EXE setup wizard, then launch TakeBoard from Start.
 - **Debian / Ubuntu:** open the DEB with your software installer and launch from the applications menu.
-  Without a graphical installer, run `sudo apt install ./TakeBoard-v0.2.0-beta.3-linux-x64.deb`
+  Without a graphical installer, run `sudo apt install ./TakeBoard-v0.2.0-beta.4-linux-x64.deb`
   in the download directory; use the ARM64 filename on ARM devices.
 
 The app starts its local service automatically. Local use needs no registration; login is optional,
@@ -41,7 +41,11 @@ models and Custom Nodes**. Projects, media and the canvas can be used without Co
 
 ## Connect a server
 
-Use **Connection → Connect device…** for SSH, HTTPS or a self-hosted Portal. SSH needs a reachable
+For remote generation with projects stored on this computer, connect to remote ComfyUI through the
+generation-service control in the workspace. Results are collected into the current project.
+
+To open and manage projects stored on another TakeBoard device, use **Connection → Connect device…**
+for SSH, HTTPS or a self-hosted Portal. SSH needs a reachable
 server, system OpenSSH, configured keys and a trusted host fingerprint; Tailscale is not required.
 Portal needs deployment and explicit pairing, not just a matching email address. There is no operated
 official cloud. See [remote access](remote-access.md) (Chinese).
