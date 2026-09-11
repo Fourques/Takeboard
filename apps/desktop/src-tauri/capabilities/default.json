@@ -2,6 +2,6 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Core TakeBoard desktop window permissions",
-  "windows": ["main", "connections", "updates"],
+  "windows": ["main", "updates"],
   "permissions": ["core:default"]
 }

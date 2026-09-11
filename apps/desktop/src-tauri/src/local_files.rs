@@ -2,7 +2,7 @@ use tauri::{Manager, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
 
 pub const ACTION_CAPABILITY: &str =
-    "window.__takeboardNativeActions = 2; window.__takeboardReportSave = true;";
+    "window.__takeboardNativeActions = 2; window.__takeboardReportSave = true; window.__takeboardRemoteProjects = true;";
 
 fn validate_report(text: &str) -> Result<String, String> {
     if text.len() > 128 * 1024 {
@@ -100,6 +100,57 @@ pub fn navigation(app: &tauri::AppHandle, source: &str, url: &tauri::Url) -> boo
         .map(|(_, value)| value.into_owned())
         .unwrap_or_default();
     if action_id.len() > 64 {
+        return false;
+    }
+    if action == "remote-project" {
+        let Some(window) = app.get_webview_window(source) else {
+            return false;
+        };
+        if source != "main" || !is_local_workspace(app, &window) {
+            acknowledge(
+                app,
+                source,
+                &action_id,
+                Some("请在此电脑的设置中管理远程项目连接。".into()),
+            );
+            return false;
+        }
+        let operation = url
+            .query_pairs()
+            .find(|(key, _)| key == "operation")
+            .map(|(_, value)| value.into_owned())
+            .unwrap_or_default();
+        let input = url
+            .query_pairs()
+            .find(|(key, _)| key == "input")
+            .map(|(_, value)| value.into_owned())
+            .unwrap_or_else(|| "{}".into());
+        if input.len() > 4096 {
+            acknowledge(app, source, &action_id, Some("连接信息过长".into()));
+            return false;
+        }
+        let input = match serde_json::from_str(&input) {
+            Ok(input) => input,
+            Err(_) => {
+                acknowledge(app, source, &action_id, Some("连接信息格式无效".into()));
+                return false;
+            }
+        };
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            let result =
+                crate::connections::settings_action(app.clone(), window.clone(), &operation, input)
+                    .await;
+            // Do not deliver device addresses to a page that navigated away while awaiting an operation.
+            if !is_local_workspace(&app, &window) {
+                return;
+            }
+            let payload = match result {
+                Ok(data) => serde_json::json!({"actionId":action_id,"data":data}),
+                Err(error) => serde_json::json!({"actionId":action_id,"error":error}),
+            };
+            let _ = window.eval(&format!("window.dispatchEvent(new CustomEvent('takeboard:desktop-action',{{detail:{payload}}}));"));
+        });
         return false;
     }
     if action == "save-report" {
@@ -287,7 +338,7 @@ mod tests {
     }
 }
 
-fn is_local_workspace(app: &tauri::AppHandle, window: &WebviewWindow) -> bool {
+pub(crate) fn is_local_workspace(app: &tauri::AppHandle, window: &WebviewWindow) -> bool {
     let Ok(current) = window.url() else {
         return false;
     };

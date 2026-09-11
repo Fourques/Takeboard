@@ -1,119 +1,102 @@
-// Isolated DOM tests for the bundled form. IPC is explicitly stubbed here;
-// actual native window/transport coverage lives in the Linux smoke and SSH tests.
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
-import { expect, test } from "@playwright/test";
+// Native responses are stubbed; this checks the real Settings UI, not SSH reachability.
+import { expect, test } from "./fixtures";
 
-test("connection form keeps pending state, saves verified targets and confirms disconnect", async ({
+test("remote projects stay in settings, preserve failed drafts and require confirmation", async ({
   page,
 }) => {
+  let status: Record<string, unknown> = { state: "idle", recent: [] };
+  const calls: { operation: string; input: Record<string, unknown> }[] = [];
   await page.addInitScript(() => {
-    const state = window as unknown as {
-      __TAURI__: unknown;
-      testEvents: (value: unknown) => void;
-      testInvocations: { command: string; args: unknown }[];
-    };
-    state.testInvocations = [];
-    state.__TAURI__ = {
-      event: {
-        listen: async (_name: string, handler: (event: unknown) => void) => {
-          state.testEvents = (value) => handler({ payload: value });
-        },
-      },
-      core: {
-        invoke: async (command: string, args: unknown) => {
-          state.testInvocations.push({ command, args });
-          if (command === "connection_status") return { state: "idle" };
-          if (command === "connect_remote") {
-            state.testEvents({ state: "idle" });
-            // The real process is asynchronous; test that an intermediate idle
-            // event cannot enable a duplicate submission or cancel automatic open.
-          }
-          if (command === "disconnect_remote") state.testEvents({ state: "idle" });
-        },
-      },
-    };
-  });
-  await page.route("https://desktop.test/**", async (route) => {
-    const file = new URL(route.request().url()).pathname.slice(1);
-    if (!["connections.html", "connections.js", "connections.css", "appearance.js"].includes(file))
-      return route.abort();
-    await route.fulfill({
-      body: await readFile(resolve("apps/desktop/ui", file)),
-      contentType: file.endsWith(".js")
-        ? "text/javascript"
-        : file.endsWith(".css")
-          ? "text/css"
-          : "text/html",
+    Object.assign(window, {
+      __TAURI__: {},
+      __takeboardNativeActions: 2,
+      __takeboardRemoteProjects: true,
     });
   });
-  await page.goto("https://desktop.test/connections.html");
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "chroma");
-  await expect(page.locator("html")).toHaveCSS("color-scheme", "light");
-  await page.getByLabel("SSH 主机", { exact: true }).fill("user@server");
-  const connect = page.getByRole("button", { name: "连接并打开", exact: true });
-  await connect.click();
-  await expect(connect).toBeDisabled();
-  await expect(page.locator("#status")).toContainText("正在验证");
-  await page.evaluate(() => {
-    (window as unknown as { testEvents: (value: unknown) => void }).testEvents({
-      state: "failed",
-      code: "START_REQUIRED",
-      message: "已安装但未启动，需要授权",
-    });
-  });
-  await expect(page.getByRole("button", { name: "允许启动并连接" })).toBeVisible();
-  await page.getByRole("button", { name: "允许启动并连接" }).click();
-  expect(
-    await page.evaluate(() => {
-      const calls = (
-        window as unknown as {
-          testInvocations: { command: string; args: { target?: { allowStart?: boolean } } }[];
-        }
-      ).testInvocations;
-      return calls.filter((item) => item.command === "connect_remote").at(-1)?.args.target
-        ?.allowStart;
-    }),
-  ).toBe(true);
-  await page.evaluate(() => {
-    const state = window as unknown as { testEvents: (value: unknown) => void };
-    state.testEvents({
-      state: "ready",
-      target: { kind: "ssh", address: "user@server", port: null },
-      instanceId: "verified-instance",
-      localPort: 52000,
-    });
-  });
-  await expect(connect).toBeEnabled();
-  await expect(page.locator("#recent")).toContainText("user@server");
-  const invocations = () =>
-    page.evaluate(() =>
-      (window as unknown as { testInvocations: { command: string }[] }).testInvocations.map(
-        (item) => item.command,
-      ),
+  await page.route("https://takeboard-desktop.invalid/remote-project?**", async (route) => {
+    const url = new URL(route.request().url());
+    const operation = url.searchParams.get("operation") as string;
+    const input = JSON.parse(url.searchParams.get("input") ?? "{}");
+    calls.push({ operation, input });
+    if (operation === "connect") status = { ...status, state: "connecting" };
+    if (operation === "disconnect") status = { ...status, state: "idle" };
+    if (operation === "forget") status = { ...status, recent: [] };
+    await route.fulfill({ status: 204 });
+    await page.evaluate(
+      (detail) => window.dispatchEvent(new CustomEvent("takeboard:desktop-action", { detail })),
+      { actionId: url.searchParams.get("actionId"), data: status },
     );
-  await expect.poll(invocations).toContain("open_remote_workspace");
-  page.once("dialog", (dialog) => dialog.dismiss());
-  await page.getByRole("button", { name: "断开连接", exact: true }).click();
-  expect(await invocations()).not.toContain("disconnect_remote");
-  page.once("dialog", (dialog) => dialog.accept());
-  await page.getByRole("button", { name: "断开连接", exact: true }).click();
-  await expect.poll(invocations).toContain("disconnect_remote");
-  await expect(page.getByRole("button", { name: "打开远程窗口" })).toBeHidden();
-  await page.setViewportSize({ width: 380, height: 440 });
+  });
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "打开工作区选项" })).toBeVisible();
+  await page.evaluate(() =>
+    window.dispatchEvent(new CustomEvent("takeboard:open-settings", { detail: "remote-projects" })),
+  );
+  const settings = page.getByRole("dialog", { name: "设置", exact: true });
+  await expect(settings).toBeVisible();
+  const panel = settings.getByRole("region", { name: "远程项目连接" });
+  await panel.getByLabel("SSH 主机", { exact: true }).fill("user@server");
+  await panel.getByLabel("设备名称", { exact: true }).fill("工作站");
+  const connect = panel.getByRole("button", { name: "连接并打开", exact: true });
+  await connect.click();
+  await expect(panel.getByRole("button", { name: "连接中…" })).toBeDisabled();
+  status = { state: "failed", recent: [], code: "START_REQUIRED", message: "远端已安装但未启动" };
+  await expect(panel.getByText("远端已安装但未启动", { exact: true })).toBeVisible();
+  await expect(panel.getByLabel("SSH 主机", { exact: true })).toHaveValue("user@server");
+  await panel.getByLabel("允许启动远端已安装的 TakeBoard").check();
+  await connect.click();
+  expect(calls.filter((call) => call.operation === "connect").at(-1)?.input.allowStart).toBe(true);
+  const target = {
+    kind: "ssh",
+    address: "user@server",
+    name: "工作站",
+    port: null,
+    instanceId: "verified-instance",
+    allowStart: true,
+  };
+  status = { state: "ready", target, recent: [target] };
+  await expect.poll(() => calls.some((call) => call.operation === "open")).toBe(true);
+  const recent = panel.getByRole("list", { name: "已保存的项目设备" });
+  await expect(recent).toContainText("工作站");
+  await panel.getByRole("button", { name: "断开连接", exact: true }).click();
+  await panel.getByRole("button", { name: "取消", exact: true }).click();
+  expect(calls.some((call) => call.operation === "disconnect")).toBe(false);
+  await panel.getByRole("button", { name: "断开连接", exact: true }).click();
+  await panel.getByRole("button", { name: "确认", exact: true }).click();
+  await expect(panel.getByText("尚未连接", { exact: true })).toBeVisible();
+  await recent.getByRole("button", { name: "移除", exact: true }).click();
+  await panel.getByRole("button", { name: "确认", exact: true }).click();
+  await expect(recent).toHaveCount(0);
+  await page.setViewportSize({ width: 390, height: 600 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
-  await page.screenshot({ path: "test-results/native-connections-chroma.png" });
-  await page.evaluate(() => localStorage.setItem("takeboard.desktop.theme", "noir"));
-  await page.reload();
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "noir");
-  await expect(page.locator("html")).toHaveCSS("color-scheme", "dark");
-  // Simulate the allowlisted native initialization script; a new app preference wins over stale utility storage.
-  await page.addInitScript(() => {
-    (window as unknown as { __takeboardTheme: string }).__takeboardTheme = "light";
-  });
-  await page.reload();
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  await expect(page.locator("html")).toHaveCSS("color-scheme", "light");
+  await page.screenshot({ path: "test-results/remote-project-settings-narrow.png" });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.screenshot({ path: "test-results/remote-project-settings-desktop.png" });
+  await settings.getByRole("button", { name: "关闭设置" }).click();
+  expect(page.context().pages()).toHaveLength(1);
+});
+
+test("an early native menu request survives startup and is consumed once", async ({ page }) => {
+  await page.addInitScript(() =>
+    Object.assign(window, { __takeboardPendingSettings: "remote-projects" }),
+  );
+  await page.goto("/");
+  const settings = page.getByRole("dialog", { name: "设置", exact: true });
+  await expect(settings).toBeVisible();
+  await expect(settings.getByRole("button", { name: "远程项目", exact: true })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await expect(
+    settings.getByText("请在此电脑的新版桌面 App 设置中管理连接。", { exact: true }),
+  ).toBeVisible();
+  await settings.getByRole("button", { name: "关闭设置" }).click();
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { __takeboardPendingSettings?: string }).__takeboardPendingSettings,
+    ),
+  ).toBeUndefined();
 });

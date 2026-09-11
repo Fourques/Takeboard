@@ -1,6 +1,17 @@
 const status = document.querySelector("#status");
 const retry = document.querySelector("#retry");
 let unlisten;
+// Migrate only from the old bundled origin, before navigating to the local HTTP UI.
+// Keep the old key as a recovery copy; an existing native preference file wins.
+const connectionMigration = (async () => {
+  if (!window.__TAURI__?.core) return;
+  const text = localStorage.getItem("takeboard.connections.v1") ?? "[]";
+  if (text.length > 65536) throw new Error("旧连接记录过大");
+  await window.__TAURI__.core.invoke("import_legacy_connections", { entries: JSON.parse(text) });
+})().then(
+  () => false,
+  () => true,
+);
 
 function showFailure(message) {
   document.querySelector(".progress").hidden = true;
@@ -8,7 +19,7 @@ function showFailure(message) {
   retry.hidden = false;
 }
 
-function applyStatus(payload) {
+async function applyStatus(payload) {
   if (payload?.state === "starting") {
     document.querySelector(".progress").hidden = false;
     status.textContent = "正在启动本机工作站…";
@@ -21,6 +32,10 @@ function applyStatus(payload) {
     const destination = new URL(payload.url);
     destination.hash = new URLSearchParams({
       "tb-device": JSON.stringify({ kind: "local", address: "" }),
+      ...((await connectionMigration) ? { "tb-connection-migration": "failed" } : {}),
+      ...(window.__takeboardPendingSettings
+        ? { "tb-settings": window.__takeboardPendingSettings }
+        : {}),
     }).toString();
     window.location.replace(destination.href);
     return;

@@ -5,7 +5,8 @@ export type DesktopAction =
   | "updates"
   | "choose-folder"
   | "reveal-folder"
-  | "save-report";
+  | "save-report"
+  | "remote-project";
 export function desktopActionUrl(
   action: DesktopAction,
   parameters: Record<string, string>,
@@ -20,19 +21,27 @@ export function requestDesktopAction(
   parameters: Record<string, string> = {},
   timeoutMs = 5000,
 ) {
-  return new Promise<void>((resolve, reject) => {
+  return requestDesktopData(action, parameters, timeoutMs).then(() => undefined);
+}
+
+export function requestDesktopData<T = unknown>(
+  action: DesktopAction,
+  parameters: Record<string, string> = {},
+  timeoutMs = 5000,
+) {
+  return new Promise<T>((resolve, reject) => {
     const actionId = crypto.randomUUID();
     const modern =
       (window as unknown as { __takeboardNativeActions?: number }).__takeboardNativeActions === 2;
-    const done = (error?: string) => {
+    const done = (error?: string, data?: T) => {
       window.clearTimeout(timer);
       window.removeEventListener("takeboard:desktop-action", receive);
       if (error) reject(new Error(error));
-      else resolve();
+      else resolve(data as T);
     };
     const receive = (event: Event) => {
-      const detail = (event as CustomEvent<{ actionId: string; error?: string }>).detail;
-      if (detail?.actionId === actionId) done(detail.error);
+      const detail = (event as CustomEvent<{ actionId: string; error?: string; data?: T }>).detail;
+      if (detail?.actionId === actionId) done(detail.error, detail.data);
     };
     const timer = window.setTimeout(
       () => done("桌面应用未响应。请从应用菜单打开对应功能，或更新 TakeBoard 安装包后重试。"),

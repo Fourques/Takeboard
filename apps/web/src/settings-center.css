@@ -94,6 +94,26 @@
 .settings-center small {
   overflow-wrap: anywhere;
 }
+.remote-project-settings :is(fieldset, label) {
+  display: grid;
+  gap: 12px;
+}
+.remote-project-settings .remote-start-choice {
+  display: flex;
+  align-items: center;
+}
+.remote-project-recents {
+  list-style: none;
+  padding: 0;
+}
+.remote-project-recents li {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.remote-project-recents small,
+.remote-project-status span {
+  display: block;
+}
 .settings-center small {
   font-size: 0.82em;
   font-weight: 400;

@@ -15,6 +15,7 @@ const GenerationConnectionPanel = lazy(() =>
     default: module.GenerationConnectionPanel,
   })),
 );
+const RemoteProjectSettings = lazy(() => import("./remote-project-settings"));
 
 export function SettingsButton() {
   const [update, setUpdate] = useState(() =>
@@ -37,15 +38,42 @@ export function SettingsButton() {
 // The host outlives temporary menus; clicking the modal must not unmount it when
 // the workspace options menu closes on an outside pointerdown.
 export function SettingsHost() {
-  const [section, setSection] = useState<SettingsSection | null>(null);
+  const [section, setSection] = useState<SettingsSection | null>(() => {
+    const requested =
+      (window as unknown as { __takeboardPendingSettings?: string }).__takeboardPendingSettings ??
+      new URLSearchParams(window.location.hash.slice(1)).get("tb-settings");
+    return requested === "remote-projects" ? "remote-projects" : null;
+  });
   useEffect(() => {
+    const consumePending = () => {
+      delete (window as unknown as { __takeboardPendingSettings?: string })
+        .__takeboardPendingSettings;
+      const hash = new URLSearchParams(window.location.hash.slice(1));
+      if (hash.has("tb-settings")) {
+        hash.delete("tb-settings");
+        window.history.replaceState(
+          null,
+          "",
+          `${window.location.pathname}${window.location.search}${hash.size ? `#${hash}` : ""}`,
+        );
+      }
+    };
+    consumePending();
     const show = (event: Event) => {
       const requested = (event as CustomEvent).detail;
       setSection(
-        ["appearance", "storage", "connections", "diagnostics", "about"].includes(requested)
+        [
+          "appearance",
+          "storage",
+          "connections",
+          "remote-projects",
+          "diagnostics",
+          "about",
+        ].includes(requested)
           ? requested
           : "appearance",
       );
+      consumePending();
     };
     window.addEventListener("takeboard:open-settings", show);
     return () => window.removeEventListener("takeboard:open-settings", show);
@@ -140,6 +168,7 @@ function SettingsCenter({
               ["appearance", "外观"],
               ["storage", "项目与存储"],
               ["connections", "设备连接"],
+              ["remote-projects", "远程项目"],
               ["diagnostics", "运行诊断"],
               ["about", "关于与更新"],
             ] as const
@@ -244,13 +273,16 @@ function SettingsCenter({
               <div className="settings-subsection">
                 <h3>远程项目</h3>
                 <p>打开另一台 TakeBoard 上的项目。项目与素材保存在那台设备。</p>
-                {desktop ? (
-                  <DesktopActionButton action="connections">管理远程项目连接</DesktopActionButton>
-                ) : (
-                  <p>在桌面 App 的“连接”菜单管理远程项目。</p>
-                )}
+                <button type="button" onClick={() => setSection("remote-projects")}>
+                  管理远程项目
+                </button>
               </div>
             </section>
+          ) : null}
+          {section === "remote-projects" ? (
+            <Suspense fallback={<p>读取连接…</p>}>
+              <RemoteProjectSettings />
+            </Suspense>
           ) : null}
           {section === "diagnostics" ? <RuntimeDiagnostics /> : null}
           {section === "about" ? (

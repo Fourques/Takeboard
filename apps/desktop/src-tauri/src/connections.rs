@@ -8,7 +8,7 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-use tauri::{Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri::{Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_shell::{process::CommandEvent, ShellExt};
 
 pub struct Connections {
@@ -31,35 +31,24 @@ fn publish(app: &tauri::AppHandle, value: Value) {
     if let Ok(mut status) = app.state::<Connections>().status.lock() {
         *status = value.clone();
     }
-    let _ = app.emit_to("connections", "takeboard-connection", value);
 }
 fn trusted(window: &WebviewWindow) -> Result<(), String> {
-    if window.label() != "connections" {
-        return Err("连接管理仅允许从桌面连接窗口操作".into());
+    if window.label() != "main"
+        || !crate::local_files::is_local_workspace(window.app_handle(), window)
+    {
+        return Err("连接管理仅允许从此电脑的设置操作".into());
     }
     Ok(())
 }
 pub async fn open(app: tauri::AppHandle) -> tauri::Result<()> {
     open_with_theme(app, None).await
 }
-pub async fn open_with_theme(app: tauri::AppHandle, theme: Option<&str>) -> tauri::Result<()> {
-    let state = app.state::<Connections>();
-    let _guard = state.operation.lock().await;
-    if let Some(window) = app.get_webview_window("connections") {
-        window.eval(&crate::local_files::appearance_script(theme))?;
+pub async fn open_with_theme(app: tauri::AppHandle, _theme: Option<&str>) -> tauri::Result<()> {
+    if let Some(window) = app.get_webview_window("main") {
+        window.eval("window.__takeboardPendingSettings = 'remote-projects'; window.dispatchEvent(new CustomEvent('takeboard:open-settings',{detail:'remote-projects'}));")?;
         window.show()?;
+        window.unminimize()?;
         window.set_focus()?;
-    } else {
-        WebviewWindowBuilder::new(
-            &app,
-            "connections",
-            WebviewUrl::App("connections.html".into()),
-        )
-        .initialization_script(crate::local_files::appearance_script(theme))
-        .title("TakeBoard · 远程项目")
-        .inner_size(680.0, 720.0)
-        .min_inner_size(380.0, 440.0)
-        .build()?;
     }
     Ok(())
 }
@@ -91,18 +80,23 @@ pub fn stop(app: &tauri::AppHandle) {
     }
     publish(app, json!({"state":"idle"}));
 }
-#[tauri::command]
 pub fn connection_status(app: tauri::AppHandle, window: WebviewWindow) -> Result<Value, String> {
     trusted(&window)?;
-    let value = app
+    let mut value = app
         .state::<Connections>()
         .status
         .lock()
         .map_err(|_| "连接状态不可用")?
         .clone();
+    match preferences_path(&app).and_then(|path| crate::connection_preferences::read(&path)) {
+        Ok(entries) => value["recent"] = json!(entries),
+        Err(error) => {
+            value["recent"] = json!([]);
+            value["preferencesError"] = json!(error);
+        }
+    }
     Ok(value)
 }
-#[tauri::command]
 pub async fn disconnect_remote(app: tauri::AppHandle, window: WebviewWindow) -> Result<(), String> {
     trusted(&window)?;
     let state = app.state::<Connections>();
@@ -117,13 +111,13 @@ pub async fn disconnect_remote(app: tauri::AppHandle, window: WebviewWindow) -> 
         .map_err(|error| error.to_string())?;
     Ok(())
 }
-#[tauri::command]
 pub async fn connect_remote(
     app: tauri::AppHandle,
     window: WebviewWindow,
     target: Value,
 ) -> Result<(), String> {
     trusted(&window)?;
+    let target = crate::connection_preferences::normalize(&target)?;
     let state = app.state::<Connections>();
     let _guard = state.operation.lock().await;
     let payload = serde_json::to_string(&target).map_err(|error| error.to_string())?;
@@ -175,6 +169,19 @@ pub async fn connect_remote(
                 CommandEvent::Stdout(bytes) => {
                     if let Ok(value) = serde_json::from_slice::<Value>(&bytes) {
                         if matches!(value["state"].as_str(), Some("ready" | "failed")) {
+                            let state = app.state::<Connections>();
+                            let _guard = state.operation.lock().await;
+                            if state.generation.load(Ordering::SeqCst) != generation {
+                                continue;
+                            }
+                            let mut value = value;
+                            if value["state"] == "ready" {
+                                let mut target = value["target"].clone();
+                                target["instanceId"] = value["instanceId"].clone();
+                                if let Err(error) = remember(&app, &target) {
+                                    value["preferencesError"] = json!(error);
+                                }
+                            }
                             publish(&app, value);
                         }
                     }
@@ -200,7 +207,84 @@ pub async fn connect_remote(
     });
     Ok(())
 }
+
+fn preferences_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    Ok(app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("remote-connections.json"))
+}
+
+fn remember(app: &tauri::AppHandle, target: &Value) -> Result<(), String> {
+    let target = crate::connection_preferences::normalize(target)?;
+    let path = preferences_path(app)?;
+    let mut entries = crate::connection_preferences::read(&path)?;
+    entries
+        .retain(|entry| entry["kind"] != target["kind"] || entry["address"] != target["address"]);
+    entries.insert(0, target);
+    entries.truncate(12);
+    crate::connection_preferences::write(&path, &entries)
+}
+
 #[tauri::command]
+pub async fn import_legacy_connections(
+    app: tauri::AppHandle,
+    window: WebviewWindow,
+    entries: Value,
+) -> Result<(), String> {
+    let url = window.url().map_err(|error| error.to_string())?;
+    let bundled = url.port().is_none()
+        && ((url.scheme() == "tauri" && url.host_str() == Some("localhost"))
+            || (matches!(url.scheme(), "http" | "https")
+                && url.host_str() == Some("tauri.localhost")));
+    if window.label() != "main" || !bundled {
+        return Err("仅允许从应用启动页迁移旧记录".into());
+    }
+    let state = app.state::<Connections>();
+    let _guard = state.operation.lock().await;
+    let path = preferences_path(&app)?;
+    if path.exists() {
+        return Ok(());
+    }
+    let entries = entries
+        .as_array()
+        .filter(|entries| entries.len() <= 12)
+        .ok_or("旧连接记录无效")?;
+    let normalized = entries
+        .iter()
+        .map(crate::connection_preferences::normalize)
+        .collect::<Result<Vec<_>, _>>()?;
+    crate::connection_preferences::write(&path, &normalized)
+}
+
+pub async fn settings_action(
+    app: tauri::AppHandle,
+    window: WebviewWindow,
+    operation: &str,
+    input: Value,
+) -> Result<Value, String> {
+    trusted(&window)?;
+    match operation {
+        "status" => return connection_status(app, window),
+        "connect" => connect_remote(app.clone(), window.clone(), input).await?,
+        "disconnect" => disconnect_remote(app.clone(), window.clone()).await?,
+        "open" => open_remote_workspace(app.clone(), window.clone()).await?,
+        "forget" => {
+            let state = app.state::<Connections>();
+            let _guard = state.operation.lock().await;
+            let path = preferences_path(&app)?;
+            let target = crate::connection_preferences::normalize(&input)?;
+            let mut entries = crate::connection_preferences::read(&path)?;
+            entries.retain(|entry| {
+                entry["kind"] != target["kind"] || entry["address"] != target["address"]
+            });
+            crate::connection_preferences::write(&path, &entries)?;
+        }
+        _ => return Err("不支持的连接操作".into()),
+    }
+    connection_status(app, window)
+}
 pub async fn open_remote_workspace(
     app: tauri::AppHandle,
     window: WebviewWindow,
@@ -272,13 +356,4 @@ pub async fn open_remote_workspace(
         });
     }
     Ok(())
-}
-
-#[tauri::command]
-pub fn open_local_workspace(app: tauri::AppHandle, window: WebviewWindow) -> Result<(), String> {
-    trusted(&window)?;
-    let local = app.get_webview_window("main").ok_or("本机窗口不可用")?;
-    local.show().map_err(|error| error.to_string())?;
-    local.unminimize().map_err(|error| error.to_string())?;
-    local.set_focus().map_err(|error| error.to_string())
 }

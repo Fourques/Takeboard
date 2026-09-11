@@ -1,4 +1,5 @@
 use serde::Serialize;
+mod connection_preferences;
 mod connections;
 mod local_files;
 mod updates;
@@ -317,11 +318,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             desktop_status,
             restart_server,
-            connections::connection_status,
-            connections::connect_remote,
-            connections::disconnect_remote,
-            connections::open_remote_workspace,
-            connections::open_local_workspace,
+            connections::import_legacy_connections,
             updates::update_action
         ])
         .on_menu_event(|app, event| {
@@ -352,7 +349,7 @@ fn main() {
             let connect = tauri::menu::MenuItem::with_id(
                 app,
                 "connect-device",
-                "连接设备…",
+                "远程项目设置…",
                 true,
                 Some("CmdOrCtrl+Shift+K"),
             )?;
