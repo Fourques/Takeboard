@@ -83,4 +83,27 @@ describe("workflow binding execution", () => {
       expect.arrayContaining([expect.stringContaining("节点 text.value 不存在")]),
     );
   });
+  it("requires an explicit FPS binding for frame-count conversion", () => {
+    const prompt = {
+      video: { class_type: "CreateVideo", inputs: { frames: 121, fps: 24, text: "a cat" } },
+    };
+    const frames: WorkflowBinding = {
+      ...binding,
+      capability: "text_to_video",
+      media: {},
+      parameters: {
+        prompt: [{ nodeId: "video", input: "text" }],
+        duration: [{ nodeId: "video", input: "frames", transform: "seconds_to_frames_plus_one" }],
+      },
+    };
+    expect(validateWorkflowBinding(prompt, frames)).toContain(
+      "duration：使用秒到帧数换算时，必须绑定输出帧率 FPS，避免表单帧率与实际视频不一致",
+    );
+    expect(
+      validateWorkflowBinding(prompt, {
+        ...frames,
+        parameters: { ...frames.parameters, fps: [{ nodeId: "video", input: "fps" }] },
+      }),
+    ).toEqual([]);
+  });
 });

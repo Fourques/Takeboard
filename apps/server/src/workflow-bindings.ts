@@ -414,6 +414,12 @@ function targetExists(prompt: ComfyPrompt, target: WorkflowBindingTarget) {
 
 export function validateWorkflowBinding(prompt: ComfyPrompt, binding: WorkflowBinding) {
   const issues: string[] = [];
+  if (
+    binding.parameters.duration?.some((target) => target.transform) &&
+    !binding.parameters.fps?.length
+  ) {
+    issues.push("duration：使用秒到帧数换算时，必须绑定输出帧率 FPS，避免表单帧率与实际视频不一致");
+  }
   for (const [key, targets] of Object.entries(binding.parameters)) {
     for (const target of targets ?? []) {
       if (!targetExists(prompt, target))
