@@ -3,17 +3,19 @@
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 
 const binary = resolve(process.argv[2] ?? "");
-const resources = resolve(process.argv[3] ?? "");
+const packagedResources = resolve(process.argv[3] ?? "");
 assert.ok(process.argv[2] && process.argv[3], "Supply packaged Node and resource directory");
-assert.ok(existsSync(binary) && existsSync(join(resources, "launcher.mjs")));
+assert.ok(existsSync(binary) && existsSync(join(packagedResources, "launcher.mjs")));
 const root = await mkdtemp(join(tmpdir(), "takeboard-packaged-runtime-"));
+const resources = join(root, "runtime-alias");
+await symlink(packagedResources, resources, process.platform === "win32" ? "junction" : "dir");
 const lease = join(root, ".system", "instance.json");
 let child;
 let exited;

@@ -5,7 +5,8 @@ import { access, mkdir, open, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
+import { isMainModule } from "./is-main-module.mjs";
 import { takeboardHealth } from "./remote-connection.mjs";
 
 export async function inspectService(bundleRoot, dataRoot) {
@@ -120,7 +121,7 @@ export async function startService(bundleRoot, dataRoot, expectedInstanceId) {
   }
 }
 
-if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
+if (isMainModule(import.meta.url)) {
   const bundleRoot = dirname(fileURLToPath(import.meta.url));
   const dataRoot = resolve(process.env.TAKEBOARD_DATA_ROOT || join(homedir(), "TakeBoardData"));
   try {

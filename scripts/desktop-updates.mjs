@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname } from "node:path";
+import { isMainModule } from "./is-main-module.mjs";
 
 export const repository = "https://github.com/Fourques/Takeboard";
 const api = "https://api.github.com/repos/Fourques/Takeboard/releases?per_page=100";
@@ -202,7 +202,7 @@ export async function updateCommand({
   }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isMainModule(import.meta.url)) {
   try {
     const [file, currentVersion, operation, raw = "{}"] = process.argv.slice(2);
     console.log(

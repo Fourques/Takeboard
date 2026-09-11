@@ -1,5 +1,4 @@
-import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { isMainModule } from "./is-main-module.mjs";
 import { manageRemoteService } from "./remote-bootstrap.mjs";
 import { connectRemote, validateRemoteHost } from "./remote-connection.mjs";
 
@@ -148,7 +147,7 @@ export async function verifyConnection(input, signal) {
   return { ...connection, target };
 }
 
-if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
+if (isMainModule(import.meta.url)) {
   const controller = new AbortController();
   let connection;
   let closing = false;

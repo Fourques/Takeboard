@@ -112,6 +112,7 @@ async function main() {
     cp(join(repositoryRoot, "scripts", "runtime-launcher.mjs"), join(resourceRoot, "launcher.mjs")),
     ...[
       "desktop-connection.mjs",
+      "is-main-module.mjs",
       "desktop-updates.mjs",
       "remote-connection.mjs",
       "remote-bootstrap.mjs",
