@@ -4,12 +4,12 @@
 
 ## Download TakeBoard
 
-**v0.2.0-beta.4 desktop preview** provides native installers only. Choose your computer and download
+**v0.2.0-beta.5** is an Apple Silicon Mac testing build focused on the homepage and connections. Other platforms remain on **beta.4**. Choose your computer and download
 one file. No portable folder to manage and no separate Node.js, pnpm or Rust installation.
 
 | Your computer | Download |
 | --- | --- |
-| Mac · Apple 芯片 / Apple silicon | [DMG](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.4/TakeBoard-v0.2.0-beta.4-macos-arm64.dmg) |
+| Mac · Apple 芯片 / Apple silicon | [DMG · beta.5](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.5/TakeBoard-v0.2.0-beta.5-macos-arm64.dmg) |
 | Mac · Intel | [DMG](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.4/TakeBoard-v0.2.0-beta.4-macos-x64.dmg) |
 | Windows · Intel / AMD | [EXE](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.4/TakeBoard-v0.2.0-beta.4-windows-x64.exe) |
 | Windows · ARM64 | [EXE](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.4/TakeBoard-v0.2.0-beta.4-windows-arm64.exe) |
@@ -18,8 +18,7 @@ one file. No portable folder to manage and no separate Node.js, pnpm or Rust ins
 
 Check **About This Mac** or Windows **Settings → System → About** for your processor.
 DEB packages target Debian/Ubuntu, not every Linux distribution. Other environments can use
-[source setup](../CONTRIBUTING.md). All installers are also on the
-[Release page](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.4).
+[source setup](../CONTRIBUTING.md). See [Apple Silicon beta.5](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.5) or [other platforms on beta.4](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.4) for release details.
 **Source code** at the bottom is for developers, not an installer.
 
 ## Install and open

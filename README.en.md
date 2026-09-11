@@ -35,7 +35,7 @@ include Node.js; no separate Node.js, pnpm or Rust installation is needed.
 ComfyUI; generation requires a working local or remote ComfyUI environment.
 
 > [!IMPORTANT]
-> The public desktop preview is `v0.2.0-beta.4`: Mac DMG, Windows EXE and Debian/Ubuntu DEB.
+> The Apple Silicon Mac testing build is `v0.2.0-beta.5` (DMG). Intel Mac, Windows and Linux remain on `beta.4`.
 > Portable downloads are retired. This README describes current `main`; see the changelog for later changes.
 > Previews are not Apple-notarized or commercially Windows-code-signed.
 
