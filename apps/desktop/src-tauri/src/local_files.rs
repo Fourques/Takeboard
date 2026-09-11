@@ -1,7 +1,23 @@
 use tauri::{Manager, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
 
-pub const ACTION_CAPABILITY: &str = "window.__takeboardNativeActions = 2;";
+pub const ACTION_CAPABILITY: &str =
+    "window.__takeboardNativeActions = 2; window.__takeboardReportSave = true;";
+
+fn validate_report(text: &str) -> Result<String, String> {
+    if text.len() > 128 * 1024 {
+        return Err("报告过大，请复制错误摘要。".into());
+    }
+    let report: serde_json::Value =
+        serde_json::from_str(text).map_err(|_| "诊断报告格式无效。".to_string())?;
+    if report.get("format").and_then(|v| v.as_str()) != Some("takeboard.client-crash-report")
+        || report.get("reportVersion").and_then(|v| v.as_u64()) != Some(1)
+        || !report.get("error").is_some_and(|v| v.is_object())
+    {
+        return Err("诊断报告格式无效。".into());
+    }
+    serde_json::to_string_pretty(&report).map_err(|error| error.to_string())
+}
 
 pub fn appearance_script(theme: Option<&str>) -> String {
     match theme.filter(|value| matches!(*value, "noir" | "light" | "chroma")) {
@@ -84,6 +100,39 @@ pub fn navigation(app: &tauri::AppHandle, source: &str, url: &tauri::Url) -> boo
         .map(|(_, value)| value.into_owned())
         .unwrap_or_default();
     if action_id.len() > 64 {
+        return false;
+    }
+    if action == "save-report" {
+        // Content may come from a remote project, but the destination is chosen
+        // only by the user in a native dialog. Never accept a path from the page.
+        let text = url
+            .query_pairs()
+            .find(|(key, _)| key == "report")
+            .map(|(_, value)| value.into_owned())
+            .unwrap_or_default();
+        let report = match validate_report(&text) {
+            Ok(report) => report,
+            Err(error) => {
+                acknowledge(app, source, &action_id, Some(error));
+                return false;
+            }
+        };
+        let callback_app = app.clone();
+        let source = source.to_owned();
+        app.dialog()
+            .file()
+            .set_title("保存 TakeBoard 异常报告")
+            .add_filter("JSON", &["json"])
+            .set_file_name("takeboard-crash-report.json")
+            .save_file(move |file| {
+                let error = match file.and_then(|file| file.into_path().ok()) {
+                    Some(path) => std::fs::write(path, &report)
+                        .err()
+                        .map(|error| format!("报告保存失败：{error}。请复制报告文本。")),
+                    None => Some("已取消保存，仍可复制报告文本。".into()),
+                };
+                acknowledge(&callback_app, &source, &action_id, error);
+            });
         return false;
     }
     if action == "updates" || action == "connections" {
@@ -196,6 +245,13 @@ pub fn navigation(app: &tauri::AppHandle, source: &str, url: &tauri::Url) -> boo
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn report_save_accepts_only_bounded_diagnostic_json() {
+        assert!(validate_report(r#"{"format":"takeboard.client-crash-report","reportVersion":1,"error":{"message":"test"}}"#).is_ok());
+        assert!(validate_report("not json").is_err());
+        assert!(validate_report(r#"{"path":"/tmp/secret"}"#).is_err());
+        assert!(validate_report(&"x".repeat(128 * 1024 + 1)).is_err());
+    }
     #[test]
     fn native_appearance_accepts_only_known_palettes() {
         for theme in ["noir", "light", "chroma"] {

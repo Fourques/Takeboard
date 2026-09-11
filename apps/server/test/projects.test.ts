@@ -662,6 +662,35 @@ describe("TakeBoard project API", () => {
       targetSlot: "reference",
     });
     expect(selfConnection.statusCode).toBe(400);
+
+    const approved = await app.inject({
+      method: "POST",
+      url: `/api/projects/${key}/takes/${takeId}/approve`,
+      payload: { reason: "保留" },
+    });
+    expect(approved.statusCode, approved.body).toBe(200);
+    const revoked = await app.inject({
+      method: "POST",
+      url: `/api/projects/${key}/takes/${takeId}/reject`,
+      payload: { reason: "重新选择" },
+    });
+    expect(revoked.statusCode, revoked.body).toBe(200);
+    expect(
+      revoked.json().snapshot.shots.find((shot: { id: string }) => shot.id === sourceShot.id),
+    ).toMatchObject({ approvedTakeId: null, status: "review" });
+    expect(revoked.json().snapshot.approvals).toEqual([
+      expect.objectContaining({ takeId, status: "revoked" }),
+    ]);
+    // Independent source assets and existing connections are not deleted by a review decision.
+    expect(revoked.json().snapshot.assets).toHaveLength(snapshot.assets.length);
+    expect(revoked.json().snapshot.canvasEdges).toEqual(connected.json().snapshot.canvasEdges);
+    const reapproved = await app.inject({
+      method: "POST",
+      url: `/api/projects/${key}/takes/${takeId}/approve`,
+      payload: { reason: "再次采用" },
+    });
+    expect(reapproved.statusCode, reapproved.body).toBe(200);
+    expect(reapproved.json().snapshot.approvals).toHaveLength(2);
   });
 
   it("edits, duplicates, removes and restores canvas nodes without deleting domain data", async () => {

@@ -43,7 +43,11 @@ export function useGenerationDraft(context: GenerationContext, workflows: Workfl
   const workflowLocked = Boolean(
     selectedShotId && snapshot?.runs.some((run) => run.shotId === selectedShotId),
   );
-  const scope = `${snapshot?.project.id ?? ""}:${selectedShotId ?? ""}:${effectivePath}`;
+  const scope = `${snapshot?.project.id ?? ""}:${selectedShotId ?? ""}:${effectivePath}:${selectedWorkflow?.execution === "bound" ? (selectedWorkflow.workflowHash ?? "") : "native"}`;
+  const preferenceScope =
+    selectedWorkflow?.execution === "bound"
+      ? `${selectedWorkflow.editorUrl}:${effectivePath}:${selectedWorkflow.workflowHash ?? ""}`
+      : effectivePath;
   const [drafts, setDrafts] = useState<{
     projectId: string | null;
     values: Map<string, GenerationSettings>;
@@ -54,9 +58,9 @@ export function useGenerationDraft(context: GenerationContext, workflows: Workfl
         snapshot,
         selectedShot,
         selectedWorkflow,
-        loadModelPreferences(effectivePath),
+        loadModelPreferences(preferenceScope),
       ),
-    [snapshot, selectedShot, selectedWorkflow, effectivePath],
+    [snapshot, selectedShot, selectedWorkflow, preferenceScope],
   );
   const raw =
     drafts.projectId === snapshot?.project.id ? (drafts.values.get(scope) ?? initial) : initial;
@@ -99,8 +103,15 @@ export function useGenerationDraft(context: GenerationContext, workflows: Workfl
     if (!edited || projectMode !== "project") return;
     const { width, height, durationSeconds, fps, steps, denoise } = edited;
     if ([width, height, durationSeconds, fps, steps, denoise].every(Number.isFinite))
-      saveModelPreferences(effectivePath, { width, height, durationSeconds, fps, steps, denoise });
-  }, [edited, effectivePath, projectMode]);
+      saveModelPreferences(preferenceScope, {
+        width,
+        height,
+        durationSeconds,
+        fps,
+        steps,
+        denoise,
+      });
+  }, [edited, preferenceScope, projectMode]);
   const [candidateCount, setCandidateCount] = useState(1);
   const [bindingBusy, setBindingBusy] = useState(false);
   const selectedModelProfile = useMemo(
@@ -115,12 +126,7 @@ export function useGenerationDraft(context: GenerationContext, workflows: Workfl
     () =>
       snapshot && selectedShotItem
         ? snapshot.canvasEdges
-            .filter(
-              (edge) =>
-                edge.targetItemId === selectedShotItem.id &&
-                edge.targetSlot &&
-                selectedModelProfile.slots.some((slot) => slot.id === edge.targetSlot),
-            )
+            .filter((edge) => edge.targetItemId === selectedShotItem.id && edge.targetSlot)
             .sort((a, b) => {
               const order = {
                 first_frame: 0,
@@ -135,17 +141,17 @@ export function useGenerationDraft(context: GenerationContext, workflows: Workfl
               );
             })
         : [],
-    [selectedModelProfile.slots, selectedShotItem, snapshot],
+    [selectedShotItem, snapshot],
   );
   const promptMentions = useMemo<PromptMention[]>(() => {
     if (!snapshot) return [];
-    const aliases = new Map<string, number>();
+    const aliases = new Set<string>();
     const mentions: PromptMention[] = [];
     let pictureIndex = 0;
     let videoIndex = 0;
-    let audioIndex = selectedShotInputEdges.filter(
-      (edge) => edge.targetSlot === "reference_video",
-    ).length;
+    let audioIndex = generationSettings.referenceVideoAudio
+      ? selectedShotInputEdges.filter((edge) => edge.targetSlot === "reference_video").length
+      : 0;
     for (const edge of selectedShotInputEdges) {
       const source = snapshot.canvasItems.find((item) => item.id === edge.sourceItemId);
       const expectedMedia =
@@ -163,15 +169,17 @@ export function useGenerationDraft(context: GenerationContext, workflows: Workfl
         asset.originalName
           .replace(/\.[^.]+$/, "")
           .trim()
-          .replace(/[\s@，。；：,.!?]+/g, "_")
+          .replace(/[\s@，。；：、,.!?！？<>()[\]{}“”‘’「」]+/g, "_")
           .slice(0, 32) ||
         (asset.mediaType === "video"
           ? "参考视频"
           : asset.mediaType === "audio"
             ? "参考音频"
             : "参考图");
-      const count = (aliases.get(baseAlias) ?? 0) + 1;
-      aliases.set(baseAlias, count);
+      let alias = baseAlias;
+      let suffix = 2;
+      while (aliases.has(alias)) alias = `${baseAlias}_${suffix++}`;
+      aliases.add(alias);
       const canonicalToken =
         asset.mediaType === "image"
           ? `<Picture ${++pictureIndex}>`
@@ -180,7 +188,7 @@ export function useGenerationDraft(context: GenerationContext, workflows: Workfl
             : `<Audio ${++audioIndex}>`;
       mentions.push({
         assetId: asset.id,
-        alias: `${baseAlias}${count > 1 ? `_${count}` : ""}`,
+        alias,
         canonicalToken,
         role:
           edge.targetSlot === "first_frame"
@@ -199,7 +207,13 @@ export function useGenerationDraft(context: GenerationContext, workflows: Workfl
       });
     }
     return mentions;
-  }, [projectKey, projectMode, selectedShotInputEdges, snapshot]);
+  }, [
+    projectKey,
+    projectMode,
+    selectedShotInputEdges,
+    snapshot,
+    generationSettings.referenceVideoAudio,
+  ]);
   const selectedInputCounts = useMemo(
     () => ({
       first_frame: selectedShotInputEdges.filter((edge) => edge.targetSlot === "first_frame")
@@ -249,14 +263,34 @@ export function useGenerationDraft(context: GenerationContext, workflows: Workfl
     [selectedShotInputEdges, snapshot],
   );
 
-  const generationDisabledReason = generationProblem({
-    projectMode,
-    selectedWorkflow,
-    generationSettings,
-    selectedModelProfile,
-    selectedInputCounts,
-    assets: snapshot?.assets ?? [],
+  const unsupportedConnections = selectedShotInputEdges.filter(
+    (edge) =>
+      !selectedModelProfile.slots.some(
+        (slot) => slot.id === edge.targetSlot && edge.targetSlotIndex < slot.maxCount,
+      ),
+  );
+  const unavailableConnections = selectedShotInputEdges.filter((edge) => {
+    const mediaType =
+      edge.targetSlot === "reference_video"
+        ? "video"
+        : edge.targetSlot === "reference_audio"
+          ? "audio"
+          : "image";
+    const source = snapshot?.canvasItems.find((item) => item.id === edge.sourceItemId);
+    return !snapshot || !sourceAssetId(snapshot, source, mediaType);
   });
+  const generationDisabledReason = unsupportedConnections.length
+    ? `有 ${unsupportedConnections.length} 条连线不适用于当前工作流，请调整连接或更换工作流`
+    : unavailableConnections.length
+      ? `有 ${unavailableConnections.length} 条连线尚无可用素材，请先生成来源镜头或调整连接`
+      : generationProblem({
+          projectMode,
+          selectedWorkflow,
+          generationSettings,
+          selectedModelProfile,
+          selectedInputCounts,
+          assets: snapshot?.assets ?? [],
+        });
 
   const updateSelectedShot = useCallback(
     async (input: {

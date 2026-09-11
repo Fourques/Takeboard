@@ -320,6 +320,7 @@ export type MiniMaxH3ReferenceInput = {
   positivePrompt: string;
   referenceImages?: string[];
   referenceVideos?: string[];
+  referenceVideoAudio?: boolean;
   referenceAudios?: string[];
   referenceImageSize?: "match" | "max";
   width: number;
@@ -556,7 +557,8 @@ export function buildMiniMaxH3ReferencePrompt(input: MiniMaxH3ReferenceInput): C
       inputs: { video: [loadNodeId, 0] },
     };
     conditioningInputs[`ref_videos.ref_video_${index}`] = [componentsNodeId, 0];
-    conditioningInputs[`ref_video_audios.ref_video_audio_${index}`] = [componentsNodeId, 1];
+    if (input.referenceVideoAudio)
+      conditioningInputs[`ref_video_audios.ref_video_audio_${index}`] = [componentsNodeId, 1];
   });
   referenceAudios.forEach((audio, index) => {
     const nodeId = `reference_audio_${index}`;

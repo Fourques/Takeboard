@@ -1,0 +1,340 @@
+/* Shared canvas/workspace surfaces: native-feeling drawers, restrained type and stable geometry. */
+.shot-inline-workflow-row > button {
+  grid-column: 1 / -1;
+  justify-self: start;
+  border: 0;
+  padding: 4px 0;
+  color: var(--accent-strong);
+  background: transparent;
+  cursor: pointer;
+}
+.recipe-library-actions,
+.recipe-rename {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+}
+.recipe-library-actions button,
+.recipe-rename button {
+  min-height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 5px 10px;
+  background: var(--surface-1);
+  color: var(--text-2);
+  font-size: calc(12px * var(--ui-scale));
+  cursor: pointer;
+}
+.recipe-library-actions button[aria-pressed="true"] {
+  color: var(--accent-strong);
+}
+.recipe-rename input {
+  flex: 1;
+  min-width: 120px;
+}
+.recipe-ready-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  font-size: calc(12px * var(--ui-scale));
+}
+.recipe-ready-filter input {
+  width: auto;
+}
+.recipe-card .recipe-copy {
+  min-width: 0;
+}
+.recipe-card .recipe-copy > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recipe-origin-tabs {
+  flex-wrap: wrap;
+}
+.recipe-studio {
+  width: min(1020px, 100vw);
+}
+.recipe-studio .workflow-import :is(p, i),
+.recipe-studio .studio-footer,
+.recipe-studio .studio-actions button,
+.recipe-studio .recipe-card i {
+  font-size: calc(12px * var(--ui-scale));
+}
+.binding-editor > .recipe-library-actions {
+  padding: 12px 20px;
+  flex-wrap: wrap;
+}
+.binding-editor > footer {
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+.recipe-studio .recipe-toolbar {
+  flex-wrap: wrap;
+}
+.recipe-studio .recipe-tabs {
+  flex-wrap: wrap;
+}
+.recipe-studio
+  :is(
+    .recipe-origin-tabs button,
+    .recipe-tabs button,
+    .recipe-toolbar input,
+    .recipe-copy small,
+    .recipe-copy > span
+  ) {
+  font-size: calc(12px * var(--ui-scale));
+}
+.recipe-studio .recipe-copy strong {
+  font-size: calc(15px * var(--ui-scale));
+}
+.recipe-library-actions {
+  color: var(--text-2);
+  font-size: calc(12px * var(--ui-scale));
+}
+.recipe-library-actions summary {
+  cursor: pointer;
+  padding: 7px;
+}
+.recipe-library-actions a {
+  color: var(--accent-strong);
+}
+.recipe-studio .workflow-origin {
+  position: static;
+  grid-column: 2;
+  width: fit-content;
+  font-size: 10px;
+}
+@media (max-width: 720px) {
+  .recipe-studio .recipe-body {
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+  }
+  .recipe-studio .recipe-list {
+    overflow: visible;
+  }
+  .recipe-studio .studio-header {
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 16px;
+  }
+}
+.app-shell.is-focused {
+  grid-template-columns: minmax(0, 1fr);
+}
+.app-shell.is-focused .canvas-wrap {
+  grid-column: 1 / -1;
+}
+.app-shell.is-focused :is(.sidebar, .inspector) {
+  display: none;
+}
+.app-shell .topbar {
+  gap: 16px;
+  min-width: 0;
+  padding-inline: 20px;
+}
+.app-shell .project-heading {
+  min-width: 0;
+  gap: 10px;
+}
+.app-shell .project-heading strong {
+  font-size: calc(15px * var(--ui-scale));
+  line-height: 1.4;
+}
+.app-shell .project-heading .project-dot {
+  display: none;
+}
+.app-shell .top-actions {
+  min-width: 0;
+  gap: 8px;
+}
+.app-shell .top-actions > :is(button, .settings-trigger) {
+  border-radius: 9px;
+}
+.shot-inputs .shot-input > span {
+  left: auto;
+  right: 13px;
+  width: max-content;
+  max-width: 140px;
+  padding: 3px 6px;
+  border-radius: 5px;
+  color: var(--text-2);
+  background: var(--surface-1);
+  font-size: 10px;
+  white-space: nowrap;
+  opacity: 0.85;
+  box-shadow: 0 1px 6px #0001;
+}
+.manually-sized .board-node-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.manually-sized .board-card {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.manually-sized :is(.shot-generated-media, .asset-node .node-media) {
+  height: 100%;
+  max-height: none;
+  min-height: 0;
+}
+.manually-sized :is(.shot-generated-media, .asset-node .node-media) > :is(img, video) {
+  height: 100%;
+  max-height: none;
+  min-height: 0;
+  object-fit: contain;
+}
+.manually-sized .shot-planning-surface {
+  height: 100%;
+  min-height: 0;
+}
+.manually-sized .shot-inline-console {
+  flex: 0 0 auto;
+  max-height: 65%;
+  overflow: auto;
+}
+.react-flow__resize-control.handle {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  background: var(--accent);
+}
+.react-flow__resize-control.line {
+  border-color: var(--accent);
+}
+.inspector .prompt-mention-chips small,
+.inspector .prompt-mention-menu small {
+  font-size: 0.8em;
+  font-weight: 400;
+  opacity: 0.7;
+}
+.inspector .h3-prompt-guide code {
+  font-size: 11px;
+  line-height: 1.7;
+}
+.run-prompt {
+  margin-block: 14px;
+}
+.run-prompt pre,
+.run-raw pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 240px;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-root);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.take-to-canvas {
+  width: 100%;
+  margin-block: 8px 16px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text-1);
+  cursor: pointer;
+}
+.project-board-node :is(img, video) {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.project-board-node:has(img, video) b {
+  position: absolute;
+  bottom: 2px;
+  inset-inline: 3px;
+  color: white;
+  text-shadow: 0 1px 3px black;
+}
+.studio-backdrop.asset-backdrop,
+.storyboard-backdrop {
+  display: flex;
+  justify-content: flex-end;
+  align-items: stretch;
+  padding: 0;
+  background: #0002;
+  backdrop-filter: none;
+}
+.studio-backdrop.asset-backdrop .asset-library,
+.storyboard-backdrop .storyboard-shell {
+  width: min(1140px, calc(100% - 56px));
+  height: 100%;
+  max-height: 100%;
+  border-radius: 16px 0 0 16px;
+  box-shadow: -18px 0 70px #0003;
+  animation: workspace-drawer-in 180ms ease-out;
+}
+.asset-library .asset-library-body {
+  grid-template-columns: 150px minmax(0, 1fr) 260px;
+}
+.asset-library .asset-library-header {
+  gap: 12px;
+  padding-inline: 18px;
+}
+.asset-library .asset-library-title > .section-kicker {
+  display: none;
+}
+.asset-library .asset-library-toolbar {
+  grid-template-columns: minmax(120px, 1fr) auto auto;
+  padding-inline: 14px;
+}
+.asset-library .asset-results-grid {
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+}
+@keyframes workspace-drawer-in {
+  from {
+    transform: translateX(28px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+@media (max-width: 1050px) {
+  .asset-library .asset-library-body {
+    grid-template-columns: 120px minmax(0, 1fr);
+    overflow: auto;
+  }
+  .asset-library .asset-detail-panel {
+    grid-column: 1 / -1;
+    min-height: 200px;
+  }
+  .app-shell .top-actions .save-status {
+    display: none;
+  }
+}
+@media (max-width: 700px) {
+  .studio-backdrop.asset-backdrop .asset-library,
+  .storyboard-backdrop .storyboard-shell {
+    width: 100%;
+    border-radius: 0;
+  }
+  .asset-library .asset-library-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .app-shell .topbar {
+    padding-inline: 10px;
+    gap: 8px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .studio-backdrop.asset-backdrop .asset-library,
+  .storyboard-backdrop .storyboard-shell {
+    animation: none;
+  }
+}

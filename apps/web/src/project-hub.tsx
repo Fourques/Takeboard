@@ -5,6 +5,7 @@ import type {
   TrashedProjectItem,
   WorkerStatus,
 } from "./api";
+import { projectApi } from "./api";
 import { AccountButton, useAuth } from "./auth-ui";
 import { DeviceIndicator } from "./device-indicator";
 import { savedSceneQuality } from "./display-preferences";
@@ -12,6 +13,7 @@ import { DisplaySettings, type SceneQuality } from "./display-settings";
 import { type ProjectLocationChoice, ProjectLocationPicker } from "./project-location-picker";
 import { SettingsButton } from "./settings-center";
 import { ThemeSwitcher } from "./theme-switcher";
+import { VideoThumbnail } from "./video-preview";
 
 const loadStudioUniverse = () =>
   import("./studio-universe").then((module) => ({ default: module.StudioUniverse }));
@@ -360,10 +362,10 @@ const hubChromeCss = `.hub-header {
   min-width: 0;
 }
 .hub-utility-panel .hub-utility-settings button {
-  min-height: 44px;
-  padding: 10px;
+  min-height: 38px;
+  padding: 8px;
   justify-content: center;
-  font-size: calc(13px * var(--ui-scale));
+  font-size: calc(11px * var(--ui-scale));
   gap: 8px;
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -611,7 +613,7 @@ function ActionIcon({ name }: { name: "open" | "rename" | "delete" | "export" })
   );
 }
 
-function boardLayout(board: ProjectBoardPreview | undefined) {
+function boardLayout(board: ProjectBoardPreview | undefined, aspectRatio: number) {
   if (!board || board.nodes.length === 0) return { nodes: [], edges: [] };
   const minX = Math.min(...board.nodes.map((node) => node.x));
   const minY = Math.min(...board.nodes.map((node) => node.y));
@@ -619,12 +621,15 @@ function boardLayout(board: ProjectBoardPreview | undefined) {
   const maxY = Math.max(...board.nodes.map((node) => node.y + node.height));
   const spanX = Math.max(maxX - minX, 1);
   const spanY = Math.max(maxY - minY, 1);
+  const scale = Math.min(84 / spanX, 70 / (spanY * aspectRatio));
+  const offsetX = (100 - spanX * scale) / 2;
+  const offsetY = (80 - spanY * scale * aspectRatio) / 2;
   const nodes = board.nodes.map((node) => ({
     ...node,
-    left: 7 + ((node.x - minX) / spanX) * 74,
-    top: 10 + ((node.y - minY) / spanY) * 63,
-    previewWidth: Math.min(32, Math.max(14, (node.width / spanX) * 76)),
-    previewHeight: Math.min(27, Math.max(13, (node.height / spanY) * 65)),
+    left: offsetX + (node.x - minX) * scale,
+    top: offsetY + (node.y - minY) * scale * aspectRatio,
+    previewWidth: node.width * scale,
+    previewHeight: node.height * scale * aspectRatio,
   }));
   const positions = new Map(
     nodes.map((node) => [
@@ -661,6 +666,32 @@ function ProjectCard({
   project: ProjectCatalogItem;
 }) {
   const [boardIndex, setBoardIndex] = useState(0);
+  const previewRef = useRef<HTMLButtonElement>(null);
+  const [previewAspect, setPreviewAspect] = useState(2);
+  const [previewVisible, setPreviewVisible] = useState(false);
+  useEffect(() => {
+    const element = previewRef.current;
+    if (!element) return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry && entry.contentRect.height > 0)
+        setPreviewAspect(entry.contentRect.width / entry.contentRect.height);
+    });
+    observer.observe(element);
+    const visibility = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting) {
+          setPreviewVisible(true);
+          visibility.disconnect();
+        }
+      },
+      { rootMargin: "200px" },
+    );
+    visibility.observe(element);
+    return () => {
+      observer.disconnect();
+      visibility.disconnect();
+    };
+  }, []);
   const canManage = project.role !== "viewer" || project.accessSource === "instance_admin";
   const canDelete = project.role === "owner" || project.accessSource === "instance_admin";
   const accessLabel =
@@ -668,7 +699,10 @@ function ProjectCard({
       ? "ADMIN ACCESS"
       : (project.membershipRole?.toUpperCase() ?? project.role.toUpperCase());
   const activeBoard = project.boards[Math.min(boardIndex, Math.max(project.boards.length - 1, 0))];
-  const preview = useMemo(() => boardLayout(activeBoard), [activeBoard]);
+  const preview = useMemo(
+    () => boardLayout(activeBoard, previewAspect),
+    [activeBoard, previewAspect],
+  );
 
   return (
     <article className="project-card project-card-managed">
@@ -694,6 +728,7 @@ function ProjectCard({
         </div>
         <button
           className="project-board-open"
+          ref={previewRef}
           type="button"
           onClick={onOpen}
           disabled={busy}
@@ -728,7 +763,20 @@ function ProjectCard({
                     height: `${node.previewHeight}%`,
                   }}
                 >
-                  <i />
+                  {node.assetId && node.mediaType === "image" ? (
+                    <img
+                      loading="lazy"
+                      src={projectApi.assetUrl(project.key, node.assetId)}
+                      alt=""
+                    />
+                  ) : node.assetId && node.mediaType === "video" && previewVisible ? (
+                    <VideoThumbnail
+                      src={projectApi.assetUrl(project.key, node.assetId)}
+                      label={`${node.label} 预览`}
+                    />
+                  ) : (
+                    <i />
+                  )}
                   <b>{node.label}</b>
                 </span>
               ))}

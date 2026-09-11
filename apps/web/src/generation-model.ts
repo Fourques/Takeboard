@@ -9,6 +9,7 @@ export type GenerationSettings = {
   lastFrameAssetId: string | null;
   referenceAssetId: string | null;
   referenceImageSize: "match" | "max";
+  referenceVideoAudio: boolean;
   width: number;
   height: number;
   durationSeconds: number;
@@ -41,17 +42,19 @@ export type ShotCanvasControls = {
   onSettingsChange: (input: Partial<GenerationSettings>) => void;
   onGenerate: (input: Partial<GenerationSettings>) => void;
   onOpenDetails: () => void;
+  onOpenWorkflows: () => void;
   onCommitTitle: (title: string) => void;
 };
 
 export const defaultGenerationSettings: GenerationSettings = {
-  recipePath: "Kino/Kino_Wan22_I2V.json",
+  recipePath: "",
   prompt: "",
   negativePrompt: "",
   firstFrameAssetId: null,
   lastFrameAssetId: null,
   referenceAssetId: null,
   referenceImageSize: "match",
+  referenceVideoAudio: false,
   width: 480,
   height: 848,
   durationSeconds: 5,

@@ -1,5 +1,5 @@
 import { type ProjectSnapshot, projectSnapshotSchema } from "@takeboard/contracts";
-import { approveTake, createTakeBoardId, toIsoTimestamp } from "@takeboard/domain";
+import { approveTake, createTakeBoardId, rejectTake, toIsoTimestamp } from "@takeboard/domain";
 import { ProjectStore } from "../storage/project-store.js";
 import { createDemoSnapshot } from "./fixture.js";
 
@@ -115,47 +115,6 @@ export class DemoService {
         });
       }
 
-      const shotItem = snapshot.canvasItems.find(
-        (item) => item.refType === "shot" && item.refId === shotId,
-      );
-      const existingStack = snapshot.canvasItems.find(
-        (item) => item.refType === "take_stack" && item.refId === shotId,
-      );
-      const stackItem = existingStack ?? {
-        id: createTakeBoardId("canvas_item", createdAt + 30),
-        sceneId: shot.sceneId,
-        refType: "take_stack" as const,
-        refId: shotId,
-        x: (shotItem?.x ?? 520) + 470,
-        y: shotItem?.y ?? 90,
-        width: 360,
-        height: 250,
-        zIndex: 3,
-        parentGroupId: null,
-        collapsed: false,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      };
-
-      const generatedEdge =
-        shotItem && !existingStack
-          ? [
-              {
-                id: createTakeBoardId("canvas_edge", createdAt + 31),
-                sceneId: shot.sceneId,
-                sourceItemId: shotItem.id,
-                targetItemId: stackItem.id,
-                relation: "generated_from" as const,
-                targetSlot: null,
-                targetSlotIndex: 0,
-                runId: newRuns[0]?.id ?? null,
-                immutable: true,
-                createdAt: timestamp,
-                updatedAt: timestamp,
-              },
-            ]
-          : [];
-
       return {
         ...snapshot,
         assets: [...snapshot.assets, ...newAssets],
@@ -166,8 +125,6 @@ export class DemoService {
             ? { ...candidate, status: "review" as const, updatedAt: timestamp }
             : candidate,
         ),
-        canvasItems: existingStack ? snapshot.canvasItems : [...snapshot.canvasItems, stackItem],
-        canvasEdges: [...snapshot.canvasEdges, ...generatedEdge],
       };
     });
   }
@@ -178,21 +135,23 @@ export class DemoService {
       if (!target) {
         throw new Error("Take not found");
       }
-      if (target.status === "approved") {
-        throw new Error("Approved takes must be replaced before rejection");
-      }
+      const shot = snapshot.shots.find((candidate) => candidate.id === target.shotId);
+      if (!shot) throw new Error("Shot not found");
+      const result = rejectTake({
+        shot,
+        takes: snapshot.takes,
+        approvals: snapshot.approvals,
+        takeId,
+        reason,
+        at: timestamp,
+      });
       return {
         ...snapshot,
-        takes: snapshot.takes.map((take) =>
-          take.id === takeId
-            ? {
-                ...take,
-                status: "rejected" as const,
-                rejectionReasons: [reason],
-                updatedAt: timestamp,
-              }
-            : take,
+        shots: snapshot.shots.map((candidate) =>
+          candidate.id === shot.id ? result.shot : candidate,
         ),
+        takes: result.takes,
+        approvals: result.approvals,
       };
     });
   }

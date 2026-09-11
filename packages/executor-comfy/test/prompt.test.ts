@@ -291,6 +291,7 @@ describe("MiniMax H3 recipe", () => {
       positivePrompt: "Use <Picture 1>, the motion from <Video 1>, and the voice from <Audio 2>.",
       referenceImages: ["portrait.png"],
       referenceVideos: ["motion.mp4"],
+      referenceVideoAudio: true,
       referenceAudios: ["voice.wav"],
       referenceImageSize: "max",
       width: 1344,
@@ -324,6 +325,30 @@ describe("MiniMax H3 recipe", () => {
       inputs: { audio: "voice.wav" },
     });
     expect(prompt.scheduler?.inputs).toMatchObject({ scheduler: "beta", steps: 20 });
+  });
+
+  it("does not implicitly reference a video's soundtrack", () => {
+    const prompt = buildMiniMaxH3ReferencePrompt({
+      positivePrompt: "A person holding a cat",
+      referenceImages: ["portrait.png"],
+      referenceVideos: ["cat.mp4"],
+      referenceAudios: [],
+      width: 1344,
+      height: 768,
+      durationSeconds: 5,
+      seed: 9,
+      steps: 25,
+      filenamePrefix: "takeboard/test",
+    });
+    expect(prompt.conditioning?.inputs["ref_videos.ref_video_0"]).toEqual([
+      "reference_video_components_0",
+      0,
+    ]);
+    expect(
+      Object.keys(prompt.conditioning?.inputs ?? {}).filter((key) =>
+        key.startsWith("ref_video_audios"),
+      ),
+    ).toEqual([]);
   });
 });
 

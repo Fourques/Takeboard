@@ -476,8 +476,7 @@ export function AssetLibrary({
               <h2>项目资产库</h2>
               <p>
                 {availableAssets.length} 项素材 ·{" "}
-                {formatBytes(availableAssets.reduce((total, asset) => total + asset.byteSize, 0))} ·
-                原文件本地保存
+                {formatBytes(availableAssets.reduce((total, asset) => total + asset.byteSize, 0))}
               </p>
             </div>
           </div>

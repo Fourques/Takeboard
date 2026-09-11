@@ -74,6 +74,7 @@ type ProjectCommandInverse =
       }>;
     }
   | RestoreItemInverse
+  | { kind: "restore_geometry"; previous: CanvasItem; applied: CanvasItem }
   | {
       kind: "restore_domain_record";
       refType: "text" | "entity" | "asset" | "shot";
@@ -687,6 +688,32 @@ function buildPlan(
     };
   }
 
+  if (command.type === "canvas.resize_item") {
+    const item = snapshot.canvasItems.find((candidate) => candidate.id === command.itemId);
+    if (!item) throw new ProjectCommandError(404, "画布节点不存在");
+    const previous = clone(item);
+    Object.assign(item, {
+      x: command.x,
+      y: command.y,
+      width: command.width,
+      height: command.height,
+      sizeMode: "manual",
+      updatedAt: timestamp,
+    });
+    touch(snapshot, timestamp);
+    return {
+      snapshot,
+      summary: `调整“${itemLabel(snapshot, item)}”大小`,
+      effects: [
+        effect("update", "canvas_item", item.id, itemLabel(snapshot, item), "调整显示尺寸"),
+      ],
+      warnings: [],
+      requiresConfirmation: false,
+      inverse: { kind: "restore_geometry", previous, applied: clone(item) },
+      result: { itemId: item.id },
+    };
+  }
+
   if (command.type === "canvas.move_item") {
     const item = snapshot.canvasItems.find((candidate) => candidate.id === command.itemId);
     if (!item) throw new ProjectCommandError(404, "画布节点不存在");
@@ -1028,6 +1055,24 @@ function applyInverse(
   } else if (inverse.kind === "restore_edge") {
     assertEdgeCanBeRestored(snapshot, inverse.edge);
     snapshot.canvasEdges.push(clone(inverse.edge));
+  } else if (inverse.kind === "restore_geometry") {
+    const item = snapshot.canvasItems.find((candidate) => candidate.id === inverse.applied.id);
+    if (
+      !item ||
+      ["x", "y", "width", "height", "sizeMode"].some(
+        (key) => item[key as keyof CanvasItem] !== inverse.applied[key as keyof CanvasItem],
+      )
+    )
+      throw new ProjectCommandError(409, "无法撤销：节点尺寸或位置已变化");
+    Object.assign(item, {
+      x: inverse.previous.x,
+      y: inverse.previous.y,
+      width: inverse.previous.width,
+      height: inverse.previous.height,
+      updatedAt: timestamp,
+    });
+    if (inverse.previous.sizeMode) item.sizeMode = inverse.previous.sizeMode;
+    else delete item.sizeMode;
   } else if (inverse.kind === "restore_position") {
     const item = snapshot.canvasItems.find((candidate) => candidate.id === inverse.itemId);
     if (!item) throw new ProjectCommandError(409, "无法撤销：节点已经不存在");

@@ -11,7 +11,11 @@ export function initialGenerationDraft(
   preferences: Partial<GenerationSettings> = {},
 ): GenerationSettings {
   if (!shot || !snapshot) return { ...defaultGenerationSettings };
-  const preferred = { ...modelProfile(workflow, shot.aspectRatio).defaults, ...preferences };
+  const preferred = {
+    ...modelProfile(workflow, shot.aspectRatio).defaults,
+    ...workflow?.parameterDefaults,
+    ...preferences,
+  };
   const lastRun = [...snapshot.runs].reverse().find((run) => run.shotId === shot.id);
   const number = (name: string, fallback: number) =>
     typeof lastRun?.parameters[name] === "number" ? (lastRun.parameters[name] as number) : fallback;
@@ -31,12 +35,19 @@ export function initialGenerationDraft(
         : "",
     width: number("width", preferred.width),
     height: number("height", preferred.height),
-    durationSeconds: number("durationSeconds", shot.durationSeconds),
+    durationSeconds: number(
+      "durationSeconds",
+      workflow?.parameterDefaults?.durationSeconds ?? shot.durationSeconds,
+    ),
     fps: number("fps", preferred.fps),
     steps: number("steps", preferred.steps),
     denoise: number("denoise", preferred.denoise),
-    seed: number("seed", defaultGenerationSettings.seed),
+    seed: number("seed", workflow?.parameterDefaults?.seed ?? defaultGenerationSettings.seed),
     referenceImageSize: lastRun?.parameters.referenceImageSize === "max" ? "max" : "match",
+    referenceVideoAudio:
+      typeof lastRun?.parameters.referenceVideoAudio === "boolean"
+        ? lastRun.parameters.referenceVideoAudio
+        : Boolean(lastRun),
     executionPolicy: lastRun?.execution?.policy ?? defaultGenerationSettings.executionPolicy,
   };
 }

@@ -1,5 +1,28 @@
+import type { Page } from "@playwright/test";
 import { captureEvidence } from "./capture-evidence";
 import { expect, test } from "./fixtures";
+
+async function rightClickVisibleEdge(page: Page) {
+  // The group's bounding-box centre can be empty space or a node, not the line.
+  const point = await page
+    .locator(".react-flow__edge-path")
+    .first()
+    .evaluate((element) => {
+      const path = element as SVGPathElement;
+      const matrix = path.getScreenCTM();
+      if (!matrix) throw new Error("Edge has no screen transform");
+      for (let fraction = 0.15; fraction < 0.9; fraction += 0.05) {
+        const p = path.getPointAtLength(path.getTotalLength() * fraction).matrixTransform(matrix);
+        if (
+          document.elementFromPoint(p.x, p.y)?.closest(".react-flow__edge") ===
+          path.closest(".react-flow__edge")
+        )
+          return { x: p.x, y: p.y };
+      }
+      throw new Error("No exposed edge segment is available for right-click");
+    });
+  await page.mouse.click(point.x, point.y, { button: "right" });
+}
 
 test("project hub presents a complete project overview", async ({ page, request }) => {
   test.setTimeout(90_000);
@@ -213,9 +236,7 @@ test("canvas nodes reveal their own contextual inspector", async ({ page }) => {
   await page.getByRole("button", { name: "显示检查器", exact: true }).click();
   await page.getByRole("button", { name: "开始生成" }).click();
   await page.getByRole("button", { name: "Fit View" }).click();
-  await expect(
-    page.locator(".react-flow__node-take_stack").first().locator(".board-output-handle"),
-  ).toBeVisible();
+  await expect(page.locator(".react-flow__node-take_stack")).toHaveCount(0);
 
   const scriptNode = page.locator(".react-flow__node-text");
   await scriptNode.dblclick();
@@ -684,6 +705,9 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
     editorUrl: "http://127.0.0.1:48188",
     execution: "native",
     origin: input.origin ?? "built_in",
+    library: { included: true, favorite: false },
+    // Controlled inventory: this test checks the selection UI, not GPU readiness.
+    diagnostic: { health: "ready", executable: true },
   });
   await page.route("**/api/workflows", async (route) => {
     await route.fulfill({
@@ -813,15 +837,14 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
   await expect(page.getByRole("dialog", { name: /删除/ })).toHaveCount(0);
   await expect(page.getByLabel("镜头候选检查器")).toBeVisible();
   await page.locator(".recipe-selector").click();
-  await expect(page.getByRole("heading", { name: "工作流与模型" })).toBeVisible();
-  await expect(page.getByText("TakeBoard 内置")).toBeVisible();
-  await expect(page.getByText("导入 Workflow 或 Recipe 包")).toBeVisible();
-  await expect(page.getByRole("link", { name: "导出包" }).first()).toHaveAttribute(
-    "href",
-    /\/api\/workflows\/recipe-package\?path=/,
-  );
-  await expect(page.getByRole("button", { name: /Wan22 FLF2V/ })).toContainText("2 个画面位置");
-  await expect(page.getByRole("button", { name: /MiniMax H3 R2V/ })).toContainText("12 个画面位置");
+  await expect(page.getByRole("heading", { name: "选择工作流" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "模板库", exact: true })).toBeVisible();
+  await expect(page.getByText("导入工作流", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "导出工作流包", includeHidden: true }).first(),
+  ).toHaveAttribute("href", /\/api\/workflows\/recipe-package\?path=/);
+  await expect(page.getByRole("button", { name: /Wan22 FLF2V/ })).toContainText("首尾帧视频");
+  await expect(page.getByRole("button", { name: /MiniMax H3 R2V/ })).toContainText("参考图生视频");
   await page.getByRole("button", { name: /MiniMax H3 R2V/ }).click();
   await page.getByRole("button", { name: "收起检查器" }).click();
   await expect(page.locator(".react-flow__node-shot")).toContainText("参考 0/9");
@@ -831,7 +854,7 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
   await page.getByRole("button", { name: "显示检查器", exact: true }).click();
   await page.locator(".recipe-selector").click();
   await page.getByRole("button", { name: /Qwen Image 2512 T2I/ }).click();
-  await expect(page.getByText("无需图片输入")).toBeVisible();
+  await expect(page.locator(".recipe-selector")).toContainText("Qwen Image 2512 T2I");
   await expect(page.locator(".react-flow__node-shot .shot-input")).toHaveCount(0);
   await expect(page.getByLabel("宽度", { exact: true })).toHaveValue("1664");
   const candidateCountControl = page.getByRole("group", { name: "每批候选数量" });
@@ -1050,7 +1073,7 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
   await inspector.getByRole("button", { name: "保存镜头" }).click();
   await expect(page.getByText("SH-01A", { exact: true }).first()).toBeVisible();
 
-  await page.locator(".react-flow__edge").click({ button: "right", force: true });
+  await rightClickVisibleEdge(page);
   await expect(page.getByRole("menu")).toContainText("CONNECTION");
   await page.getByRole("menuitem", { name: /断开连接/ }).click();
   await expect(page.locator(".react-flow__edge")).toHaveCount(0);
@@ -1067,6 +1090,9 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
   await shotNodes.first().dblclick();
   await page.locator(".recipe-selector").click();
   await page.getByRole("button", { name: /MiniMax H3 R2V/ }).click();
+  // Opening the inspector narrows the canvas; bring both connection endpoints into view.
+  await page.locator(".react-flow__controls-fitview").click();
+  await expect(videoNode).toBeInViewport();
   const videoSourceHandle = videoNode.locator(".board-output-handle");
   const videoTargetHandle = page.locator(".react-flow__node-shot .slot-reference_video").first();
   const videoSourceBox = await videoSourceHandle.boundingBox();
@@ -1087,7 +1113,7 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
   await expect(page.locator(".react-flow__node-shot")).toContainText("参考视频 1/3");
   await page.getByRole("button", { name: "收起检查器" }).click();
   await expect(page.locator(".shot-inline-mentions")).toContainText("@camera-motion-reference");
-  await page.locator(".react-flow__edge").click({ button: "right", force: true });
+  await rightClickVisibleEdge(page);
   await page.getByRole("menuitem", { name: /断开连接/ }).click();
   await expect(page.locator(".react-flow__edge")).toHaveCount(0);
 

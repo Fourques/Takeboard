@@ -3106,7 +3106,7 @@ button.save-status {
 
 .board-card h3 {
   margin: 5px 14px 7px;
-  color: #e2e4df;
+  color: var(--text-1);
   font-size: 13px;
   font-weight: 600;
 }
@@ -3271,6 +3271,7 @@ button.save-status {
 
 .shot-generated-media {
   position: relative;
+  width: 100%;
   min-height: 150px;
   max-height: 440px;
   overflow: hidden;
@@ -3743,28 +3744,6 @@ button.save-status {
 .large-status {
   margin-top: 3px;
   padding: 5px 8px;
-  font-size: 8px;
-}
-
-.shot-intent {
-  margin: 5px 19px 12px;
-  color: #a0a7a3;
-  font-size: 10px;
-  line-height: 1.65;
-}
-
-.shot-facts {
-  display: flex;
-  padding: 0 19px 17px;
-  border-bottom: 1px solid var(--line);
-  gap: 7px;
-}
-
-.shot-facts span {
-  padding: 4px 6px;
-  border: 1px solid #303633;
-  color: #717a75;
-  background: #191d1b;
   font-size: 8px;
 }
 
@@ -4729,22 +4708,6 @@ button.save-status {
   font-size: 8px;
 }
 
-.canvas-primary-actions {
-  display: flex;
-  gap: 6px;
-  pointer-events: auto;
-}
-
-.canvas-primary-actions button {
-  padding: 7px 10px;
-  border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--line));
-  border-radius: 4px;
-  color: var(--accent-strong);
-  background: color-mix(in srgb, var(--panel-raised) 88%, transparent);
-  font-size: 9px;
-  cursor: pointer;
-}
-
 .asset-import .vault-button {
   border-color: color-mix(in srgb, var(--accent) 35%, var(--line));
   color: var(--cream);
@@ -4913,24 +4876,6 @@ button.save-status {
   cursor: not-allowed;
 }
 
-.recipe-binding-action {
-  z-index: 2;
-  position: absolute;
-  right: 9px;
-  bottom: 7px;
-  padding: 5px 8px;
-  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
-  border-radius: 4px;
-  color: var(--accent-strong);
-  background: color-mix(in srgb, var(--accent) 7%, var(--surface-2));
-  font-size: 7px;
-  cursor: pointer;
-}
-
-.recipe-card-wrap:has(.recipe-binding-action) .recipe-card {
-  padding-bottom: 34px;
-}
-
 .recipe-card:hover,
 .recipe-card.selected {
   border-color: color-mix(in srgb, var(--accent) 62%, var(--line));
@@ -5001,48 +4946,6 @@ button.save-status {
 .recipe-card > i.comfy {
   color: var(--muted);
   background: var(--panel-raised);
-}
-
-.workflow-health {
-  position: absolute;
-  right: 72px;
-  bottom: 10px;
-  padding-left: 8px;
-  color: var(--faint);
-  font-size: 7px;
-  font-style: normal;
-}
-
-.workflow-health::before {
-  position: absolute;
-  top: 50%;
-  left: 0;
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--faint);
-  transform: translateY(-50%);
-  content: "";
-}
-
-.workflow-health.health-ready {
-  color: var(--green);
-}
-
-.workflow-health.health-ready::before {
-  background: var(--green);
-}
-
-.workflow-health.health-blocked {
-  color: var(--red);
-}
-
-.workflow-health.health-blocked::before {
-  background: var(--red);
-}
-
-.recipe-card-wrap:has(.workflow-health) .recipe-card {
-  padding-bottom: 31px;
 }
 
 .recipe-empty {
@@ -5465,10 +5368,6 @@ button.save-status {
   .binding-map-groups {
     grid-template-columns: 1fr;
   }
-}
-
-.asset-backdrop {
-  justify-content: flex-start;
 }
 
 .asset-library {
@@ -6323,14 +6222,6 @@ html[data-theme="chroma"] .loading-mark {
 }
 .canvas-toolbar strong,
 .canvas-status {
-  color: var(--text-2);
-}
-.canvas-legend {
-  border-color: var(--line);
-  background: var(--surface-glass);
-  backdrop-filter: blur(12px);
-}
-.canvas-legend span {
   color: var(--text-2);
 }
 .react-flow__controls {
@@ -8064,23 +7955,6 @@ html[data-theme="light"] .universe-vignette {
   background: #df766d;
 }
 
-.node-action-hint {
-  z-index: 8;
-  position: absolute;
-  right: 8px;
-  bottom: 7px;
-  padding: 4px 6px;
-  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line));
-  border-radius: 3px;
-  color: var(--accent-strong);
-  background: color-mix(in srgb, var(--surface-root) 88%, transparent);
-  font-size: 6px;
-  letter-spacing: 0.04em;
-  box-shadow: 0 4px 12px var(--shadow);
-  pointer-events: none;
-  backdrop-filter: blur(8px);
-}
-
 .canvas-context-menu {
   z-index: 120;
   position: fixed;
@@ -8413,6 +8287,7 @@ a:focus-visible {
 
 .sidebar-collapsed .sidebar,
 .inspector-collapsed .inspector {
+  display: none;
   visibility: hidden;
   opacity: 0;
   pointer-events: none;
@@ -8548,70 +8423,8 @@ a:focus-visible {
   background: var(--surface-2);
 }
 
-.canvas-legend .panel-toggle {
-  margin-left: 3px;
-}
-
 .focus-toggle {
   color: var(--accent-strong);
-}
-
-/* Comfortable is the default; compact preserves the original information density. */
-.density-comfortable .section-kicker {
-  font-size: 9px;
-}
-
-.density-comfortable .project-cover strong,
-.density-comfortable .shot-list-copy strong {
-  font-size: 11px;
-}
-
-.density-comfortable .project-cover div span,
-.density-comfortable .shot-list-copy small,
-.density-comfortable .progress-card span,
-.density-comfortable .sidebar-bottom div,
-.density-comfortable .shot-intent,
-.density-comfortable .shot-facts span,
-.density-comfortable .candidate-title-row p,
-.density-comfortable .generation-console label > span,
-.density-comfortable .context-copy,
-.density-comfortable .context-facts span {
-  font-size: 10px;
-}
-
-.density-comfortable .inspector-heading h2 {
-  font-size: 20px;
-}
-
-.density-comfortable .candidate-title-row h3,
-.density-comfortable .recipe-selector strong,
-.density-comfortable .context-section h3 {
-  font-size: 12px;
-}
-
-.density-comfortable .candidate-meta,
-.density-comfortable .decision-panel select,
-.density-comfortable .reject-button,
-.density-comfortable .approve-button,
-.density-comfortable .generate-button,
-.density-comfortable .node-facts span,
-.density-comfortable .canvas-legend span {
-  font-size: 9px;
-}
-
-.density-comfortable .prompt-field textarea,
-.density-comfortable .negative-field input,
-.density-comfortable .parameter-grid input,
-.density-comfortable .seed-field input {
-  font-size: 11px;
-}
-
-.density-comfortable .candidate-grid {
-  gap: 10px;
-}
-
-.density-comfortable .candidate-art {
-  height: 108px;
 }
 
 @media (max-width: 1120px) {
@@ -8821,15 +8634,6 @@ a:focus-visible {
 
   .project-count {
     display: none;
-  }
-
-  .canvas-primary-actions button {
-    padding: 6px;
-    font-size: 0;
-  }
-
-  .canvas-primary-actions button::first-letter {
-    font-size: 10px;
   }
 
   .focus-toggle {
@@ -9840,38 +9644,6 @@ html[data-theme="light"] .project-card-art {
   cursor: pointer;
 }
 
-.recipe-archive-action {
-  z-index: 2;
-  position: absolute;
-  right: 78px;
-  bottom: 7px;
-  padding: 5px 8px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  color: var(--text-2);
-  background: var(--surface-2);
-  font-size: 7px;
-  cursor: pointer;
-}
-
-.recipe-package-action {
-  z-index: 2;
-  position: absolute;
-  bottom: 7px;
-  left: 9px;
-  padding: 5px 8px;
-  border: 1px solid color-mix(in srgb, var(--green) 32%, var(--line));
-  border-radius: 4px;
-  color: var(--green);
-  background: color-mix(in srgb, var(--green) 6%, var(--surface-2));
-  font-size: 7px;
-  text-decoration: none;
-}
-
-.recipe-card-wrap:has(.recipe-package-action) .recipe-card {
-  padding-bottom: 34px;
-}
-
 .workflow-package-error,
 .workflow-readonly-note,
 .recipe-package-notice {
@@ -9901,10 +9673,6 @@ html[data-theme="light"] .project-card-art {
   margin-top: 8px;
   border-color: color-mix(in srgb, var(--green) 34%, var(--line));
   color: var(--green);
-}
-
-.recipe-card-wrap:has(.recipe-archive-action) .recipe-card {
-  padding-bottom: 34px;
 }
 
 .workflow-archive-dialog {
@@ -10032,16 +9800,6 @@ html[data-theme="light"] .project-card-art {
     align-items: stretch;
     flex-direction: column;
   }
-}
-
-/* Asset library — project media should feel inspectable, sortable and ready for use. */
-.asset-backdrop {
-  z-index: 180;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-  background: rgb(4 7 6 / 72%);
-  backdrop-filter: blur(18px) saturate(0.8);
 }
 
 .asset-library {
@@ -10683,11 +10441,11 @@ html[data-theme="light"] .project-card-art {
   padding: 0 7px;
   border: 1px solid rgb(255 255 255 / 13%);
   border-radius: 4px;
-  color: rgb(244 241 231 / 70%);
+  color: #fff;
   background: rgb(9 12 11 / 64%);
   backdrop-filter: blur(9px);
-  font-size: 6px;
-  letter-spacing: 0.12em;
+  font-size: 9px;
+  letter-spacing: 0.03em;
   gap: 4px;
 }
 
@@ -11361,10 +11119,6 @@ html[data-theme="light"] .project-card-art {
 }
 
 @media (max-width: 860px) {
-  .asset-backdrop {
-    padding: 0;
-  }
-
   .asset-library {
     width: 100vw;
     height: 100vh;
@@ -11676,7 +11430,7 @@ html[data-theme="light"] .project-card-art {
   border-radius: 999px;
   color: var(--accent-strong);
   background: var(--surface-root);
-  font-size: 7px;
+  font-size: calc(11px * var(--ui-scale));
   cursor: pointer;
 }
 
@@ -11962,40 +11716,6 @@ html[data-theme="light"] .project-card-art {
   font-size: 7px;
   font-style: normal;
   line-height: 1.3;
-}
-
-.text-only-workflow-note {
-  display: flex;
-  align-items: center;
-  margin-top: 10px;
-  padding: 10px;
-  border: 1px solid color-mix(in srgb, var(--green) 25%, var(--line));
-  border-radius: 5px;
-  background: color-mix(in srgb, var(--green) 5%, transparent);
-  gap: 10px;
-}
-
-.text-only-workflow-note > span {
-  display: grid;
-  width: 30px;
-  height: 30px;
-  flex: none;
-  place-items: center;
-  border-radius: 50%;
-  color: var(--green);
-  background: color-mix(in srgb, var(--green) 12%, var(--surface-root));
-}
-
-.text-only-workflow-note strong {
-  color: var(--text-1);
-  font-size: 9px;
-}
-
-.text-only-workflow-note p {
-  margin: 3px 0 0;
-  color: var(--text-2);
-  font-size: 8px;
-  line-height: 1.4;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -13105,8 +12825,8 @@ button.universe-lite-mode:focus-visible {
   z-index: 2;
   position: absolute;
   display: flex;
-  min-width: 42px;
-  min-height: 27px;
+  min-width: 0;
+  min-height: 0;
   align-items: center;
   padding: 7px 7px 5px;
   overflow: hidden;

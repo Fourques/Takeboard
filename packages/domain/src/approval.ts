@@ -75,3 +75,38 @@ export function approveTake(input: ApproveTakeInput): ApprovalResult {
     approvals,
   };
 }
+
+/** Revoke adoption without deleting the result, its provenance or other canvas uses. */
+export function rejectTake(input: Omit<ApproveTakeInput, "approvalId">): ApprovalResult {
+  const target = input.takes.find((take) => take.id === input.takeId);
+  if (!target || target.shotId !== input.shot.id)
+    throw new DomainError("TAKE_NOT_FOUND", "Take does not belong to this shot");
+  if (target.status === "media_missing")
+    throw new DomainError("TAKE_MEDIA_MISSING", "Take media is missing");
+  const revoking = input.shot.approvedTakeId === target.id;
+  return {
+    shot: revoking
+      ? {
+          ...input.shot,
+          approvedTakeId: null,
+          status: input.shot.status === "generating" ? "generating" : "review",
+          updatedAt: input.at,
+        }
+      : { ...input.shot },
+    takes: input.takes.map((take) =>
+      take.id === target.id
+        ? {
+            ...take,
+            status: "rejected",
+            rejectionReasons: input.reason ? [input.reason] : [],
+            updatedAt: input.at,
+          }
+        : { ...take },
+    ),
+    approvals: input.approvals.map((approval) =>
+      approval.takeId === target.id && approval.status === "active"
+        ? { ...approval, status: "revoked", revokedAt: input.at }
+        : { ...approval },
+    ),
+  };
+}

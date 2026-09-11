@@ -27,6 +27,7 @@ export const projectCommandTypeSchema = z.enum([
   "canvas.connect_items",
   "canvas.disconnect",
   "canvas.move_item",
+  "canvas.resize_item",
   "canvas.arrange_scene",
   "canvas.remove_item",
   "shot.reorder",
@@ -94,6 +95,14 @@ export const projectCommandSchema = z.discriminatedUnion("type", [
     itemId: canvasItemIdSchema,
     x: finiteCoordinateSchema,
     y: finiteCoordinateSchema,
+  }),
+  z.object({
+    type: z.literal("canvas.resize_item"),
+    itemId: canvasItemIdSchema,
+    x: finiteCoordinateSchema,
+    y: finiteCoordinateSchema,
+    width: z.number().finite().min(180).max(4000),
+    height: z.number().finite().min(100).max(4000),
   }),
   z.object({
     type: z.literal("canvas.arrange_scene"),

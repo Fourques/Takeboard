@@ -32,7 +32,7 @@ describe("TakeBoard demo API", () => {
     expect(generated.statusCode).toBe(200);
     const generatedPayload = generated.json();
     expect(generatedPayload.snapshot.takes).toHaveLength(4);
-    expect(generatedPayload.snapshot.canvasItems).toHaveLength(7);
+    expect(generatedPayload.snapshot.canvasItems).toEqual(initialPayload.snapshot.canvasItems);
 
     const [rejectedTake, approvedTake] = generatedPayload.snapshot.takes as Array<{ id: string }>;
     const rejected = await app.inject({

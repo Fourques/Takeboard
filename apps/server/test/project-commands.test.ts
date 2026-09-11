@@ -25,6 +25,48 @@ async function fixture() {
 }
 
 describe("project command API", () => {
+  it("persists resize geometry, can undo it, and rejects out-of-range sizes", async () => {
+    const { app, key } = await fixture();
+    const execute = (command: unknown) =>
+      app.inject({
+        method: "POST",
+        url: `/api/projects/${key}/commands`,
+        payload: { command, requestId: crypto.randomUUID() },
+      });
+    const created = await execute({ type: "canvas.create_shot" });
+    const item = created.json().snapshot.canvasItems[0];
+    const command = {
+      type: "canvas.resize_item",
+      itemId: item.id,
+      x: 10,
+      y: 20,
+      width: 640,
+      height: 480,
+    };
+    const resized = await execute(command);
+    expect(resized.statusCode, resized.body).toBe(200);
+    expect(resized.json().snapshot.canvasItems[0]).toMatchObject({
+      width: 640,
+      height: 480,
+      x: 10,
+      y: 20,
+      sizeMode: "manual",
+    });
+    const invalid = await execute({ ...command, width: 0 });
+    expect(invalid.statusCode).toBe(400);
+    const undone = await app.inject({
+      method: "POST",
+      url: `/api/projects/${key}/commands/${resized.json().commandId}/undo`,
+    });
+    expect(undone.statusCode, undone.body).toBe(200);
+    expect(undone.json().snapshot.canvasItems[0]).toMatchObject({
+      width: item.width,
+      height: item.height,
+      x: item.x,
+      y: item.y,
+    });
+    expect(undone.json().snapshot.canvasItems[0].sizeMode).toBeUndefined();
+  });
   it("previews without mutation, executes idempotently, records, and undoes", async () => {
     const { app, key, revision } = await fixture();
     const command = { type: "canvas.create_shot" as const, label: "雾中入口" };

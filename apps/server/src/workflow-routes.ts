@@ -24,7 +24,15 @@ import {
   writeWorkflowBinding,
   writeWorkflowBindingProposal,
 } from "./workflow-bindings.js";
+import { workflowDefaults } from "./workflow-defaults.js";
 import { buildWorkflowDiagnostic } from "./workflow-diagnostics.js";
+import { workflowFromUpload } from "./workflow-import.js";
+import {
+  readWorkflowLibraryEntry,
+  updateWorkflowLibraryEntry,
+  workflowLibrarySchema,
+  writeWorkflowLibraryEntry,
+} from "./workflow-library.js";
 import {
   createWorkflowRecipeArchive,
   parseWorkflowRecipeArchive,
@@ -218,6 +226,7 @@ function displayName(path: string) {
 }
 
 function isNativeWorkflow(path: string) {
+  if (!path.startsWith("Kino/")) return false;
   return (
     path.endsWith("Kino_Wan22_I2V.json") ||
     path.endsWith("Kino_Wan22_FLF2V.json") ||
@@ -257,6 +266,8 @@ function workflowSummary(
         ...(activeBinding.media.reference_audio?.length ? ["reference_audio"] : []),
       ]
     : detectedInputs;
+  if (activeBinding && (boundInputs.includes("width") || boundInputs.includes("height")))
+    boundInputs.push("resolution");
   const inputs = [...new Set(boundInputs)].filter((slot) => {
     if (!native) return true;
     if (slot === "cfg") return false;
@@ -492,15 +503,35 @@ export function registerWorkflowRoutes(
   const getComfyUrl = () => (typeof comfyEndpoint === "string" ? comfyEndpoint : comfyEndpoint());
   const getEditorUrl = () =>
     typeof editorEndpoint === "string" ? editorEndpoint : editorEndpoint();
-  const inspectPath = async (path: string) => {
+  app.put<{ Querystring: { path?: string } }>("/api/workflows/library", async (request, reply) => {
+    const path = request.query.path;
+    const parsed = workflowLibrarySchema.strict().safeParse(request.body);
+    if (!isWorkflowPath(path) || !parsed.success)
+      return reply.code(400).send({ error: "工作流列表设置无效" });
+    try {
+      const endpoint = getComfyUrl();
+      await fetchWorkflow(endpoint, path);
+      const library = await updateWorkflowLibraryEntry(endpoint, path, parsed.data);
+      return { path, library };
+    } catch (error) {
+      return reply
+        .code(502)
+        .send({ error: error instanceof Error ? error.message : "无法保存工作流设置" });
+    }
+  });
+  const inspectPath = async (
+    path: string,
+    endpoint = getComfyUrl(),
+    editorUrl = getEditorUrl(),
+  ) => {
     const [workflow, current, proposal, objectInfo] = await Promise.all([
-      fetchWorkflow(getComfyUrl(), path),
-      readWorkflowBinding(getComfyUrl(), path),
-      readWorkflowBindingProposal(getComfyUrl(), path),
-      fetchComfyObjectInfo(getComfyUrl()),
+      fetchWorkflow(endpoint, path),
+      readWorkflowBinding(endpoint, path),
+      readWorkflowBindingProposal(endpoint, path),
+      fetchComfyObjectInfo(endpoint),
     ]);
     const inventory = installedModels(objectInfo);
-    const summary = workflowSummary(path, workflow, getEditorUrl(), inventory, current);
+    const summary = workflowSummary(path, workflow, editorUrl, inventory, current);
     const inspected = inspectWorkflowDocument(workflow, objectInfo, summary.workflowHash);
     const outputMediaType = detectedOutputMediaType(summary.capability, inspected.prompt, current);
     const activeProposal = proposal?.workflowHash === inspected.workflowHash ? proposal : null;
@@ -526,6 +557,10 @@ export function registerWorkflowRoutes(
     return {
       ...summary,
       status: summary.bindingStatus,
+      parameterDefaults:
+        summary.execution === "bound" && current
+          ? workflowDefaults(inspected.prompt, current)
+          : undefined,
       diagnostic,
       candidates: inspected.candidates,
       binding: current ?? activeProposal ?? suggested,
@@ -540,12 +575,14 @@ export function registerWorkflowRoutes(
   };
 
   app.get("/api/workflows", async (_request, reply) => {
+    const endpoint = getComfyUrl();
+    const editorUrl = getEditorUrl();
     try {
-      const paths = (await listComfyWorkflowPaths(getComfyUrl())).filter(
+      const paths = (await listComfyWorkflowPaths(endpoint)).filter(
         (path) => !path.startsWith("TakeBoard/.archive/"),
       );
       let objectInfoError: string | null = null;
-      const objectInfo = await fetchComfyObjectInfo(getComfyUrl()).catch((error: unknown) => {
+      const objectInfo = await fetchComfyObjectInfo(endpoint).catch((error: unknown) => {
         objectInfoError = error instanceof Error ? error.message : "ComfyUI 节点目录不可用";
         return null;
       });
@@ -553,12 +590,60 @@ export function registerWorkflowRoutes(
       const detected = await Promise.allSettled(
         paths.map(async (path) => {
           const [workflow, binding] = await Promise.all([
-            fetchWorkflow(getComfyUrl(), path),
-            readWorkflowBinding(getComfyUrl(), path),
+            fetchWorkflow(endpoint, path),
+            readWorkflowBinding(endpoint, path),
           ]);
-          const summary = workflowSummary(path, workflow, getEditorUrl(), inventory, binding);
+          let libraryError: string | undefined;
+          const library = await readWorkflowLibraryEntry(endpoint, path).catch(
+            (error: unknown): import("@takeboard/contracts").WorkflowLibraryEntry => {
+              libraryError = error instanceof Error ? error.message : "列表偏好读取失败";
+              return { included: false };
+            },
+          );
+          const rawSummary = workflowSummary(path, workflow, editorUrl, inventory, binding);
+          const summary = {
+            ...rawSummary,
+            name: library.name ?? rawSummary.name,
+            libraryError,
+            library: { included: rawSummary.origin !== "built_in", favorite: false, ...library },
+          };
           if (!objectInfo) return summary;
-          const inspected = inspectWorkflowDocument(workflow, objectInfo, summary.workflowHash);
+          let inspected: ReturnType<typeof inspectWorkflowDocument>;
+          try {
+            inspected = inspectWorkflowDocument(workflow, objectInfo, summary.workflowHash);
+          } catch (error) {
+            return {
+              ...summary,
+              diagnostic: {
+                path,
+                workflowHash: summary.workflowHash,
+                health: "blocked" as const,
+                executable: false,
+                nodeCount: summary.nodeCount,
+                capability: summary.capability,
+                outputMediaType: ["text_to_image", "image_to_image"].includes(summary.capability)
+                  ? ("image" as const)
+                  : ("video" as const),
+                bindingStatus: summary.bindingStatus,
+                modelStatus: summary.modelStatus,
+                models: summary.models,
+                missingModels: summary.missingModels,
+                missingNodeTypes: [],
+                checks: [
+                  {
+                    id: "conversion.failed",
+                    category: "conversion" as const,
+                    status: "blocked" as const,
+                    code: "WORKFLOW_CONVERSION_FAILED",
+                    title: "需要在 ComfyUI 中检查",
+                    detail: error instanceof Error ? error.message : "无法转换该工作流",
+                    remediation: "在 ComfyUI 中检查节点与子图，导出 API 格式后重新导入。",
+                    nodeIds: [],
+                  },
+                ],
+              },
+            };
+          }
           const outputMediaType = detectedOutputMediaType(
             summary.capability,
             inspected.prompt,
@@ -566,6 +651,10 @@ export function registerWorkflowRoutes(
           );
           return {
             ...summary,
+            parameterDefaults:
+              summary.execution === "bound" && binding
+                ? workflowDefaults(inspected.prompt, binding)
+                : undefined,
             diagnostic: buildWorkflowDiagnostic({
               path,
               workflowHash: inspected.workflowHash,
@@ -615,10 +704,10 @@ export function registerWorkflowRoutes(
             : [],
         ),
       ];
-      return { editorUrl: getEditorUrl(), workflows, warnings, diagnostics };
+      return { editorUrl, workflows, warnings, diagnostics };
     } catch (error) {
       return await reply.code(503).send({
-        editorUrl: getEditorUrl(),
+        editorUrl,
         workflows: [],
         error: error instanceof Error ? error.message : "无法检测 ComfyUI 工作流",
       });
@@ -640,6 +729,46 @@ export function registerWorkflowRoutes(
           message: error instanceof Error ? error.message : "无法转换工作流",
         },
       });
+    }
+  });
+
+  app.post("/api/workflows/copy", async (request, reply) => {
+    const path = (request.body as { path?: unknown } | null)?.path;
+    if (!isWorkflowPath(path)) return reply.code(400).send({ error: "工作流路径无效" });
+    const endpoint = getComfyUrl();
+    try {
+      const workflow = await fetchWorkflow(endpoint, path);
+      const destination = `TakeBoard/workflow-${randomUUID()}.json`;
+      const response = await fetch(
+        `${endpoint}/api/userdata/${encodeURIComponent(`workflows/${destination}`)}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(workflow),
+          signal: AbortSignal.timeout(5000),
+        },
+      );
+      if (!response.ok) throw new Error(`副本保存失败 (${response.status})`);
+      // Do not copy execution trust. The editable copy must be bound and checked.
+      let warning: string | undefined;
+      const sourceEntry = await readWorkflowLibraryEntry(endpoint, path).catch(() => ({
+        name: undefined,
+      }));
+      await writeWorkflowLibraryEntry(endpoint, destination, {
+        name: `${sourceEntry.name ?? displayName(path)} 副本`.slice(0, 100),
+        included: true,
+      }).catch((error: unknown) => {
+        warning = error instanceof Error ? error.message : "副本已保存，但名称设置失败";
+      });
+      return reply.code(201).send({
+        imported: true,
+        ...workflowSummary(destination, workflow, getEditorUrl(), null),
+        warning,
+      });
+    } catch (error) {
+      return reply
+        .code(502)
+        .send({ error: error instanceof Error ? error.message : "无法创建副本" });
     }
   });
 
@@ -980,27 +1109,31 @@ export function registerWorkflowRoutes(
   });
 
   app.post("/api/workflows/import", async (request, reply) => {
+    const endpoint = getComfyUrl();
+    const editorUrl = getEditorUrl();
     const upload = await request.file();
-    if (!upload?.filename.toLowerCase().endsWith(".json")) {
-      return await reply.code(400).send({ error: "请选择 ComfyUI Workflow JSON" });
+    if (!upload || !/\.(json|png)$/i.test(upload.filename)) {
+      return await reply.code(400).send({ error: "请选择工作流 JSON 或包含工作流的 PNG" });
     }
     const bytes = await upload.toBuffer();
     let workflow: WorkflowJson;
     try {
-      workflow = JSON.parse(bytes.toString("utf8")) as WorkflowJson;
-    } catch {
-      return await reply.code(400).send({ error: "JSON 文件无法解析" });
+      workflow = workflowFromUpload(upload.filename, bytes) as WorkflowJson;
+    } catch (error) {
+      return await reply
+        .code(400)
+        .send({ error: error instanceof Error ? error.message : "文件无法解析" });
     }
     if (!isComfyWorkflowDocument(workflow)) {
       return await reply.code(400).send({ error: "文件不是 ComfyUI Workflow 或 API Prompt" });
     }
     const safeName = upload.filename
-      .replace(/\.json$/i, "")
+      .replace(/\.(json|png)$/i, "")
       .replace(/[^a-zA-Z0-9_-]+/g, "-")
       .slice(0, 80);
-    const suffix = Date.now().toString(36);
+    const suffix = randomUUID();
     const path = `workflows/TakeBoard/${safeName || "workflow"}-${suffix}.json`;
-    const response = await fetch(`${getComfyUrl()}/api/userdata/${encodeURIComponent(path)}`, {
+    const response = await fetch(`${endpoint}/api/userdata/${encodeURIComponent(path)}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(workflow),
@@ -1010,12 +1143,30 @@ export function registerWorkflowRoutes(
       return await reply.code(502).send({ error: `ComfyUI 保存失败：${response.status}` });
     }
     const relativePath = path.replace(/^workflows\//, "");
+    const name =
+      upload.filename
+        .replace(/\.(json|png)$/i, "")
+        .trim()
+        .slice(0, 100) || "工作流";
+    let libraryWarning: string | undefined;
+    await writeWorkflowLibraryEntry(endpoint, relativePath, { name, included: true }).catch(
+      (error: unknown) => {
+        libraryWarning = error instanceof Error ? error.message : "名称保存失败";
+      },
+    );
     try {
-      return await reply.code(201).send({ imported: true, ...(await inspectPath(relativePath)) });
+      return await reply.code(201).send({
+        imported: true,
+        ...(await inspectPath(relativePath, endpoint, editorUrl)),
+        name,
+        libraryWarning,
+      });
     } catch (error) {
       return await reply.code(201).send({
         imported: true,
-        ...workflowSummary(relativePath, workflow, getEditorUrl(), null, null),
+        ...workflowSummary(relativePath, workflow, editorUrl, null, null),
+        name,
+        libraryWarning,
         warning:
           error instanceof Error ? error.message : "工作流已经导入，但当前电脑无法完成节点转换诊断",
       });

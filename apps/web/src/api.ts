@@ -267,6 +267,10 @@ export type ProjectBoardPreview = {
     y: number;
     width: number;
     height: number;
+    assetId?: string;
+    mediaType?: "image" | "video" | "audio";
+    mediaWidth?: number | null;
+    mediaHeight?: number | null;
   }>;
   edges: Array<{ sourceItemId: string; targetItemId: string }>;
 };
@@ -334,6 +338,11 @@ export type WorkflowSummary = {
   workflowHash?: string;
   origin?: "built_in" | "imported" | "comfyui";
   diagnostic?: WorkflowDiagnostic;
+  library?: { included: boolean; favorite: boolean; name?: string };
+  libraryError?: string;
+  parameterDefaults?: Partial<
+    Record<"width" | "height" | "fps" | "steps" | "denoise" | "seed" | "durationSeconds", number>
+  >;
 };
 
 export type WorkflowListDiagnostic = {
@@ -763,6 +772,7 @@ export const projectApi = {
       referenceVideoAssetIds?: string[];
       referenceAudioAssetIds?: string[];
       referenceImageSize?: "match" | "max";
+      referenceVideoAudio?: boolean;
       width: number;
       height: number;
       durationSeconds: number;
@@ -1200,6 +1210,19 @@ export const authApi = {
 };
 
 export const workflowApi = {
+  copy: (path: string) =>
+    jsonRequest<WorkflowImport>("/api/workflows/copy", {
+      method: "POST",
+      body: JSON.stringify({ path }),
+    }),
+  updateLibrary: (path: string, entry: { name?: string; included?: boolean; favorite?: boolean }) =>
+    jsonRequest<{
+      path: string;
+      library: { name?: string; included?: boolean; favorite?: boolean };
+    }>(`/api/workflows/library?path=${encodeURIComponent(path)}`, {
+      method: "PUT",
+      body: JSON.stringify(entry),
+    }),
   list: () =>
     jsonRequest<{
       editorUrl: string;

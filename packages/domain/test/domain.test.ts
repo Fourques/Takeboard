@@ -7,6 +7,7 @@ import {
   createTakeBoardId,
   createUuidV7,
   DomainError,
+  rejectTake,
   summarizeProjectCosts,
   transitionRun,
 } from "../src/index.js";
@@ -125,6 +126,38 @@ describe("run state machine", () => {
 });
 
 describe("approveTake", () => {
+  it("can revoke adoption while keeping the media and approval history", () => {
+    const adopted = { ...shot, status: "approved" as const, approvedTakeId: ids.takeA };
+    const result = rejectTake({
+      shot: adopted,
+      takes,
+      approvals,
+      takeId: ids.takeA,
+      at: later,
+      reason: "改变选择",
+    });
+    expect(result.shot).toMatchObject({ status: "review", approvedTakeId: null });
+    expect(result.takes[0]).toMatchObject({ assetId: takes[0]?.assetId, status: "rejected" });
+    expect(result.approvals[0]).toMatchObject({ status: "revoked", revokedAt: later });
+    expect(adopted.approvedTakeId).toBe(ids.takeA);
+    expect(approvals[0]?.status).toBe("active");
+    const again = approveTake({
+      ...result,
+      takeId: ids.takeA,
+      approvalId: ids.approvalB,
+      at: later,
+    });
+    expect(again.shot.approvedTakeId).toBe(ids.takeA);
+    expect(
+      rejectTake({
+        shot: { ...adopted, status: "generating" },
+        takes,
+        approvals,
+        takeId: ids.takeA,
+        at: later,
+      }).shot,
+    ).toMatchObject({ status: "generating", approvedTakeId: null });
+  });
   it("revokes the old decision and approves the replacement without deleting history", () => {
     const result = approveTake({
       shot,

@@ -37,7 +37,7 @@ export function boardNodes(
   selectedShotId: string | null,
   controls: ShotCanvasControls | null,
 ): BoardNode[] {
-  return snapshot.canvasItems.map((item): BoardNode => {
+  const projected = snapshot.canvasItems.map((item): BoardNode => {
     const common = {
       id: item.id,
       position: { x: item.x, y: item.y },
@@ -197,6 +197,7 @@ export function boardNodes(
                 durationSeconds: controls.settings.durationSeconds,
                 seed: controls.settings.seed,
                 outputLabel: profile.outputLabel,
+                minDurationSeconds: profile.family === "minimax_h3" ? 4 : 1,
                 mentionAliases: controls.mentionAliases,
                 busy: controls.busy,
                 progress: controls.progress,
@@ -205,12 +206,23 @@ export function boardNodes(
                 onSettingsChange: controls.onSettingsChange,
                 onGenerate: controls.onGenerate,
                 onOpenDetails: controls.onOpenDetails,
+                onOpenWorkflows: controls.onOpenWorkflows,
                 onCommitTitle: controls.onCommitTitle,
               },
             }
           : {}),
       },
     };
+  });
+  return projected.map((node, index) => {
+    const item = snapshot.canvasItems[index];
+    return item?.sizeMode === "manual"
+      ? {
+          ...node,
+          className: "manually-sized",
+          style: { ...node.style, width: item.width, height: item.height },
+        }
+      : node;
   });
 }
 
@@ -355,7 +367,12 @@ export function sourceAssetId(
   source: ProjectSnapshot["canvasItems"][number] | undefined,
   mediaType: "image" | "video" | "audio",
 ) {
-  if (source?.refType === "asset") return source.refId;
+  if (source?.refType === "asset")
+    return snapshot.assets.some(
+      (asset) => asset.id === source.refId && asset.mediaType === mediaType,
+    )
+      ? source.refId
+      : null;
   if (source?.refType === "entity") {
     const entity = snapshot.entities.find((candidate) => candidate.id === source.refId);
     return (
@@ -400,10 +417,13 @@ export function connectedAssetId(
 }
 
 export function compileMiniMaxH3Mentions(prompt: string, mentions: PromptMention[]) {
-  return [...mentions]
-    .sort((a, b) => b.alias.length - a.alias.length)
-    .reduce(
-      (compiled, mention) => compiled.replaceAll(`@${mention.alias}`, mention.canonicalToken),
-      prompt,
-    );
+  const aliases = new Map(mentions.map((mention) => [mention.alias, mention.canonicalToken]));
+  return prompt.replace(
+    /@([^\s@，。；：、,.!?！？<>()[\]{}“”‘’「」]+)/g,
+    (_token, alias: string) => {
+      const canonical = aliases.get(alias);
+      if (!canonical) throw new Error(`“@${alias}”没有对应的已连接素材，请重新选择引用`);
+      return canonical;
+    },
+  );
 }

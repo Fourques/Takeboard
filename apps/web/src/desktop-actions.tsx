@@ -1,6 +1,11 @@
 import { type ReactNode, useState } from "react";
 
-export type DesktopAction = "connections" | "updates" | "choose-folder" | "reveal-folder";
+export type DesktopAction =
+  | "connections"
+  | "updates"
+  | "choose-folder"
+  | "reveal-folder"
+  | "save-report";
 export function desktopActionUrl(
   action: DesktopAction,
   parameters: Record<string, string>,
@@ -13,6 +18,7 @@ export function desktopActionUrl(
 export function requestDesktopAction(
   action: DesktopAction,
   parameters: Record<string, string> = {},
+  timeoutMs = 5000,
 ) {
   return new Promise<void>((resolve, reject) => {
     const actionId = crypto.randomUUID();
@@ -30,7 +36,7 @@ export function requestDesktopAction(
     };
     const timer = window.setTimeout(
       () => done("桌面应用未响应。请从应用菜单打开对应功能，或更新 TakeBoard 安装包后重试。"),
-      5000,
+      timeoutMs,
     );
     window.addEventListener("takeboard:desktop-action", receive);
     const theme = document.documentElement.dataset.theme || "chroma";

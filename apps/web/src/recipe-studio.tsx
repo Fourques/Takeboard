@@ -1,4 +1,4 @@
-import { type CSSProperties, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import {
   type ArchivedWorkflow,
   type WorkflowArchivePreview,
@@ -13,6 +13,7 @@ import {
   type WorkflowSummary,
   workflowApi,
 } from "./api";
+import { compareWorkflows, isLibraryWorkflow, workflowAvailability } from "./workflow-library";
 
 const groups: Array<{ id: "all" | WorkflowCapability; label: string }> = [
   { id: "all", label: "全部" },
@@ -58,7 +59,7 @@ const bindingTargetRowStyle: CSSProperties = {
   padding: "7px 9px",
   borderTop: "1px solid var(--line)",
   color: "var(--muted)",
-  fontSize: "8px",
+  fontSize: "12px",
   gap: "7px",
 };
 const bindingTargetLabelStyle: CSSProperties = { display: "contents" };
@@ -69,12 +70,12 @@ const bindingTargetNameStyle: CSSProperties = {
 };
 const bindingTransformStyle: CSSProperties = {
   maxWidth: "150px",
-  minHeight: "26px",
+  minHeight: "32px",
   border: "1px solid var(--line)",
   borderRadius: "5px",
   color: "var(--text-1)",
   background: "var(--surface-1)",
-  fontSize: "8px",
+  fontSize: "12px",
 };
 
 export function RecipeStudio({
@@ -105,7 +106,28 @@ export function RecipeStudio({
   workflows: WorkflowSummary[];
 }) {
   const [group, setGroup] = useState<"all" | WorkflowCapability>("all");
-  const [origin, setOrigin] = useState<"all" | "built_in" | "imported" | "comfyui">("all");
+  const [origin, setOrigin] = useState<"mine" | "templates" | "all">("mine");
+  const [libraryBusy, setLibraryBusy] = useState<string | null>(null);
+  const [renamePath, setRenamePath] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [onlyReady, setOnlyReady] = useState(false);
+  const updateLibrary = async (
+    workflow: WorkflowSummary,
+    entry: { name?: string; included?: boolean; favorite?: boolean },
+  ) => {
+    if (libraryBusy) return;
+    setLibraryBusy(workflow.path);
+    setBindingError("");
+    try {
+      await workflowApi.updateLibrary(workflow.path, entry);
+      await onRefresh();
+      setRenamePath(null);
+    } catch (cause) {
+      setBindingError(cause instanceof Error ? cause.message : "列表更新失败");
+    } finally {
+      setLibraryBusy(null);
+    }
+  };
   const [query, setQuery] = useState("");
   const [advanced, setAdvanced] = useState(false);
   const [inspection, setInspection] = useState<WorkflowBindingInspection | null>(null);
@@ -120,37 +142,72 @@ export function RecipeStudio({
   const [packageNoticePath, setPackageNoticePath] = useState("");
   const [packageBusy, setPackageBusy] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const inspectionRequest = useRef(0);
+  const refreshRef = useRef(onRefresh);
+  refreshRef.current = onRefresh;
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    void refreshRef.current().catch((error: unknown) => {
+      if (active) setBindingError(error instanceof Error ? error.message : "检查失败，请重试");
+    });
+    return () => {
+      active = false;
+    };
+  }, [open]);
   const filtered = useMemo(
     () =>
-      workflows.filter(
-        (workflow) =>
-          (group === "all" || workflow.capability === group) &&
-          (origin === "all" || workflow.origin === origin) &&
-          `${workflow.name} ${workflow.models.join(" ")}`
-            .toLowerCase()
-            .includes(query.toLowerCase()),
-      ),
-    [group, origin, query, workflows],
+      workflows
+        .filter(
+          (workflow) =>
+            (group === "all" || workflow.capability === group) &&
+            (origin === "all" ||
+              (origin === "mine" ? isLibraryWorkflow(workflow) : workflow.origin === "built_in")) &&
+            (!onlyReady || workflowAvailability(workflow).ready) &&
+            `${workflow.name} ${workflow.models.join(" ")}`
+              .toLowerCase()
+              .includes(query.toLowerCase()),
+        )
+        .sort(compareWorkflows),
+    [group, origin, onlyReady, query, workflows],
   );
   const selectedEditorUrl = selectedPath
     ? `${editorUrl}/?takeboard_workflow=${encodeURIComponent(selectedPath)}`
     : editorUrl;
 
-  const configureBinding = async (workflow: WorkflowSummary) => {
+  const configureBinding = async (workflow: Pick<WorkflowSummary, "path" | "bindingStatus">) => {
+    const ticket = ++inspectionRequest.current;
     setBindingBusy(true);
     setBindingError("");
     setInspection({ path: workflow.path, status: workflow.bindingStatus ?? "needs_binding" });
     setBindingDraft(null);
     try {
       const result = await workflowApi.inspectWorkflow(workflow.path);
+      if (ticket !== inspectionRequest.current) return;
       setInspection(result);
       setBindingDraft(result.binding ?? result.suggested ?? null);
     } catch (error) {
+      if (ticket !== inspectionRequest.current) return;
       setBindingError(error instanceof Error ? error.message : "无法分析该工作流");
       setInspection({ path: workflow.path, status: "needs_binding" });
       setBindingDraft(null);
     } finally {
-      setBindingBusy(false);
+      if (ticket === inspectionRequest.current) setBindingBusy(false);
+    }
+  };
+
+  const createEditableCopy = async (path: string) => {
+    setPackageBusy(true);
+    setBindingError("");
+    try {
+      const copied = await workflowApi.copy(path);
+      await onRefresh();
+      setOrigin("mine");
+      await configureBinding(copied);
+    } catch (cause) {
+      setBindingError(cause instanceof Error ? cause.message : "副本创建失败");
+    } finally {
+      setPackageBusy(false);
     }
   };
 
@@ -298,8 +355,8 @@ export function RecipeStudio({
       setPackageNoticePath(imported.path);
       setPackageNotice(
         imported.candidates
-          ? "Workflow 已隔离导入并完成当前电脑诊断。请核对自动识别的参数位置，再明确启用。"
-          : "Workflow 已安全导入，但当前电脑尚未完成节点转换诊断。修复诊断问题后才能启用。",
+          ? "已导入。核对输入与参数后即可启用。"
+          : "已保存工作流，完成检查后才能启用。",
       );
       if (!imported.candidates) {
         setBindingError(imported.warning ?? "当前工作流无法转换为可执行 Prompt");
@@ -318,12 +375,10 @@ export function RecipeStudio({
         <header className="studio-header">
           <div>
             <span className="section-kicker">RECIPE LIBRARY</span>
-            <h2>工作流与模型</h2>
+            <h2>选择工作流</h2>
             <p>
-              {selectionLocked
-                ? "当前镜头已有结果，工作流已锁定"
-                : `共 ${workflows.length} 个可用工作流`}
-              {warnings.length > 0 ? ` · ${warnings.length} 个文件未能读取` : ""}
+              {selectionLocked ? "当前镜头已有结果，工作流已锁定" : `${workflows.length} 个工作流`}
+              {warnings.length > 0 ? ` · ${warnings.length} 条检查提示` : ""}
             </p>
           </div>
           <div className="studio-actions">
@@ -341,7 +396,7 @@ export function RecipeStudio({
               </button>
             ) : null}
             <button type="button" onClick={() => void onRefresh()} disabled={busy}>
-              ↻ 检测
+              {busy ? "检查中…" : "重新检查"}
             </button>
             <button type="button" onClick={onClose} aria-label="关闭工作流面板">
               ×
@@ -352,10 +407,9 @@ export function RecipeStudio({
           <fieldset className="recipe-origin-tabs">
             <legend>工作流来源</legend>
             {[
-              ["all", "全部来源"],
-              ["built_in", "TakeBoard 内置"],
-              ["imported", "我的导入"],
-              ["comfyui", "ComfyUI 现有"],
+              ["mine", "我的工作流"],
+              ["templates", "模板库"],
+              ["all", "全部发现"],
             ].map(([id, label]) => (
               <button
                 type="button"
@@ -382,9 +436,17 @@ export function RecipeStudio({
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜索 Workflow 或模型…"
+            placeholder="搜索名称或模型"
             aria-label="搜索工作流"
           />
+          <label className="recipe-ready-filter">
+            <input
+              type="checkbox"
+              checked={onlyReady}
+              onChange={(event) => setOnlyReady(event.target.checked)}
+            />
+            仅显示可用
+          </label>
         </div>
         <div className="recipe-body">
           <div className="recipe-list">
@@ -393,9 +455,13 @@ export function RecipeStudio({
                 <button
                   type="button"
                   className={`recipe-card ${selectedPath === workflow.path ? "selected" : ""}`}
-                  disabled={selectionLocked}
+                  disabled={selectionLocked || !isLibraryWorkflow(workflow)}
                   onClick={() => {
-                    if (workflow.execution === "comfy_only") void configureBinding(workflow);
+                    if (
+                      !workflowAvailability(workflow).ready ||
+                      workflow.diagnostic?.health === "attention"
+                    )
+                      void configureBinding(workflow);
                     else onSelect(workflow);
                   }}
                 >
@@ -403,96 +469,128 @@ export function RecipeStudio({
                     {capabilityIcon[workflow.capability]}
                   </span>
                   <span className="recipe-copy">
-                    <strong>{workflow.name}</strong>
-                    <small>
-                      {workflow.capabilityLabel} ·{" "}
-                      {(workflow.mediaInputs?.first_frame ?? 0) +
-                        (workflow.mediaInputs?.last_frame ?? 0) +
-                        (workflow.mediaInputs?.reference ?? 0) +
-                        (workflow.mediaInputs?.reference_video ?? 0)}{" "}
-                      个画面位置 · {workflow.inputs.length} 项参数
-                    </small>
+                    <strong>
+                      {workflow.library?.favorite ? "★ " : ""}
+                      {workflow.name}
+                    </strong>
+                    <small>{workflow.capabilityLabel}</small>
                     <span>
-                      {advanced
-                        ? workflow.models
-                            .slice(0, 2)
-                            .map((model) => model.replace(/\.safetensors$/i, ""))
-                            .join(" · ") || "未检测到固定模型"
-                        : workflow.modelStatus === "missing"
-                          ? "执行端缺少这个工作流需要的模型"
-                          : workflow.diagnostic?.health === "blocked"
-                            ? "需要完成检查后才能运行"
-                            : "依赖检查通过后可直接用于镜头"}
+                      {workflow.models
+                        .slice(0, 2)
+                        .map((model) => model.replace(/\.safetensors$/i, ""))
+                        .join(" · ") || "未检测到固定模型"}
                     </span>
                   </span>
                   <i
                     className={`${workflow.execution === "native" || workflow.execution === "bound" ? "native" : "comfy"} model-${workflow.modelStatus ?? "unknown"}`}
                   >
-                    {workflow.modelStatus === "missing"
-                      ? "缺模型"
-                      : workflow.bindingStatus === "stale"
-                        ? "映射失效"
-                        : workflow.execution === "bound"
-                          ? "已验证"
-                          : workflow.execution === "native"
-                            ? "内置适配"
-                            : "配置运行"}
+                    {workflowAvailability(workflow).label}
                   </i>
-                  {workflow.diagnostic ? (
-                    <em className={`workflow-health health-${workflow.diagnostic.health}`}>
-                      {workflow.diagnostic.health === "ready"
-                        ? "可执行"
-                        : workflow.diagnostic.health === "blocked"
-                          ? `${workflow.diagnostic.checks.filter((item) => item.status === "blocked").length} 项阻塞`
-                          : "需检查"}
-                    </em>
-                  ) : null}
                   <b className={`workflow-origin origin-${workflow.origin ?? "comfyui"}`}>
                     {workflow.origin === "built_in"
-                      ? "内置"
+                      ? "模板"
                       : workflow.origin === "imported"
                         ? "我的"
                         : "ComfyUI"}
                   </b>
                 </button>
-                {workflow.execution !== "native" ? (
-                  <button
-                    type="button"
-                    className="recipe-binding-action"
-                    onClick={() => void configureBinding(workflow)}
-                  >
-                    {canManageWorkflows
-                      ? workflow.execution === "bound"
-                        ? "检查映射"
-                        : "建立映射"
-                      : "查看诊断"}
+                <div className="recipe-library-actions">
+                  <button type="button" onClick={() => void configureBinding(workflow)}>
+                    {workflow.execution === "native" ? "查看检查" : "检查与配置"}
                   </button>
-                ) : null}
-                {canManageWorkflows ? (
-                  <a
-                    className="recipe-package-action"
-                    href={workflowApi.recipePackageUrl(workflow.path)}
-                    download
-                    title="导出 Workflow、参数映射、依赖清单与内容哈希"
+                  {canManageWorkflows ? (
+                    <>
+                      {!isLibraryWorkflow(workflow) ? (
+                        <button
+                          type="button"
+                          disabled={libraryBusy !== null}
+                          onClick={() =>
+                            void updateLibrary(workflow, { included: !isLibraryWorkflow(workflow) })
+                          }
+                        >
+                          添加到我的工作流
+                        </button>
+                      ) : null}
+                      <details>
+                        <summary>更多</summary>
+                        <div className="recipe-library-actions">
+                          <button
+                            type="button"
+                            disabled={libraryBusy !== null}
+                            aria-pressed={Boolean(workflow.library?.favorite)}
+                            onClick={() =>
+                              void updateLibrary(workflow, {
+                                favorite: !workflow.library?.favorite,
+                              })
+                            }
+                          >
+                            {workflow.library?.favorite ? "取消收藏" : "收藏"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRenamePath(workflow.path);
+                              setRenameValue(workflow.name);
+                            }}
+                          >
+                            重命名
+                          </button>
+                          {isLibraryWorkflow(workflow) ? (
+                            <button
+                              type="button"
+                              disabled={libraryBusy !== null}
+                              onClick={() => void updateLibrary(workflow, { included: false })}
+                            >
+                              从列表移除
+                            </button>
+                          ) : null}
+                          <a href={workflowApi.recipePackageUrl(workflow.path)} download>
+                            导出工作流包
+                          </a>
+                          {workflow.origin === "imported" ? (
+                            <button
+                              type="button"
+                              disabled={archiveBusy}
+                              onClick={() => void previewArchive(workflow)}
+                            >
+                              归档文件
+                            </button>
+                          ) : null}
+                        </div>
+                      </details>
+                    </>
+                  ) : null}
+                </div>
+                {renamePath === workflow.path ? (
+                  <form
+                    className="recipe-rename"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void updateLibrary(workflow, { name: renameValue.trim() });
+                    }}
                   >
-                    导出包
-                  </a>
-                ) : null}
-                {canManageWorkflows && workflow.origin === "imported" ? (
-                  <button
-                    type="button"
-                    className="recipe-archive-action"
-                    disabled={archiveBusy}
-                    onClick={() => void previewArchive(workflow)}
-                    title="检查引用后归档；可随时恢复"
-                  >
-                    归档
-                  </button>
+                    <input
+                      aria-label="工作流名称"
+                      value={renameValue}
+                      maxLength={100}
+                      onChange={(event) => setRenameValue(event.target.value)}
+                    />
+                    <button type="submit" disabled={!renameValue.trim() || libraryBusy !== null}>
+                      保存
+                    </button>
+                    <button type="button" onClick={() => setRenamePath(null)}>
+                      取消
+                    </button>
+                  </form>
                 ) : null}
               </div>
             ))}
             {filtered.length === 0 ? (
-              <div className="recipe-empty">这个分类还没有 Workflow。拖入 JSON 后会自动检测。</div>
+              <div className="recipe-empty">
+                {origin === "mine"
+                  ? "还没有匹配的工作流。可以从模板库添加，或导入自己的工作流。"
+                  : "没有匹配的工作流。"}
+              </div>
             ) : null}
           </div>
           {canManageWorkflows ? (
@@ -500,7 +598,7 @@ export function RecipeStudio({
               <input
                 ref={fileInput}
                 type="file"
-                accept="application/json,.json,application/gzip,.tgz,.takeboard-recipe.tgz"
+                accept="application/json,.json,image/png,.png,application/gzip,.tgz,.takeboard-recipe.tgz"
                 onChange={(event) => {
                   const file = event.target.files?.[0];
                   if (file) {
@@ -526,12 +624,9 @@ export function RecipeStudio({
                 disabled={packageBusy}
               >
                 <span>↧</span>
-                <strong>{packageBusy ? "正在隔离验包…" : "导入 Workflow 或 Recipe 包"}</strong>
-                <p>
-                  JSON 用于单机导入；Recipe
-                  包同时携带映射草案、依赖清单与哈希，但不会自动获得执行信任。
-                </p>
-                <i>选择 .json / .takeboard-recipe.tgz</i>
+                <strong>{packageBusy ? "正在导入…" : "导入工作流"}</strong>
+                <p>JSON、包含工作流的 PNG，或 TakeBoard 工作流包</p>
+                <i>导入后检查依赖与输入配置</i>
               </button>
               {bindingError && !inspection ? (
                 <p className="workflow-package-error">{bindingError}</p>
@@ -559,24 +654,84 @@ export function RecipeStudio({
                   <span className="section-kicker">
                     {advanced ? "WORKFLOW BINDING · V1" : "WORKFLOW SETUP"}
                   </span>
-                  <h3>{advanced ? "建立 TakeBoard 参数映射" : "让 TakeBoard 认识这个工作流"}</h3>
+                  <h3>{inspection.status === "built_in" ? "工作流检查" : "工作流配置"}</h3>
                   <p>
-                    {advanced
+                    {advanced || inspection.status === "built_in"
                       ? inspection.path
-                      : "确认生成类型、输出和需要由画布控制的内容；工作流原文件不会被改写。"}
+                      : "设置画布参数与工作流的对应关系"}
                   </p>
                   {inspection.path === packageNoticePath && packageNotice ? (
                     <div className="recipe-package-notice">{packageNotice}</div>
                   ) : null}
                 </div>
-                <button type="button" onClick={() => setInspection(null)} aria-label="关闭映射面板">
+                <button
+                  type="button"
+                  onClick={() => {
+                    inspectionRequest.current++;
+                    setInspection(null);
+                    setBindingBusy(false);
+                  }}
+                  aria-label="关闭映射面板"
+                >
                   ×
                 </button>
               </header>
+              <div className="recipe-library-actions">
+                <button
+                  type="button"
+                  disabled={bindingBusy}
+                  onClick={() => {
+                    const workflow = workflows.find((item) => item.path === inspection.path);
+                    if (workflow) void configureBinding(workflow);
+                    else void configureBinding({ path: inspection.path });
+                  }}
+                >
+                  重新检查
+                </button>
+                <a
+                  href={`${editorUrl}/?takeboard_workflow=${encodeURIComponent(inspection.path)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  在 ComfyUI 编辑 ↗
+                </a>
+                <a href={workflowApi.rawUrl(inspection.path)} download>
+                  下载 JSON
+                </a>
+              </div>
               {bindingBusy && !bindingDraft ? (
                 <div className="binding-loading">正在读取真实工作流与节点定义…</div>
               ) : null}
-              {bindingDraft && inspection.candidates ? (
+              {inspection.status === "built_in" && inspection.diagnostic ? (
+                <div className="binding-editor-body">
+                  <p>
+                    此模板使用 TakeBoard
+                    原生适配。需要修改节点时，请创建可编辑副本；副本按实际节点配置运行。
+                  </p>
+                  {canManageWorkflows ? (
+                    <button
+                      type="button"
+                      disabled={packageBusy}
+                      onClick={() => void createEditableCopy(inspection.path)}
+                    >
+                      创建可编辑副本
+                    </button>
+                  ) : null}
+                  <div className="workflow-diagnostic-grid">
+                    {inspection.diagnostic.checks.map((check) => (
+                      <article key={check.id} className={`diagnostic-${check.status}`}>
+                        <i>{check.status === "pass" ? "✓" : "!"}</i>
+                        <div>
+                          <strong>{check.title}</strong>
+                          <p>{check.detail}</p>
+                          {check.remediation ? <small>{check.remediation}</small> : null}
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              {inspection.status !== "built_in" && bindingDraft && inspection.candidates ? (
                 <div className="binding-editor-body">
                   <div className="binding-overview">
                     <label>
@@ -757,7 +912,25 @@ export function RecipeStudio({
               <footer>
                 <p>{inspection.warning ?? bindingError}</p>
                 {bindingError ? <strong>{bindingError}</strong> : null}
-                {canManageWorkflows ? (
+                {inspection.diagnostic?.executable &&
+                !bindingBusy &&
+                !selectionLocked &&
+                workflows.some(
+                  (item) => item.path === inspection.path && isLibraryWorkflow(item),
+                ) ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const workflow = workflows.find((item) => item.path === inspection.path);
+                      if (workflow) onSelect(workflow);
+                    }}
+                  >
+                    使用此工作流
+                  </button>
+                ) : null}
+                {inspection.status === "built_in" ? (
+                  <span>内置工作流</span>
+                ) : canManageWorkflows ? (
                   <button
                     type="button"
                     onClick={() => void saveBinding()}

@@ -17,6 +17,7 @@ export const canvasItemSchema = timestampsSchema.extend({
   y: z.number().finite(),
   width: z.number().positive().max(10_000),
   height: z.number().positive().max(10_000),
+  sizeMode: z.enum(["auto", "manual"]).optional(),
   zIndex: z.number().int(),
   parentGroupId: canvasItemIdSchema.nullable().default(null),
   collapsed: z.boolean().default(false),

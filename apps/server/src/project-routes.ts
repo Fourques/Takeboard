@@ -14,6 +14,7 @@ import {
   approveTake,
   approveTakesBatch,
   createTakeBoardId,
+  rejectTake,
   summarizeProjectCosts,
   toIsoTimestamp,
 } from "@takeboard/domain";
@@ -99,6 +100,36 @@ function canvasItemLabel(snapshot: ProjectSnapshot, item: { refType: string; ref
   }
   const shot = snapshot.shots.find((candidate) => candidate.id === item.refId);
   return shot?.label || (item.refType === "take_stack" ? "生成结果" : "镜头");
+}
+
+function canvasItemMedia(snapshot: ProjectSnapshot, item: { refType: string; refId: string }) {
+  let assetId: string | undefined;
+  if (item.refType === "asset") assetId = item.refId;
+  else if (item.refType === "entity")
+    assetId = snapshot.entities.find((entity) => entity.id === item.refId)?.referenceAssetIds[0];
+  else if (item.refType === "shot" || item.refType === "take_stack") {
+    const shot = snapshot.shots.find((shot) => shot.id === item.refId);
+    const take =
+      snapshot.takes.find((take) => take.id === shot?.approvedTakeId) ??
+      [...snapshot.takes]
+        .reverse()
+        .find(
+          (take) =>
+            take.shotId === item.refId &&
+            take.status !== "rejected" &&
+            take.status !== "media_missing",
+        );
+    assetId = take?.assetId;
+  }
+  const asset = snapshot.assets.find((asset) => asset.id === assetId);
+  return asset
+    ? {
+        assetId: asset.id,
+        mediaType: asset.mediaType,
+        mediaWidth: asset.width,
+        mediaHeight: asset.height,
+      }
+    : {};
 }
 
 export function projectKey(value: unknown): string | null {
@@ -402,15 +433,28 @@ export function registerProjectRoutes(
                   const items = opened.snapshot.canvasItems
                     .filter((item) => item.sceneId === scene.id)
                     .sort((left, right) => left.zIndex - right.zIndex);
-                  const nodes = items.slice(0, 16).map((item) => ({
-                    id: item.id,
-                    refType: item.refType,
-                    label: canvasItemLabel(opened.snapshot, item),
-                    x: item.x,
-                    y: item.y,
-                    width: item.width,
-                    height: item.height,
-                  }));
+                  const nodes = items.slice(0, 80).map((item) => {
+                    const media = canvasItemMedia(opened.snapshot, item);
+                    const automatic = item.sizeMode !== "manual";
+                    const width = automatic && item.refType === "shot" ? 470 : item.width;
+                    const height =
+                      automatic &&
+                      ["shot", "asset"].includes(item.refType) &&
+                      media.mediaWidth &&
+                      media.mediaHeight
+                        ? (width * media.mediaHeight) / media.mediaWidth
+                        : item.height;
+                    return {
+                      id: item.id,
+                      refType: item.refType,
+                      label: canvasItemLabel(opened.snapshot, item),
+                      x: item.x,
+                      y: item.y,
+                      width,
+                      height,
+                      ...media,
+                    };
+                  });
                   const nodeIds = new Set(nodes.map((node) => node.id));
                   return {
                     sceneId: scene.id,
@@ -811,13 +855,24 @@ export function registerProjectRoutes(
         const current = store.loadCurrent();
         const take = current?.snapshot.takes.find((item) => item.id === request.params.takeId);
         if (!current || !take) return await reply.code(404).send({ error: "候选不存在" });
-        if (take.status === "approved") {
-          return await reply.code(409).send({ error: "已批准候选需先由另一候选替换" });
-        }
+        if (take.status === "media_missing")
+          return await reply.code(409).send({ error: "候选文件缺失，无法更改采用状态" });
         const timestamp = toIsoTimestamp();
-        take.status = "rejected";
-        take.rejectionReasons = [reason];
-        take.updatedAt = timestamp;
+        const shot = current.snapshot.shots.find((item) => item.id === take.shotId);
+        if (!shot) return await reply.code(404).send({ error: "镜头不存在" });
+        const result = rejectTake({
+          shot,
+          takes: current.snapshot.takes,
+          approvals: current.snapshot.approvals,
+          takeId: take.id,
+          at: timestamp,
+          reason,
+        });
+        current.snapshot.shots = current.snapshot.shots.map((item) =>
+          item.id === shot.id ? result.shot : item,
+        );
+        current.snapshot.takes = result.takes;
+        current.snapshot.approvals = result.approvals;
         current.snapshot.project.updatedAt = timestamp;
         current.snapshot.exportedAt = timestamp;
         const saved = await store.save(current.snapshot, {

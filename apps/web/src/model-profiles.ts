@@ -1,5 +1,6 @@
 import type { AspectRatio } from "@takeboard/contracts";
 import type { WorkflowSummary } from "./api";
+import { optionalLocalStorage } from "./browser-storage";
 
 export type WorkflowInputSlot = {
   id: "first_frame" | "last_frame" | "reference" | "reference_video" | "reference_audio";
@@ -98,7 +99,9 @@ export function modelProfile(
   workflow: WorkflowSummary | null,
   aspectRatio: AspectRatio,
 ): ModelProfile {
-  const haystack = `${workflow?.path ?? ""} ${workflow?.name ?? ""}`.toLowerCase();
+  // Display names are user-editable. Only native adapter paths define native
+  // constraints; imported graphs use their own bindings and defaults.
+  const haystack = workflow?.execution === "native" ? workflow.path.toLowerCase() : "";
   const slots = workflowInputSlots(workflow);
   if (haystack.includes("qwen")) {
     const size = orientedSize(1664, 928, aspectRatio);
@@ -165,7 +168,7 @@ const preferencePrefix = "takeboard.model-preferences.";
 
 export function loadModelPreferences(path: string): Partial<ModelDefaults> {
   try {
-    const raw = window.localStorage.getItem(`${preferencePrefix}${path}`);
+    const raw = optionalLocalStorage.getItem(`${preferencePrefix}${path}`);
     if (!raw) return {};
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     return Object.fromEntries(
@@ -182,5 +185,5 @@ export function loadModelPreferences(path: string): Partial<ModelDefaults> {
 }
 
 export function saveModelPreferences(path: string, settings: ModelDefaults) {
-  window.localStorage.setItem(`${preferencePrefix}${path}`, JSON.stringify(settings));
+  optionalLocalStorage.setItem(`${preferencePrefix}${path}`, JSON.stringify(settings));
 }

@@ -32,6 +32,7 @@ import {
 } from "./output-transfer.js";
 import { projectDirectory } from "./project-locations.js";
 import { projectKey } from "./project-routes.js";
+import { submittedModelFiles } from "./run-models.js";
 import { ProjectStore } from "./storage/project-store.js";
 import {
   comfyOutputReserveBytes,
@@ -65,36 +66,6 @@ function importedImageNodeSize(image: { width: number; height: number } | null) 
   const width = Math.round(Math.min(420, Math.max(240, 300 * Math.sqrt(ratio))));
   const previewHeight = Math.min(440, width / ratio);
   return { width, height: Math.round(previewHeight + 76) };
-}
-
-function takeStackPosition(snapshot: ProjectSnapshot, shotId: string) {
-  const shotItem = snapshot.canvasItems.find(
-    (item) => item.refType === "shot" && item.refId === shotId,
-  );
-  if (!shotItem) return { x: 560, y: 180 };
-  const shotWidth = Math.max(470, shotItem.width);
-  const shotHeight = Math.max(190, shotItem.height);
-  const stack = { width: 280, height: 190 };
-  const gap = 64;
-  const candidates = [
-    { x: shotItem.x + shotWidth + gap, y: shotItem.y },
-    { x: shotItem.x, y: shotItem.y + shotHeight + gap },
-    { x: shotItem.x, y: shotItem.y - stack.height - gap },
-    { x: shotItem.x - stack.width - gap, y: shotItem.y },
-  ];
-  const overlaps = (candidate: { x: number; y: number }) =>
-    snapshot.canvasItems.some((item) => {
-      if (item.id === shotItem.id) return false;
-      const width = item.refType === "shot" ? Math.max(470, item.width) : item.width;
-      const height = Math.max(120, item.height);
-      return !(
-        candidate.x + stack.width + 24 <= item.x ||
-        item.x + width + 24 <= candidate.x ||
-        candidate.y + stack.height + 24 <= item.y ||
-        item.y + height + 24 <= candidate.y
-      );
-    });
-  return candidates.find((candidate) => !overlaps(candidate)) ?? { x: 560, y: 180 };
 }
 
 function parseByteRange(header: string, size: number) {
@@ -834,16 +805,18 @@ export function registerGenerationRoutes(
           return await reply.code(409).send({ error: "这个镜头已有运行记录，工作流不能直接更换" });
         }
         shot.workflowPath = recipePath;
-        const wanFirstLast = /Kino_Wan22_FLF2V(?:_Preview)?\.json$/.test(recipePath);
-        const wanImage = /Kino_Wan22_I2V(?:_Preview)?\.json$/.test(recipePath);
+        const nativeNamespace = recipePath.startsWith("Kino/");
+        const wanFirstLast =
+          nativeNamespace && /Kino_Wan22_FLF2V(?:_Preview)?\.json$/.test(recipePath);
+        const wanImage = nativeNamespace && /Kino_Wan22_I2V(?:_Preview)?\.json$/.test(recipePath);
         const wanPreview = (wanFirstLast || wanImage) && recipePath.endsWith("_Preview.json");
-        const miniMaxText = recipePath.endsWith("Kino_MinimaxH3_T2V.json");
-        const miniMaxImage = recipePath.endsWith("Kino_MinimaxH3_I2V.json");
-        const miniMaxReference = recipePath.endsWith("Kino_MinimaxH3_R2V.json");
+        const miniMaxText = nativeNamespace && recipePath.endsWith("Kino_MinimaxH3_T2V.json");
+        const miniMaxImage = nativeNamespace && recipePath.endsWith("Kino_MinimaxH3_I2V.json");
+        const miniMaxReference = nativeNamespace && recipePath.endsWith("Kino_MinimaxH3_R2V.json");
         const miniMax = miniMaxText || miniMaxImage || miniMaxReference;
-        const ltxImage = recipePath.endsWith("Kino_LTX23_I2V_Draft.json");
-        const qwenText = recipePath.endsWith("Kino_QwenImage2512_T2I.json");
-        const qwenImage = recipePath.endsWith("Kino_QwenImage2512_I2I.json");
+        const ltxImage = nativeNamespace && recipePath.endsWith("Kino_LTX23_I2V_Draft.json");
+        const qwenText = nativeNamespace && recipePath.endsWith("Kino_QwenImage2512_T2I.json");
+        const qwenImage = nativeNamespace && recipePath.endsWith("Kino_QwenImage2512_I2I.json");
         const qwen = qwenText || qwenImage;
         const nativeWorkflow = wanImage || wanFirstLast || miniMax || ltxImage || qwen;
         let boundWorkflow: Awaited<ReturnType<typeof loadExecutableWorkflow>> | null = null;
@@ -899,20 +872,44 @@ export function registerGenerationRoutes(
         ) {
           return await reply.code(409).send({ error: "首尾帧模式需要选择一张可用的结束帧图片" });
         }
-        if (lastAsset && lastAsset.mediaType !== "image") {
+        if (
+          requestedLastAssetId &&
+          lastAsset?.mediaType !== "image" &&
+          (wanFirstLast || miniMaxImage || boundNeedsLast)
+        ) {
           return await reply.code(409).send({ error: "选择的结束帧不是可用图片" });
         }
 
-        const assetIds = (value: unknown, limit: number) =>
-          Array.isArray(value)
-            ? [...new Set(value.filter((id): id is string => typeof id === "string"))].slice(
-                0,
-                limit,
-              )
-            : [];
-        const referenceImageIds = assetIds(body.referenceImageAssetIds, 9);
-        const referenceVideoIds = assetIds(body.referenceVideoAssetIds, 3);
-        const referenceAudioIds = assetIds(body.referenceAudioAssetIds, 3);
+        const referenceLists = [
+          body.referenceImageAssetIds,
+          body.referenceVideoAssetIds,
+          body.referenceAudioAssetIds,
+        ];
+        if (
+          referenceLists.some(
+            (value) =>
+              value !== undefined &&
+              (!Array.isArray(value) ||
+                value.some((id) => typeof id !== "string" || !id) ||
+                new Set(value).size !== value.length),
+          )
+        ) {
+          return reply.code(400).send({ error: "参考素材列表无效或重复；未提交生成" });
+        }
+        const referenceImageIds = (body.referenceImageAssetIds ?? []) as string[];
+        const referenceVideoIds = (body.referenceVideoAssetIds ?? []) as string[];
+        const referenceAudioIds = (body.referenceAudioAssetIds ?? []) as string[];
+        if (
+          miniMaxReference &&
+          (referenceImageIds.length > 9 ||
+            referenceVideoIds.length > 3 ||
+            referenceAudioIds.length > 3)
+        ) {
+          return reply.code(409).send({
+            error:
+              "MiniMax H3 最多接收 9 张参考图、3 个参考视频、3 个参考音频，总计不超过 12 个；请调整连线",
+          });
+        }
         const resolveAssets = (ids: string[], expectedType: "image" | "video" | "audio") =>
           ids
             .map((id) => current.snapshot.assets.find((asset) => asset.id === id))
@@ -948,6 +945,29 @@ export function registerGenerationRoutes(
             referenceAudios.length > (boundWorkflow.binding.media.reference_audio?.length ?? 0))
         ) {
           return await reply.code(409).send({ error: "参考素材数量超过该工作流已绑定的输入位置" });
+        }
+        if (
+          !miniMaxReference &&
+          !boundWorkflow &&
+          referenceImages.length + referenceVideos.length + referenceAudios.length > 0
+        ) {
+          return await reply
+            .code(409)
+            .send({ error: "当前工作流不支持这些参考输入，请调整连线；未提交生成" });
+        }
+        if (
+          requestedAssetId &&
+          !requiresInputImage &&
+          !boundWorkflow?.binding.media.first_frame?.length
+        ) {
+          return await reply
+            .code(409)
+            .send({ error: "当前工作流没有首帧输入，请调整连线；未提交生成" });
+        }
+        if (requestedLastAssetId && !wanFirstLast && !miniMaxImage && !boundNeedsLast) {
+          return await reply
+            .code(409)
+            .send({ error: "当前工作流没有尾帧输入，请调整连线；未提交生成" });
         }
 
         const seed =
@@ -1177,6 +1197,7 @@ export function registerGenerationRoutes(
           effectiveSize = miniMaxH3Resolution(width, height);
           prompt = buildMiniMaxH3ReferencePrompt({
             ...recipeInput,
+            referenceVideoAudio: body.referenceVideoAudio === true,
             referenceImages: comfyReferenceImages,
             referenceVideos: comfyReferenceVideos,
             referenceAudios: comfyReferenceAudios,
@@ -1311,6 +1332,7 @@ export function registerGenerationRoutes(
             })),
           ],
           parameters: {
+            models: submittedModelFiles(prompt),
             seed,
             width: effectiveSize.width,
             height: effectiveSize.height,
@@ -1334,7 +1356,10 @@ export function registerGenerationRoutes(
                 : positivePrompt,
             negativePrompt: negativePrompt ?? null,
             ...(miniMaxReference
-              ? { referenceImageSize: body.referenceImageSize === "max" ? "max" : "match" }
+              ? {
+                  referenceImageSize: body.referenceImageSize === "max" ? "max" : "match",
+                  referenceVideoAudio: body.referenceVideoAudio === true,
+                }
               : {}),
             ...(candidateBatchId
               ? {
@@ -1827,31 +1852,8 @@ export function registerGenerationRoutes(
       delete run.parameters.missingFromWorkerSince;
       run.updatedAt = timestamp;
       finishRunAccounting(run, timestamp);
-      const shot = current.snapshot.shots.find((item) => item.id === run.shotId);
-      if (shot) {
-        if (
-          !current.snapshot.canvasItems.some(
-            (item) => item.refType === "take_stack" && item.refId === shot.id,
-          )
-        ) {
-          const stackPosition = takeStackPosition(current.snapshot, shot.id);
-          current.snapshot.canvasItems.push({
-            id: createTakeBoardId("canvas_item"),
-            sceneId: shot.sceneId,
-            refType: "take_stack",
-            refId: shot.id,
-            x: stackPosition.x,
-            y: stackPosition.y,
-            width: 280,
-            height: 190,
-            zIndex: 2,
-            parentGroupId: null,
-            collapsed: false,
-            createdAt: timestamp,
-            updatedAt: timestamp,
-          });
-        }
-      }
+      // Results belong to shot history. Only a user action adds a result to the
+      // canvas; preserve existing candidate stacks for older projects.
       refreshShotStatus(current.snapshot, run.shotId, timestamp);
       current.snapshot.project.updatedAt = timestamp;
       current.snapshot.exportedAt = timestamp;

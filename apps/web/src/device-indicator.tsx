@@ -140,7 +140,7 @@ export function DeviceIndicator({ projectKey }: { projectKey?: string | undefine
                 {error
                   ? "需要检查连接"
                   : connection?.kind === "local"
-                    ? "保存在此电脑，不随生成服务切换"
+                    ? "项目文件"
                     : device
                       ? "远程项目"
                       : "正在读取项目位置…"}
@@ -184,7 +184,6 @@ export function DeviceIndicator({ projectKey }: { projectKey?: string | undefine
                   复制文件夹路径
                 </button>
               ) : null}
-              <p>文件保存在上述设备。下载会在当前电脑保存副本，不会删除服务器原文件。</p>
               {error ? (
                 <>
                   <p role="alert">{error}</p>

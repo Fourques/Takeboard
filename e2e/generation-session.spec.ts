@@ -4,7 +4,12 @@ import { expect, test } from "./fixtures";
 
 // Controlled acknowledgement fixtures exercise the real UI session controller;
 // they intentionally do not execute a GPU workflow or claim generation quality.
-async function sessionFixture(page: Page, request: APIRequestContext, runningSecond: boolean) {
+async function sessionFixture(
+  page: Page,
+  request: APIRequestContext,
+  runningSecond: boolean,
+  runningBatch = false,
+) {
   const title = `提交会话 ${Date.now()}`;
   const created = await request.post("/api/projects", { data: { title } });
   expect(created.ok()).toBeTruthy();
@@ -59,6 +64,10 @@ async function sessionFixture(page: Page, request: APIRequestContext, runningSec
     payload.revision++;
   };
   if (runningSecond) appendRun("run-b", b);
+  if (runningBatch) {
+    appendRun("run-batch-1", a, { candidateBatchId: "batch-existing", candidateIndex: 1 });
+    appendRun("run-batch-2", a, { candidateBatchId: "batch-existing", candidateIndex: 2 });
+  }
   let release = () => {};
   const gate = new Promise<void>((resolve) => {
     release = resolve;
@@ -146,6 +155,26 @@ test("stop waits for the submitted identity and does not submit the rest of a ba
     await expect.poll(() => fixture.cancellations).toEqual(["run-a"]);
     await expect(page.getByText("1 个生成任务已停止并完成清理")).toBeVisible();
     expect(fixture.submissions()).toBe(1);
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test("restoring a running batch does not repeatedly update canvas nodes", async ({
+  page,
+  request,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const fixture = await sessionFixture(page, request, false, true);
+  try {
+    await expect(page.getByText("候选结果 · 0/2 已保存").first()).toBeVisible();
+    await page.locator(".shot-list > button").filter({ hasText: "另一个镜头" }).click();
+    await page.locator(".shot-list > button").filter({ hasText: "提交镜头" }).click();
+    await expect(page.getByText("候选结果 · 0/2 已保存").first()).toBeVisible();
+    await expect(page.locator(".fatal-error-shell")).toHaveCount(0);
+    expect(errors).toEqual([]);
+    expect(fixture.submissions()).toBe(0);
   } finally {
     await fixture.cleanup();
   }

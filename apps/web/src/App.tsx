@@ -37,6 +37,7 @@ import {
 import { AccountButton, useAuth } from "./auth-ui";
 import { type BoardNode, boardNodeTypes } from "./board-nodes";
 import { optionalLocalStorage, optionalSessionStorage } from "./browser-storage";
+import { canvasPlacement } from "./canvas-placement";
 import {
   boardEdges,
   boardNodes,
@@ -57,6 +58,7 @@ import { useEditorSelection } from "./use-editor-selection";
 import { useProjectDocument } from "./use-project-document";
 import { useShotGeneration } from "./use-shot-generation";
 import { VideoThumbnail } from "./video-preview";
+import { isLibraryWorkflow, workflowAvailability } from "./workflow-library";
 
 const Inspector = lazy(() =>
   import("./workspace-inspector").then((module) => ({ default: module.Inspector })),
@@ -168,9 +170,6 @@ export function App() {
   const [renameTitle, setRenameTitle] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 1120);
   const [focusMode, setFocusMode] = useState(false);
-  const [comfortableDensity, setComfortableDensity] = useState(
-    () => optionalLocalStorage.getItem("takeboard.density") !== "compact",
-  );
   const [shotQuery, setShotQuery] = useState("");
   const [shotFilter, setShotFilter] = useState<"all" | "todo" | "approved">("all");
   const assetInput = useRef<HTMLInputElement>(null);
@@ -402,13 +401,6 @@ export function App() {
     const timeout = window.setTimeout(() => setNotice(null), 2600);
     return () => window.clearTimeout(timeout);
   }, [notice]);
-
-  useEffect(() => {
-    optionalLocalStorage.setItem(
-      "takeboard.density",
-      comfortableDensity ? "comfortable" : "compact",
-    );
-  }, [comfortableDensity]);
 
   useEffect(() => {
     const effectiveWidth = () => {
@@ -1206,8 +1198,34 @@ export function App() {
     ],
   );
 
+  const visibleCanvasPosition = useCallback(
+    (width = 470, height = 300) => {
+      const bounds = document.querySelector(".canvas-wrap")?.getBoundingClientRect();
+      if (!bounds || !flowInstance) return { x: 180, y: 180 };
+      const topLeft = flowInstance.screenToFlowPosition({
+        x: bounds.left + 24,
+        y: bounds.top + 72,
+      });
+      const bottomRight = flowInstance.screenToFlowPosition({
+        x: bounds.right - 24,
+        y: bounds.bottom - 24,
+      });
+      return canvasPlacement(
+        { ...topLeft, width: bottomRight.x - topLeft.x, height: bottomRight.y - topLeft.y },
+        flowInstance.getNodes().map((node) => ({
+          ...node.position,
+          width: node.measured?.width ?? 330,
+          height: node.measured?.height ?? 240,
+        })),
+        width,
+        height,
+      );
+    },
+    [flowInstance],
+  );
+
   const addAssetToCanvasFromLibrary = useCallback(
-    async (assetId: string) => {
+    async (assetId: string, position?: { x: number; y: number }) => {
       if (!projectKey || projectMode !== "project" || !snapshot || !canEditProject) {
         return { ok: false, error: "请先打开一个本地项目" };
       }
@@ -1221,15 +1239,16 @@ export function App() {
       );
       if (existing) {
         selection.item(existing.id);
+        void flowInstance?.fitView({
+          nodes: [{ id: existing.id }],
+          maxZoom: 1,
+          padding: 0.3,
+          duration: 180,
+        });
         setAssetLibraryOpen(false);
         setNotice("素材已经在画布中，已为你定位");
         return { ok: true };
       }
-      const target = selectedShot
-        ? snapshot.canvasItems.find(
-            (item) => item.refType === "shot" && item.refId === selectedShot.id,
-          )
-        : null;
       const sceneId = selectedShot?.sceneId ?? activeScene?.id ?? snapshot.scenes[0]?.id;
       if (!sceneId) return { ok: false, error: "当前项目还没有可用画布" };
       setBusy(true);
@@ -1239,8 +1258,7 @@ export function App() {
           refType: "asset",
           refId: assetId,
           sceneId,
-          x: target ? target.x - 320 : 120,
-          y: target ? target.y + target.height + 56 : 160,
+          ...(position ?? visibleCanvasPosition(300, 300)),
         });
         acceptPayload(payload);
         selection.item(payload.itemId);
@@ -1264,6 +1282,8 @@ export function App() {
       selectedShot,
       snapshot,
       selection.item,
+      flowInstance,
+      visibleCanvasPosition,
     ],
   );
 
@@ -1546,18 +1566,21 @@ export function App() {
       setBusy(true);
       setError(null);
       try {
-        const payload = await projectApi.createShot(projectKey, position);
+        const payload = await projectApi.createShot(
+          projectKey,
+          position ?? visibleCanvasPosition(),
+        );
         setBlankCanvasGuideOpen(false);
         acceptPayload(payload);
         selection.item(payload.itemId);
-        setNotice("已添加一个空白镜头；在右侧设置镜头内容与工作流");
+        setNotice("已添加镜头");
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "镜头创建失败");
       } finally {
         setBusy(false);
       }
     },
-    [acceptPayload, canEditProject, projectKey, projectMode, selection.item],
+    [acceptPayload, canEditProject, projectKey, projectMode, selection.item, visibleCanvasPosition],
   );
 
   const createTextNode = useCallback(
@@ -1609,7 +1632,10 @@ export function App() {
       setBusy(true);
       setError(null);
       try {
-        const payload = await projectApi.uploadAsset(projectKey, file, metadata);
+        const payload = await projectApi.uploadAsset(projectKey, file, {
+          ...visibleCanvasPosition(300, 300),
+          ...metadata,
+        });
         acceptPayload(payload);
         setNotice(
           metadata?.kind
@@ -1626,7 +1652,7 @@ export function App() {
         setBusy(false);
       }
     },
-    [acceptPayload, canEditProject, projectKey],
+    [acceptPayload, canEditProject, projectKey, visibleCanvasPosition],
   );
 
   const runAction = useCallback(
@@ -1650,7 +1676,9 @@ export function App() {
 
   useEffect(() => {
     if (!snapshot) return;
-    const availableWorkflows = [...workflows];
+    const availableWorkflows = workflows.filter(
+      (workflow) => isLibraryWorkflow(workflow) && workflowAvailability(workflow).ready,
+    );
     if (
       selectedWorkflow &&
       !availableWorkflows.some((workflow) => workflow.path === selectedWorkflow.path)
@@ -1688,6 +1716,7 @@ export function App() {
               if (focusMode) setNotice("退出专注后可查看详细设置");
               else selection.inspect(true);
             },
+            onOpenWorkflows: () => setRecipeOpen(true),
             onCommitTitle: (title) =>
               void updateSelectedShot({
                 title,
@@ -1698,7 +1727,52 @@ export function App() {
           }
         : null,
     );
-    setNodes((previous) => retainNodeMeasurements(previous, projectedNodes));
+    const interactiveNodes = projectedNodes.map((node) => ({
+      ...node,
+      data: {
+        ...node.data,
+        ...(projectKey && projectMode === "project" && canEditProject
+          ? {
+              onResizeEnd: (geometry: { x: number; y: number; width: number; height: number }) => {
+                void projectApi
+                  .executeCommand(projectKey, {
+                    type: "canvas.resize_item",
+                    itemId: node.id,
+                    ...geometry,
+                  })
+                  .then(acceptPayload)
+                  .catch((cause: unknown) => {
+                    const current = readProjectDocument();
+                    if (current?.snapshot.project.id !== snapshot.project.id) return;
+                    setError(cause instanceof Error ? cause.message : "尺寸保存失败");
+                    const restored = boardNodes(
+                      current.snapshot,
+                      selectedCanvasItemId,
+                      projectKey,
+                      workflows,
+                      selectedWorkflow,
+                      selectedShot?.id ?? null,
+                      null,
+                    ).find((item) => item.id === node.id);
+                    if (restored)
+                      setNodes((previous) =>
+                        previous.map((item) =>
+                          item.id === node.id
+                            ? {
+                                ...restored,
+                                data: item.data,
+                                selected: item.selected ?? false,
+                              }
+                            : item,
+                        ),
+                      );
+                  });
+              },
+            }
+          : {}),
+      },
+    }));
+    setNodes((previous) => retainNodeMeasurements(previous, interactiveNodes));
   }, [
     activeRun,
     busy,
@@ -1724,6 +1798,8 @@ export function App() {
     bindWorkflow,
     inspectorVisible,
     focusMode,
+    acceptPayload,
+    readProjectDocument,
   ]);
 
   if (showHub) {
@@ -1760,7 +1836,7 @@ export function App() {
 
   return (
     <main
-      className={`app-shell ${sidebarOpen ? "sidebar-open" : "sidebar-collapsed"} ${inspectorVisible ? "inspector-open" : "inspector-collapsed"} ${comfortableDensity ? "density-comfortable" : "density-compact"}`}
+      className={`app-shell ${sidebarOpen ? "sidebar-open" : "sidebar-collapsed"} ${inspectorVisible ? "inspector-open" : "inspector-collapsed"} ${focusMode ? "is-focused" : ""}`}
     >
       <header className="topbar">
         <div className="brand">
@@ -1784,10 +1860,6 @@ export function App() {
           <span className="project-dot" />
           <div>
             <strong>{snapshot.project.title}</strong>
-            <span>
-              {snapshot.scenes[0]?.title || "工作画板"} ·{" "}
-              {projectMode === "demo" ? "功能示例" : "本地优先项目"}
-            </span>
           </div>
           {projectMode === "project" && canEditProject ? (
             <span className="project-heading-edit">✎</span>
@@ -1829,16 +1901,6 @@ export function App() {
             扩展
           </button>
           <SettingsButton />
-          <button
-            className="density-button"
-            type="button"
-            onClick={() => setComfortableDensity((current) => !current)}
-            title={comfortableDensity ? "切换为紧凑密度" : "切换为舒适密度"}
-            aria-label={comfortableDensity ? "切换为紧凑密度" : "切换为舒适密度"}
-          >
-            <span aria-hidden="true">{comfortableDensity ? "舒" : "紧"}</span>
-            {comfortableDensity ? "舒适" : "紧凑"}
-          </button>
           <AccountButton
             compact
             projectKey={projectMode === "project" ? (projectKey ?? undefined) : undefined}
@@ -2072,7 +2134,23 @@ export function App() {
         ) : null}
       </nav>
 
-      <section className="canvas-wrap" aria-label="TakeBoard 创作画布">
+      <section
+        className="canvas-wrap"
+        aria-label="TakeBoard 创作画布"
+        onDragOver={(event) => {
+          if (event.dataTransfer.types.includes("application/x-takeboard-asset"))
+            event.preventDefault();
+        }}
+        onDrop={(event) => {
+          const assetId = event.dataTransfer.getData("application/x-takeboard-asset");
+          if (!assetId || !snapshot.assets.some((asset) => asset.id === assetId)) return;
+          event.preventDefault();
+          void addAssetToCanvasFromLibrary(
+            assetId,
+            flowInstance?.screenToFlowPosition({ x: event.clientX, y: event.clientY }),
+          );
+        }}
+      >
         <div className="canvas-toolbar">
           <div>
             <button
@@ -2597,6 +2675,7 @@ export function App() {
                 `${selectedShot.label} 已采用，决策历史已保存`,
               );
             }}
+            onAddTakeToCanvas={(assetId) => void addAssetToCanvasFromLibrary(assetId)}
           />
         ) : null}
       </Suspense>

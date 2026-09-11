@@ -1,5 +1,12 @@
 import { z } from "zod";
 
+export const workflowLibrarySchema = z.object({
+  name: z.string().trim().min(1).max(100).optional(),
+  included: z.boolean().optional(),
+  favorite: z.boolean().optional(),
+});
+export type WorkflowLibraryEntry = z.infer<typeof workflowLibrarySchema>;
+
 export const workflowDiagnosticCheckSchema = z.object({
   id: z.string().min(1).max(160),
   category: z.enum(["document", "conversion", "nodes", "models", "binding", "output"]),

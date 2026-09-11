@@ -1,5 +1,5 @@
 import type { Run, Shot } from "@takeboard/contracts";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { demoApi, projectApi, type WorkflowSummary } from "./api";
 import { compileMiniMaxH3Mentions } from "./canvas-projection";
 import type { GenerationContext } from "./generation-context";
@@ -323,6 +323,7 @@ export function useGenerationSession(
           steps: numberParameter("steps", generationSettings.steps),
           denoise: numberParameter("denoise", generationSettings.denoise),
           referenceImageSize: run.parameters.referenceImageSize === "max" ? "max" : "match",
+          referenceVideoAudio: run.parameters.referenceVideoAudio !== false,
           executionPolicy: run.execution?.policy ?? generationSettings.executionPolicy,
         },
         {
@@ -481,9 +482,13 @@ export function useGenerationSession(
       setError,
     ],
   );
-  const batchProgress = selectedShot
-    ? batchGenerationProgress(snapshot?.runs ?? [], selectedShot.id)
-    : null;
+  const selectedShotId = selectedShot?.id;
+  // The canvas projects this object into node state. A fresh object on every
+  // render would make that effect update node state again indefinitely.
+  const batchProgress = useMemo(
+    () => (selectedShotId ? batchGenerationProgress(snapshot?.runs ?? [], selectedShotId) : null),
+    [snapshot?.runs, selectedShotId],
+  );
   const operationShot = generationCancelling ? cancellationShot.current : submissionShot.current;
   return {
     canCancelGeneration:

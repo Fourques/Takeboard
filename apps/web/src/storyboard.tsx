@@ -10,6 +10,7 @@ import type {
 } from "@takeboard/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { extensionApi, projectApi } from "./api";
+import { VideoThumbnail } from "./video-preview";
 
 const roughCutCss = `.rough-cut-player{display:grid;min-height:0;padding:clamp(14px,2vw,26px);overflow:auto;border-top:1px solid var(--line);background:color-mix(in srgb,var(--surface-root) 55%,transparent);grid-template-rows:minmax(260px,1fr) auto auto auto;gap:12px}.rough-cut-stage{position:relative;display:grid;min-height:0;overflow:hidden;place-items:center;border:1px solid var(--line);border-radius:12px;background:radial-gradient(circle at 50% 35%,color-mix(in srgb,var(--accent) 8%,transparent),transparent 40%),#070a09}.rough-cut-stage>:is(img,video){display:block;width:100%;height:100%;min-height:0;object-fit:contain}.rough-cut-slate{display:grid;width:min(480px,82%);padding:34px;border:1px dashed color-mix(in srgb,var(--line) 78%,var(--accent));border-radius:10px;text-align:center;background:color-mix(in srgb,var(--surface-2) 55%,transparent);gap:8px}.rough-cut-slate span{color:var(--accent-strong);font-size:calc(10px * var(--ui-scale));font-weight:800;letter-spacing:.14em}.rough-cut-slate strong{font-size:clamp(22px,3vw,38px);font-weight:560}.rough-cut-slate p{margin:0;color:var(--text-2);font-size:calc(11px * var(--ui-scale));line-height:1.6}.rough-cut-overlay{position:absolute;right:14px;bottom:14px;left:14px;display:flex;align-items:flex-end;justify-content:space-between;pointer-events:none;text-shadow:0 1px 12px #000}.rough-cut-overlay>span{padding:5px 7px;border:1px solid rgb(255 255 255/18%);border-radius:5px;color:#fff;background:rgb(0 0 0/48%);font:calc(10px * var(--ui-scale)) ui-monospace,monospace}.rough-cut-overlay>div{display:grid;text-align:right;gap:2px}.rough-cut-overlay strong{color:#fff;font-size:calc(13px * var(--ui-scale))}.rough-cut-overlay small{color:rgb(255 255 255/70%);font-size:calc(10px * var(--ui-scale))}.rough-cut-transport{display:grid;align-items:center;grid-template-columns:1fr auto 1fr;gap:12px}.rough-cut-clock strong{font:calc(16px * var(--ui-scale)) ui-monospace,monospace}.rough-cut-clock span{margin-left:5px;color:var(--faint);font:calc(10px * var(--ui-scale)) ui-monospace,monospace}.rough-cut-controls{display:flex;align-items:center;gap:6px}.rough-cut-transport button{min-height:34px;padding:0 11px;border:1px solid var(--line);border-radius:8px;color:var(--text-2);background:var(--surface-2);cursor:pointer;font-size:calc(11px * var(--ui-scale))}.rough-cut-transport button:disabled{cursor:default;opacity:.35}.rough-cut-transport .rough-cut-play{min-width:104px;border-color:color-mix(in srgb,var(--accent) 52%,var(--line));color:var(--surface-root);background:var(--accent-strong);font-weight:720}.rough-cut-open-shot{justify-self:end}.rough-cut-timeline{display:flex;min-width:0;min-height:66px;margin:0;overflow-x:auto;padding:0 0 4px;border:0;gap:4px}.rough-cut-timeline>button{position:relative;display:grid;min-width:72px;max-width:260px;padding:9px 10px 11px;overflow:hidden;border:1px solid var(--line);border-radius:7px;color:var(--text-2);text-align:left;background:var(--surface-2);cursor:pointer;gap:3px}.rough-cut-timeline>button.open{border-style:dashed;background:color-mix(in srgb,var(--surface-2) 45%,transparent)}.rough-cut-timeline>button.selected{border-color:var(--accent);color:var(--text-1)}.rough-cut-timeline span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:calc(11px * var(--ui-scale));font-weight:650}.rough-cut-timeline small{color:var(--faint);font-size:calc(9px * var(--ui-scale))}.rough-cut-timeline i{position:absolute;bottom:0;left:0;height:2px;background:var(--accent-strong)}.rough-cut-empty{display:grid;width:100%;place-items:center;border:1px dashed var(--line);border-radius:8px;color:var(--text-2);font-size:calc(11px * var(--ui-scale))}.rough-cut-note{display:flex;justify-content:space-between;color:var(--faint);font-size:calc(10px * var(--ui-scale));gap:12px}@media(max-width:680px){.rough-cut-player{grid-template-rows:minmax(220px,1fr) auto auto auto}.rough-cut-transport{grid-template-columns:auto 1fr}.rough-cut-controls{justify-self:end}.rough-cut-open-shot{display:none}.rough-cut-note{display:grid}}`;
 
@@ -476,7 +477,7 @@ function StoryboardMedia({
   const source = projectKey && asset ? projectApi.assetUrl(projectKey, asset.id, compact) : null;
   if (source && asset?.mediaType === "video") {
     return compact ? (
-      <video src={source} muted playsInline preload="metadata" aria-label={`${title} 视频缩略图`} />
+      <VideoThumbnail src={source} label={`${title} 视频缩略图`} />
     ) : (
       // biome-ignore lint/a11y/useMediaCaption: generated clips do not have an authored caption track; native controls and the written shot intent remain available.
       <video
@@ -583,6 +584,23 @@ export function Storyboard({
   const selectedShot = snapshot.shots.find((shot) => shot.id === selectedShotId) ?? firstShot;
   const draggedShot = snapshot.shots.find((shot) => shot.id === draggedShotId) ?? null;
   const selectedPreview = selectedShot ? previewForShot(snapshot, selectedShot) : null;
+  const selectedCanvasItem = snapshot.canvasItems.find(
+    (item) => item.refType === "shot" && item.refId === selectedShot?.id,
+  );
+  const inputConnections = snapshot.canvasEdges
+    .filter((edge) => edge.targetItemId === selectedCanvasItem?.id)
+    .map((edge) => {
+      const source = snapshot.canvasItems.find((item) => item.id === edge.sourceItemId);
+      const label =
+        source?.refType === "asset"
+          ? snapshot.assets.find((asset) => asset.id === source.refId)?.originalName
+          : source?.refType === "entity"
+            ? snapshot.entities.find((entity) => entity.id === source.refId)?.name
+            : source?.refType === "text"
+              ? snapshot.textItems.find((text) => text.id === source.refId)?.title
+              : snapshot.shots.find((shot) => shot.id === source?.refId)?.label;
+      return { id: edge.id, label: label ?? "素材", slot: edge.targetSlot };
+    });
   const approvedShots = snapshot.shots.filter((shot) => shot.status === "approved");
   const reviewShots = snapshot.shots.filter((shot) => shot.status === "review");
   const generatingShots = snapshot.shots.filter((shot) => shot.status === "generating");
@@ -1091,7 +1109,7 @@ export function Storyboard({
                       {statusLabel(selectedShot.status)} · {selectedShot.aspectRatio}
                     </span>
                     <h3>{selectedShot.label}</h3>
-                    <p>{selectedShot.intent || "这个镜头还没有补充说明。"}</p>
+                    {selectedShot.intent ? <p>{selectedShot.intent}</p> : null}
                     <dl>
                       <div>
                         <dt>时长</dt>
@@ -1102,6 +1120,26 @@ export function Storyboard({
                         <dd>{selectedPreview.takeCount}</dd>
                       </div>
                     </dl>
+                    {inputConnections.length ? (
+                      <dl aria-label="镜头输入连接">
+                        {inputConnections.map((connection) => (
+                          <div key={connection.id}>
+                            <dt>
+                              {connection.slot === "first_frame"
+                                ? "首帧"
+                                : connection.slot === "last_frame"
+                                  ? "尾帧"
+                                  : connection.slot === "reference_video"
+                                    ? "参考视频"
+                                    : connection.slot === "reference_audio"
+                                      ? "参考音频"
+                                      : "参考"}
+                            </dt>
+                            <dd>{connection.label}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    ) : null}
                     <button type="button" onClick={() => onOpenShot(selectedShot.id)}>
                       回到画布查看
                     </button>

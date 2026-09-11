@@ -1092,12 +1092,31 @@ describe("real generation routes", () => {
       }),
     );
 
+    for (const [referenceImageAssetIds, expectedStatus] of [
+      [[assets[0].id, assets[0].id], 400],
+      [Array.from({ length: 10 }, (_, index) => `asset-${index}`), 409],
+      [[assets[1].id], 409],
+    ] as const) {
+      const invalid = await app.inject({
+        method: "POST",
+        url: `/api/projects/${key}/shots/${shotId}/generate`,
+        payload: {
+          recipePath: "Kino/Kino_MinimaxH3_R2V.json",
+          prompt: "test",
+          referenceImageAssetIds,
+        },
+      });
+      expect(invalid.statusCode, invalid.body).toBe(expectedStatus);
+      expect(submittedPrompt).toBeNull();
+      expect(uploadIndex).toBe(0);
+    }
     const response = await app.inject({
       method: "POST",
       url: `/api/projects/${key}/shots/${shotId}/generate`,
       payload: {
         recipePath: "Kino/Kino_MinimaxH3_R2V.json",
         prompt: "Use <Picture 1>, <Video 1>, and <Audio 2>.",
+        referenceVideoAudio: true,
         promptSource: "使用 @subject、@motion 和 @voice。",
         referenceImageAssetIds: [assets[0].id],
         referenceVideoAssetIds: [assets[1].id],

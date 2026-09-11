@@ -7,6 +7,7 @@ import { savedScale } from "./display-preferences";
 import { SettingsHost } from "./settings-center";
 import { readThemePreference, rememberTheme } from "./theme-preferences";
 import "./styles.css";
+import "./workspace-refinements.css";
 
 rememberTheme(readThemePreference());
 const displayScale = savedScale();

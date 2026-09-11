@@ -1,9 +1,17 @@
-import { Handle, type Node, type NodeProps, Position, useUpdateNodeInternals } from "@xyflow/react";
+import {
+  Handle,
+  type Node,
+  type NodeProps,
+  NodeResizer,
+  Position,
+  useUpdateNodeInternals,
+} from "@xyflow/react";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { NumericInput } from "./numeric-input";
 import { CanvasVideo } from "./video-preview";
 
 export type BoardNodeData = {
+  onResizeEnd?: (geometry: { x: number; y: number; width: number; height: number }) => void;
   kind: "text" | "entity" | "asset" | "shot" | "take_stack";
   eyebrow: string;
   title: string;
@@ -43,6 +51,7 @@ export type BoardNodeData = {
     durationSeconds: number;
     seed: number;
     outputLabel: "图片" | "视频";
+    minDurationSeconds: number;
     mentionAliases: string[];
     busy: boolean;
     progress: {
@@ -69,6 +78,7 @@ export type BoardNodeData = {
       seed: number;
     }) => void;
     onOpenDetails: () => void;
+    onOpenWorkflows: () => void;
     onCommitTitle: (title: string) => void;
   };
 };
@@ -136,7 +146,6 @@ function TextNode({ data }: NodeProps<BoardNode>) {
         <h3>{data.title}</h3>
         <p>{data.body}</p>
         <footer>剧本资产 · 可作为生成来源</footer>
-        {data.selected ? <span className="node-action-hint">双击详情 · 右键编辑</span> : null}
       </article>
     </NodeShell>
   );
@@ -161,7 +170,6 @@ function EntityNode({ data }: NodeProps<BoardNode>) {
         <h3>{data.title}</h3>
         <p>{data.body}</p>
         <NodeFacts details={data.details} />
-        {data.selected ? <span className="node-action-hint">双击详情 · 右键编辑</span> : null}
       </article>
     </NodeShell>
   );
@@ -317,8 +325,7 @@ function ShotNode({ data, id }: NodeProps<BoardNode>) {
     settingsDraft.seed < 0 ||
     (data.inlineControls?.outputLabel === "视频" &&
       (!Number.isFinite(settingsDraft.durationSeconds) ||
-        settingsDraft.durationSeconds <
-          (currentWorkflow?.name.toLowerCase().includes("minimax") ? 4 : 1) ||
+        settingsDraft.durationSeconds < (data.inlineControls?.minDurationSeconds ?? 1) ||
         settingsDraft.durationSeconds > 15));
   const draftDisabledReason = !settingsDraft.prompt.trim()
     ? "请先输入镜头提示词"
@@ -496,12 +503,22 @@ function ShotNode({ data, id }: NodeProps<BoardNode>) {
                 </option>
               ))}
             </select>
+            <button
+              type="button"
+              aria-label="选择或管理工作流"
+              onClick={() => {
+                data.inlineControls?.onSettingsChange(settingsDraftRef.current);
+                data.inlineControls?.onOpenWorkflows();
+              }}
+            >
+              选择工作流
+            </button>
           </div>
           <textarea
             aria-label="画布提示词"
             value={settingsDraft.prompt}
             placeholder={
-              currentWorkflow?.name.toLowerCase().includes("minimax")
+              data.inlineControls.minDurationSeconds === 4
                 ? "按时间线描述画面、对白、环境声和配乐"
                 : "描述一个主要动作、运镜与光线；@ 引用素材"
             }
@@ -516,7 +533,7 @@ function ShotNode({ data, id }: NodeProps<BoardNode>) {
                   onClick={() => {
                     const prompt = settingsDraftRef.current.prompt;
                     updateSettingsDraft({
-                      prompt: `${prompt}${prompt && !/\s$/.test(prompt) ? " " : ""}@${alias}`,
+                      prompt: `${prompt}${prompt && !/\s$/.test(prompt) ? " " : ""}@${alias} `,
                     });
                   }}
                 >
@@ -563,7 +580,7 @@ function ShotNode({ data, id }: NodeProps<BoardNode>) {
                   id={`${quickSettingsId}-duration`}
                   draftKey={`${id}:${data.inlineControls.workflowPath}:duration`}
                   aria-label="画布时长"
-                  min={currentWorkflow?.name.toLowerCase().includes("minimax") ? 4 : 1}
+                  min={data.inlineControls.minDurationSeconds}
                   max={15}
                   step={0.5}
                   value={settingsDraft.durationSeconds}
@@ -662,16 +679,36 @@ function TakeStackNode({ data }: NodeProps<BoardNode>) {
           <span>{data.rejectedCount ?? 0} 已淘汰</span>
           <span>{data.status === "approved" ? "1 已批准" : "等待选择"}</span>
         </footer>
-        {data.selected ? <span className="node-action-hint">右键复制或移除</span> : null}
       </article>
     </NodeShell>
   );
 }
 
+function resizable(Component: typeof TextNode) {
+  return function ResizableNode(props: NodeProps<BoardNode>) {
+    const { data } = props;
+    const fixedRatio = Boolean(data.mediaUrl && data.mediaType !== "audio");
+    return (
+      <>
+        <NodeResizer
+          isVisible={Boolean(data.selected && data.onResizeEnd)}
+          minWidth={props.type === "shot" ? 360 : 180}
+          minHeight={120}
+          maxWidth={4000}
+          maxHeight={4000}
+          keepAspectRatio={fixedRatio}
+          onResizeEnd={(_, geometry) => data.onResizeEnd?.(geometry)}
+        />
+        <Component {...props} />
+      </>
+    );
+  };
+}
+
 export const boardNodeTypes = {
-  text: TextNode,
-  entity: EntityNode,
-  asset: AssetNode,
-  shot: ShotNode,
-  take_stack: TakeStackNode,
+  text: resizable(TextNode),
+  entity: resizable(EntityNode),
+  asset: resizable(AssetNode),
+  shot: resizable(ShotNode),
+  take_stack: resizable(TakeStackNode),
 };

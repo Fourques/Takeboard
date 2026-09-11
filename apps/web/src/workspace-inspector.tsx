@@ -419,6 +419,7 @@ type InspectorProps = {
   cancelling: boolean;
   onReject: (takeId: string, reason: string) => void;
   onApprove: (takeId: string) => void;
+  onAddTakeToCanvas: (assetId: string) => void;
   assets: Asset[];
   projectKey: string | null;
   isDemo: boolean;
@@ -461,6 +462,7 @@ export function Inspector({
   cancelling,
   onReject,
   onApprove,
+  onAddTakeToCanvas,
   assets,
   projectKey,
   isDemo,
@@ -742,9 +744,7 @@ export function Inspector({
                           <span>图</span>
                         )}
                         <strong>@{mention.alias}</strong>
-                        <small>
-                          {mention.role} · {mention.canonicalToken}
-                        </small>
+                        <small>{mention.role}</small>
                       </button>
                     ))}
                   </div>
@@ -758,12 +758,30 @@ export function Inspector({
                         onClick={() => setMentionOpen(true)}
                       >
                         @{mention.alias}
-                        <small>{mention.canonicalToken}</small>
+                        <small>{mention.role}</small>
                       </button>
                     ))}
                   </div>
                 ) : null}
               </label>
+              {mentions.length ? (
+                <details className="h3-prompt-guide">
+                  <summary>本次输入 · {mentions.length} 个素材</summary>
+                  {mentions.map((mention) => (
+                    <p key={`${mention.assetId}-${mention.alias}`}>
+                      {mention.alias} · {mention.role}
+                      {profile.family === "minimax_h3" ? (
+                        <small> {mention.canonicalToken}</small>
+                      ) : null}
+                    </p>
+                  ))}
+                  {workflow?.capability === "reference_video" &&
+                  profile.family === "minimax_h3" &&
+                  inputCounts.reference_video > 0 ? (
+                    <p>{settings.referenceVideoAudio ? "参考视频画面与原声" : "仅参考视频画面"}</p>
+                  ) : null}
+                </details>
+              ) : null}
               {profile.family === "minimax_h3" ? (
                 <details className="h3-prompt-guide">
                   <summary>H3 音画提示词结构</summary>
@@ -823,15 +841,7 @@ export function Inspector({
                     );
                   })}
                 </div>
-              ) : (
-                <div className="text-only-workflow-note">
-                  <span>文</span>
-                  <div>
-                    <strong>无需图片输入</strong>
-                    <p>这个模型从文字开始，画布节点不会显示多余的图片端口。</p>
-                  </div>
-                </div>
-              )}
+              ) : null}
               <details className="advanced-generation-settings">
                 <summary>
                   生成参数 <span>分辨率、Seed 与采样</span>
@@ -919,23 +929,24 @@ export function Inspector({
                     <span>Steps</span>
                     <NumericInput
                       id="generation-steps"
-                      min={workflow.name.toLowerCase().includes("wan") ? 8 : 1}
-                      max={workflow.name.toLowerCase().includes("wan") ? 40 : 100}
+                      min={profile.family === "wan22" ? 8 : 1}
+                      max={profile.family === "wan22" ? 40 : 100}
                       step={1}
                       value={settings.steps}
                       onValueChange={(steps) => onSettingsChange({ ...settings, steps })}
                     />
-                    <small>
-                      {workflow.name.toLowerCase().includes("qwen")
-                        ? settings.steps <= 4
-                          ? "Lightning 快速预览"
-                          : "标准采样配置"
-                        : workflow.name.toLowerCase().includes("minimax")
-                          ? "由当前 JSON 暴露"
-                          : workflow.name.toLowerCase().includes("wan")
-                            ? "20 步为官方高质量基线；8–40 步可调"
-                            : "当前工作流参数"}
-                    </small>
+                  </label>
+                ) : null}
+                {profile.family === "minimax_h3" && workflow?.capability === "reference_video" ? (
+                  <label className="seed-field">
+                    <input
+                      type="checkbox"
+                      checked={settings.referenceVideoAudio}
+                      onChange={(event) =>
+                        onSettingsChange({ ...settings, referenceVideoAudio: event.target.checked })
+                      }
+                    />
+                    <span>同时参考视频原声</span>
                   </label>
                 ) : null}
                 {profile.family === "minimax_h3" && workflow?.capability === "reference_video" ? (
@@ -1155,6 +1166,11 @@ export function Inspector({
                 className={`candidate-card ${selectedTakeId === take.id ? "selected" : ""} status-${take.status}`}
                 key={take.id}
                 type="button"
+                draggable={!readOnly && !isDemo && take.status !== "media_missing"}
+                onDragStart={(event) => {
+                  event.dataTransfer.setData("application/x-takeboard-asset", take.assetId);
+                  event.dataTransfer.effectAllowed = "copy";
+                }}
                 onClick={() => setSelectedTakeId(take.id)}
                 aria-label={`选择候选 ${index + 1}`}
               >
@@ -1204,7 +1220,6 @@ export function Inspector({
                       aria-label="不采用的备注"
                       value={reason}
                       onChange={(event) => setReason(event.target.value)}
-                      disabled={selectedTake.status === "approved"}
                     >
                       <option value="">不填写原因</option>
                       {rejectionReasons.map((item) => (
@@ -1219,7 +1234,7 @@ export function Inspector({
                 <button
                   className="reject-button"
                   type="button"
-                  disabled={readOnly || busy || selectedTake.status === "approved"}
+                  disabled={readOnly || busy || selectedTake.status === "media_missing"}
                   onClick={() => {
                     if (!rejecting) setRejecting(true);
                     else {
@@ -1239,12 +1254,33 @@ export function Inspector({
                   {selectedTake.status === "approved" ? "已采用" : "采用此结果"}
                 </button>
               </div>
+              {!isDemo ? (
+                <button
+                  type="button"
+                  className="take-to-canvas"
+                  disabled={readOnly || busy || selectedTake.status === "media_missing"}
+                  onClick={() => onAddTakeToCanvas(selectedTake.assetId)}
+                >
+                  加入画布
+                </button>
+              ) : null}
             </>
           ) : null}
           {selectedTakeRun ? (
             <details className="inspector-section">
               <summary>生成记录</summary>
               <div className="context-facts context-facts-wide">
+                <span>
+                  <small>工作流</small>
+                  {String(selectedTakeRun.parameters.recipePath ?? selectedTakeRun.recipeId)}
+                </span>
+                <span>
+                  <small>模型文件</small>
+                  {Array.isArray(selectedTakeRun.parameters.models) &&
+                  selectedTakeRun.parameters.models.length
+                    ? selectedTakeRun.parameters.models.join(" · ")
+                    : "未记录"}
+                </span>
                 <span>
                   <small>工作流版本</small>
                   {selectedTakeRun.recipeVersion}
@@ -1253,7 +1289,56 @@ export function Inspector({
                   <small>种子</small>
                   {String(selectedTakeRun.parameters.seed ?? "未记录")}
                 </span>
+                <span>
+                  <small>尺寸</small>
+                  {String(selectedTakeRun.parameters.width ?? "—")} ×{" "}
+                  {String(selectedTakeRun.parameters.height ?? "—")}
+                </span>
+                <span>
+                  <small>时长 / 帧率</small>
+                  {String(selectedTakeRun.parameters.durationSeconds ?? "—")} s ·{" "}
+                  {String(selectedTakeRun.parameters.fps ?? "—")} fps
+                </span>
+                <span>
+                  <small>步数</small>
+                  {String(selectedTakeRun.parameters.steps ?? "—")}
+                </span>
+                <span>
+                  <small>生成时间</small>
+                  {new Date(selectedTakeRun.createdAt).toLocaleString()}
+                </span>
               </div>
+              <div className="run-prompt">
+                <small>提示词</small>
+                <pre>{String(selectedTakeRun.parameters.prompt ?? "未记录")}</pre>
+              </div>
+              {selectedTakeRun.parameters.negativePrompt ||
+              selectedTakeRun.parameters.negative_prompt ? (
+                <div className="run-prompt">
+                  <small>负向提示词</small>
+                  <pre>
+                    {String(
+                      selectedTakeRun.parameters.negativePrompt ??
+                        selectedTakeRun.parameters.negative_prompt,
+                    )}
+                  </pre>
+                </div>
+              ) : null}
+              <details className="run-raw">
+                <summary>完整参数与输入</summary>
+                <pre>
+                  {JSON.stringify(
+                    {
+                      parameters: selectedTakeRun.parameters,
+                      inputs: selectedTakeRun.inputs,
+                      workflowSha256: selectedTakeRun.workflowSha256,
+                      promptId: selectedTakeRun.promptId,
+                    },
+                    null,
+                    2,
+                  )}
+                </pre>
+              </details>
               {selectedTakeRun.execution ? (
                 <Suspense fallback={null}>
                   <ExecutionProvenance run={selectedTakeRun} />
