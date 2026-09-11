@@ -45,6 +45,7 @@ import {
   edgeIdentityFromPointer,
   gentlyAlignedPosition,
   resolveSnapshotEdge,
+  retainNodeMeasurements,
 } from "./canvas-projection";
 import { CommandConfirmation } from "./command-confirmation";
 import { DeviceIndicator } from "./device-indicator";
@@ -1656,49 +1657,48 @@ export function App() {
     ) {
       availableWorkflows.push(selectedWorkflow);
     }
-    setNodes(
-      boardNodes(
-        snapshot,
-        selectedCanvasItemId,
-        projectMode === "project" ? projectKey : null,
-        workflows,
-        selectedWorkflow,
-        selectedShotId,
-        selectedShot && canEditProject && !inspectorVisible
-          ? {
-              settings: generationSettings,
-              workflows: availableWorkflows,
-              workflowLocked,
-              mentionAliases: promptMentions.map((mention) => mention.alias),
-              busy: busy || generationBusy || Boolean(activeRun),
-              progress: generationProgress,
-              disabledReason:
-                projectMode === "project" && selectedWorkflow?.execution === "comfy_only"
-                  ? "这个工作流需要在 ComfyUI 中运行"
-                  : generationDisabledReason,
-              onWorkflowChange: (path) => {
-                const workflow = findWorkflow(path, availableWorkflows);
-                if (workflow) void bindWorkflow(workflow);
-              },
-              onSettingsChange: (input) => editSettings((current) => ({ ...current, ...input })),
-              onGenerate: (input) => {
-                void requestShotGeneration(selectedShot, input);
-              },
-              onOpenDetails: () => {
-                if (focusMode) setNotice("退出专注后可查看详细设置");
-                else selection.inspect(true);
-              },
-              onCommitTitle: (title) =>
-                void updateSelectedShot({
-                  title,
-                  body: selectedShot.intent,
-                  durationSeconds: selectedShot.durationSeconds,
-                  aspectRatio: selectedShot.aspectRatio,
-                }),
-            }
-          : null,
-      ),
+    const projectedNodes = boardNodes(
+      snapshot,
+      selectedCanvasItemId,
+      projectMode === "project" ? projectKey : null,
+      workflows,
+      selectedWorkflow,
+      selectedShotId,
+      selectedShot && canEditProject && !inspectorVisible
+        ? {
+            settings: generationSettings,
+            workflows: availableWorkflows,
+            workflowLocked,
+            mentionAliases: promptMentions.map((mention) => mention.alias),
+            busy: busy || generationBusy || Boolean(activeRun),
+            progress: generationProgress,
+            disabledReason:
+              projectMode === "project" && selectedWorkflow?.execution === "comfy_only"
+                ? "这个工作流需要在 ComfyUI 中运行"
+                : generationDisabledReason,
+            onWorkflowChange: (path) => {
+              const workflow = findWorkflow(path, availableWorkflows);
+              if (workflow) void bindWorkflow(workflow);
+            },
+            onSettingsChange: (input) => editSettings((current) => ({ ...current, ...input })),
+            onGenerate: (input) => {
+              void requestShotGeneration(selectedShot, input);
+            },
+            onOpenDetails: () => {
+              if (focusMode) setNotice("退出专注后可查看详细设置");
+              else selection.inspect(true);
+            },
+            onCommitTitle: (title) =>
+              void updateSelectedShot({
+                title,
+                body: selectedShot.intent,
+                durationSeconds: selectedShot.durationSeconds,
+                aspectRatio: selectedShot.aspectRatio,
+              }),
+          }
+        : null,
     );
+    setNodes((previous) => retainNodeMeasurements(previous, projectedNodes));
   }, [
     activeRun,
     busy,

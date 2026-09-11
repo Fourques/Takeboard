@@ -18,6 +18,16 @@ export type CanvasEdgeIdentity = Pick<
   "sourceItemId" | "targetItemId" | "targetSlot"
 >;
 
+/** Keep renderer measurements across document/control updates. ResizeObserver will
+ * refresh changed content sizes; discarding them hides the node and steals input focus. */
+export function retainNodeMeasurements(previous: BoardNode[], next: BoardNode[]): BoardNode[] {
+  const byId = new Map(previous.map((node) => [node.id, node]));
+  return next.map((node) => {
+    const old = byId.get(node.id);
+    return old?.type === node.type && old?.measured ? { ...node, measured: old.measured } : node;
+  });
+}
+
 export function boardNodes(
   snapshot: ProjectSnapshot,
   selectedCanvasItemId: string | null,

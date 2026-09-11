@@ -1,4 +1,4 @@
-import { Handle, type Node, type NodeProps, Position } from "@xyflow/react";
+import { Handle, type Node, type NodeProps, Position, useUpdateNodeInternals } from "@xyflow/react";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { NumericInput } from "./numeric-input";
 import { CanvasVideo } from "./video-preview";
@@ -207,6 +207,14 @@ function AssetNode({ data }: NodeProps<BoardNode>) {
 }
 
 function ShotNode({ data, id }: NodeProps<BoardNode>) {
+  const updateNodeInternals = useUpdateNodeInternals();
+  const inputSlotSignature = (data.inputSlots ?? []).map((slot) => slot.id).join(":");
+  useEffect(() => {
+    // A workflow may replace handles without changing the card's dimensions.
+    // Refresh their geometry explicitly instead of hiding/re-measuring the whole node.
+    void inputSlotSignature;
+    updateNodeInternals(id);
+  }, [id, inputSlotSignature, updateNodeInternals]);
   const [titleDraft, setTitleDraft] = useState(data.title);
   const [failedMediaUrl, setFailedMediaUrl] = useState<string | null>(null);
   const [loadedMediaUrl, setLoadedMediaUrl] = useState<string | null>(null);
