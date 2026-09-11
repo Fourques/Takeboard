@@ -1093,7 +1093,7 @@ describe("real generation routes", () => {
     );
 
     for (const [referenceImageAssetIds, expectedStatus] of [
-      [[assets[0].id, assets[0].id], 400],
+      [[assets[0].id, null], 400],
       [Array.from({ length: 10 }, (_, index) => `asset-${index}`), 409],
       [[assets[1].id], 409],
     ] as const) {
@@ -1118,7 +1118,7 @@ describe("real generation routes", () => {
         prompt: "Use <Picture 1>, <Video 1>, and <Audio 2>.",
         referenceVideoAudio: true,
         promptSource: "使用 @subject、@motion 和 @voice。",
-        referenceImageAssetIds: [assets[0].id],
+        referenceImageAssetIds: [assets[0].id, assets[0].id],
         referenceVideoAssetIds: [assets[1].id],
         referenceAudioAssetIds: [assets[2].id],
         referenceImageSize: "max",
@@ -1127,7 +1127,7 @@ describe("real generation routes", () => {
     });
 
     expect(response.statusCode, response.body).toBe(202);
-    expect(uploadIndex).toBe(3);
+    expect(uploadIndex).toBe(4);
     expect(submittedPrompt).toMatchObject({
       prompt: {
         model: {
@@ -1138,6 +1138,7 @@ describe("real generation routes", () => {
           inputs: {
             ref_image_size: "max",
             "ref_images.ref_image_0": ["reference_image_0", 0],
+            "ref_images.ref_image_1": ["reference_image_1", 0],
             "ref_videos.ref_video_0": ["reference_video_components_0", 0],
             "ref_video_audios.ref_video_audio_0": ["reference_video_components_0", 1],
             "ref_audios.ref_audio_0": ["reference_audio_0", 0],
@@ -1149,6 +1150,7 @@ describe("real generation routes", () => {
       recipeVersion: "minimax-h3-ref2va@2",
       inputs: [
         expect.objectContaining({ slot: "reference_image_0", refId: assets[0].id }),
+        expect.objectContaining({ slot: "reference_image_1", refId: assets[0].id }),
         expect.objectContaining({ slot: "reference_video_0", refId: assets[1].id }),
         expect.objectContaining({ slot: "reference_audio_0", refId: assets[2].id }),
       ],

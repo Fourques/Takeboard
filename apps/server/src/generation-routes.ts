@@ -889,12 +889,10 @@ export function registerGenerationRoutes(
           referenceLists.some(
             (value) =>
               value !== undefined &&
-              (!Array.isArray(value) ||
-                value.some((id) => typeof id !== "string" || !id) ||
-                new Set(value).size !== value.length),
+              (!Array.isArray(value) || value.some((id) => typeof id !== "string" || !id)),
           )
         ) {
-          return reply.code(400).send({ error: "参考素材列表无效或重复；未提交生成" });
+          return reply.code(400).send({ error: "参考素材列表无效；未提交生成" });
         }
         const referenceImageIds = (body.referenceImageAssetIds ?? []) as string[];
         const referenceVideoIds = (body.referenceVideoAssetIds ?? []) as string[];
