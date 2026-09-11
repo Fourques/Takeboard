@@ -4,12 +4,12 @@
 
 ## 下载 TakeBoard
 
-Mac M 系列现提供 **v0.2.0-beta.5 调试版**，主要改进首页与连接设置；其余平台保留 **beta.4**。选择自己的电脑，只需下载一个安装包。
+Mac M 系列现提供 **v0.2.0-beta.7 调试版**，主要修复画布视频、项目操作与设备设置；其余平台保留 **beta.4**。选择自己的电脑，只需下载一个安装包。
 不再提供便携包，不需要解压管理运行目录，也不需要安装 Node.js、pnpm 或 Rust。
 
 | 你的电脑 | 下载 |
 | --- | --- |
-| Mac · Apple 芯片 / Apple silicon | [DMG · beta.5](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.5/TakeBoard-v0.2.0-beta.5-macos-arm64.dmg) |
+| Mac · Apple 芯片 / Apple silicon | [DMG · beta.7](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.7/TakeBoard-v0.2.0-beta.7-macos-arm64.dmg) |
 | Mac · Intel | [DMG](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.4/TakeBoard-v0.2.0-beta.4-macos-x64.dmg) |
 | Windows · Intel / AMD | [EXE](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.4/TakeBoard-v0.2.0-beta.4-windows-x64.exe) |
 | Windows · ARM64 | [EXE](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.4/TakeBoard-v0.2.0-beta.4-windows-arm64.exe) |
@@ -18,7 +18,7 @@ Mac M 系列现提供 **v0.2.0-beta.5 调试版**，主要改进首页与连接�
 
 Mac 在“关于本机”查看芯片；Windows 在“设置 → 系统 → 系统信息”查看系统类型。
 DEB 面向 Debian/Ubuntu，并非所有 Linux 发行版通用；其他环境可参考[源码运行](source-guide.md)。
-也可查看 [Mac M 系列 beta.5](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.5) 和[其他平台 beta.4](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.4) 的发布页面。
+也可查看 [Mac M 系列 beta.7](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.7) 和[其他平台 beta.4](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.4) 的发布页面。
 底部 **Source code** 是开发者源码，不是安装包。
 
 ## 安装并打开
