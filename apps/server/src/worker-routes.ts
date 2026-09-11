@@ -321,12 +321,14 @@ export function registerWorkerRoutes(
   // HTTP response/abort hooks alone would release it while an upload still runs.
   app.addHook("onRoute", (route) => {
     const control =
-      route.method === "POST" &&
-      [
-        "/api/workers/comfy/start",
-        "/api/workers/comfy/stop",
-        "/api/generation/connection",
-      ].includes(route.url);
+      (route.url === "/api/generation/connection/:workerId" &&
+        (route.method === "PATCH" || route.method === "DELETE")) ||
+      (route.method === "POST" &&
+        [
+          "/api/workers/comfy/start",
+          "/api/workers/comfy/stop",
+          "/api/generation/connection",
+        ].includes(route.url));
     const generation =
       route.method === "POST" && route.url === "/api/projects/:key/shots/:shotId/generate";
     const workflow = route.url.startsWith("/api/workflows");
@@ -348,6 +350,7 @@ export function registerWorkerRoutes(
   const controlStatus = async () => {
     const canStop =
       workerPool.defaultWorkerId === workerPool.localWorkerId &&
+      workerPool.definition(workerPool.defaultWorkerId)?.enabled === true &&
       localEndpoint(comfyUrl) &&
       (await launcher.canStop?.().catch(() => false)) === true;
     return {
@@ -483,6 +486,15 @@ export function registerWorkerRoutes(
   );
 
   app.get("/api/workers/comfy", async () => {
+    const selectedDevice = workerPool.definition(workerPool.defaultWorkerId);
+    if (!selectedDevice?.enabled || selectedDevice.retiredAt) {
+      return {
+        status: "offline",
+        engine: "ComfyUI",
+        startup: blockedStartup(platform, launcher, [], "请选择或启用生成设备"),
+        control: { canStop: false, message: "未选择可用的生成设备" },
+      };
+    }
     if (workerPool.defaultWorkerId !== workerPool.localWorkerId) {
       const selected = workerPool.definition(workerPool.defaultWorkerId);
       const health = selected ? await workerPool.probe(selected) : null;
@@ -571,6 +583,8 @@ export function registerWorkerRoutes(
   });
 
   app.post<{ Body: { action?: string } }>("/api/workers/comfy/start", async (request, reply) => {
+    if (!workerPool.definition(workerPool.defaultWorkerId)?.enabled)
+      return reply.code(409).send({ error: "请先选择或启用生成设备" });
     if (workerPool.defaultWorkerId !== workerPool.localWorkerId)
       return await reply
         .code(409)

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   type GenerationConnection,
   type GenerationConnectionTarget,
@@ -8,7 +8,6 @@ import {
   workerApi,
 } from "./api";
 import { useAuth } from "./auth-ui";
-import { GenerationDevicePreferences } from "./generation-device-preferences";
 import { openSettings } from "./settings-navigation";
 import "./generation-connection-panel.css";
 
@@ -18,6 +17,19 @@ export function GenerationConnectionPanel({ manage = false }: { manage?: boolean
   const [fleet, setFleet] = useState<NonNullable<WorkerStatus["fleet"]> | null>(null);
   const [worker, setWorker] = useState<WorkerStatus | null>(null);
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<{ id: string; name: string } | null>(null);
+  const [enabled, setEnabled] = useState(true);
+  const [allow, setAllow] = useState(true);
+  const [confirmMedia, setConfirmMedia] = useState(false);
+  const editor = useRef<HTMLFormElement>(null);
+  const deleteConfirmation = useRef<HTMLFieldSetElement>(null);
+  useEffect(() => {
+    if (removing) deleteConfirmation.current?.scrollIntoView({ block: "nearest" });
+  }, [removing]);
+  useEffect(() => {
+    if (adding || editing) editor.current?.scrollIntoView({ block: "nearest" });
+  }, [adding, editing]);
   const [kind, setKind] = useState<"ssh" | "url">("ssh");
   const [address, setAddress] = useState("");
   const [name, setName] = useState("");
@@ -86,6 +98,41 @@ export function GenerationConnectionPanel({ manage = false }: { manage?: boolean
   };
   const connect = (target: GenerationConnectionTarget | { workerId: string }) =>
     operate(() => generationConnectionApi.connect(target), "已切换设备");
+  const edit = (id: string, target: GenerationConnectionTarget) => {
+    setEditing(id);
+    setAdding(true);
+    setRemoving(null);
+    setKind(target.kind);
+    setAddress(target.kind === "ssh" ? target.host : target.url);
+    setPort(String(target.kind === "ssh" ? target.port : 8188));
+    setName(target.name);
+    const definition = fleet?.workers.find((entry) => entry.worker.id === id)?.worker;
+    setEnabled(definition?.enabled ?? true);
+    setAllow(definition?.allowSensitiveInputs ?? false);
+    setConfirmMedia(false);
+    setError("");
+    setNotice("");
+  };
+  const deviceActions = (id: string, target: GenerationConnectionTarget) =>
+    manage && canManage ? (
+      <fieldset className="generation-device-actions" aria-label={`${target.name}的操作`}>
+        <button type="button" disabled={busy} onClick={() => edit(id, target)}>
+          编辑
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => {
+            setRemoving({ id, name: target.name });
+            setAdding(false);
+            setError("");
+            setNotice("");
+          }}
+        >
+          删除
+        </button>
+      </fieldset>
+    ) : null;
   const profiles = connection?.profiles ?? [];
   const savedIds = new Set(profiles.map((item) => item.workerId));
   const legacy =
@@ -104,68 +151,72 @@ export function GenerationConnectionPanel({ manage = false }: { manage?: boolean
           const online = status?.status === "ready";
           const disabled = status?.worker.enabled === false;
           return (
-            <button
-              type="button"
-              className="generation-device-row"
-              key={profile.workerId}
-              aria-pressed={current && online}
-              disabled={busy || !canManage || disabled || (current && online)}
-              onClick={() => void connect(profile.target)}
-            >
-              <i data-online={online} />
-              <span>
-                <strong>{profile.target.name}</strong>
-                <small>
-                  {profile.target.kind === "ssh" ? profile.target.host : profile.target.url}
-                </small>
-              </span>
-              <em>
-                {disabled
-                  ? "已停用"
-                  : online
-                    ? current
-                      ? "使用中"
-                      : "可连接"
-                    : status?.status === "offline" && current
-                      ? "离线"
-                      : "未连接"}
-              </em>
-            </button>
+            <div className="generation-device-item" key={profile.workerId}>
+              <button
+                type="button"
+                className="generation-device-row"
+                aria-pressed={current && online}
+                disabled={busy || !canManage || disabled || (current && online)}
+                onClick={() => void connect(profile.target)}
+              >
+                <i data-online={online} />
+                <span>
+                  <strong>{profile.target.name}</strong>
+                  <small>
+                    {profile.target.kind === "ssh" ? profile.target.host : profile.target.url}
+                  </small>
+                </span>
+                <em>
+                  {disabled
+                    ? "已停用"
+                    : online
+                      ? current
+                        ? "使用中"
+                        : "可连接"
+                      : status?.status === "offline" && current
+                        ? "离线"
+                        : "未连接"}
+                </em>
+              </button>
+              {deviceActions(profile.workerId, profile.target)}
+            </div>
           );
         })}
         {legacy.map((entry) => (
-          <button
-            type="button"
-            className="generation-device-row"
-            key={entry.worker.id}
-            disabled={
-              busy ||
-              !canManage ||
-              !entry.worker.enabled ||
-              entry.worker.id === connection?.workerId
-            }
-            aria-pressed={entry.worker.id === connection?.workerId && entry.status === "ready"}
-            onClick={() => void connect({ workerId: entry.worker.id })}
-          >
-            <i data-online={entry.status === "ready"} />
-            <span>
-              <strong>
-                {entry.worker.id === connection?.localWorkerId
-                  ? new URL(entry.worker.endpoint).host
-                  : entry.worker.name}
-              </strong>
-              <small>{entry.worker.endpoint}</small>
-            </span>
-            <em>
-              {!entry.worker.enabled
-                ? "已停用"
-                : entry.status === "ready"
-                  ? entry.worker.id === connection?.workerId
-                    ? "使用中"
-                    : "可连接"
-                  : "离线"}
-            </em>
-          </button>
+          <div className="generation-device-item" key={entry.worker.id}>
+            <button
+              type="button"
+              className="generation-device-row"
+              disabled={
+                busy ||
+                !canManage ||
+                !entry.worker.enabled ||
+                entry.worker.id === connection?.workerId
+              }
+              aria-pressed={entry.worker.id === connection?.workerId && entry.status === "ready"}
+              onClick={() => void connect({ workerId: entry.worker.id })}
+            >
+              <i data-online={entry.status === "ready"} />
+              <span>
+                <strong>{entry.worker.name}</strong>
+                <small>{entry.worker.endpoint}</small>
+              </span>
+              <em>
+                {!entry.worker.enabled
+                  ? "已停用"
+                  : entry.status === "ready"
+                    ? entry.worker.id === connection?.workerId
+                      ? "使用中"
+                      : "可连接"
+                    : "离线"}
+              </em>
+            </button>
+            {deviceActions(entry.worker.id, {
+              kind: "url",
+              url: entry.worker.endpoint,
+              name: entry.worker.name,
+            })}
+          </div>
         ))}
         {connection && profiles.length + legacy.length === 0 ? (
           <p className="generation-empty">尚未添加设备</p>
@@ -191,13 +242,59 @@ export function GenerationConnectionPanel({ manage = false }: { manage?: boolean
               刷新状态
             </button>
             {canManage ? (
-              <button type="button" disabled={busy} onClick={() => setAdding((value) => !value)}>
-                {adding ? "取消添加" : "添加设备"}
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setAdding(!adding);
+                  setEditing(null);
+                  setRemoving(null);
+                  setAddress("");
+                  setName("");
+                  setPort("8188");
+                  setKind("ssh");
+                  setError("");
+                  setConfirmMedia(false);
+                }}
+              >
+                {adding ? "取消编辑" : "添加设备"}
               </button>
             ) : null}
           </div>
+          {removing ? (
+            <fieldset
+              ref={deleteConfirmation}
+              className="generation-delete-confirm"
+              aria-label="确认删除设备"
+              disabled={busy}
+            >
+              <strong>删除“{removing.name}”？</strong>
+              <small>
+                仅删除连接配置，保留项目和生成历史，不会停止 ComfyUI。
+                {removing.id === connection?.workerId ? "删除后需重新选择生成设备。" : ""}
+              </small>
+              <div className="settings-actions">
+                <button type="button" onClick={() => setRemoving(null)}>
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    void operate(async () => {
+                      await generationConnectionApi.remove(removing.id);
+                      setRemoving(null);
+                    }, "设备已删除")
+                  }
+                >
+                  确认删除
+                </button>
+              </div>
+            </fieldset>
+          ) : null}
           {adding && canManage ? (
             <form
+              aria-label={editing ? "编辑设备" : "添加设备"}
+              ref={editor}
               onSubmit={(event) => {
                 event.preventDefault();
                 if (
@@ -207,10 +304,31 @@ export function GenerationConnectionPanel({ manage = false }: { manage?: boolean
                   setError("端口需要是 1–65535 的整数");
                   return;
                 }
-                void connect(
+                const target: GenerationConnectionTarget =
                   kind === "ssh"
                     ? { kind, host: address.trim(), port: Number(port), name }
-                    : { kind, url: address.trim(), name },
+                    : { kind, url: address.trim(), name };
+                const previous = fleet?.workers.find(
+                  (entry) => entry.worker.id === editing,
+                )?.worker;
+                if (editing && allow && previous?.allowSensitiveInputs === false && !confirmMedia) {
+                  setConfirmMedia(true);
+                  return;
+                }
+                void operate(
+                  async () => {
+                    if (editing)
+                      await generationConnectionApi.edit(editing, {
+                        ...target,
+                        enabled,
+                        allowSensitiveInputs: allow,
+                        confirmMedia,
+                      });
+                    else await generationConnectionApi.connect(target);
+                    setAdding(false);
+                    setEditing(null);
+                  },
+                  editing ? "设备设置已保存" : "设备已连接并保存",
                 );
               }}
             >
@@ -218,6 +336,7 @@ export function GenerationConnectionPanel({ manage = false }: { manage?: boolean
                 <label>
                   连接方式
                   <select
+                    disabled={editing === connection?.localWorkerId}
                     value={kind}
                     onChange={(event) => {
                       setKind(event.target.value as "ssh" | "url");
@@ -231,6 +350,7 @@ export function GenerationConnectionPanel({ manage = false }: { manage?: boolean
                 <label>
                   {kind === "ssh" ? "IP 或 SSH 名称" : "服务地址"}
                   <input
+                    readOnly={editing === connection?.localWorkerId}
                     required
                     value={address}
                     autoComplete="off"
@@ -258,16 +378,50 @@ export function GenerationConnectionPanel({ manage = false }: { manage?: boolean
                     />
                   </label>
                 ) : null}
+                {editing ? (
+                  <>
+                    <label className="generation-checkbox">
+                      <input
+                        type="checkbox"
+                        checked={enabled}
+                        onChange={(event) => setEnabled(event.target.checked)}
+                      />
+                      启用设备
+                    </label>
+                    <label className="generation-checkbox">
+                      <input
+                        type="checkbox"
+                        checked={allow}
+                        onChange={(event) => {
+                          setAllow(event.target.checked);
+                          setConfirmMedia(false);
+                        }}
+                      />
+                      允许向此设备发送素材
+                    </label>
+                  </>
+                ) : null}
+                {confirmMedia ? (
+                  <p role="status">请确认这是你信任的设备，允许它接收项目中的图片、视频和音频。</p>
+                ) : null}
                 <small>
                   {kind === "ssh"
                     ? "使用项目所在设备的 SSH 配置与可信主机记录，不依赖 VS Code。"
                     : "远程使用 HTTPS；HTTP 回环地址也可用于已有隧道。"}
                 </small>
-                <button type="submit">{busy ? "验证连接…" : "连接并保存"}</button>
+                <button type="submit">
+                  {busy
+                    ? "保存中…"
+                    : confirmMedia
+                      ? "确认授权并保存"
+                      : editing
+                        ? "保存设备设置"
+                        : "连接并保存"}
+                </button>
               </fieldset>
             </form>
           ) : null}
-          {worker && canManage ? (
+          {worker && canManage && connection?.address ? (
             <details className="generation-service-control">
               <summary>服务控制</summary>
               <p>{connection?.address || "尚未配置地址"}</p>
@@ -310,40 +464,6 @@ export function GenerationConnectionPanel({ manage = false }: { manage?: boolean
                   </button>
                 </fieldset>
               ) : null}
-            </details>
-          ) : null}
-          {canManage &&
-          fleet?.workers.some(
-            (entry) =>
-              entry.status === "ready" ||
-              entry.worker.id !== connection?.localWorkerId ||
-              !entry.worker.enabled,
-          ) ? (
-            <details className="generation-service-control">
-              <summary>调度偏好</summary>
-              {fleet.workers
-                .filter(
-                  (entry) =>
-                    entry.status === "ready" ||
-                    entry.worker.id !== connection?.localWorkerId ||
-                    !entry.worker.enabled,
-                )
-                .map((entry) => (
-                  <GenerationDevicePreferences
-                    key={`${entry.worker.id}:${entry.worker.updatedAt}`}
-                    worker={entry.worker}
-                    canRemove={
-                      !savedIds.has(entry.worker.id) &&
-                      entry.worker.id !== connection?.localWorkerId &&
-                      entry.worker.id !== connection?.workerId
-                    }
-                    onChanged={async () => {
-                      await refresh();
-                      setNotice("设备设置已保存");
-                      window.dispatchEvent(new Event("takeboard:generation-connection-changed"));
-                    }}
-                  />
-                ))}
             </details>
           ) : null}
         </>

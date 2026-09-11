@@ -271,6 +271,17 @@ describe("TakeBoard authentication and authorization", () => {
       headers: { cookie: member.cookie },
     });
     expect(deniedRecipeExport.statusCode).toBe(403);
+    for (const method of ["PATCH", "DELETE"] as const) {
+      const deniedConnectionEdit = await app.inject({
+        method,
+        url: "/api/generation/connection/worker_any",
+        headers: { cookie: member.cookie, "x-takeboard-csrf": member.csrf },
+        ...(method === "PATCH"
+          ? { payload: { kind: "url", name: "Changed", url: "https://example.test" } }
+          : {}),
+      });
+      expect(deniedConnectionEdit.statusCode).toBe(403);
+    }
     for (const url of [
       "/api/workflows/raw?path=TakeBoard%2Fprivate.json",
       "/api/workflows/archive-preview?path=TakeBoard%2Fprivate.json",

@@ -2,6 +2,86 @@ import { readFile } from "node:fs/promises";
 import type { ProjectCommand, ProjectSnapshot } from "@takeboard/contracts";
 import { expect, test } from "./fixtures";
 
+test("gentle arrangement uses rendered bounds, confirms changes and preserves the viewport", async ({
+  page,
+  request,
+}) => {
+  const title = `轻量对齐 ${Date.now()}`;
+  const created = await request.post("/api/projects", { data: { title } });
+  expect(created.ok()).toBeTruthy();
+  const { key } = await created.json();
+  const current = async () =>
+    (await (await request.get(`/api/projects/${key}`)).json()).snapshot as ProjectSnapshot;
+  try {
+    for (const offset of [0, 12]) {
+      const response = await request.post(`/api/projects/${key}/assets?x=${offset}&y=${offset}`, {
+        multipart: {
+          file: {
+            name: `portrait-${offset}.webp`,
+            mimeType: "image/webp",
+            buffer: await readFile("apps/web/public/scene/takeboard-crew-mascot.webp"),
+          },
+        },
+      });
+      expect(response.ok()).toBeTruthy();
+    }
+    const before = await current();
+    await page.goto("/");
+    await page
+      .locator(".project-card")
+      .filter({ hasText: title })
+      .getByRole("button", { name: /打开画板/ })
+      .click();
+    const nodes = page.locator(".react-flow__node-asset");
+    await expect(nodes).toHaveCount(2);
+    const viewport = page.locator(".react-flow__viewport");
+    const originalTransform = await viewport.getAttribute("style");
+    const previewRequest = page.waitForRequest((request) =>
+      request.url().endsWith("/commands/preview"),
+    );
+    await page.getByRole("button", { name: "轻量对齐当前画布" }).click();
+    const command = (await previewRequest).postDataJSON().command;
+    expect(command.nodeSizes).toHaveLength(2);
+    for (const size of command.nodeSizes) {
+      const bounds = await page
+        .locator(`.react-flow__node[data-id="${size.itemId}"]`)
+        .evaluate((element) => ({
+          width: (element as HTMLElement).offsetWidth,
+          height: (element as HTMLElement).offsetHeight,
+        }));
+      expect(Math.abs(size.width - bounds.width)).toBeLessThanOrEqual(1);
+      expect(Math.abs(size.height - bounds.height)).toBeLessThanOrEqual(1);
+    }
+    const dialog = page.getByRole("alertdialog", { name: "整理当前画布？" });
+    await expect(dialog).toBeVisible();
+    expect((await current()).canvasItems).toEqual(before.canvasItems);
+    await dialog.getByRole("button", { name: "保持现状" }).click();
+    expect((await current()).canvasItems).toEqual(before.canvasItems);
+    await page.getByRole("button", { name: "轻量对齐当前画布" }).click();
+    await dialog.getByRole("button", { name: "应用对齐" }).click();
+    await expect(dialog).toBeHidden();
+    await expect
+      .poll(async () => {
+        const a = await nodes.nth(0).boundingBox();
+        const b = await nodes.nth(1).boundingBox();
+        return (
+          !!a &&
+          !!b &&
+          (a.x + a.width < b.x ||
+            b.x + b.width < a.x ||
+            a.y + a.height < b.y ||
+            b.y + b.height < a.y)
+        );
+      })
+      .toBe(true);
+    expect(await viewport.getAttribute("style")).toBe(originalTransform);
+    expect((await current()).canvasItems[0]?.x).toBe(before.canvasItems[0]?.x);
+    expect((await current()).canvasItems[0]?.y).toBe(before.canvasItems[0]?.y);
+  } finally {
+    expect((await request.delete(`/api/projects/${key}`)).ok()).toBeTruthy();
+  }
+});
+
 test("replacing a canvas input requires approval and can be undone", async ({ page, request }) => {
   test.setTimeout(60_000);
   const title = `连线确认 ${Date.now()}`;

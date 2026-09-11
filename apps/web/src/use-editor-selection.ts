@@ -21,7 +21,11 @@ export function useEditorSelection(
   const selection = useMemo(
     () => ({
       activate: (snapshot: ProjectSnapshot) =>
-        dispatch({ type: "activate", snapshot, reveal: window.innerWidth >= 1040 }),
+        dispatch({ type: "activate", snapshot, reveal: false }),
+      quick: (itemId: string, toggle = true) => {
+        const snapshot = readDocument()?.snapshot;
+        if (snapshot) dispatch({ type: "quick", snapshot, itemId, toggle });
+      },
       item: (itemId: string, menu?: MenuPosition) => {
         const snapshot = readDocument()?.snapshot;
         if (snapshot) dispatch({ type: "item", snapshot, itemId, ...(menu ? { menu } : {}) });

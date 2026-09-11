@@ -13,6 +13,7 @@ import type {
   TextItem,
 } from "@takeboard/contracts";
 import { createTakeBoardId, toIsoTimestamp } from "@takeboard/domain";
+import { gentlyArrange } from "./gentle-arrange.js";
 import type { ProjectStore, StoredProjectCommand } from "./storage/project-store.js";
 
 export class ProjectCommandError extends Error {
@@ -721,76 +722,49 @@ function buildPlan(
     const items = snapshot.canvasItems.filter((item) => item.sceneId === scene.id);
     if (items.length < 2) throw new ProjectCommandError(409, "至少需要两个节点才能整理画布");
     const itemById = new Map(items.map((item) => [item.id, item]));
-    const layers = new Map(
-      items.map((item) => [
-        item.id,
-        item.refType === "take_stack" ? 2 : item.refType === "shot" ? 1 : 0,
-      ]),
+    const measured = new Map(command.nodeSizes?.map((item) => [item.itemId, item]) ?? []);
+    const positions = gentlyArrange(
+      items.map((item) => {
+        const size = measured.get(item.id);
+        const shot =
+          item.refType === "shot"
+            ? snapshot.shots.find((shot) => shot.id === item.refId)
+            : undefined;
+        const take =
+          snapshot.takes.find((take) => take.id === shot?.approvedTakeId) ??
+          [...snapshot.takes]
+            .reverse()
+            .find((take) => take.shotId === shot?.id && take.status !== "rejected");
+        const asset = snapshot.assets.find(
+          (asset) => asset.id === (item.refType === "asset" ? item.refId : take?.assetId),
+        );
+        const width =
+          size?.width ?? (item.refType === "shot" ? Math.max(470, item.width) : item.width);
+        const mediaHeight =
+          asset?.width && asset?.height ? (width * asset.height) / asset.width : null;
+        const height =
+          size?.height ??
+          (mediaHeight
+            ? item.refType === "shot"
+              ? Math.min(440, Math.max(150, mediaHeight)) + 20
+              : mediaHeight
+            : item.height);
+        return { id: item.id, x: item.x, y: item.y, width, height };
+      }),
     );
-    const edges = snapshot.canvasEdges.filter(
-      (edge) =>
-        edge.sceneId === scene.id &&
-        itemById.has(edge.sourceItemId) &&
-        itemById.has(edge.targetItemId),
-    );
-    // Longest-path relaxation creates a readable left-to-right flow. The iteration
-    // cap makes cycles harmless: they retain a bounded, deterministic layout.
-    let cyclicFlow = false;
-    for (let pass = 0; pass < items.length; pass += 1) {
-      let changed = false;
-      for (const edge of edges) {
-        const sourceLayer = layers.get(edge.sourceItemId) ?? 0;
-        const targetLayer = layers.get(edge.targetItemId) ?? 0;
-        const nextLayer = Math.min(items.length, sourceLayer + 1);
-        if (nextLayer > targetLayer) {
-          layers.set(edge.targetItemId, nextLayer);
-          changed = true;
-        }
-      }
-      if (changed && pass === items.length - 1) cyclicFlow = true;
-      if (!changed) break;
-    }
-    for (const item of items) {
-      if (item.refType !== "take_stack") continue;
-      const shotItem = items.find(
-        (candidate) => candidate.refType === "shot" && candidate.refId === item.refId,
-      );
-      layers.set(item.id, Math.min(items.length, (layers.get(shotItem?.id ?? "") ?? 1) + 1));
-    }
-    const usedLayers = [...new Set(layers.values())].sort((left, right) => left - right);
-    const compactLayer = new Map(usedLayers.map((layer, index) => [layer, index]));
-    const grouped = new Map<number, CanvasItem[]>();
-    for (const item of items) {
-      const layer = compactLayer.get(layers.get(item.id) ?? 0) ?? 0;
-      grouped.set(layer, [...(grouped.get(layer) ?? []), item]);
-    }
-    const originX = Math.min(...items.map((item) => item.x));
-    const originY = Math.min(...items.map((item) => item.y));
-    const columnX = new Map<number, number>();
-    let nextX = originX;
-    for (const layer of [...grouped.keys()].sort((left, right) => left - right)) {
-      columnX.set(layer, nextX);
-      const widest = Math.max(...(grouped.get(layer) ?? []).map((item) => item.width));
-      nextX += widest + 120;
-    }
     const moved: Array<{
       itemId: string;
       from: { x: number; y: number };
       applied: { x: number; y: number };
     }> = [];
-    for (const [layer, layerItems] of grouped) {
-      let nextY = originY;
-      for (const item of [...layerItems].sort(
-        (left, right) => left.y - right.y || left.x - right.x || left.id.localeCompare(right.id),
-      )) {
-        const applied = { x: columnX.get(layer) ?? originX, y: nextY };
-        nextY += Math.max(120, item.height) + 64;
-        if (Math.abs(item.x - applied.x) < 1 && Math.abs(item.y - applied.y) < 1) continue;
-        moved.push({ itemId: item.id, from: { x: item.x, y: item.y }, applied });
-        item.x = applied.x;
-        item.y = applied.y;
-        item.updatedAt = timestamp;
-      }
+    for (const item of items) {
+      const applied = positions.get(item.id);
+      if (!applied) continue;
+      if (Math.abs(item.x - applied.x) < 1 && Math.abs(item.y - applied.y) < 1) continue;
+      moved.push({ itemId: item.id, from: { x: item.x, y: item.y }, applied });
+      item.x = applied.x;
+      item.y = applied.y;
+      item.updatedAt = timestamp;
     }
     if (moved.length === 0) throw new ProjectCommandError(409, "当前画布已经排列整齐");
     touch(snapshot, timestamp);
@@ -804,12 +778,12 @@ function buildPlan(
           "canvas_item",
           entry.itemId,
           itemLabel(snapshot, item),
-          "重新排列位置",
+          "轻量对齐并留出间距",
         );
       }),
       warnings: [
         "只调整节点位置；不会更改连线、素材、镜头或生成记录",
-        ...(cyclicFlow ? ["检测到循环连线；循环部分按稳定顺序分层"] : []),
+        "保留原有布局，仅吸附相近边缘并避开重叠",
       ],
       requiresConfirmation: true,
       inverse: { kind: "restore_positions", items: moved },

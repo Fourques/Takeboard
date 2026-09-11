@@ -13,4 +13,10 @@ describe("display scale preference", () => {
     expect(resolveDisplayScale("1.24")).toBe(1.24);
     expect(resolveDisplayScale("1.4")).toBe(1.4);
   });
+  it("supports intermediate percentages, rounds sub-percent values and rejects invalid preferences", () => {
+    expect(resolveDisplayScale("1.17")).toBe(1.17);
+    expect(resolveDisplayScale("1.235")).toBe(1.24);
+    for (const invalid of ["", "0", "Infinity", "NaN", "-1", "0.89", "1.41"])
+      expect(resolveDisplayScale(invalid)).toBe(1.12);
+  });
 });

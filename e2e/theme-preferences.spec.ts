@@ -8,8 +8,8 @@ test("fresh theme and explicit display choices survive reload", async ({ page, c
   await expect(page.locator("html")).toHaveAttribute("data-theme", "chroma");
   await page.getByRole("button", { name: "打开工作区选项" }).click();
   await page.getByRole("button", { name: "黑曜主题" }).click();
-  await page.getByRole("button", { name: "显示大小：清晰" }).click();
-  await page.getByRole("button", { name: /大字/ }).click();
+  await page.getByRole("button", { name: "显示大小：112%" }).click();
+  await page.getByRole("slider", { name: "字体大小", exact: true }).fill("124");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "noir");
   await expect(page.getByRole("button", { name: "黑曜主题" })).toHaveAttribute(
     "aria-pressed",
@@ -29,12 +29,12 @@ test("desktop restart preserves display choices across a real port change", asyn
   await test.step("save actual UI choices and close the original desktop page", async () => {
     await page.goto("/");
     await page.getByRole("button", { name: "打开工作区选项" }).click();
-    await page.getByRole("button", { name: "显示大小：清晰" }).click();
+    await page.getByRole("button", { name: "显示大小：112%" }).click();
     // Test the real low-power preference as well. The separate fresh-theme case
     // keeps default 3D rendering; restarting preferences need not repeatedly
     // compile the 3D scene on CI's software renderer.
     await page.getByRole("button", { name: "节能 始终使用清晰静态封面" }).click();
-    await page.getByRole("button", { name: /大字/ }).click();
+    await page.getByRole("slider", { name: "字体大小", exact: true }).fill("124");
     await page.getByRole("button", { name: "黑曜主题" }).click();
     await expect(page.locator("html")).toHaveAttribute("data-theme", "noir");
     await expect(page.locator("html")).toHaveAttribute("data-display-scale", "1-24");

@@ -68,7 +68,7 @@ test("generation service choice preserves local storage and fits short/narrow wi
   expect(catalogBefore).toBeGreaterThan(0);
   await port.fill("8188");
   await settings.getByRole("button", { name: "连接并保存" }).click();
-  await expect(settings.getByRole("status")).toContainText("已切换设备");
+  await expect(settings.getByRole("status")).toContainText("设备已连接并保存");
   await expect(settings.getByRole("button", { name: /创作工作站 user@studio/ })).toBeVisible();
   await expect.poll(() => workflowReads).toBeGreaterThan(workflowsBefore);
   expect(catalogReads).toBe(catalogBefore);
@@ -108,4 +108,78 @@ test("project catalog loads without waiting for generation discovery", async ({
     releaseDiscovery();
     expect((await request.delete(`/api/projects/${key}`)).ok()).toBeTruthy();
   }
+});
+
+test("saved device editing keeps failed input, supports offline renaming and confirms removal", async ({
+  page,
+  request,
+}) => {
+  const pool = await (await request.get("/api/workers")).json();
+  let target = { kind: "url", name: "剪辑室", url: "https://studio.test" };
+  const worker = {
+    ...pool.workers[0].worker,
+    id: "saved-studio",
+    endpoint: target.url,
+    name: target.name,
+  };
+  let removed = false;
+  let deletes = 0;
+  let edits = 0;
+  const status = () => ({
+    workerId: worker.id,
+    localWorkerId: "startup-device",
+    kind: "url",
+    name: target.name,
+    address: target.url,
+    state: "offline",
+    profiles: removed ? [] : [{ workerId: worker.id, target }],
+    error: null,
+  });
+  await page.route("**/api/generation/connection", (route) => route.fulfill({ json: status() }));
+  await page.route("**/api/workers", (route) =>
+    route.fulfill({ json: { ...pool, workers: removed ? [] : [{ worker, status: "offline" }] } }),
+  );
+  await page.route("**/api/generation/connection/saved-studio", (route) => {
+    if (route.request().method() === "DELETE") {
+      removed = true;
+      deletes++;
+    } else {
+      edits++;
+      const next = route.request().postDataJSON();
+      if (next.url !== target.url)
+        return route.fulfill({ status: 409, json: { error: "新地址无法连接，原配置保留" } });
+      target = { kind: next.kind, name: next.name, url: next.url };
+      worker.name = target.name;
+    }
+    return route.fulfill({ json: status() });
+  });
+  await page.setViewportSize({ width: 390, height: 620 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "选择生成设备", exact: true }).click();
+  await page.getByRole("button", { name: "管理设备" }).click();
+  const settings = page.getByRole("dialog", { name: "设置", exact: true });
+  await settings
+    .getByRole("group", { name: "剪辑室的操作" })
+    .getByRole("button", { name: "编辑", exact: true })
+    .click();
+  const editor = settings.getByRole("form", { name: "编辑设备" });
+  await editor.getByLabel("设备名称（选填）").fill("我的工作站");
+  await editor.getByLabel("服务地址", { exact: true }).fill("https://unavailable.test");
+  await editor.getByRole("button", { name: "保存设备设置" }).click();
+  await expect(settings.getByRole("alert")).toContainText("原配置保留");
+  await expect(editor.getByLabel("设备名称（选填）")).toHaveValue("我的工作站");
+  await editor.getByLabel("服务地址", { exact: true }).fill(target.url);
+  await editor.getByRole("button", { name: "保存设备设置" }).click();
+  await expect(editor).toHaveCount(0);
+  await expect(settings.getByRole("group", { name: "我的工作站的操作" })).toBeVisible();
+  expect(edits).toBe(2);
+  await settings.getByRole("button", { name: "删除", exact: true }).click();
+  const confirmation = settings.getByRole("group", { name: "确认删除设备" });
+  await confirmation.getByRole("button", { name: "取消", exact: true }).click();
+  expect(deletes).toBe(0);
+  await settings.getByRole("button", { name: "删除", exact: true }).click();
+  await confirmation.getByRole("button", { name: "确认删除", exact: true }).click();
+  await expect(settings.getByText("尚未添加设备", { exact: true })).toBeVisible();
+  expect(deletes).toBe(1);
+  await expect(settings.getByRole("button", { name: "编辑", exact: true })).toHaveCount(0);
 });

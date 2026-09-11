@@ -1637,6 +1637,62 @@ label.auth-remember {
   padding: 0;
   border: 0;
 }
+.inspector-section {
+  border-bottom: 1px solid var(--line);
+  padding: 14px 0;
+}
+.inspector-section > summary {
+  cursor: pointer;
+  color: var(--text-1);
+  font-size: calc(13px * var(--ui-scale));
+  padding: 0 19px;
+}
+.inspector-section[open] > summary {
+  margin-bottom: 14px;
+}
+.rejection-note {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
+  padding: 12px 0;
+}
+.selected-take-preview video {
+  width: 100%;
+  max-height: 240px;
+  border-radius: 8px;
+}
+.selected-take-preview {
+  margin: 14px 19px;
+}
+.inspector .candidate-title-row h3,
+.inspector .decision-id strong {
+  color: var(--text-1);
+}
+.inspector .candidate-title-row p,
+.inspector .candidate-meta,
+.inspector .decision-id span {
+  color: var(--text-2);
+}
+.inspector
+  :is(
+    .take-state,
+    .candidate-meta,
+    .decision-id span,
+    .reject-button,
+    .approve-button,
+    .generate-button
+  ) {
+  font-size: calc(11px * var(--ui-scale));
+}
+.inspector-heading-actions > button:not(.inspector-dismiss) {
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text-1);
+  white-space: nowrap;
+  cursor: pointer;
+}
 
 .inspector-editable-zone:disabled {
   opacity: 0.72;
@@ -2155,6 +2211,7 @@ html[data-theme="chroma"] body {
 
 .project-heading {
   display: flex;
+  min-width: 0;
   align-items: center;
   padding-left: 22px;
   gap: 10px;
@@ -2169,9 +2226,16 @@ html[data-theme="chroma"] body {
 }
 
 .project-heading strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: #e7e9e4;
   font-size: 13px;
   font-weight: 600;
+}
+
+.project-heading div {
+  min-width: 0;
 }
 
 .project-heading span,
@@ -3228,26 +3292,48 @@ button.save-status {
 .shot-generated-media > video {
   position: relative;
   z-index: 1;
-  pointer-events: auto;
+  pointer-events: none;
 }
 
 .shot-generated-media.is-video .shot-generated-overlay {
-  flex-direction: row;
-  align-items: flex-start;
-  justify-content: space-between;
-  padding-bottom: 10px;
-  background: linear-gradient(to bottom, rgb(7 10 9 / 48%), transparent 32%);
+  padding-bottom: 46px;
 }
 
-.shot-generated-media.is-video .shot-generated-facts {
-  justify-content: flex-end;
-  width: auto;
-  padding: 3px 6px;
-  border: 1px solid rgb(255 255 255 / 10%);
-  border-radius: 3px;
-  background: rgb(7 10 9 / 38%);
-  backdrop-filter: blur(7px);
-  gap: 6px;
+.node-media > video {
+  pointer-events: none;
+}
+.canvas-video-controls {
+  margin: 0;
+  border: 0;
+  min-width: 0;
+  position: absolute;
+  inset: auto 8px 8px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: rgb(0 0 0 / 48%);
+  color: white;
+  font-size: 11px;
+}
+.canvas-video-controls :is(button, a) {
+  border: 0;
+  padding: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-decoration: none;
+}
+.canvas-video-controls input {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent);
+}
+.video-preview-unavailable {
+  color: var(--text-2);
+  font-size: 11px;
 }
 
 .shot-video-fallback {
@@ -3701,8 +3787,7 @@ button.save-status {
   font-size: 8px;
 }
 
-.generate-button,
-.empty-candidates button {
+.generate-button {
   display: flex;
   align-items: center;
   padding: 7px 10px;
@@ -3715,14 +3800,12 @@ button.save-status {
   gap: 6px;
 }
 
-.generate-button:hover:not(:disabled),
-.empty-candidates button:hover:not(:disabled) {
+.generate-button:hover:not(:disabled) {
   border-color: #c39751;
   background: #47351f;
 }
 
-.generate-button:disabled,
-.empty-candidates button:disabled {
+.generate-button:disabled {
   cursor: wait;
   opacity: 0.6;
 }
@@ -3747,7 +3830,7 @@ button.save-status {
   flex-direction: column;
   align-items: center;
   margin: 4px 19px 20px;
-  padding: 35px 25px;
+  padding: 20px;
   border: 1px dashed #343c38;
   background: #111513;
   text-align: center;
@@ -3765,50 +3848,6 @@ button.save-status {
   color: #69716d;
   font-size: 9px;
   line-height: 1.55;
-}
-
-.empty-orbit {
-  position: relative;
-  width: 42px;
-  height: 42px;
-  border: 1px solid #4e4432;
-  border-radius: 50%;
-}
-
-.empty-orbit::before {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #b18a4f;
-  box-shadow: 0 0 10px rgb(177 138 79 / 35%);
-  content: "";
-  transform: translate(-50%, -50%);
-}
-
-.empty-orbit span {
-  position: absolute;
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: #7a817c;
-}
-
-.empty-orbit span:nth-child(1) {
-  top: 3px;
-  left: 18px;
-}
-
-.empty-orbit span:nth-child(2) {
-  right: 3px;
-  bottom: 10px;
-}
-
-.empty-orbit span:nth-child(3) {
-  bottom: 5px;
-  left: 8px;
 }
 
 .candidate-grid {
@@ -3930,22 +3969,11 @@ button.save-status {
   transform: translate(-50%, -50%);
 }
 
-.candidate-approved {
-  z-index: 2;
-  position: absolute;
-  top: 6px;
-  left: 6px;
-  padding: 3px 5px;
-  color: #b4e3c4;
-  background: rgb(17 56 32 / 82%);
-  font-size: 7px;
-}
-
 .candidate-meta {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 7px 8px 3px;
+  padding: 9px;
   color: #a5aca8;
   font-size: 8px;
 }
@@ -3962,13 +3990,6 @@ button.save-status {
 
 .state-approved {
   color: #76c795;
-}
-
-.candidate-seed {
-  padding: 0 8px 7px;
-  color: #5f6864;
-  font-family: ui-monospace, monospace;
-  font-size: 7px;
 }
 
 .decision-panel {
@@ -7408,25 +7429,6 @@ html[data-theme="light"] .universe-vignette {
   transform: translateY(-2px);
 }
 
-.react-flow__node.selected .board-card::after {
-  z-index: 9;
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  display: grid;
-  width: 20px;
-  height: 20px;
-  place-items: center;
-  border: 1px solid color-mix(in srgb, var(--accent) 75%, white 10%);
-  border-radius: 50%;
-  color: var(--surface-root);
-  background: var(--accent-strong);
-  box-shadow: 0 5px 18px color-mix(in srgb, var(--accent) 30%, transparent);
-  content: "✓";
-  font-size: 9px;
-  font-weight: 800;
-}
-
 .node-context-inspector {
   background:
     radial-gradient(
@@ -8389,7 +8391,6 @@ a:focus-visible {
   --inspector-width: 420px;
 
   grid-template-columns: var(--sidebar-width) minmax(420px, 1fr) var(--inspector-width);
-  transition: grid-template-columns 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .app-shell.sidebar-collapsed {
@@ -8509,6 +8510,7 @@ a:focus-visible {
 .settings-entry,
 .density-button {
   display: flex;
+  white-space: nowrap;
   align-items: center;
   padding: 5px 8px;
   border-radius: 5px;
@@ -8592,7 +8594,6 @@ a:focus-visible {
 .density-comfortable .reject-button,
 .density-comfortable .approve-button,
 .density-comfortable .generate-button,
-.density-comfortable .empty-candidates button,
 .density-comfortable .node-facts span,
 .density-comfortable .canvas-legend span {
   font-size: 9px;
@@ -8720,7 +8721,7 @@ a:focus-visible {
   }
 
   .topbar {
-    grid-template-columns: 58px minmax(160px, 1fr) auto;
+    grid-template-columns: 58px minmax(0, 1fr) auto;
   }
 
   .topbar .brand {
@@ -14674,51 +14675,6 @@ html[data-theme="chroma"] .scene-companions img {
   padding-bottom: 10px;
 }
 
-html:is([data-display-scale="1-24"], [data-display-scale="1-4"]) .hub-brand div span,
-html:is([data-display-scale="1-24"], [data-display-scale="1-4"]) .hub-header .theme-switcher span,
-html:is([data-display-scale="1-24"], [data-display-scale="1-4"]) .hub-header .worker-pill span {
-  display: none;
-}
-
-html:is([data-display-scale="1-24"], [data-display-scale="1-4"])
-  .hub-header
-  .theme-switcher
-  button {
-  width: 30px;
-  padding-right: 0;
-  padding-left: 0;
-  justify-content: center;
-}
-
-html:is([data-display-scale="1-24"], [data-display-scale="1-4"]) .display-settings > button,
-html:is([data-display-scale="1-24"], [data-display-scale="1-4"]) .hub-help-button,
-html:is([data-display-scale="1-24"], [data-display-scale="1-4"]) .hub-recycle-button,
-html:is([data-display-scale="1-24"], [data-display-scale="1-4"]) .hub-header-create,
-html:is([data-display-scale="1-24"], [data-display-scale="1-4"]) .hub-header-import {
-  width: 38px;
-  min-width: 38px;
-  padding-right: 0;
-  padding-left: 0;
-  justify-content: center;
-  font-size: 0;
-}
-
-html:is([data-display-scale="1-24"], [data-display-scale="1-4"])
-  :is(
-    .display-settings > button,
-    .hub-help-button,
-    .hub-recycle-button,
-    .hub-header-create,
-    .hub-header-import
-  )
-  > span {
-  font-size: 13px;
-}
-
-html:is([data-display-scale="1-24"], [data-display-scale="1-4"]) .hub-header .worker-pill {
-  min-width: 132px;
-}
-
 .project-board-toolbar > small,
 .project-board-tabs button,
 .project-board-tabs > span {
@@ -15217,7 +15173,7 @@ html:is([data-display-scale="1-24"], [data-display-scale="1-4"]) .hub-header .wo
     gap: 5px;
   }
 
-  .hub-header-actions :is(.operations-pill, .display-settings > button, .account-button),
+  .hub-header-actions :is(.operations-pill, .account-button),
   .hub-header-actions
     :is(.hub-help-button, .hub-recycle-button, .hub-header-import, .hub-header-create) {
     width: 36px;

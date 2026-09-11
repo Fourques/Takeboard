@@ -229,6 +229,7 @@ test("viewer and editor see coherent project actions for their roles", async ({
     await editorCard.getByRole("button", { name: /打开画板/ }).click();
     await expect(page.getByText("VIEW ONLY", { exact: true })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "添加镜头" })).toBeVisible();
+    await page.getByRole("button", { name: "显示检查器", exact: true }).click();
     await page.locator(".recipe-selector").click();
     await expect(page.getByRole("heading", { name: "工作流与模型" })).toBeVisible();
     await expect(page.getByText("工作流由实例管理员管理")).toBeVisible();

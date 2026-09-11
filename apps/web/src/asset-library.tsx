@@ -1,6 +1,7 @@
 import type { Asset, CanvasItem, Entity } from "@takeboard/contracts";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { projectApi } from "./api";
+import { seekPreviewFrame, VideoThumbnail } from "./video-preview";
 
 type AssetKind = "character" | "location" | "prop";
 type AssetScope = "all" | "image" | "video" | "character" | "location" | "prop" | "loose";
@@ -802,12 +803,7 @@ export function AssetLibrary({
                   >
                     <div className="asset-card-media">
                       {asset.mediaType === "video" ? (
-                        <video
-                          src={projectApi.assetUrl(projectKey, asset.id)}
-                          muted
-                          playsInline
-                          preload="metadata"
-                        />
+                        <VideoThumbnail src={projectApi.assetUrl(projectKey, asset.id)} />
                       ) : (
                         <img src={projectApi.assetUrl(projectKey, asset.id, true)} alt="" />
                       )}
@@ -892,6 +888,7 @@ export function AssetLibrary({
                       controls
                       playsInline
                       preload="metadata"
+                      onLoadedData={(event) => seekPreviewFrame(event.currentTarget)}
                     />
                   ) : (
                     <img

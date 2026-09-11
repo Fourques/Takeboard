@@ -1,6 +1,7 @@
 import { Handle, type Node, type NodeProps, Position } from "@xyflow/react";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { NumericInput } from "./numeric-input";
+import { CanvasVideo } from "./video-preview";
 
 export type BoardNodeData = {
   kind: "text" | "entity" | "asset" | "shot" | "take_stack";
@@ -135,7 +136,7 @@ function TextNode({ data }: NodeProps<BoardNode>) {
         <h3>{data.title}</h3>
         <p>{data.body}</p>
         <footer>剧本资产 · 可作为生成来源</footer>
-        {data.selected ? <span className="node-action-hint">双击编辑 · 右键更多</span> : null}
+        {data.selected ? <span className="node-action-hint">双击详情 · 右键编辑</span> : null}
       </article>
     </NodeShell>
   );
@@ -160,7 +161,7 @@ function EntityNode({ data }: NodeProps<BoardNode>) {
         <h3>{data.title}</h3>
         <p>{data.body}</p>
         <NodeFacts details={data.details} />
-        {data.selected ? <span className="node-action-hint">双击编辑 · 右键更多</span> : null}
+        {data.selected ? <span className="node-action-hint">双击详情 · 右键编辑</span> : null}
       </article>
     </NodeShell>
   );
@@ -181,7 +182,7 @@ function AssetNode({ data }: NodeProps<BoardNode>) {
           style={mediaStyle}
         >
           {data.mediaUrl && data.mediaType === "video" ? (
-            <video src={data.mediaUrl} muted loop playsInline controls preload="metadata" />
+            <CanvasVideo src={data.mediaUrl} label={`${data.title} 参考视频`} />
           ) : data.mediaUrl && data.mediaType === "audio" ? (
             <div className="asset-audio-preview">
               <span aria-hidden="true">♪</span>
@@ -350,23 +351,14 @@ function ShotNode({ data, id }: NodeProps<BoardNode>) {
             style={generatedStyle}
           >
             {data.mediaType === "video" ? (
-              <video
-                className="nodrag nopan nowheel"
+              <CanvasVideo
                 src={data.mediaUrl}
-                autoPlay
-                controls
-                muted
-                loop
-                playsInline
-                preload="metadata"
-                aria-label={`${data.title} 生成视频`}
+                label={`${data.title} 生成视频`}
                 onError={() => setFailedMediaUrl(data.mediaUrl ?? null)}
-                onLoadedData={() => {
+                onLoaded={() => {
                   setFailedMediaUrl(null);
                   setLoadedMediaUrl(data.mediaUrl ?? null);
                 }}
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={(event) => event.stopPropagation()}
               />
             ) : (
               <img src={data.mediaUrl} alt={`${data.title} 生成画面`} />
@@ -423,7 +415,6 @@ function ShotNode({ data, id }: NodeProps<BoardNode>) {
               <span>{data.takeCount ?? 0} Takes</span>
               <span>{data.engine ?? "I2V"}</span>
             </footer>
-            {data.selected ? <span className="node-action-hint">在右侧编辑镜头</span> : null}
           </>
         )}
       </article>

@@ -372,6 +372,11 @@ const operationsCss = `.operations-control {
   color: var(--text-2);
 }
 
+.storage-breakdown + .operations-view-actions {
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
 .storage-safety-note {
   color: var(--text-2);
   font-size: calc(10px * var(--ui-scale));

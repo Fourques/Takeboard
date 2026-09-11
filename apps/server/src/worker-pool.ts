@@ -176,11 +176,7 @@ export class WorkerPool {
     try {
       const payload = JSON.parse(readFileSync(this.storagePath, "utf8")) as Partial<WorkerFile>;
       if (payload.version !== 1 || !Array.isArray(payload.workers)) return [];
-      if (
-        payload.workers.some(
-          (worker) => worker.id === payload.selectedWorkerId && !worker.retiredAt,
-        )
-      )
+      if (payload.workers.some((worker) => worker.id === payload.selectedWorkerId))
         this.selectedWorkerId = payload.selectedWorkerId;
       return payload.workers.flatMap((worker) => {
         const parsed = workerDefinitionSchema.safeParse(worker);
@@ -242,19 +238,29 @@ export class WorkerPool {
       createdAt: now,
       updatedAt: now,
     });
-    if (this.workers.some((candidate) => candidate.endpoint === worker.endpoint)) {
+    if (
+      this.workers.some(
+        (candidate) => !candidate.retiredAt && candidate.endpoint === worker.endpoint,
+      )
+    ) {
       throw new Error("这个执行端地址已经存在");
     }
     this.workers.push(worker);
-    await this.persist();
+    try {
+      await this.persist();
+    } catch (error) {
+      this.workers = this.workers.filter((item) => item !== worker);
+      throw error;
+    }
     return worker;
   }
 
-  async update(workerId: string, patch: Partial<WorkerDefinition>) {
+  async update(workerId: string, patch: Partial<WorkerDefinition>, connectionEdit = false) {
     const current = this.definition(workerId);
     if (!current) throw new Error("执行端不存在");
     if (current.retiredAt !== null) throw new Error("执行端已经移除，不能继续修改");
     if (
+      !connectionEdit &&
       this.managedEndpoints.has(workerId) &&
       (patch.endpoint !== undefined || patch.transport !== undefined || patch.kind !== undefined)
     )
@@ -272,19 +278,28 @@ export class WorkerPool {
     }
     if (
       this.workers.some(
-        (candidate) => candidate.id !== updated.id && candidate.endpoint === updated.endpoint,
+        (candidate) =>
+          !candidate.retiredAt &&
+          candidate.id !== updated.id &&
+          candidate.endpoint === updated.endpoint,
       )
     ) {
       throw new Error("这个执行端地址已经存在");
     }
     this.workers = this.workers.map((worker) => (worker.id === workerId ? updated : worker));
+    try {
+      await this.persist();
+    } catch (error) {
+      this.workers = this.workers.map((worker) => (worker.id === workerId ? current : worker));
+      throw error;
+    }
+    if (connectionEdit) this.managedEndpoints.delete(workerId);
     this.invalidateClients(workerId);
-    await this.persist();
     return updated;
   }
 
-  async remove(workerId: string) {
-    if (workerId === this.defaultWorkerId || workerId === this.localWorkerId)
+  async remove(workerId: string, connectionEdit = false) {
+    if (!connectionEdit && (workerId === this.defaultWorkerId || workerId === this.localWorkerId))
       throw new Error("默认执行端不能删除，可以停用");
     const current = this.definition(workerId);
     if (!current || current.retiredAt !== null) return false;
@@ -294,7 +309,13 @@ export class WorkerPool {
         ? { ...worker, enabled: false, retiredAt, updatedAt: retiredAt }
         : worker,
     );
-    await this.persist();
+    try {
+      await this.persist();
+    } catch (error) {
+      this.workers = this.workers.map((worker) => (worker.id === workerId ? current : worker));
+      throw error;
+    }
+    this.invalidateClients(workerId);
     return true;
   }
 
@@ -319,6 +340,8 @@ export class WorkerPool {
 
   endpoint(workerId: string | null | undefined) {
     const id = workerId || this.defaultWorkerId;
+    if (id === this.defaultWorkerId && this.definition(id)?.retiredAt)
+      throw new Error("此生成设备已删除，请选择或添加设备");
     if (this.managedEndpoints.has(id)) {
       const endpoint = this.managedEndpoints.get(id);
       if (!endpoint) throw new Error("SSH 连接尚未恢复，等待原生成设备重新连接");

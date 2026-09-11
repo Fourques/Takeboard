@@ -19,6 +19,23 @@ const activated = reduceEditorSelection(emptySelection, {
   reveal: true,
 });
 describe("editor selection transitions", () => {
+  it("single click toggles quick controls, while explicit inspection is a separate state", () => {
+    const first = reduceEditorSelection(
+      { ...emptySelection, projectId: "project-a" },
+      { type: "quick", snapshot, itemId: "node-a", toggle: true },
+    );
+    expect(first).toMatchObject({ target: { kind: "item", id: "node-a" }, inspectorOpen: false });
+    const again = reduceEditorSelection(first, {
+      type: "quick",
+      snapshot,
+      itemId: "node-a",
+      toggle: true,
+    });
+    expect(again.target.kind).toBe("canvas");
+    expect(
+      reduceEditorSelection(first, { type: "item", snapshot, itemId: "node-a" }).inspectorOpen,
+    ).toBe(true);
+  });
   it("keeps the context menu anchored to the single selected target and closes it on deletion", () => {
     const menu = { clientX: 100, clientY: 200, flowX: 300, flowY: 400 };
     const selected = reduceEditorSelection(activated, {

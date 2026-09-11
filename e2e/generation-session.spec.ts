@@ -114,7 +114,7 @@ async function sessionFixture(page: Page, request: APIRequestContext, runningSec
     .getByRole("button", { name: /打开画板/ })
     .click();
   await page.locator(".shot-list > button").filter({ hasText: "提交镜头" }).click();
-  await page.getByLabel("画布提示词", { exact: true }).fill("受控会话回归测试");
+  await page.locator(".prompt-with-mentions textarea").fill("受控会话回归测试");
   return {
     key,
     release,
@@ -137,7 +137,7 @@ test("stop waits for the submitted identity and does not submit the rest of a ba
       .getByRole("group", { name: "每批候选数量" })
       .getByRole("button", { name: "3", exact: true })
       .click();
-    await page.locator(".shot-inline-generate").click();
+    await page.getByRole("button", { name: "生成 3 个", exact: true }).click();
     await expect.poll(fixture.submissions).toBe(1);
     await page.getByRole("button", { name: /停止生成并清理任务/ }).click();
     await expect(page.getByRole("button", { name: "正在停止并清理…" })).toBeDisabled();
@@ -157,7 +157,7 @@ test("stopping another shot never cancels the pending first shot or steals selec
 }) => {
   const fixture = await sessionFixture(page, request, true);
   try {
-    await page.locator(".shot-inline-generate").click();
+    await page.getByRole("button", { name: "生成 1 个", exact: true }).click();
     await expect.poll(fixture.submissions).toBe(1);
     await page.locator(".shot-list > button").filter({ hasText: "另一个镜头" }).click();
     await page

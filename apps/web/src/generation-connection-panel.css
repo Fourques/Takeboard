@@ -8,6 +8,30 @@
   display: grid;
   gap: 8px;
 }
+.generation-device-item {
+  min-width: 0;
+}
+.generation-connection-panel fieldset.generation-device-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px 0;
+}
+.generation-connection-panel .generation-device-actions button {
+  background: transparent;
+  padding: 6px 12px;
+}
+.generation-connection-panel label.generation-checkbox {
+  display: flex;
+  align-items: center;
+}
+.generation-checkbox input {
+  width: auto;
+  accent-color: var(--accent);
+}
+.generation-connection-panel fieldset.generation-delete-confirm {
+  border-bottom: 1px solid var(--line);
+}
 .generation-connection-panel .generation-device-row {
   width: 100%;
   display: flex;

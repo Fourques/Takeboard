@@ -16,6 +16,8 @@ export type ConnectionTarget =
   | { kind: "url"; name: string; url: string };
 type Profile = { workerId: string; target: ConnectionTarget };
 type Tunnel = { endpoint: string; close: () => Promise<void>; closed: Promise<void> };
+const targetKey = (target: ConnectionTarget) =>
+  target.kind === "ssh" ? `ssh:${target.host}:${target.port}` : `url:${target.url}`;
 
 export function parseConnectionTarget(input: unknown): ConnectionTarget {
   if (!input || typeof input !== "object") throw new Error("请填写生成服务地址");
@@ -178,9 +180,11 @@ export class ComfyConnections {
   private readonly connecting = new Set<string>();
   private readonly lifetime = new AbortController();
   private restoring: Promise<void> | null = null;
+  private restoreAbort: AbortController | undefined;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private readonly path: string;
   private configurationError: string | null = null;
+  private editing = false;
   constructor(
     private readonly root: string,
     private readonly pool: WorkerPool,
@@ -209,23 +213,26 @@ export class ComfyConnections {
   }
   status() {
     const workerId = this.pool.defaultWorkerId;
-    const profile = this.profiles.find((item) => item.workerId === workerId);
-    const worker = this.pool.definition(workerId);
+    const definition = this.pool.definition(workerId);
+    const worker = definition?.retiredAt ? null : definition;
+    const profile = worker ? this.profiles.find((item) => item.workerId === workerId) : undefined;
     return {
       workerId,
-      name: profile?.target.name ?? worker?.name ?? "ComfyUI",
+      name: profile?.target.name ?? worker?.name ?? "未选择设备",
       address:
         profile?.target.kind === "ssh"
           ? `${profile.target.host}:${profile.target.port}`
           : (profile?.target.url ?? worker?.endpoint ?? ""),
       kind: profile?.target.kind ?? "existing",
-      state: this.connecting.has(workerId)
-        ? "connecting"
-        : this.errors.has(workerId)
-          ? "offline"
-          : "configured",
+      state: !worker
+        ? "offline"
+        : this.connecting.has(workerId)
+          ? "connecting"
+          : this.errors.has(workerId)
+            ? "offline"
+            : "configured",
       error: this.configurationError ?? this.errors.get(workerId) ?? null,
-      profiles: this.profiles,
+      profiles: this.profiles.filter((item) => !this.pool.definition(item.workerId)?.retiredAt),
       localWorkerId: this.pool.localWorkerId,
     };
   }
@@ -252,7 +259,9 @@ export class ComfyConnections {
     if (this.configurationError) throw new Error(this.configurationError);
     const target = parseConnectionTarget(input);
     const existing = this.profiles.find(
-      (item) => JSON.stringify(item.target) === JSON.stringify(target),
+      (item) =>
+        targetKey(item.target) === targetKey(target) &&
+        !this.pool.definition(item.workerId)?.retiredAt,
     );
     if (existing && this.connecting.has(existing.workerId))
       throw new Error("此连接正在恢复，请稍候重试");
@@ -333,8 +342,143 @@ export class ComfyConnections {
     return this.profiles.some(
       (profile) =>
         profile.workerId === this.pool.defaultWorkerId &&
-        JSON.stringify(profile.target) === JSON.stringify(target),
+        targetKey(profile.target) === targetKey(target),
     );
+  }
+  /** One mutation at a time, including automatic SSH recovery. */
+  async mutate<T>(action: () => Promise<T>) {
+    if (this.configurationError) throw new Error(this.configurationError);
+    if (this.editing) throw new Error("设备连接正在更新，请稍后重试");
+    this.editing = true;
+    try {
+      // A background retry must not trap an offline device in an uneditable state.
+      // Cancel only the in-progress SSH attempt, not an installed connection.
+      this.restoreAbort?.abort();
+      await this.restoring;
+      if (this.connecting.size) throw new Error("设备连接正在更新，请稍后重试");
+      return await action();
+    } finally {
+      this.editing = false;
+    }
+  }
+  async edit(workerId: string, input: unknown) {
+    return this.mutate(async () => {
+      const worker = this.pool.definition(workerId);
+      if (!worker || worker.retiredAt) throw new Error("此设备已删除或不存在");
+      const target = parseConnectionTarget(input);
+      const access = input as {
+        enabled?: unknown;
+        allowSensitiveInputs?: unknown;
+        confirmMedia?: unknown;
+      };
+      for (const key of ["enabled", "allowSensitiveInputs"] as const)
+        if (access[key] !== undefined && typeof access[key] !== "boolean")
+          throw new Error("设备权限格式无效");
+      if (
+        access.allowSensitiveInputs === true &&
+        !worker.allowSensitiveInputs &&
+        access.confirmMedia !== true
+      )
+        throw new Error("请确认允许向此设备发送素材");
+      const previous = this.profiles.find((item) => item.workerId === workerId);
+      const oldTarget = previous?.target ?? {
+        kind: "url" as const,
+        url: worker.endpoint,
+        name: worker.name,
+      };
+      const addressChanged = targetKey(oldTarget) !== targetKey(target);
+      if (addressChanged && workerId === this.pool.localWorkerId)
+        throw new Error("启动配置中的地址不能改写，请添加新的设备地址");
+      if (
+        this.profiles.some(
+          (item) =>
+            item.workerId !== workerId &&
+            targetKey(item.target) === targetKey(target) &&
+            !this.pool.definition(item.workerId)?.retiredAt,
+        )
+      )
+        throw new Error("此设备地址已保存，请直接选择它");
+      if (
+        addressChanged ||
+        (access.enabled === false && worker.enabled) ||
+        (access.allowSensitiveInputs === false && worker.allowSensitiveInputs)
+      )
+        await this.assertIdle();
+      let tunnel: Tunnel | null = null;
+      const oldProfiles = this.profiles;
+      try {
+        if (addressChanged) {
+          if (target.kind === "ssh")
+            tunnel = await this.runtime.openTunnel(target, this.lifetime.signal);
+          else
+            await this.runtime.verify(
+              target.url,
+              AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(5000)]),
+            );
+        }
+        const profile = { workerId, target };
+        this.profiles = [...this.profiles.filter((item) => item.workerId !== workerId), profile];
+        await this.persist();
+        try {
+          await this.pool.update(
+            workerId,
+            {
+              name: target.name,
+              ...(typeof access.enabled === "boolean" ? { enabled: access.enabled } : {}),
+              ...(typeof access.allowSensitiveInputs === "boolean"
+                ? { allowSensitiveInputs: access.allowSensitiveInputs }
+                : {}),
+              ...(addressChanged
+                ? {
+                    endpoint:
+                      target.kind === "url" ? target.url : `http://127.0.0.1:1/ssh/${workerId}`,
+                    transport:
+                      target.kind === "ssh"
+                        ? "ssh_tunnel"
+                        : target.url.startsWith("https:")
+                          ? "https"
+                          : "loopback",
+                  }
+                : {}),
+            },
+            addressChanged,
+          );
+        } catch (error) {
+          this.profiles = oldProfiles;
+          await this.persist();
+          throw error;
+        }
+        if (addressChanged) {
+          const oldTunnel = this.tunnels.get(workerId);
+          this.tunnels.delete(workerId);
+          if (tunnel && workerId === this.pool.defaultWorkerId) {
+            this.install(profile, tunnel);
+            tunnel = null;
+          } else if (target.kind === "ssh") this.pool.setManagedEndpoint(workerId, null);
+          await oldTunnel?.close();
+          this.errors.delete(workerId);
+        }
+        return this.status();
+      } catch (error) {
+        this.profiles = oldProfiles;
+        throw error;
+      } finally {
+        await tunnel?.close();
+      }
+    });
+  }
+  async remove(workerId: string) {
+    return this.mutate(async () => {
+      await this.assertIdle();
+      // Retain a disabled historical identity, including the selected ID. Never
+      // silently choose the startup endpoint after deleting a selected device.
+      await this.pool.remove(workerId, true);
+      const tunnel = this.tunnels.get(workerId);
+      this.tunnels.delete(workerId);
+      await tunnel?.close();
+      this.errors.delete(workerId);
+      return this.status();
+    });
   }
   async releaseInactive() {
     for (const [workerId, tunnel] of this.tunnels) {
@@ -366,6 +510,7 @@ export class ComfyConnections {
   start() {
     if (this.configurationError) return;
     const restore = async () => {
+      if (this.editing) return;
       for (const profile of this.profiles) {
         if (this.lifetime.signal.aborted) return;
         if (
@@ -373,17 +518,25 @@ export class ComfyConnections {
           profile.target.kind !== "ssh" ||
           this.tunnels.has(profile.workerId) ||
           this.connecting.has(profile.workerId) ||
+          !this.pool.definition(profile.workerId)?.enabled ||
           this.pool.definition(profile.workerId)?.retiredAt !== null
         )
           continue;
         this.connecting.add(profile.workerId);
+        const attempt = new AbortController();
+        this.restoreAbort = attempt;
         try {
-          const tunnel = await this.runtime.openTunnel(profile.target, this.lifetime.signal);
+          const tunnel = await this.runtime.openTunnel(
+            profile.target,
+            AbortSignal.any([this.lifetime.signal, attempt.signal]),
+          );
           if (profile.workerId === this.pool.defaultWorkerId) this.install(profile, tunnel);
           else await tunnel.close();
         } catch (error) {
-          this.errors.set(profile.workerId, error instanceof Error ? error.message : "连接失败");
+          if (!attempt.signal.aborted)
+            this.errors.set(profile.workerId, error instanceof Error ? error.message : "连接失败");
         } finally {
+          if (this.restoreAbort === attempt) this.restoreAbort = undefined;
           this.connecting.delete(profile.workerId);
         }
       }
@@ -418,13 +571,17 @@ export function registerComfyConnections(
       if (typeof body?.workerId === "string") {
         const target = pool.definition(body.workerId);
         if (!target?.enabled || target.retiredAt) throw new Error("此设备未配置或已停用");
-        if (pool.defaultWorkerId !== target.id) await connections.assertIdle();
-        await verifyComfy(target.endpoint, AbortSignal.timeout(5000));
-        await pool.selectDefault(target.id);
-        await connections.releaseInactive();
+        await connections.mutate(async () => {
+          if (pool.defaultWorkerId !== target.id) await connections.assertIdle();
+          await verifyComfy(target.endpoint, AbortSignal.timeout(5000));
+          await pool.selectDefault(target.id);
+          await connections.releaseInactive();
+        });
       } else {
-        if (!connections.isCurrentTarget(body)) await connections.assertIdle();
-        await connections.connect(body);
+        await connections.mutate(async () => {
+          if (!connections.isCurrentTarget(body)) await connections.assertIdle();
+          await connections.connect(body);
+        });
       }
       return connections.status();
     } catch (error) {
@@ -433,6 +590,23 @@ export function registerComfyConnections(
         .send({ error: error instanceof Error ? error.message : "连接失败" });
     }
   });
+  for (const method of ["PATCH", "DELETE"] as const) {
+    app.route<{ Params: { workerId: string } }>({
+      method,
+      url: "/api/generation/connection/:workerId",
+      handler: async (request, reply) => {
+        try {
+          return method === "PATCH"
+            ? await connections.edit(request.params.workerId, request.body)
+            : await connections.remove(request.params.workerId);
+        } catch (error) {
+          return reply
+            .code(409)
+            .send({ error: error instanceof Error ? error.message : "设备更新失败" });
+        }
+      },
+    });
+  }
   app.addHook("onReady", async () => connections.start());
   app.addHook("onClose", async () => connections.close());
 }

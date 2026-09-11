@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import { rememberDisplayPreference, savedScale, savedSceneQuality } from "./display-preferences";
-import { type DisplayScale, displayScales } from "./display-scale";
+import {
+  type DisplayScale,
+  maxDisplayPercent,
+  minDisplayPercent,
+  resolveDisplayScale,
+} from "./display-scale";
 
 import { openSettings } from "./settings-navigation";
 
@@ -34,7 +39,8 @@ export function DisplaySettings({
   }, [sceneQuality]);
 
   useEffect(() => {
-    const size = (event: Event) => setScale((event as CustomEvent<DisplayScale>).detail);
+    const size = (event: Event) =>
+      setScale(resolveDisplayScale(String((event as CustomEvent<DisplayScale>).detail)));
     const quality = (event: Event) => setSceneQuality((event as CustomEvent<SceneQuality>).detail);
     window.addEventListener("takeboard:display-scale", size);
     window.addEventListener("takeboard:scene-quality", quality);
@@ -52,10 +58,10 @@ export function DisplaySettings({
           aria-haspopup="dialog"
           onClick={() => openSettings("appearance")}
           title="调整界面文字大小"
-          aria-label={`显示大小：${displayScales.find((item) => item.value === scale)?.label ?? "清晰"}`}
+          aria-label={`显示大小：${Math.round(scale * 100)}%`}
         >
           <span aria-hidden="true">Aa</span>
-          {compact ? null : "显示"}
+          {compact ? null : "字体大小"}
         </button>
       ) : null}
       {inline ? (
@@ -64,25 +70,38 @@ export function DisplaySettings({
             <strong>界面文字</strong>
             <small>仅调整界面，不改变素材分辨率</small>
           </header>
-          <div className="display-setting-options">
-            {displayScales.map((item) => (
-              <button
-                type="button"
-                key={item.value}
-                className={scale === item.value ? "active" : ""}
-                aria-pressed={scale === item.value}
-                onClick={() => {
-                  setScale(item.value);
-                }}
-              >
-                <span style={{ fontSize: `${Math.round(12 * item.value)}px` }}>Aa</span>
-                <div>
-                  <strong>{item.label}</strong>
-                  <small>{item.hint}</small>
-                </div>
-                <i>{Math.round(item.value * 100)}%</i>
-              </button>
-            ))}
+          <div className="display-scale-control">
+            <button
+              type="button"
+              aria-label="缩小字体"
+              disabled={scale <= minDisplayPercent / 100}
+              onClick={() =>
+                setScale(Math.max(minDisplayPercent, Math.round(scale * 100) - 1) / 100)
+              }
+            >
+              −
+            </button>
+            <input
+              type="range"
+              aria-label="字体大小"
+              aria-valuetext={`${Math.round(scale * 100)}%`}
+              min={minDisplayPercent}
+              max={maxDisplayPercent}
+              step={1}
+              value={Math.round(scale * 100)}
+              onChange={(event) => setScale(Number(event.target.value) / 100)}
+            />
+            <button
+              type="button"
+              aria-label="放大字体"
+              disabled={scale >= maxDisplayPercent / 100}
+              onClick={() =>
+                setScale(Math.min(maxDisplayPercent, Math.round(scale * 100) + 1) / 100)
+              }
+            >
+              +
+            </button>
+            <output aria-label="当前字体大小">{Math.round(scale * 100)}%</output>
           </div>
           <section className="scene-quality-setting">
             <div>

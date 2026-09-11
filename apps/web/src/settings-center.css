@@ -163,27 +163,23 @@
 .display-settings-content small {
   color: var(--text-2);
 }
-.settings-center .display-setting-options {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-.settings-center .display-setting-options button {
+.display-scale-control {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   align-items: center;
-  text-align: left;
 }
-.settings-center .display-setting-options button > div {
-  display: grid;
-  gap: 4px;
+.display-scale-control input[type="range"] {
+  min-width: 0;
   flex: 1;
+  width: 100%;
+  padding: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
 }
-.settings-center .display-setting-options button i {
-  font-size: 0.8em;
-  font-style: normal;
+.display-scale-control output {
+  min-width: 4ch;
+  font-variant-numeric: tabular-nums;
 }
-.settings-center .display-setting-options button.active,
 .settings-center .scene-quality-options button.active {
   border-color: var(--accent);
 }
@@ -264,9 +260,6 @@
     padding: 20px 18px;
   }
   .settings-center .scene-quality-options {
-    grid-template-columns: 1fr;
-  }
-  .settings-center .display-setting-options {
     grid-template-columns: 1fr;
   }
 }

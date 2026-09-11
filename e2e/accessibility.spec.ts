@@ -18,8 +18,8 @@ test("display scale is clear by default and remains a user choice", async ({ pag
   await page.goto("/");
   await expect(page.locator("html")).toHaveAttribute("data-display-scale", "1-12");
   await page.getByRole("button", { name: "打开工作区选项" }).click();
-  await page.getByRole("button", { name: "显示大小：清晰" }).click();
-  await page.getByRole("button", { name: /大字/ }).click();
+  await page.getByRole("button", { name: "显示大小：112%" }).click();
+  await page.getByRole("slider", { name: "字体大小", exact: true }).fill("124");
   await expect(page.locator("html")).toHaveAttribute("data-display-scale", "1-24");
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-display-scale", "1-24");

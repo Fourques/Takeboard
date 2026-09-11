@@ -25,7 +25,7 @@ test("a disabled base device can be re-enabled in settings and media authorizati
   await page.route("**/api/workers", (route) =>
     route.fulfill({ json: { ...pool, workers: [{ worker, status: "offline" }] } }),
   );
-  await page.route("**/api/admin/workers/*", (route) => {
+  await page.route("**/api/generation/connection/*", (route) => {
     const patch = route.request().postDataJSON();
     updates.push(patch);
     worker = { ...worker, ...patch, updatedAt: new Date().toISOString() };
@@ -35,10 +35,11 @@ test("a disabled base device can be re-enabled in settings and media authorizati
   await page.getByRole("button", { name: "选择生成设备", exact: true }).click();
   await page.getByRole("button", { name: "管理设备" }).click();
   const settings = page.getByRole("dialog", { name: "设置", exact: true });
-  await settings.getByText("调度偏好", { exact: true }).click();
-  await settings.locator("summary").filter({ hasText: worker.name }).click();
-  await settings.getByRole("combobox", { name: "参与调度", exact: true }).selectOption("true");
-  await settings.getByRole("combobox", { name: "素材发送权限", exact: true }).selectOption("true");
+  await expect(settings.getByText("调度偏好", { exact: true })).toHaveCount(0);
+  await expect(settings.getByText(/估算费用/)).toHaveCount(0);
+  await settings.getByRole("button", { name: "编辑", exact: true }).click();
+  await settings.getByRole("checkbox", { name: "启用设备", exact: true }).check();
+  await settings.getByRole("checkbox", { name: "允许向此设备发送素材", exact: true }).check();
   await settings.getByRole("button", { name: "保存设备设置" }).click();
   await expect(settings.getByRole("button", { name: "确认授权并保存" })).toBeVisible();
   expect(updates).toEqual([]);
@@ -52,10 +53,10 @@ test("Aa opens one responsive settings dialog, with readable themes and navigabl
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "打开工作区选项" }).click();
-  await page.getByRole("button", { name: "显示大小：清晰" }).click();
+  await page.getByRole("button", { name: "显示大小：112%" }).click();
   const dialog = page.getByRole("dialog", { name: "设置", exact: true });
   await expect(page.getByRole("dialog")).toHaveCount(1);
-  await dialog.getByRole("button", { name: /大字/ }).click();
+  await dialog.getByRole("slider", { name: "字体大小", exact: true }).fill("124");
   for (const viewport of [
     { width: 1440, height: 900 },
     { width: 1024, height: 560 },
@@ -90,6 +91,63 @@ test("Aa opens one responsive settings dialog, with readable themes and navigabl
   ).toEqual([]);
   await dialog.getByRole("button", { name: "关闭设置" }).click();
   await expect(dialog).toHaveCount(0);
+});
+
+test("font scale supports one-percent adjustments and the workspace menu remains readable at maximum size", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "打开工作区选项" }).click();
+  await page.getByRole("button", { name: "显示大小：112%" }).click();
+  const dialog = page.getByRole("dialog", { name: "设置", exact: true });
+  const slider = dialog.getByRole("slider", { name: "字体大小", exact: true });
+  await slider.fill("117");
+  await dialog.getByRole("button", { name: "放大字体" }).click();
+  await expect(slider).toHaveValue("118");
+  await dialog.getByRole("button", { name: "缩小字体" }).click();
+  await expect(slider).toHaveValue("117");
+  await slider.fill("90");
+  await expect(dialog.getByRole("button", { name: "缩小字体" })).toBeDisabled();
+  await slider.fill("140");
+  await expect(dialog.getByRole("button", { name: "放大字体" })).toBeDisabled();
+  await dialog.getByRole("button", { name: "关闭设置" }).click();
+  await page.setViewportSize({ width: 390, height: 620 });
+  await page.getByRole("button", { name: "打开工作区选项" }).click();
+  const menu = page.getByRole("dialog", { name: "工作区选项", exact: true });
+  for (const name of ["黑曜主题", "明亮主题", "柔彩主题", "显示大小：140%", "设置"]) {
+    const button = menu.getByRole("button", { name, exact: true });
+    await button.scrollIntoViewIfNeeded();
+    await expect(button).toBeInViewport();
+    expect(
+      await button.evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize)),
+    ).toBeGreaterThanOrEqual(14);
+  }
+  for (const span of await menu.locator(".theme-switcher span").all())
+    await expect(span).toBeVisible();
+  const sizeButton = menu.getByRole("button", { name: "显示大小：140%" });
+  const settingsButton = menu.getByRole("button", { name: "设置", exact: true });
+  const sizeBounds = await sizeButton.boundingBox();
+  const settingsBounds = await settingsButton.boundingBox();
+  if (!sizeBounds || !settingsBounds) throw new Error("Missing appearance actions");
+  expect(Math.abs(sizeBounds.width - settingsBounds.width)).toBeLessThan(2);
+  expect(await sizeButton.evaluate((element) => element.scrollHeight <= element.clientHeight)).toBe(
+    true,
+  );
+  expect(await menu.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await page.screenshot({ path: "test-results/workspace-menu-large-font.png" });
+  await page.setViewportSize({ width: 390, height: 360 });
+  await menu.evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  const backgroundScroll = await page
+    .locator(".hub-shell")
+    .evaluate((element) => element.scrollTop);
+  await menu.getByText("工作区选项", { exact: true }).hover();
+  await page.mouse.wheel(0, 180);
+  await expect.poll(() => menu.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  expect(await page.locator(".hub-shell").evaluate((element) => element.scrollTop)).toBe(
+    backgroundScroll,
+  );
 });
 
 test("optional account entry opens a usable login dialog instead of a collapsed arrow popup", async ({

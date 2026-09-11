@@ -18,6 +18,10 @@ test("global operations center exposes real task and storage state", async ({ pa
   await panel.getByRole("tab", { name: "存储空间" }).click();
   await expect(panel.getByText("当前磁盘可用")).toBeVisible();
   await expect(panel.getByText("项目占用")).toBeVisible();
+  const breakdown = await panel.locator(".storage-breakdown").boundingBox();
+  const refresh = await panel.getByRole("button", { name: "刷新空间" }).boundingBox();
+  if (!breakdown || !refresh) throw new Error("Storage summary is missing");
+  expect(refresh.y - (breakdown.y + breakdown.height)).toBeGreaterThanOrEqual(24);
   await expect(panel.getByRole("tab", { name: "运行诊断" })).toHaveCount(0);
 
   await page.getByRole("button", { name: "关闭任务中心" }).click();

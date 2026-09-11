@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { type DeviceInfo, deviceApi } from "./api";
 import { DesktopActionButton } from "./desktop-actions";
 import { readConnectionDisplay } from "./device-context";
@@ -12,6 +13,42 @@ export function DeviceIndicator({ projectKey }: { projectKey?: string | undefine
   const [notice, setNotice] = useState("");
   const [revision, setRevision] = useState(0);
   const menu = useRef<HTMLDetailsElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState({ left: 16, top: 64 });
+  useEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const anchor = menu.current?.getBoundingClientRect();
+      if (!anchor) return;
+      const top = Math.min(anchor.bottom + 8, window.innerHeight - 120);
+      setPosition({
+        left: Math.max(16, Math.min(anchor.left, window.innerWidth - 376)),
+        top: Math.max(16, top),
+      });
+    };
+    const close = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!menu.current?.contains(target) && !panel.current?.contains(target) && menu.current)
+        menu.current.open = false;
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && menu.current) {
+        event.stopPropagation();
+        menu.current.open = false;
+        menu.current.querySelector("summary")?.focus();
+      }
+    };
+    place();
+    window.addEventListener("resize", place);
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      window.removeEventListener("resize", place);
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [open]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: revision explicitly requests a fresh status check.
   useEffect(() => {
     let active = true;
@@ -75,10 +112,7 @@ export function DeviceIndicator({ projectKey }: { projectKey?: string | undefine
           menu.current.querySelector("summary")?.focus();
         }
       }}
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null))
-          event.currentTarget.open = false;
-      }}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
     >
       <summary title={`${label} · ${address}`} aria-label={`当前设备：${label}`}>
         <span
@@ -87,77 +121,95 @@ export function DeviceIndicator({ projectKey }: { projectKey?: string | undefine
         <span>{label}</span>
         <span aria-hidden="true">⌄</span>
       </summary>
-      <div className="device-indicator-panel">
-        <strong>{label}</strong>
-        <span>
-          {error
-            ? "需要检查连接"
-            : connection?.kind === "local"
-              ? "保存在此电脑，不随生成服务切换"
-              : device
-                ? "远程项目"
-                : "正在读取项目位置…"}
-        </span>
-        <dl>
-          <dt>{connection?.kind === "portal" ? "门户入口" : "连接地址"}</dt>
-          <dd>{address}</dd>
-          {device ? (
-            <>
-              <dt>设备名称</dt>
-              <dd>{device.name}</dd>
-            </>
-          ) : null}
-          {device?.instanceId ? (
-            <>
-              <dt>实例标识</dt>
-              <dd>{device.instanceId}</dd>
-            </>
-          ) : null}
-          {directory ? (
-            <>
-              <dt>{projectKey ? "项目文件夹" : "默认项目位置"}</dt>
-              <dd>{directory}</dd>
-            </>
-          ) : null}
-        </dl>
-        {directory ? (
-          <button
-            type="button"
-            onClick={() => {
-              if (!navigator.clipboard) {
-                setNotice("当前连接不支持自动复制，请选择上方路径手动复制。");
-                return;
+      {open
+        ? createPortal(
+            <div
+              ref={panel}
+              className="device-indicator-panel"
+              role="dialog"
+              aria-label="项目文件位置"
+              style={
+                {
+                  "--device-left": `${position.left}px`,
+                  "--device-top": `${position.top}px`,
+                } as CSSProperties
               }
-              void navigator.clipboard
-                .writeText(directory)
-                .then(() => setNotice("路径已复制"))
-                .catch(() => setNotice("无法自动复制，请选择上方路径手动复制。"));
-            }}
-          >
-            复制文件夹路径
-          </button>
-        ) : null}
-        <p>文件保存在上述设备。下载会在当前电脑保存副本，不会删除服务器原文件。</p>
-        {error ? (
-          <>
-            <p role="alert">{error}</p>
-            <button type="button" onClick={() => setRevision((value) => value + 1)}>
-              重新检测
-            </button>
-          </>
-        ) : null}
-        {notice ? <p role="status">{notice}</p> : null}
-        {"__TAURI__" in window ? (
-          <DesktopActionButton action="connections">打开远程项目 / 管理连接</DesktopActionButton>
-        ) : (
-          <p>桌面应用中可从“连接 → 连接设备”切换或断开远程连接。</p>
-        )}
-        {directory && connection?.kind === "local" && "__TAURI__" in window ? (
-          <DesktopActionButton action="reveal-folder" parameters={{ path: directory }}>
-            在文件夹中显示
-          </DesktopActionButton>
-        ) : null}
-      </div>
+            >
+              <strong>{label}</strong>
+              <span>
+                {error
+                  ? "需要检查连接"
+                  : connection?.kind === "local"
+                    ? "保存在此电脑，不随生成服务切换"
+                    : device
+                      ? "远程项目"
+                      : "正在读取项目位置…"}
+              </span>
+              <dl>
+                <dt>{connection?.kind === "portal" ? "门户入口" : "连接地址"}</dt>
+                <dd>{address}</dd>
+                {device ? (
+                  <>
+                    <dt>设备名称</dt>
+                    <dd>{device.name}</dd>
+                  </>
+                ) : null}
+                {device?.instanceId ? (
+                  <>
+                    <dt>实例标识</dt>
+                    <dd>{device.instanceId}</dd>
+                  </>
+                ) : null}
+                {directory ? (
+                  <>
+                    <dt>{projectKey ? "项目文件夹" : "默认项目位置"}</dt>
+                    <dd>{directory}</dd>
+                  </>
+                ) : null}
+              </dl>
+              {directory ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!navigator.clipboard) {
+                      setNotice("当前连接不支持自动复制，请选择上方路径手动复制。");
+                      return;
+                    }
+                    void navigator.clipboard
+                      .writeText(directory)
+                      .then(() => setNotice("路径已复制"))
+                      .catch(() => setNotice("无法自动复制，请选择上方路径手动复制。"));
+                  }}
+                >
+                  复制文件夹路径
+                </button>
+              ) : null}
+              <p>文件保存在上述设备。下载会在当前电脑保存副本，不会删除服务器原文件。</p>
+              {error ? (
+                <>
+                  <p role="alert">{error}</p>
+                  <button type="button" onClick={() => setRevision((value) => value + 1)}>
+                    重新检测
+                  </button>
+                </>
+              ) : null}
+              {notice ? <p role="status">{notice}</p> : null}
+              {"__TAURI__" in window ? (
+                <DesktopActionButton action="connections">
+                  打开远程项目 / 管理连接
+                </DesktopActionButton>
+              ) : (
+                <p>桌面应用中可从“连接 → 连接设备”切换或断开远程连接。</p>
+              )}
+              {directory && connection?.kind === "local" && "__TAURI__" in window ? (
+                <DesktopActionButton action="reveal-folder" parameters={{ path: directory }}>
+                  在文件夹中显示
+                </DesktopActionButton>
+              ) : null}
+            </div>,
+            document.body,
+          )
+        : null}
     </details>
   );
 }

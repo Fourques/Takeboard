@@ -328,25 +328,46 @@ const hubChromeCss = `.hub-header {
 
 .hub-utility-section {
   display: grid;
-  padding: 11px 8px 5px;
+  padding: 18px 0 0;
   border-top: 1px solid var(--line);
-  gap: 8px;
+  gap: 12px;
 }
 
 .hub-utility-settings {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.hub-utility-section .theme-switcher {
   display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-}
-
-.hub-utility-settings > :is(.theme-switcher, .display-settings) {
-  flex: 1 1 140px;
-}
-
-.hub-utility-settings :is(.theme-switcher > button, .display-settings > button) {
   width: 100%;
-  min-height: 38px;
+  margin: 0;
+  min-width: 0;
+}
+.hub-utility-panel .hub-utility-section .theme-switcher button {
+  flex: 1;
+  width: auto;
+  min-height: 42px;
   justify-content: center;
+  font: inherit;
+}
+.hub-utility-panel .hub-utility-section .theme-switcher span {
+  display: inline;
+}
+.hub-utility-settings :is(button, .display-settings) {
+  width: 100%;
+  min-width: 0;
+}
+.hub-utility-panel .hub-utility-settings button {
+  min-height: 44px;
+  padding: 10px;
+  justify-content: center;
+  font-size: calc(13px * var(--ui-scale));
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
 }
 
 .worker-panel {
@@ -960,7 +981,11 @@ export function ProjectHub({
     if (!shell) return;
     const handleWheel = (event: WheelEvent) => {
       const target = event.target;
-      if (!(target instanceof Element) || target.closest(".worker-panel, .modal-backdrop")) return;
+      if (
+        !(target instanceof Element) ||
+        target.closest('.worker-panel, .modal-backdrop, [role="dialog"]')
+      )
+        return;
       if (event.deltaY === 0) return;
       const section = projectsRef.current;
       if (!section) return;
@@ -1185,9 +1210,9 @@ export function ProjectHub({
                     </button>
                   </div>
                   <div className="hub-utility-section">
-                    <span>外观与可读性</span>
+                    <span>外观</span>
+                    <ThemeSwitcher />
                     <div className="hub-utility-settings">
-                      <ThemeSwitcher />
                       <DisplaySettings />
                       <SettingsButton />
                     </div>

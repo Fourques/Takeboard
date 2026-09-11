@@ -83,7 +83,7 @@ test("display controls remain synchronized when storage is blocked", async ({ pa
   await page.getByRole("button", { name: "打开工作区选项" }).click();
   await page.getByRole("button", { name: "设置", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "设置", exact: true });
-  await dialog.getByRole("button", { name: /大字/ }).click();
+  await dialog.getByRole("slider", { name: "字体大小", exact: true }).fill("124");
   await expect(page.locator("html")).toHaveAttribute("data-display-scale", "1-24");
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-display-scale", "1-24");

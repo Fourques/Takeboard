@@ -48,15 +48,14 @@ import {
 } from "./canvas-projection";
 import { CommandConfirmation } from "./command-confirmation";
 import { DeviceIndicator } from "./device-indicator";
-import { DisplaySettings } from "./display-settings";
 import { findWorkflow } from "./generation-model";
 import { NumericInput } from "./numeric-input";
 import { SettingsButton } from "./settings-center";
-import { ThemeSwitcher } from "./theme-switcher";
 import { useCanvasConnection } from "./use-canvas-connection";
 import { useEditorSelection } from "./use-editor-selection";
 import { useProjectDocument } from "./use-project-document";
 import { useShotGeneration } from "./use-shot-generation";
+import { VideoThumbnail } from "./video-preview";
 
 const Inspector = lazy(() =>
   import("./workspace-inspector").then((module) => ({ default: module.Inspector })),
@@ -143,9 +142,9 @@ export function App() {
   const [pendingCanvasRemoval, setPendingCanvasRemoval] = useState<PendingCanvasRemoval | null>(
     null,
   );
-  const [pendingCanvasArrange, setPendingCanvasArrange] = useState<ProjectCommandPreview | null>(
-    null,
-  );
+  const [pendingCanvasArrange, setPendingCanvasArrange] = useState<
+    (ProjectCommandPreview & { command: ProjectCommand }) | null
+  >(null);
   const [nodeEditDraft, setNodeEditDraft] = useState<NodeEditDraft | null>(null);
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<BoardNode> | null>(null);
   const [actionBusy, setBusy] = useState(false);
@@ -167,6 +166,7 @@ export function App() {
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameTitle, setRenameTitle] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 1120);
+  const [focusMode, setFocusMode] = useState(false);
   const [comfortableDensity, setComfortableDensity] = useState(
     () => optionalLocalStorage.getItem("takeboard.density") !== "compact",
   );
@@ -179,6 +179,13 @@ export function App() {
     null,
   );
   const interactionActiveRef = useRef(false);
+  const nodeClickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelNodeClick = useCallback(() => {
+    if (nodeClickTimer.current !== null) clearTimeout(nodeClickTimer.current);
+    nodeClickTimer.current = null;
+  }, []);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: cancel a pending click when leaving this project.
+  useEffect(() => cancelNodeClick, [cancelNodeClick, projectKey, showHub]);
   interactionActiveRef.current = Boolean(
     nodeEditDraft ||
       pendingCanvasRemoval ||
@@ -412,8 +419,10 @@ export function App() {
       const nextNarrow = effectiveWidth() <= 1120;
       if (nextNarrow === narrow) return;
       narrow = nextNarrow;
-      setSidebarOpen(!nextNarrow);
-      selection.inspect(!nextNarrow);
+      if (nextNarrow) {
+        setSidebarOpen(false);
+        selection.inspect(false);
+      }
     };
     window.addEventListener("resize", adaptWorkspacePanels);
     window.addEventListener("takeboard:display-scale", adaptWorkspacePanels);
@@ -433,7 +442,12 @@ export function App() {
   const selectedCanvasItem =
     snapshot?.canvasItems.find((item) => item.id === selectedCanvasItemId) ?? null;
   const inspectorHasContent = Boolean(selectedCanvasItem || selectedShot);
-  const inspectorVisible = inspectorOpen && inspectorHasContent;
+  const inspectorVisible = !focusMode && inspectorOpen && inspectorHasContent;
+  const toggleFocus = useCallback(() => {
+    setFocusMode((current) => !current);
+    setSidebarOpen(focusMode && window.innerWidth >= 1120);
+    selection.inspect(false);
+  }, [focusMode, selection.inspect]);
   const selectedTakes = snapshot?.takes.filter((take) => take.shotId === selectedShotId) ?? [];
   const visibleShots = useMemo(() => {
     const normalizedQuery = shotQuery.trim().toLocaleLowerCase("zh-CN");
@@ -475,13 +489,20 @@ export function App() {
   }, []);
 
   const onNodeClick: NodeMouseHandler<BoardNode> = useCallback(
-    (_event, node) => {
+    (event, node) => {
+      if (event.detail > 1) return;
       if (!snapshot) return;
       const item = snapshot.canvasItems.find((candidate) => candidate.id === node.id);
       if (!item) return;
-      selection.item(item.id);
+      cancelNodeClick();
+      // Opening/closing a panel changes the canvas bounds. Wait briefly so the
+      // first click of a double-click cannot move its target out from under it.
+      nodeClickTimer.current = setTimeout(() => {
+        nodeClickTimer.current = null;
+        selection.quick(item.id);
+      }, 220);
     },
-    [snapshot, selection.item],
+    [snapshot, selection.quick, cancelNodeClick],
   );
 
   const openNodeEditor = useCallback(
@@ -622,17 +643,23 @@ export function App() {
     setBusy(true);
     setError(null);
     try {
-      const { preview } = await projectApi.previewCommand(projectKey, {
+      const command: ProjectCommand = {
         type: "canvas.arrange_scene",
         sceneId: activeScene.id,
-      });
-      setPendingCanvasArrange(preview);
+        nodeSizes: nodes.flatMap((node) =>
+          node.measured?.width && node.measured?.height
+            ? [{ itemId: node.id, width: node.measured.width, height: node.measured.height }]
+            : [],
+        ),
+      };
+      const { preview } = await projectApi.previewCommand(projectKey, command);
+      setPendingCanvasArrange({ ...preview, command });
     } catch (cause) {
       setNotice(cause instanceof Error ? cause.message : "当前画布无法自动整理");
     } finally {
       setBusy(false);
     }
-  }, [activeScene, canEditProject, projectKey, projectMode]);
+  }, [activeScene, canEditProject, projectKey, projectMode, nodes]);
 
   const confirmCanvasArrange = useCallback(async () => {
     if (
@@ -648,29 +675,18 @@ export function App() {
     try {
       const payload = await projectApi.executeCommand(
         projectKey,
-        { type: "canvas.arrange_scene", sceneId: activeScene.id },
+        pendingCanvasArrange.command,
         pendingCanvasArrange,
       );
       acceptPayload(payload);
       setPendingCanvasArrange(null);
-      setNotice("画布已按连线方向整理，可在“记录”中撤销");
-      window.requestAnimationFrame(
-        () => void flowInstance?.fitView({ padding: 0.16, duration: 420 }),
-      );
+      setNotice("已轻量对齐，可在“记录”中撤销");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "画布整理失败");
     } finally {
       setBusy(false);
     }
-  }, [
-    acceptPayload,
-    activeScene,
-    canEditProject,
-    flowInstance,
-    pendingCanvasArrange,
-    projectKey,
-    projectMode,
-  ]);
+  }, [acceptPayload, activeScene, canEditProject, pendingCanvasArrange, projectKey, projectMode]);
 
   const deleteCanvasItem = useCallback(
     (itemId: string) => {
@@ -889,6 +905,7 @@ export function App() {
     const handleShortcut = (event: KeyboardEvent) => {
       const target = event.target;
       if (event.key === "Escape") {
+        cancelNodeClick();
         const overlayOpen = Boolean(
           canvasContextMenu ||
             canvasGuideOpen ||
@@ -934,9 +951,7 @@ export function App() {
         return;
       }
       if (event.key === "\\") {
-        const enteringFocus = sidebarOpen || inspectorVisible;
-        setSidebarOpen(!enteringFocus);
-        selection.inspect(!enteringFocus && inspectorHasContent);
+        toggleFocus();
         return;
       }
       const command = event.metaKey || event.ctrlKey;
@@ -979,9 +994,7 @@ export function App() {
     pasteCanvasItem,
     selectedCanvasItemId,
     selectedEdgeId,
-    sidebarOpen,
     inspectorHasContent,
-    inspectorVisible,
     nodeEditDraft,
     recipeOpen,
     assetLibraryOpen,
@@ -990,11 +1003,14 @@ export function App() {
     selection.canvas,
     selection.inspect,
     selection.dismissMenu,
+    toggleFocus,
+    cancelNodeClick,
   ]);
 
   const openNodeContextMenu = useCallback(
     (event: ReactMouseEvent, node: BoardNode) => {
       event.preventDefault();
+      cancelNodeClick();
       if (!canEditProject) return;
       const point = flowInstance?.screenToFlowPosition({ x: event.clientX, y: event.clientY }) ?? {
         x: node.position.x,
@@ -1007,12 +1023,13 @@ export function App() {
         flowY: point.y,
       });
     },
-    [canEditProject, flowInstance, selection.item],
+    [canEditProject, flowInstance, selection.item, cancelNodeClick],
   );
 
   const openPaneContextMenu = useCallback(
     (event: ReactMouseEvent | MouseEvent) => {
       event.preventDefault();
+      cancelNodeClick();
       if (!canEditProject) return;
       const point = flowInstance?.screenToFlowPosition({ x: event.clientX, y: event.clientY }) ?? {
         x: 180,
@@ -1025,12 +1042,13 @@ export function App() {
         flowY: point.y,
       });
     },
-    [canEditProject, flowInstance, selection.canvas],
+    [canEditProject, flowInstance, selection.canvas, cancelNodeClick],
   );
 
   const openEdgeContextMenu = useCallback(
     (event: ReactMouseEvent, edge: Edge) => {
       event.preventDefault();
+      cancelNodeClick();
       const currentSnapshot = readProjectDocument()?.snapshot;
       const snapshotEdge = currentSnapshot ? resolveSnapshotEdge(currentSnapshot, edge) : null;
       const resolvedEdgeId = snapshotEdge?.id ?? edge.id;
@@ -1061,7 +1079,7 @@ export function App() {
         flowY: point.y,
       });
     },
-    [flowInstance, readProjectDocument, selection.edge],
+    [flowInstance, readProjectDocument, selection.edge, cancelNodeClick],
   );
 
   const applyConnection = useCallback(
@@ -1556,7 +1574,7 @@ export function App() {
         acceptPayload(payload);
         selection.item(payload.itemId);
         selection.dismissMenu();
-        setNotice("笔记已加入画布；双击即可编辑");
+        setNotice("笔记已加入画布；右键可编辑");
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "笔记创建失败");
       } finally {
@@ -1646,7 +1664,7 @@ export function App() {
         workflows,
         selectedWorkflow,
         selectedShotId,
-        selectedShot && canEditProject
+        selectedShot && canEditProject && !inspectorVisible
           ? {
               settings: generationSettings,
               workflows: availableWorkflows,
@@ -1666,7 +1684,10 @@ export function App() {
               onGenerate: (input) => {
                 void requestShotGeneration(selectedShot, input);
               },
-              onOpenDetails: () => selection.inspect(true),
+              onOpenDetails: () => {
+                if (focusMode) setNotice("退出专注后可查看详细设置");
+                else selection.inspect(true);
+              },
               onCommitTitle: (title) =>
                 void updateSelectedShot({
                   title,
@@ -1701,6 +1722,8 @@ export function App() {
     editSettings,
     generationDisabledReason,
     bindWorkflow,
+    inspectorVisible,
+    focusMode,
   ]);
 
   if (showHub) {
@@ -1805,11 +1828,7 @@ export function App() {
             <span aria-hidden="true">◇</span>
             扩展
           </button>
-          <ThemeSwitcher compact />
           <SettingsButton />
-          <Suspense fallback={null}>
-            <DisplaySettings compact />
-          </Suspense>
           <button
             className="density-button"
             type="button"
@@ -1826,9 +1845,6 @@ export function App() {
             projectTitle={projectMode === "project" ? snapshot.project.title : undefined}
             projectRole={projectMode === "project" ? activeProjectRole : undefined}
           />
-          <span className="local-badge">
-            <i /> {authUser ? "PRIVATE" : "LOCAL"}
-          </span>
           <button
             className="reset-button"
             type="button"
@@ -1994,7 +2010,7 @@ export function App() {
                   className={`shot-thumb thumb-${shot.order + 1} ${previewUrl ? "has-media" : ""}`}
                 >
                   {previewUrl && previewAsset?.mediaType === "video" ? (
-                    <video src={previewUrl} muted playsInline preload="metadata" />
+                    <VideoThumbnail src={previewUrl} label={`${shot.label} 缩略图`} />
                   ) : previewUrl ? (
                     <img src={previewUrl} alt="" />
                   ) : (
@@ -2054,16 +2070,6 @@ export function App() {
             </small>
           </div>
         ) : null}
-        <div className="sidebar-bottom">
-          <span>{projectMode === "demo" ? "DEMO WORKER" : "GENERATION WORKER"}</span>
-          <div>
-            <i /> {projectMode === "demo" ? "Fake ComfyUI" : (worker?.engine ?? "ComfyUI")} ·{" "}
-            {worker?.status === "ready" || projectMode === "demo" ? "Ready" : "Offline"}
-          </div>
-          <small>
-            {projectMode === "demo" ? "无需计算资源 · 不产生费用" : "数据、模型与工作流由你掌控"}
-          </small>
-        </div>
       </nav>
 
       <section className="canvas-wrap" aria-label="TakeBoard 创作画布">
@@ -2082,7 +2088,7 @@ export function App() {
             <strong>{activeScene?.title || "未命名场景"}</strong>
           </div>
           <div className="canvas-utility">
-            {inspectorHasContent ? (
+            {inspectorHasContent && !focusMode ? (
               <button
                 className="panel-toggle"
                 type="button"
@@ -2097,13 +2103,11 @@ export function App() {
               className="focus-toggle"
               type="button"
               onClick={() => {
-                const enteringFocus = sidebarOpen || inspectorVisible;
-                setSidebarOpen(!enteringFocus);
-                selection.inspect(!enteringFocus && inspectorHasContent);
+                toggleFocus();
               }}
               title="切换专注画布（\\）"
             >
-              {sidebarOpen || inspectorVisible ? "专注" : "退出专注"}
+              {focusMode ? "退出专注" : "专注"}
             </button>
             <button
               className={`canvas-guide-toggle ${canvasGuideOpen ? "active" : ""}`}
@@ -2123,7 +2127,7 @@ export function App() {
                   (snapshot?.canvasItems.filter((item) => item.sceneId === activeScene?.id)
                     .length ?? 0) < 2
                 }
-                aria-label="按连线方向整理当前画布"
+                aria-label="轻量对齐当前画布"
                 title="预览后整理节点位置，可撤销"
                 onClick={() => void previewCanvasArrange()}
               >
@@ -2166,7 +2170,7 @@ export function App() {
                   </div>
                   <div>
                     <dt>编辑</dt>
-                    <dd>单击镜头；空白处退出</dd>
+                    <dd>单击镜头，再次单击收起；双击查看详情</dd>
                   </div>
                   <div>
                     <dt>连接</dt>
@@ -2225,7 +2229,9 @@ export function App() {
           nodesDraggable={canEditProject}
           nodesConnectable={canEditProject}
           onNodeClick={onNodeClick}
+          onNodeDragStart={cancelNodeClick}
           onEdgeClick={(event, edge) => {
+            cancelNodeClick();
             const snapshotEdge = resolveSnapshotEdge(
               readProjectDocument()?.snapshot ?? snapshot,
               edge,
@@ -2252,16 +2258,19 @@ export function App() {
           }}
           onEdgeContextMenu={openEdgeContextMenu}
           onNodeDoubleClick={(_event, node) => {
+            cancelNodeClick();
             const item = snapshot.canvasItems.find((candidate) => candidate.id === node.id);
             if (item?.refType === "shot") {
-              selection.item(item.id);
+              if (focusMode) selection.quick(item.id, false);
+              else selection.item(item.id);
               return;
             }
-            if (canEditProject) openNodeEditor(node.id);
+            if (item && !focusMode) selection.item(item.id);
           }}
           onNodeContextMenu={openNodeContextMenu}
           onPaneContextMenu={openPaneContextMenu}
           onPaneClick={(event) => {
+            cancelNodeClick();
             if (event.detail === 2) {
               openPaneContextMenu(event);
               return;
@@ -2383,7 +2392,6 @@ export function App() {
                 >
                   <span>✎</span>
                   <strong>编辑节点</strong>
-                  <kbd>双击</kbd>
                 </button>
               ) : null}
               <button
@@ -2566,11 +2574,6 @@ export function App() {
             onRetryRun={(run) => void retryGenerationRun(run)}
             readOnly={!canEditProject}
             onClose={() => selection.inspect(false)}
-            workerLabel={
-              projectMode === "demo"
-                ? "Fake Wan I2V"
-                : `${selectedWorkflow?.name ?? "ComfyUI"} · ${worker?.fleet?.workers.filter((entry) => entry.status === "ready").length ?? 0} 个执行端在线`
-            }
             onGenerate={() => void requestShotGeneration(selectedShot)}
             onCancel={() => void cancelGeneration()}
             canCancel={canCancelGeneration}
@@ -2771,7 +2774,7 @@ export function App() {
           >
             <span className="section-kicker">CANVAS ARRANGE</span>
             <h2 id="canvas-arrange-title">整理当前画布？</h2>
-            <p>系统会沿连线从左到右分层，并保留每一列原有的上下顺序。</p>
+            <p>保留现有布局，只对齐相近边缘，并按当前显示尺寸避开重叠。不改变连线或缩放视野。</p>
             <div className="shot-delete-preview">
               <span>位置预览</span>
               <ul>
@@ -2795,7 +2798,7 @@ export function App() {
                 保持现状
               </button>
               <button type="button" disabled={busy} onClick={() => void confirmCanvasArrange()}>
-                {busy ? "正在整理…" : "整理并适配视野"}
+                {busy ? "正在对齐…" : "应用对齐"}
               </button>
             </div>
           </section>

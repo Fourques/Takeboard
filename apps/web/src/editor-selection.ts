@@ -26,6 +26,7 @@ export type SelectionAction =
   | { type: "activate"; snapshot: ProjectSnapshot; reveal: boolean }
   | { type: "reconcile"; snapshot: ProjectSnapshot }
   | { type: "item"; snapshot: ProjectSnapshot; itemId: string; menu?: MenuPosition }
+  | { type: "quick"; snapshot: ProjectSnapshot; itemId: string; toggle: boolean }
   | { type: "shot"; snapshot: ProjectSnapshot; shotId: string }
   | { type: "edge"; id: string; identity: EdgeIdentity; menu?: MenuPosition }
   | { type: "canvas"; menu?: MenuPosition }
@@ -88,12 +89,23 @@ export function reduceEditorSelection(
         ...next,
         target: { kind: "item", id: item.id },
         menu: action.menu ?? null,
-        inspectorOpen: true,
+        inspectorOpen: action.menu ? next.inspectorOpen : true,
         shotContextId:
           item.refType === "shot" || item.refType === "take_stack"
             ? item.refId
             : next.shotContextId,
       };
+    }
+    case "quick": {
+      const next = reconcileSelection(state, action.snapshot);
+      if (action.toggle && next.target.kind === "item" && next.target.id === action.itemId)
+        return { ...emptySelection, projectId: next.projectId, shotContextId: next.shotContextId };
+      const chosen = reduceEditorSelection(next, {
+        type: "item",
+        snapshot: action.snapshot,
+        itemId: action.itemId,
+      });
+      return { ...chosen, inspectorOpen: false };
     }
     case "shot": {
       if (!action.snapshot.shots.some((shot) => shot.id === action.shotId))

@@ -952,6 +952,26 @@ export type GenerationConnection = {
   profiles: Array<{ workerId: string; target: GenerationConnectionTarget }>;
 };
 export const generationConnectionApi = {
+  edit: (
+    workerId: string,
+    target: GenerationConnectionTarget & {
+      enabled?: boolean;
+      allowSensitiveInputs?: boolean;
+      confirmMedia?: boolean;
+    },
+  ) =>
+    jsonRequest<GenerationConnection>(
+      `/api/generation/connection/${encodeURIComponent(workerId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(target),
+      },
+    ),
+  remove: (workerId: string) =>
+    jsonRequest<GenerationConnection>(
+      `/api/generation/connection/${encodeURIComponent(workerId)}`,
+      { method: "DELETE" },
+    ),
   status: () => jsonRequest<GenerationConnection>("/api/generation/connection"),
   connect: (target: GenerationConnectionTarget | { workerId: string }) =>
     jsonRequest<GenerationConnection>("/api/generation/connection", {

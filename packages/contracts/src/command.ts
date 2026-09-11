@@ -98,6 +98,16 @@ export const projectCommandSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("canvas.arrange_scene"),
     sceneId: sceneIdSchema.optional(),
+    nodeSizes: z
+      .array(
+        z.object({
+          itemId: canvasItemIdSchema,
+          width: z.number().finite().positive().max(10000),
+          height: z.number().finite().positive().max(10000),
+        }),
+      )
+      .max(5000)
+      .optional(),
   }),
   z.object({
     type: z.literal("canvas.remove_item"),

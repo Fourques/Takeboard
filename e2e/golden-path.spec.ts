@@ -210,13 +210,15 @@ test("canvas nodes reveal their own contextual inspector", async ({ page }) => {
       page.locator(`.react-flow__node-${nodeType}`).first().locator(".board-output-handle"),
     ).toBeVisible();
   }
+  await page.getByRole("button", { name: "显示检查器", exact: true }).click();
   await page.getByRole("button", { name: "开始生成" }).click();
+  await page.getByRole("button", { name: "Fit View" }).click();
   await expect(
     page.locator(".react-flow__node-take_stack").first().locator(".board-output-handle"),
   ).toBeVisible();
 
   const scriptNode = page.locator(".react-flow__node-text");
-  await scriptNode.click();
+  await scriptNode.dblclick();
   await expect(page.getByLabel("剧本节点检查器")).toBeVisible();
   await expect(
     page.getByLabel("剧本节点检查器").getByRole("heading", { name: "场景剧本" }),
@@ -227,7 +229,7 @@ test("canvas nodes reveal their own contextual inspector", async ({ page }) => {
   await expect(scriptNode).toHaveClass(/selected/);
 
   const entityNode = page.locator(".react-flow__node-entity");
-  await entityNode.click();
+  await entityNode.dblclick();
   await expect(page.getByLabel("实体节点检查器")).toBeVisible();
   await expect(
     page.getByLabel("实体节点检查器").getByRole("heading", { name: "林夏" }),
@@ -236,7 +238,7 @@ test("canvas nodes reveal their own contextual inspector", async ({ page }) => {
   await expect(scriptNode).not.toHaveClass(/selected/);
 
   const assetNode = page.locator(".react-flow__node-asset");
-  await assetNode.click();
+  await assetNode.dblclick();
   await expect(page.getByLabel("素材节点检查器")).toBeVisible();
   await expect(page.getByRole("heading", { name: "连接用途" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "自定义标签" })).toBeVisible();
@@ -247,7 +249,7 @@ test("canvas nodes reveal their own contextual inspector", async ({ page }) => {
   });
 
   const secondShot = page.locator(".react-flow__node-shot").nth(1);
-  await secondShot.click();
+  await secondShot.dblclick();
   await expect(page.getByLabel("镜头候选检查器").getByLabel("镜头名称")).toHaveValue("S002");
   await expect(secondShot).toHaveClass(/selected/);
   const canvasWidthWithInspector = (await page.locator(".canvas-wrap").boundingBox())?.width ?? 0;
@@ -261,7 +263,7 @@ test("canvas nodes reveal their own contextual inspector", async ({ page }) => {
     path: "test-results/takeboard-canvas-expanded.png",
     animations: "disabled",
   });
-  await secondShot.click();
+  await secondShot.dblclick();
   await expect(page.getByLabel("镜头候选检查器")).toBeVisible();
   await page.getByRole("button", { name: "收起检查器" }).click();
   await expect(page.getByLabel("镜头候选检查器")).toBeHidden();
@@ -277,22 +279,30 @@ test("fake generation and approval survive reload", async ({ page }) => {
   const reset = page.getByRole("button", { name: "重置 Demo" });
   await reset.click();
   await page.getByRole("button", { name: "确认重置" }).click();
-  await expect(page.getByText("这个镜头还没有 Take")).toBeVisible();
+  await page.getByRole("button", { name: "显示检查器", exact: true }).click();
+  await expect(page.getByText("这个镜头还没有生成结果")).toBeVisible();
 
   await page.getByRole("button", { name: "开始生成" }).click();
   await expect(page.getByRole("button", { name: "选择候选 1" })).toBeVisible();
   await expect(page.getByRole("button", { name: /选择候选/ })).toHaveCount(4);
 
   await page.getByRole("button", { name: "选择候选 1" }).click();
-  await page.getByLabel("淘汰原因").selectOption("角色漂移");
-  await page.getByRole("button", { name: "淘汰" }).click();
-  await expect(page.getByText("REJECTED")).toBeVisible();
+  await expect(page.getByLabel("不采用的备注")).toHaveCount(0);
+  await page.getByRole("button", { name: "不采用", exact: true }).click();
+  await page.getByLabel("不采用的备注").selectOption("角色漂移");
+  await page.getByRole("button", { name: "确认不采用" }).click();
+  await expect(page.getByText("未采用", { exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "选择候选 2" }).click();
   await page.locator(".react-flow__node-shot").first().click();
+  await expect(page.getByLabel("镜头候选检查器")).toBeHidden();
+  await expect(page.locator(".shot-inline-console")).toHaveCount(0);
+  await page.locator(".react-flow__node-shot").first().click();
   await expect(page.locator(".shot-inline-console")).toBeVisible();
-  await page.getByRole("button", { name: "批准此 Take" }).click();
-  await expect(page.getByText("APPROVED").first()).toBeVisible();
+  await page.locator(".react-flow__node-shot").first().dblclick();
+  await page.getByRole("button", { name: "选择候选 2" }).click();
+  await page.getByRole("button", { name: "采用此结果" }).click();
+  await expect(page.locator(".take-state").getByText("已采用", { exact: true })).toBeVisible();
   await expect(page.getByText("镜头完成度").locator("..").getByText("1/3")).toBeVisible();
   await expect(page.locator(".shot-inline-console")).toHaveCount(0);
 
@@ -303,11 +313,13 @@ test("fake generation and approval survive reload", async ({ page }) => {
     await dialog.dismiss();
   });
   await page.locator(".shot-inline-generate").click();
+  await page.getByRole("button", { name: "显示检查器", exact: true }).click();
   await expect(page.getByRole("button", { name: /选择候选/ })).toHaveCount(4);
 
   await page.reload();
-  await expect(page.getByText("APPROVED").first()).toBeVisible();
-  await expect(page.getByText("REJECTED")).toBeVisible();
+  await page.getByRole("button", { name: "显示检查器", exact: true }).click();
+  await expect(page.locator(".take-state").getByText("已采用", { exact: true })).toBeVisible();
+  await expect(page.getByText("未采用", { exact: true })).toBeVisible();
   await expect(page.getByText(/已保存 · r/)).toBeVisible();
   await page.screenshot({ path: "test-results/takeboard-demo-approved.png", fullPage: true });
 });
@@ -535,23 +547,104 @@ test("a generated video loads and remains controllable on canvas", async ({ page
     "base64",
   );
 
+  // Exercise the actual authenticated, seekable media endpoint; only the GPU
+  // result identity is simulated. Browser media caching cannot be validated by
+  // route.fulfill's in-memory stream.
+  const imported = await request.post(`/api/projects/${payload.key}/assets`, {
+    multipart: { file: { name: "generated-shot.mp4", mimeType: "video/mp4", buffer: mp4 } },
+  });
+  expect(imported.status()).toBe(201);
+  const realAsset = (await imported.json()).snapshot.assets[0];
+  snapshot.assets = [realAsset];
+  snapshot.takes[0].assetId = realAsset.id;
   await page.route(`**/api/projects/${payload.key}`, async (route) => {
     await route.fulfill({ json: { key: payload.key, revision: 2, snapshot } });
   });
-  await page.route(`**/api/projects/${payload.key}/assets/${assetId}/content*`, async (route) => {
-    await route.fulfill({ contentType: "video/mp4", body: mp4 });
+  let moved = false;
+  await page.route(`**/api/projects/${payload.key}/commands`, async (route) => {
+    const { command } = route.request().postDataJSON();
+    expect(command.type).toBe("canvas.move_item");
+    const item = snapshot.canvasItems.find((item: { id: string }) => item.id === command.itemId);
+    item.x = command.x;
+    item.y = command.y;
+    moved = true;
+    await route.fulfill({ json: { key: payload.key, revision: 3, snapshot } });
   });
 
   await page.goto("/");
   await page.getByRole("button", { name: `打开 ${title} 的SC-01` }).click();
   const video = page.getByLabel("SH-01 生成视频");
   await expect(video).toBeVisible();
-  await expect(video).toHaveAttribute("controls", "");
+  await expect(video).not.toHaveAttribute("controls", "");
   await expect
     .poll(() => video.evaluate((element: HTMLVideoElement) => element.readyState))
     .toBeGreaterThanOrEqual(2);
   await expect(page.locator(".shot-video-fallback")).toHaveCount(0);
   await expect(page.locator(".shot-generated-overlay")).toContainText("视频");
+  const node = page.locator(".react-flow__node-shot").first();
+  const picture = node.locator(".shot-generated-media");
+  const originalBounds = await picture.boundingBox();
+  if (!originalBounds) throw new Error("Video picture is missing");
+  const center = {
+    x: originalBounds.x + originalBounds.width / 2,
+    y: originalBounds.y + originalBounds.height / 2,
+  };
+  await page.mouse.move(center.x, center.y);
+  await page.mouse.down();
+  await page.mouse.move(center.x + 70, center.y + 30, { steps: 10 });
+  await page.mouse.up();
+  await expect.poll(() => moved).toBe(true);
+  await expect(node.getByRole("button", { name: "播放视频", exact: true })).toBeVisible();
+  await node.getByRole("button", { name: "播放视频", exact: true }).click();
+  await expect
+    .poll(() => video.evaluate((element: HTMLVideoElement) => element.paused))
+    .toBe(false);
+  await node.getByRole("button", { name: "暂停视频", exact: true }).click();
+  await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.paused)).toBe(true);
+  await node.getByRole("button", { name: "开启视频声音" }).click();
+  await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.muted)).toBe(false);
+  await node.getByRole("button", { name: "静音视频" }).click();
+  await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.muted)).toBe(true);
+  // Decode actual thumbnails, rather than asserting only that a black video tag exists.
+  const thumbnail = page.getByLabel("SH-01 缩略图");
+  await expect
+    .poll(() => thumbnail.evaluate((element: HTMLVideoElement) => element.readyState))
+    .toBeGreaterThanOrEqual(2);
+  await expect
+    .poll(() => thumbnail.evaluate((element: HTMLVideoElement) => element.currentTime))
+    .toBeGreaterThan(0);
+  await page.locator(".react-flow__pane").click({ position: { x: 20, y: 180 } });
+  await picture.click({ position: { x: 80, y: 80 } });
+  await expect(page.locator(".shot-inline-console")).toBeVisible();
+  await expect(page.getByLabel("镜头候选检查器")).toBeHidden();
+  await picture.click({ position: { x: 80, y: 80 } });
+  await expect(page.locator(".shot-inline-console")).toHaveCount(0);
+  await picture.dblclick({ position: { x: 80, y: 80 } });
+  await expect(page.getByLabel("镜头候选检查器")).toBeVisible();
+  await expect(page.locator(".shot-inline-console")).toHaveCount(0);
+  await expect(page.getByLabel("不采用的备注")).toHaveCount(0);
+  await expect
+    .poll(async () => (await page.getByLabel("镜头候选检查器").boundingBox())?.width ?? 0)
+    .toBeGreaterThanOrEqual(400);
+  await page.screenshot({
+    path: "test-results/project-result-inspector.png",
+    animations: "disabled",
+  });
+  await page.getByRole("button", { name: "专注", exact: true }).click();
+  await picture.dblclick({ position: { x: 80, y: 80 } });
+  await expect(page.getByLabel("镜头候选检查器")).toBeHidden();
+  await page.setViewportSize({ width: 1700, height: 1000 });
+  await expect(page.getByLabel("镜头候选检查器")).toBeHidden();
+  await page.getByRole("button", { name: "退出专注", exact: true }).click();
+  await page.getByRole("button", { name: /打开资产库/ }).click();
+  const assetVideo = page.locator(".asset-card-media video").first();
+  await expect
+    .poll(() => assetVideo.evaluate((element: HTMLVideoElement) => element.readyState))
+    .toBeGreaterThanOrEqual(2);
+  await expect
+    .poll(() => assetVideo.evaluate((element: HTMLVideoElement) => element.currentTime))
+    .toBeGreaterThan(0);
+  await page.getByRole("button", { name: "关闭资产库" }).click();
   await page.screenshot({
     path: "test-results/takeboard-generated-video-node.png",
     animations: "disabled",
@@ -563,6 +656,7 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
   // the normal expect budget while allowing the full import/edit/connect/generate/reopen sequence
   // to finish on a cold shared runner without relying on a whole-test retry.
   test.setTimeout(120_000);
+  page.setDefaultTimeout(10_000);
   const roughCut = await request.patch("/api/admin/extensions/studio.takeboard.rough-cut", {
     data: { enabled: true },
   });
@@ -717,7 +811,7 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
   await expect(settings).not.toBeVisible();
   await expect(page.locator(".react-flow__node-shot")).toHaveCount(1);
   await expect(page.getByRole("dialog", { name: /删除/ })).toHaveCount(0);
-  await page.getByRole("button", { name: "柔彩主题" }).click();
+  await expect(page.getByLabel("镜头候选检查器")).toBeVisible();
   await page.locator(".recipe-selector").click();
   await expect(page.getByRole("heading", { name: "工作流与模型" })).toBeVisible();
   await expect(page.getByText("TakeBoard 内置")).toBeVisible();
@@ -729,10 +823,12 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
   await expect(page.getByRole("button", { name: /Wan22 FLF2V/ })).toContainText("2 个画面位置");
   await expect(page.getByRole("button", { name: /MiniMax H3 R2V/ })).toContainText("12 个画面位置");
   await page.getByRole("button", { name: /MiniMax H3 R2V/ }).click();
+  await page.getByRole("button", { name: "收起检查器" }).click();
   await expect(page.locator(".react-flow__node-shot")).toContainText("参考 0/9");
   await expect(page.locator(".react-flow__node-shot")).toContainText("参考视频 0/3");
   await expect(page.getByLabel("画布工作流")).toHaveValue("Kino/Kino_MiniMaxH3_R2V.json");
   await expect(page.getByLabel("画布提示词")).toBeVisible();
+  await page.getByRole("button", { name: "显示检查器", exact: true }).click();
   await page.locator(".recipe-selector").click();
   await page.getByRole("button", { name: /Qwen Image 2512 T2I/ }).click();
   await expect(page.getByText("无需图片输入")).toBeVisible();
@@ -759,6 +855,7 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
   await expect(page.locator(".react-flow__node-shot")).toContainText("首帧 0/1");
   await expect(page.locator(".react-flow__node-shot")).toContainText("尾帧 0/1");
   await expect(page.locator(".react-flow__node-shot")).toContainText("Wan22 FLF2V");
+  await page.getByRole("button", { name: "收起检查器" }).click();
   const canvasWidth = page.getByLabel("画布宽度");
   await canvasWidth.fill("");
   await expect(canvasWidth).toHaveValue("");
@@ -778,6 +875,7 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
   await canvasDuration.fill("3.5");
   await canvasDuration.press("Enter");
   await expect(canvasDuration).toHaveValue("3.5");
+  await page.getByRole("button", { name: "显示检查器", exact: true }).click();
   await page.locator(".advanced-generation-settings summary").click();
   const inspectorWidth = page.getByLabel("宽度", { exact: true });
   await inspectorWidth.fill("");
@@ -864,7 +962,7 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
   expect(await originalImage.evaluate((image) => getComputedStyle(image).objectFit)).toBe(
     "contain",
   );
-  await originalAssetNode.click();
+  await originalAssetNode.dblclick();
   await expect(page.getByText("原始文件只读保存")).toBeVisible();
   await expect(page.getByText("尚未连接到模型输入")).toBeVisible();
   const customTagInput = page.getByLabel("新增自定义标签");
@@ -899,7 +997,9 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
   await expect(page.getByText("已连接为首帧")).toBeVisible();
   await expect(page.locator(".react-flow__edge")).toHaveCount(1);
   const shotNodes = page.locator(".react-flow__node-shot");
-  await shotNodes.first().click();
+  // Connecting selects the target shot; dismiss its detail panel to continue
+  // editing inline without toggling the already selected target off.
+  await page.getByRole("button", { name: "收起检查器" }).click();
   const inlinePrompt = page.getByLabel("画布提示词");
   await inlinePrompt.click();
   await inlinePrompt.pressSequentially("镜头内中文输入正常");
@@ -907,24 +1007,27 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
   await expect(inlinePrompt).toBeFocused();
   await expect(page.getByLabel("画布生成方式")).toHaveValue("first_last_video");
   await expect(page.getByLabel("画布生成方式")).toContainText("文生图");
-  const blankCanvasPoint = await page.locator(".react-flow__pane").evaluate((pane) => {
-    const bounds = pane.getBoundingClientRect();
-    for (let y = bounds.top + 24; y < bounds.bottom - 24; y += 32) {
-      for (let x = bounds.left + 24; x < bounds.right - 24; x += 32) {
-        if (document.elementFromPoint(x, y)?.classList.contains("react-flow__pane"))
-          return { x, y };
+  const findBlankCanvasPoint = () =>
+    page.locator(".react-flow__pane").evaluate((pane) => {
+      const bounds = pane.getBoundingClientRect();
+      for (let y = bounds.top + 24; y < bounds.bottom - 24; y += 32) {
+        for (let x = bounds.left + 24; x < bounds.right - 24; x += 32) {
+          if (document.elementFromPoint(x, y)?.classList.contains("react-flow__pane"))
+            return { x, y };
+        }
       }
-    }
-    return null;
-  });
+      return null;
+    });
+  const blankCanvasPoint = await findBlankCanvasPoint();
   if (!blankCanvasPoint) throw new Error("没有找到可点击的画布空白区域");
   await page.mouse.click(blankCanvasPoint.x, blankCanvasPoint.y);
   await expect(page.locator(".shot-inline-console")).toHaveCount(0);
   await shotNodes.first().click();
+  await expect(page.locator(".shot-inline-mentions")).toContainText("@takeboard-crew-mascot");
+  await shotNodes.first().dblclick();
   await expect(
     page.locator(".prompt-mention-chips").getByText("@takeboard-crew-mascot"),
   ).toBeVisible();
-  await expect(page.locator(".shot-inline-mentions")).toContainText("@takeboard-crew-mascot");
   const prompt = page.locator(".prompt-with-mentions textarea");
   await prompt.fill("让 ");
   await prompt.press("@");
@@ -933,15 +1036,16 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
     .getByRole("button", { name: /@takeboard-crew-mascot/ })
     .click();
   await expect(prompt).toHaveValue("让 @takeboard-crew-mascot");
-  await originalAssetNode.click();
+  await originalAssetNode.dblclick();
   await expect(
     page.locator(".connection-role-badges").getByText("首帧", { exact: true }),
   ).toBeVisible();
 
   const originalShotCount = await shotNodes.count();
-  await shotNodes.first().click();
+  await shotNodes.first().dblclick();
   const inspector = page.getByLabel("镜头候选检查器");
   await inspector.getByLabel("镜头名称").fill("SH-01A");
+  await inspector.locator("summary").filter({ hasText: "镜头信息" }).click();
   await inspector.getByLabel("镜头画幅").selectOption("9:16");
   await inspector.getByRole("button", { name: "保存镜头" }).click();
   await expect(page.getByText("SH-01A", { exact: true }).first()).toBeVisible();
@@ -960,7 +1064,7 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
   await expect(page.getByText("已导入参考素材：camera-motion-reference.mp4")).toBeVisible();
   const videoNode = page.locator(".react-flow__node-asset").filter({ has: page.locator("video") });
   await expect(videoNode).toBeVisible();
-  await shotNodes.first().click();
+  await shotNodes.first().dblclick();
   await page.locator(".recipe-selector").click();
   await page.getByRole("button", { name: /MiniMax H3 R2V/ }).click();
   const videoSourceHandle = videoNode.locator(".board-output-handle");
@@ -981,6 +1085,7 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
   await page.mouse.up();
   await expect(page.getByText("已连接为参考视频")).toBeVisible();
   await expect(page.locator(".react-flow__node-shot")).toContainText("参考视频 1/3");
+  await page.getByRole("button", { name: "收起检查器" }).click();
   await expect(page.locator(".shot-inline-mentions")).toContainText("@camera-motion-reference");
   await page.locator(".react-flow__edge").click({ button: "right", force: true });
   await page.getByRole("menuitem", { name: /断开连接/ }).click();
@@ -988,10 +1093,9 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
 
   const textNodes = page.locator(".react-flow__node-text");
   const originalTextCount = await textNodes.count();
-  const pane = page.locator(".react-flow__pane");
-  const paneBox = await pane.boundingBox();
-  if (!paneBox) throw new Error("画布未渲染");
-  await page.mouse.dblclick(paneBox.x + 340, paneBox.y + paneBox.height - 90);
+  const addPoint = await findBlankCanvasPoint();
+  if (!addPoint) throw new Error("没有找到可双击的画布空白区域");
+  await page.mouse.dblclick(addPoint.x, addPoint.y);
   await expect(page.getByRole("menu")).toContainText("ADD TO CANVAS");
   await page.getByRole("menuitem", { name: /添加文字笔记/ }).click();
   await expect(textNodes).toHaveCount(originalTextCount + 1);

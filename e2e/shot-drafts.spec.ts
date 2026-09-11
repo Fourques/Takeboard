@@ -36,16 +36,20 @@ test("shot drafts survive selection changes without leaking across workflow fami
       .getByRole("button", { name: /打开画板/ })
       .click();
     await page.locator(".shot-list > button").filter({ hasText: "视频草稿" }).click();
+    await page.getByRole("button", { name: "收起检查器" }).click();
     await page.getByLabel("画布提示词", { exact: true }).fill("视频的未提交草稿");
     await page.getByLabel("画布宽度", { exact: true }).fill("960");
     await page.locator(".shot-list > button").filter({ hasText: "图片草稿" }).click();
+    await page.getByRole("button", { name: "收起检查器" }).click();
     await expect(page.getByLabel("画布提示词", { exact: true })).toHaveValue("");
     await expect(page.getByLabel("画布宽度", { exact: true })).not.toHaveValue("960");
     await page.getByLabel("画布提示词", { exact: true }).fill("图片的未提交草稿");
     await page.locator(".shot-list > button").filter({ hasText: "视频草稿" }).click();
+    await page.getByRole("button", { name: "收起检查器" }).click();
     await expect(page.getByLabel("画布提示词", { exact: true })).toHaveValue("视频的未提交草稿");
     await expect(page.getByLabel("画布宽度", { exact: true })).toHaveValue("960");
     await page.locator(".shot-list > button").filter({ hasText: "图片草稿" }).click();
+    await page.getByRole("button", { name: "收起检查器" }).click();
     await expect(page.getByLabel("画布提示词", { exact: true })).toHaveValue("图片的未提交草稿");
     await page.getByLabel("画布提示词", { exact: true }).blur();
     await page.keyboard.press("Escape");

@@ -39,14 +39,17 @@
   background: var(--red);
 }
 .device-indicator-panel {
-  position: absolute;
-  inset-inline-end: 0;
-  top: calc(100% + 10px);
-  z-index: 100;
+  position: fixed;
+  left: clamp(16px, var(--device-left), max(16px, calc(100vw - 376px)));
+  top: clamp(16px, var(--device-top), max(16px, calc(100dvh - 120px)));
+  z-index: 1600;
   display: grid;
   gap: 10px;
   width: min(360px, calc(100vw - 32px));
-  max-height: min(540px, calc(100dvh - 110px));
+  max-height: min(
+    540px,
+    calc(100dvh - clamp(16px, var(--device-top), max(16px, calc(100dvh - 120px))) - 16px)
+  );
   overflow: auto;
   padding: 18px;
   border: 1px solid var(--line);
@@ -149,9 +152,6 @@
 }
 @media (max-width: 600px) {
   .device-indicator-panel {
-    position: fixed;
-    inset-inline: 16px;
-    top: 80px;
-    width: auto;
+    width: calc(100vw - 32px);
   }
 }

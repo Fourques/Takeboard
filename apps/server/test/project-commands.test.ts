@@ -459,7 +459,7 @@ describe("project command API", () => {
     for (const [index, position] of [
       { x: 720, y: 420 },
       { x: 140, y: 150 },
-      { x: 430, y: 760 },
+      { x: 730, y: 760 },
     ].entries()) {
       const created = await app.inject({
         method: "POST",
@@ -511,9 +511,9 @@ describe("project command API", () => {
       x: number;
       y: number;
     }>;
-    expect(new Set(arrangedItems.map((item) => item.x))).toEqual(new Set([140]));
+    expect(new Set(arrangedItems.map((item) => item.x))).toEqual(new Set([140, 720]));
     expect(arrangedItems.map((item) => item.y).sort((left, right) => left - right)).toEqual([
-      150, 404, 658,
+      150, 420, 760,
     ]);
 
     const undone = await app.inject({
