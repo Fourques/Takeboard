@@ -35,6 +35,12 @@ test("gentle arrangement uses rendered bounds, confirms changes and preserves th
     const nodes = page.locator(".react-flow__node-asset");
     await expect(nodes).toHaveCount(2);
     const viewport = page.locator(".react-flow__viewport");
+    // React Flow mounts nodes before its initial fitView has measured them.
+    // Wait for that initial fit before recording the view that arrangement must preserve.
+    await expect(viewport).not.toHaveAttribute(
+      "style",
+      "transform: translate(60px, 30px) scale(0.78);",
+    );
     const originalTransform = await viewport.getAttribute("style");
     const previewRequest = page.waitForRequest((request) =>
       request.url().endsWith("/commands/preview"),

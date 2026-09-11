@@ -177,7 +177,7 @@ try {
           "--pid",
           String(desktop.child.pid),
           "--name",
-          "TakeBoard · 连接设备",
+          "TakeBoard · 远程项目",
         ],
         { encoding: "utf8" },
       )
@@ -190,7 +190,8 @@ try {
   execFileSync("xdotool", ["windowactivate", "--sync", connectionId]);
   execFileSync("xdotool", ["key", "--clearmodifiers", "Down", "Tab"]);
   execFileSync("xdotool", ["type", "--clearmodifiers", `http://127.0.0.1:${record.port}`]);
-  execFileSync("xdotool", ["key", "--clearmodifiers", "Tab", "Return"]);
+  // Submit from the address field; Tab would now focus the optional settings disclosure.
+  execFileSync("xdotool", ["key", "--clearmodifiers", "Return"]);
   const remoteId = await until(
     "verified remote workspace window",
     () =>
