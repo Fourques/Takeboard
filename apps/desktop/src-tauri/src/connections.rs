@@ -40,9 +40,13 @@ fn trusted(window: &WebviewWindow) -> Result<(), String> {
     Ok(())
 }
 pub async fn open(app: tauri::AppHandle) -> tauri::Result<()> {
+    open_with_theme(app, None).await
+}
+pub async fn open_with_theme(app: tauri::AppHandle, theme: Option<&str>) -> tauri::Result<()> {
     let state = app.state::<Connections>();
     let _guard = state.operation.lock().await;
     if let Some(window) = app.get_webview_window("connections") {
+        window.eval(&crate::local_files::appearance_script(theme))?;
         window.show()?;
         window.set_focus()?;
     } else {
@@ -51,7 +55,8 @@ pub async fn open(app: tauri::AppHandle) -> tauri::Result<()> {
             "connections",
             WebviewUrl::App("connections.html".into()),
         )
-        .title("TakeBoard · 连接设备")
+        .initialization_script(crate::local_files::appearance_script(theme))
+        .title("TakeBoard · 远程项目")
         .inner_size(680.0, 720.0)
         .min_inner_size(380.0, 440.0)
         .build()?;

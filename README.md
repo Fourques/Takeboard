@@ -80,7 +80,7 @@ TakeBoard 不替代 ComfyUI 的节点编辑器，而是让创作过程更连贯�
 
 [全部文档](docs/README.md) · [版本记录](CHANGELOG.md) · [路线图](docs/roadmap.md) · [安全策略](SECURITY.md)
 
-遇到问题，先查看“任务中心 → 运行诊断”，再通过
+遇到问题，先在“设置 → 运行诊断”点击“开始检测”，再通过
 [问题反馈](https://github.com/Fourques/Takeboard/issues/new/choose)提交复现步骤。
 不要上传私人素材、密码或 API Key；安全漏洞请按安全策略私下报告。
 

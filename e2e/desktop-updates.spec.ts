@@ -55,7 +55,8 @@ test("desktop update UI saves channels, skips releases and never invents a downl
   });
   await page.route("https://desktop.test/**", async (route) => {
     const file = new URL(route.request().url()).pathname.slice(1);
-    if (!["updates.html", "updates.js", "connections.css"].includes(file)) return route.abort();
+    if (!["updates.html", "updates.js", "connections.css", "appearance.js"].includes(file))
+      return route.abort();
     await route.fulfill({
       body: await readFile(resolve("apps/desktop/ui", file)),
       contentType: file.endsWith(".js")

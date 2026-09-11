@@ -1,11 +1,10 @@
 import type {
-  OperationsDiagnostics,
   OperationsStorage,
   OperationsTaskCenter,
   OperationTask,
   RunStatus,
 } from "@takeboard/contracts";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { projectApi } from "./api";
 import { optionalLocalStorage } from "./browser-storage";
 
@@ -143,9 +142,7 @@ const operationsCss = `.operations-control {
 .operations-panel > header,
 .operations-tabs,
 .operations-view-actions,
-.operations-view-actions > div,
-.storage-project-list > div,
-.storage-project-list > button {
+.operations-view-actions > div {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -211,8 +208,7 @@ const operationsCss = `.operations-control {
 }
 
 .operations-task-view,
-.operations-storage-view,
-.operations-diagnostic-view {
+.operations-storage-view {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
@@ -225,8 +221,7 @@ const operationsCss = `.operations-control {
   gap: 8px;
 }
 
-.operations-view-actions button,
-.storage-project-list button {
+.operations-view-actions button {
   min-height: 27px;
   padding: 0 8px;
   border-radius: 6px;
@@ -377,115 +372,10 @@ const operationsCss = `.operations-control {
   color: var(--text-2);
 }
 
-.storage-project-list {
-  margin-top: 14px;
-}
-
-.storage-project-list > div {
-  margin-bottom: 7px;
-}
-
-.storage-project-list > button {
-  width: 100%;
-  margin-top: 5px;
-  text-align: left;
-}
-
 .storage-safety-note {
   color: var(--text-2);
   font-size: calc(10px * var(--ui-scale));
   line-height: 1.5;
-}
-
-.operations-diagnostic-summary {
-  display: grid;
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface-2);
-  gap: 5px;
-}
-
-.operations-diagnostic-summary strong {
-  font-size: calc(15px * var(--ui-scale));
-}
-
-.operations-diagnostic-summary span,
-.operations-diagnostic-summary small {
-  color: var(--text-2);
-  font-size: calc(10px * var(--ui-scale));
-  line-height: 1.5;
-}
-
-.operations-diagnostic-actions {
-  display: flex;
-  flex-wrap: wrap;
-  margin-top: 10px;
-  gap: 7px;
-}
-
-.operations-diagnostic-actions button {
-  min-height: 31px;
-  padding: 0 10px;
-  border-radius: 7px;
-  font-size: calc(10px * var(--ui-scale));
-}
-
-.operations-diagnostic-list {
-  display: grid;
-  margin-top: 12px;
-  gap: 7px;
-}
-
-.operations-diagnostic-check {
-  display: grid;
-  padding: 11px 12px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--surface-2) 58%, transparent);
-  grid-template-columns: 9px minmax(0, 1fr);
-  gap: 9px;
-}
-
-.operations-diagnostic-check > i {
-  width: 8px;
-  height: 8px;
-  margin-top: 3px;
-  border-radius: 50%;
-  background: var(--green);
-}
-
-.operations-diagnostic-check.warning > i {
-  background: var(--accent);
-}
-
-.operations-diagnostic-check.blocked > i {
-  background: var(--red);
-}
-
-.operations-diagnostic-check > div {
-  display: grid;
-  gap: 3px;
-}
-
-.operations-diagnostic-check strong {
-  font-size: calc(11px * var(--ui-scale));
-}
-
-.operations-diagnostic-check span,
-.operations-diagnostic-check small,
-.operations-report-notice {
-  color: var(--text-2);
-  font-size: calc(10px * var(--ui-scale));
-  line-height: 1.5;
-}
-
-.operations-diagnostic-check small {
-  color: var(--accent-strong);
-}
-
-.operations-report-notice {
-  margin: 9px 0 0;
 }
 
 @media (max-width: 700px) {
@@ -525,8 +415,7 @@ const operationsCss = `.operations-control {
   }
 
   .operations-task-view,
-  .operations-storage-view,
-  .operations-diagnostic-view {
+  .operations-storage-view {
     padding: 9px 14px 14px;
   }
 }
@@ -542,7 +431,7 @@ const activeStatuses = new Set<RunStatus>([
   "reconciling",
 ]);
 
-const operationsTabs = ["tasks", "storage", "diagnostics"] as const;
+const operationsTabs = ["tasks", "storage"] as const;
 
 const statusLabel: Record<RunStatus, string> = {
   draft: "准备中",
@@ -579,21 +468,6 @@ function taskIdentity(task: OperationTask) {
   return `${task.projectTitle} · ${task.shotLabel}`;
 }
 
-function supportReportWithClient(report: OperationsDiagnostics) {
-  return {
-    ...report,
-    client: {
-      userAgent: navigator.userAgent,
-      language: navigator.language,
-      viewport: { width: window.innerWidth, height: window.innerHeight },
-      devicePixelRatio: window.devicePixelRatio,
-      displayScale: document.documentElement.style.getPropertyValue("--ui-scale") || "default",
-      theme: document.documentElement.dataset.theme ?? "noir",
-      online: navigator.onLine,
-    },
-  };
-}
-
 function notifyFinishedTasks(
   previous: Map<string, RunStatus> | null,
   tasks: OperationTask[],
@@ -623,16 +497,13 @@ export function OperationsCenter({
   compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState<"tasks" | "storage" | "diagnostics">("tasks");
+  const [tab, setTab] = useState<"tasks" | "storage">("tasks");
   const [center, setCenter] = useState<OperationsTaskCenter | null>(null);
   const [storage, setStorage] = useState<OperationsStorage | null>(null);
-  const [diagnostics, setDiagnostics] = useState<OperationsDiagnostics | null>(null);
   const [progress, setProgress] = useState<Record<string, number | null>>({});
   const [busyRunId, setBusyRunId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [storageLoading, setStorageLoading] = useState(false);
-  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
-  const [reportNotice, setReportNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(
     () => optionalLocalStorage.getItem("takeboard.task-notifications") === "1",
@@ -691,19 +562,6 @@ export function OperationsCenter({
     }
   }, []);
 
-  const refreshDiagnostics = useCallback(async () => {
-    setDiagnosticsLoading(true);
-    setReportNotice(null);
-    try {
-      setDiagnostics(await projectApi.diagnostics());
-      setError(null);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "无法完成运行诊断");
-    } finally {
-      setDiagnosticsLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
     void refreshTasks();
     const timer = window.setInterval(
@@ -720,10 +578,6 @@ export function OperationsCenter({
   }, [open, refreshStorage, storage, tab]);
 
   useEffect(() => {
-    if (open && tab === "diagnostics" && !diagnostics) void refreshDiagnostics();
-  }, [diagnostics, open, refreshDiagnostics, tab]);
-
-  useEffect(() => {
     if (!open) return;
     const close = (event: MouseEvent | KeyboardEvent) => {
       if (event instanceof KeyboardEvent && event.key !== "Escape") return;
@@ -737,20 +591,6 @@ export function OperationsCenter({
       window.removeEventListener("pointerdown", close);
     };
   }, [open]);
-
-  const categories = useMemo(() => {
-    if (!storage) return [];
-    const sum = (key: keyof OperationsStorage["projects"][number]["categories"]) =>
-      storage.projects.reduce((total, project) => total + project.categories[key], 0);
-    return [
-      ["原始素材", sum("originals")],
-      ["生成结果", sum("renders")],
-      ["代理文件", sum("proxies")],
-      ["Recipe 与工作流", sum("recipes")],
-      ["项目备份", sum("backups")],
-      ["其他项目数据", sum("runData") + sum("exports") + sum("other")],
-    ] as const;
-  }, [storage]);
 
   const toggleNotifications = async () => {
     if (!("Notification" in window)) return;
@@ -778,42 +618,6 @@ export function OperationsCenter({
     }
   };
 
-  const diagnosticCounts = diagnostics?.checks.reduce(
-    (counts, check) => {
-      counts[check.status] += 1;
-      return counts;
-    },
-    { pass: 0, warning: 0, blocked: 0 },
-  );
-
-  const copySupportReport = async () => {
-    if (!diagnostics) return;
-    try {
-      await navigator.clipboard.writeText(
-        JSON.stringify(supportReportWithClient(diagnostics), null, 2),
-      );
-      setError(null);
-      setReportNotice("诊断报告已复制；可以直接粘贴到 GitHub Issue。报告不含素材和账号信息。");
-    } catch {
-      setError("浏览器没有允许复制诊断报告；请使用“下载报告”。");
-    }
-  };
-
-  const downloadSupportReport = () => {
-    if (!diagnostics) return;
-    const content = JSON.stringify(supportReportWithClient(diagnostics), null, 2);
-    const url = URL.createObjectURL(new Blob([`${content}\n`], { type: "application/json" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `takeboard-support-${diagnostics.generatedAt.slice(0, 10)}.json`;
-    document.body.append(link);
-    link.click();
-    link.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
-    setError(null);
-    setReportNotice("诊断报告已下载。发送前仍可自行打开检查内容。");
-  };
-
   return (
     <div className={`operations-control ${compact ? "is-compact" : ""}`} ref={shell}>
       <style>{operationsCss}</style>
@@ -822,7 +626,7 @@ export function OperationsCenter({
         type="button"
         aria-expanded={open}
         aria-haspopup="dialog"
-        aria-label="打开生成任务、存储与诊断中心"
+        aria-label="打开生成任务与存储空间"
         onClick={() => setOpen((current) => !current)}
       >
         <span className="operations-mark" aria-hidden="true">
@@ -833,7 +637,7 @@ export function OperationsCenter({
         </span>
         {compact ? (
           <strong className="operations-compact-label">
-            {center?.activeCount ? `${center.activeCount} 项进行中` : "制作进度"}
+            {center?.activeCount ? `${center.activeCount} 项进行中` : "运行中心"}
           </strong>
         ) : (
           <div>
@@ -841,13 +645,13 @@ export function OperationsCenter({
               {center?.activeCount ? `${center.activeCount} 个任务运行中` : "任务中心"}
             </strong>
             <small>
-              {center?.failedCount ? `${center.failedCount} 项需要检查` : "生成 · 存储 · 诊断"}
+              {center?.failedCount ? `${center.failedCount} 项需要检查` : "生成 · 存储"}
             </small>
           </div>
         )}
       </button>
       {open ? (
-        <aside className="operations-panel" role="dialog" aria-label="生成任务、存储与诊断中心">
+        <aside className="operations-panel" role="dialog" aria-label="生成任务与存储空间">
           <header>
             <div>
               <span>PRODUCTION STATUS</span>
@@ -905,18 +709,6 @@ export function OperationsCenter({
               onClick={() => setTab("storage")}
             >
               存储空间
-            </button>
-            <button
-              type="button"
-              role="tab"
-              id="operations-tab-diagnostics"
-              aria-controls="operations-panel-diagnostics"
-              aria-selected={tab === "diagnostics"}
-              tabIndex={tab === "diagnostics" ? 0 : -1}
-              className={tab === "diagnostics" ? "active" : ""}
-              onClick={() => setTab("diagnostics")}
-            >
-              运行诊断
             </button>
           </div>
           {error ? <p className="operations-error">{error}</p> : null}
@@ -1002,7 +794,7 @@ export function OperationsCenter({
                 ) : null}
               </div>
             </div>
-          ) : tab === "storage" ? (
+          ) : (
             <div
               className="operations-storage-view"
               role="tabpanel"
@@ -1026,116 +818,31 @@ export function OperationsCenter({
                 />
               </div>
               <div className="storage-breakdown">
-                {categories.map(([label, bytes]) => (
-                  <div key={label}>
-                    <span>{label}</span>
-                    <strong>{formatBytes(bytes)}</strong>
-                  </div>
-                ))}
+                <div>
+                  <span>项目占用</span>
+                  <strong>
+                    {storage
+                      ? formatBytes(
+                          storage.projects.reduce((total, item) => total + item.totalBytes, 0),
+                        )
+                      : "—"}
+                  </strong>
+                </div>
                 <div>
                   <span>回收区</span>
                   <strong>{storage ? formatBytes(storage.trashBytes) : "—"}</strong>
                 </div>
-                {storage?.systemBytes != null ? (
-                  <div>
-                    <span>账号、备份与系统数据</span>
-                    <strong>{storage ? formatBytes(storage.systemBytes ?? 0) : "—"}</strong>
-                  </div>
-                ) : null}
               </div>
-              <section className="storage-project-list">
-                <div>
-                  <strong>项目占用</strong>
-                  <button
-                    type="button"
-                    disabled={storageLoading}
-                    onClick={() => void refreshStorage()}
-                  >
-                    {storageLoading ? "扫描中…" : "重新扫描"}
-                  </button>
-                </div>
-                {storage?.projects.slice(0, 8).map((project) => (
-                  <button
-                    type="button"
-                    key={project.projectKey}
-                    onClick={() => {
-                      setOpen(false);
-                      void onOpenProject(project.projectKey);
-                    }}
-                  >
-                    <span>{project.projectTitle}</span>
-                    <strong>{formatBytes(project.totalBytes)}</strong>
-                  </button>
-                ))}
-              </section>
-              <p className="storage-safety-note">
-                生成前会检查项目盘与 ComfyUI 输出盘；空间不足时不会上传素材或强行排队。
-              </p>
-            </div>
-          ) : (
-            <div
-              className="operations-diagnostic-view"
-              role="tabpanel"
-              id="operations-panel-diagnostics"
-              aria-labelledby="operations-tab-diagnostics"
-              aria-busy={diagnosticsLoading}
-            >
-              <section className="operations-diagnostic-summary">
-                <span>SUPPORT REPORT · v{diagnostics?.application.version ?? "—"}</span>
-                <strong>
-                  {diagnosticsLoading
-                    ? "正在核对当前环境…"
-                    : diagnosticCounts?.blocked
-                      ? `${diagnosticCounts.blocked} 项会阻止正常使用`
-                      : diagnosticCounts?.warning
-                        ? `${diagnosticCounts.warning} 项建议处理`
-                        : diagnostics
-                          ? "当前基础环境正常"
-                          : "尚未运行诊断"}
-                </strong>
-                <small>
-                  {diagnostics
-                    ? `${diagnostics.workload.visibleProjects} 个可见项目 · ${diagnostics.workload.activeRuns} 个运行中任务 · ${diagnostics.application.platform}/${diagnostics.application.architecture}`
-                    : "只检查运行环境与汇总状态，不读取素材、提示词或账号内容。"}
-                </small>
-              </section>
-              <div className="operations-diagnostic-actions">
+              <div className="operations-view-actions">
                 <button
                   type="button"
-                  disabled={diagnosticsLoading}
-                  onClick={() => void refreshDiagnostics()}
+                  disabled={storageLoading}
+                  onClick={() => void refreshStorage()}
                 >
-                  {diagnosticsLoading ? "检查中…" : "重新检查"}
-                </button>
-                <button
-                  type="button"
-                  disabled={!diagnostics}
-                  onClick={() => void copySupportReport()}
-                >
-                  复制报告
-                </button>
-                <button type="button" disabled={!diagnostics} onClick={downloadSupportReport}>
-                  下载报告
+                  {storageLoading ? "扫描中…" : "刷新空间"}
                 </button>
               </div>
-              {reportNotice ? (
-                <p className="operations-report-notice" role="status">
-                  {reportNotice}
-                </p>
-              ) : null}
-              <div className="operations-diagnostic-list">
-                {diagnostics?.checks.map((check) => (
-                  <article className={`operations-diagnostic-check ${check.status}`} key={check.id}>
-                    <i aria-hidden="true" />
-                    <div>
-                      <strong>{check.title}</strong>
-                      <span>{check.detail}</span>
-                      {check.action ? <small>下一步：{check.action}</small> : null}
-                    </div>
-                  </article>
-                ))}
-              </div>
-              {diagnostics ? <p className="storage-safety-note">{diagnostics.privacy}</p> : null}
+              <p className="storage-safety-note">空间不足时会暂停提交，不影响已有作品。</p>
             </div>
           )}
         </aside>

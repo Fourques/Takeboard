@@ -64,7 +64,7 @@ pnpm compatibility:matrix -- --check
 
 ## 原生安装包预览门槛
 
-`.github/workflows/desktop-preview.yml` 在 Linux x64/arm64、macOS Intel/Apple Silicon、Windows x64/arm64 原生 Runner 上构建 DMG、EXE 和 DEB。运行时记录构建 Commit 与架构；macOS 挂载最终 DMG，Windows 与 Linux 安装最终安装包，再使用其中的 Node.js 验证数据库、图像依赖、服务健康和网页入口。全部通过后才上传安装包、校验文件与构建证明。这些检查不是 GPU 兼容性或原生窗口体验的替代验收。
+`.github/workflows/desktop-preview.yml` 可选择构建目标。调试阶段默认 `macos-arm64`，只在 Apple Silicon Runner 构建 M 系列 Mac 的 DMG；选择 `all` 才构建 Linux x64/arm64、macOS Intel/Apple Silicon、Windows x64/arm64 的全部安装包。运行时记录构建 Commit 与架构；macOS 挂载最终 DMG，Windows 与 Linux 安装最终安装包，再使用其中的 Node.js 验证数据库、图像依赖、服务健康和网页入口。所选目标检查通过后才上传安装包、校验文件与构建证明。这些检查不是 GPU 兼容性或原生窗口体验的替代验收。
 
 预览包只允许手动构建，不再由 Tag 自动发布。正式 Tag 发布使用独立的 `Signed production release`：必须等待 macOS 双架构完成 Developer ID 签名、notarization 和 stapling，以及 Windows x64 主程序与 NSIS 完成 Authenticode 签名并通过系统验证。Windows ARM64 和 Linux Tauri 当前仍只属于预览通道；详细配置与净机验收见[桌面正式签名与发行](desktop-production-signing.md)。
 

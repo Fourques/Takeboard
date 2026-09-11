@@ -43,13 +43,13 @@ describe("WorkerPool", () => {
     const endpoint = "http://127.0.0.1:8188";
     const original = new WorkerPool(path, endpoint, runtimeFetch as typeof fetch).definitions()[0];
     if (!original) throw new Error("Default worker was not created");
-    expect(original.name).toBe("默认 ComfyUI");
+    expect(original.name).toBe("127.0.0.1:8188");
     expect(original.transport).toBe("loopback");
     await writeFile(
       path,
       JSON.stringify({ version: 1, workers: [{ ...original, name: "本机 ComfyUI" }] }),
     );
-    expect(new WorkerPool(path, endpoint).definitions()[0]?.name).toBe("默认 ComfyUI");
+    expect(new WorkerPool(path, endpoint).definitions()[0]?.name).toBe("127.0.0.1:8188");
     await writeFile(
       path,
       JSON.stringify({ version: 1, workers: [{ ...original, name: "我的远程工作站" }] }),

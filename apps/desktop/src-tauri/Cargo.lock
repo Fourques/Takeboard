@@ -3400,7 +3400,7 @@ dependencies = [
 
 [[package]]
 name = "takeboard-desktop"
-version = "0.2.0-beta.4"
+version = "0.2.0-beta.5"
 dependencies = [
  "serde",
  "serde_json",

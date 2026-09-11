@@ -10,13 +10,18 @@ pub struct Updates {
 }
 
 pub async fn open(app: tauri::AppHandle) -> tauri::Result<()> {
+    open_with_theme(app, None).await
+}
+pub async fn open_with_theme(app: tauri::AppHandle, theme: Option<&str>) -> tauri::Result<()> {
     let state = app.state::<Updates>();
     let _guard = state.window_operation.lock().await;
     if let Some(window) = app.get_webview_window("updates") {
+        window.eval(&crate::local_files::appearance_script(theme))?;
         window.show()?;
         window.set_focus()?;
     } else {
         WebviewWindowBuilder::new(&app, "updates", WebviewUrl::App("updates.html".into()))
+            .initialization_script(crate::local_files::appearance_script(theme))
             .title("TakeBoard · 应用更新")
             .inner_size(620.0, 680.0)
             .min_inner_size(380.0, 420.0)

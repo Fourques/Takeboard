@@ -63,7 +63,7 @@ test("project hub presents a complete project overview", async ({ page, request 
       const optionsButton = mobileHeader.getByRole("button", { name: "打开工作区选项" });
       await expect(optionsButton).toBeInViewport();
       await optionsButton.click();
-      await expect(page.getByRole("button", { name: "导入项目" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "导入项目包" })).toBeVisible();
       await page.getByRole("button", { name: "关闭工作区选项" }).click();
       await expect(page.locator(".hub-artifact-background .studio-universe")).toBeVisible();
       await page.waitForTimeout(400);
@@ -142,12 +142,11 @@ test("project hub presents a complete project overview", async ({ page, request 
     path: "test-results/takeboard-home-chroma.png",
     animations: "disabled",
   });
-  await page.getByRole("button", { name: "ComfyUI 连接与安全启动" }).click();
-  const workerPanel = page.getByLabel("ComfyUI 连接与安全启动面板");
+  await page.getByRole("button", { name: "选择生成设备" }).click();
+  const workerPanel = page.getByRole("complementary", { name: "选择生成设备" });
   await expect(workerPanel).toBeVisible();
-  const safeStart = workerPanel.getByRole("button", { name: "安全启动", exact: true });
-  if (await safeStart.count()) await expect(safeStart).toBeDisabled();
-  else await expect(workerPanel.locator(".worker-ready-detail")).toBeVisible();
+  await expect(workerPanel.getByRole("button", { name: "管理设备" })).toBeVisible();
+  await expect(workerPanel.locator("input")).toHaveCount(0);
   await page.screenshot({
     path: "test-results/takeboard-worker-panel.png",
     animations: "disabled",

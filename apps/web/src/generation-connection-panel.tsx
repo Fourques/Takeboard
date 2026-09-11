@@ -3,164 +3,352 @@ import {
   type GenerationConnection,
   type GenerationConnectionTarget,
   generationConnectionApi,
+  projectApi,
+  type WorkerStatus,
+  workerApi,
 } from "./api";
 import { useAuth } from "./auth-ui";
+import { GenerationDevicePreferences } from "./generation-device-preferences";
+import { openSettings } from "./settings-navigation";
 import "./generation-connection-panel.css";
 
-export function GenerationConnectionPanel() {
+export function GenerationConnectionPanel({ manage = false }: { manage?: boolean }) {
   const auth = useAuth();
   const [connection, setConnection] = useState<GenerationConnection | null>(null);
+  const [fleet, setFleet] = useState<NonNullable<WorkerStatus["fleet"]> | null>(null);
+  const [worker, setWorker] = useState<WorkerStatus | null>(null);
+  const [adding, setAdding] = useState(false);
   const [kind, setKind] = useState<"ssh" | "url">("ssh");
   const [address, setAddress] = useState("");
   const [name, setName] = useState("");
   const [port, setPort] = useState("8188");
   const [busy, setBusy] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const canManage = !auth.enabled || auth.local || auth.user?.instanceRole === "admin";
+  const refresh = async () => {
+    const [next, pool, status] = await Promise.all([
+      generationConnectionApi.status(),
+      workerApi.fleet(),
+      projectApi.worker(),
+    ]);
+    setConnection(next);
+    setFleet(pool);
+    setWorker(status);
+  };
   useEffect(() => {
-    if (!canManage) return;
     let active = true;
-    let timer = 0;
-    const refresh = async () => {
+    const read = async () => {
       try {
-        const result = await generationConnectionApi.status();
-        if (active) setConnection(result);
+        const [next, pool, status] = await Promise.all([
+          generationConnectionApi.status(),
+          workerApi.fleet(),
+          projectApi.worker(),
+        ]);
+        if (active) {
+          setConnection(next);
+          setFleet(pool);
+          setWorker(status);
+        }
       } catch (cause) {
-        if (active) setError(cause instanceof Error ? cause.message : "无法读取连接");
+        if (active) setError(cause instanceof Error ? cause.message : "无法读取设备");
       }
-      if (active) timer = window.setTimeout(() => void refresh(), 5000);
     };
-    void refresh();
+    void read();
+    const changed = () => void read();
+    window.addEventListener("takeboard:generation-connection-changed", changed);
     return () => {
       active = false;
-      window.clearTimeout(timer);
+      window.removeEventListener("takeboard:generation-connection-changed", changed);
     };
-  }, [canManage]);
-  const connect = async (target: GenerationConnectionTarget | { workerId: string }) => {
+  }, []);
+  const operate = async (
+    action: () => Promise<unknown>,
+    message: string,
+    changesConnection = true,
+  ) => {
+    if (busy) return;
     setBusy(true);
     setError("");
     setNotice("");
     try {
-      setConnection(await generationConnectionApi.connect(target));
-      setNotice("已切换生成服务，项目保存位置保持不变。");
-      window.dispatchEvent(new Event("takeboard:generation-connection-changed"));
+      await action();
+      if (changesConnection) await refresh();
+      setNotice(message);
+      if (changesConnection)
+        window.dispatchEvent(new Event("takeboard:generation-connection-changed"));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "连接失败，原连接未切换");
+      setError(cause instanceof Error ? cause.message : "连接失败，原设备未切换");
     } finally {
       setBusy(false);
     }
   };
-  if (!canManage) return <p>生成服务由设备管理员设置，项目成员可使用已配置的服务。</p>;
+  const connect = (target: GenerationConnectionTarget | { workerId: string }) =>
+    operate(() => generationConnectionApi.connect(target), "已切换设备");
+  const profiles = connection?.profiles ?? [];
+  const savedIds = new Set(profiles.map((item) => item.workerId));
+  const legacy =
+    fleet?.workers.filter(
+      (entry) =>
+        !savedIds.has(entry.worker.id) &&
+        (entry.status === "ready" ||
+          (manage && (entry.worker.id !== connection?.localWorkerId || !entry.worker.enabled))),
+    ) ?? [];
   return (
-    <section className="generation-connection-panel" aria-label="生成服务连接">
-      <div>
-        <strong>生成服务</strong>
-        <span>{connection?.name ?? "正在读取…"}</span>
-        <code>{connection?.address}</code>
-      </div>
-      {connection?.error ? <p role="status">{connection.error}</p> : null}
-      <details>
-        <summary>选择生成设备</summary>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (
-              kind === "ssh" &&
-              (!/^\d+$/.test(port) || Number(port) < 1 || Number(port) > 65535)
-            ) {
-              setError("ComfyUI 端口需要是 1–65535 的整数");
-              return;
-            }
-            void connect(
-              kind === "ssh"
-                ? { kind, host: address.trim(), port: Number(port), name }
-                : { kind, url: address.trim(), name },
-            );
-          }}
-        >
-          <fieldset disabled={busy}>
-            <label>
-              连接方式
-              <select
-                value={kind}
-                onChange={(event) => {
-                  setKind(event.target.value as "ssh" | "url");
-                  setAddress("");
-                }}
-              >
-                <option value="ssh">SSH · 加密连接</option>
-                <option value="url">ComfyUI 地址</option>
-              </select>
-            </label>
-            <label>
-              {kind === "ssh" ? "IP 或 SSH 名称" : "服务地址"}
-              <input
-                required
-                autoComplete="off"
-                value={address}
-                placeholder={
-                  kind === "ssh" ? "user@server / 已配置的 SSH 名称" : "https://comfy.example.com"
-                }
-                onChange={(event) => setAddress(event.target.value)}
-              />
-            </label>
-            <label>
-              显示名称（选填）
-              <input
-                maxLength={100}
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder="例如：家里的工作站"
-              />
-            </label>
-            {kind === "ssh" ? (
-              <label>
-                服务器上的 ComfyUI 端口
-                <input
-                  inputMode="numeric"
-                  value={port}
-                  onChange={(event) => setPort(event.target.value)}
-                />
-              </label>
-            ) : null}
-            <p>
-              {kind === "ssh"
-                ? "使用项目所在设备的 SSH 密钥和主机配置；TakeBoard 独立维护连接，不依赖 VS Code。首次连接需先核实服务器指纹。"
-                : "支持 HTTPS，或此设备上的 HTTP 回环地址。局域网 HTTP 服务可通过 SSH 连接。"}
-            </p>
-            <p>
-              连接后，生成所需的素材副本会发送到此服务，结果下载到项目文件夹。不会移动项目，也不会自动删除远端原文件。
-            </p>
-            <button type="submit">{busy ? "正在验证连接…" : "连接并使用"}</button>
-          </fieldset>
-        </form>
-        {connection ? (
-          <div className="generation-recent">
-            <span>最近使用</span>
-            {connection.profiles.map((profile) => (
-              <button
-                type="button"
-                key={profile.workerId}
-                disabled={busy}
-                onClick={() => void connect(profile.target)}
-              >
-                {profile.target.name}
+    <section className="generation-connection-panel" aria-label="生成设备">
+      <div className="generation-device-list">
+        {profiles.map((profile) => {
+          const status = fleet?.workers.find((entry) => entry.worker.id === profile.workerId);
+          const current = connection?.workerId === profile.workerId;
+          const online = status?.status === "ready";
+          const disabled = status?.worker.enabled === false;
+          return (
+            <button
+              type="button"
+              className="generation-device-row"
+              key={profile.workerId}
+              aria-pressed={current && online}
+              disabled={busy || !canManage || disabled || (current && online)}
+              onClick={() => void connect(profile.target)}
+            >
+              <i data-online={online} />
+              <span>
+                <strong>{profile.target.name}</strong>
                 <small>
                   {profile.target.kind === "ssh" ? profile.target.host : profile.target.url}
                 </small>
-              </button>
-            ))}
+              </span>
+              <em>
+                {disabled
+                  ? "已停用"
+                  : online
+                    ? current
+                      ? "使用中"
+                      : "可连接"
+                    : status?.status === "offline" && current
+                      ? "离线"
+                      : "未连接"}
+              </em>
+            </button>
+          );
+        })}
+        {legacy.map((entry) => (
+          <button
+            type="button"
+            className="generation-device-row"
+            key={entry.worker.id}
+            disabled={
+              busy ||
+              !canManage ||
+              !entry.worker.enabled ||
+              entry.worker.id === connection?.workerId
+            }
+            aria-pressed={entry.worker.id === connection?.workerId && entry.status === "ready"}
+            onClick={() => void connect({ workerId: entry.worker.id })}
+          >
+            <i data-online={entry.status === "ready"} />
+            <span>
+              <strong>
+                {entry.worker.id === connection?.localWorkerId
+                  ? new URL(entry.worker.endpoint).host
+                  : entry.worker.name}
+              </strong>
+              <small>{entry.worker.endpoint}</small>
+            </span>
+            <em>
+              {!entry.worker.enabled
+                ? "已停用"
+                : entry.status === "ready"
+                  ? entry.worker.id === connection?.workerId
+                    ? "使用中"
+                    : "可连接"
+                  : "离线"}
+            </em>
+          </button>
+        ))}
+        {connection && profiles.length + legacy.length === 0 ? (
+          <p className="generation-empty">尚未添加设备</p>
+        ) : null}
+        {!connection && !error ? <p>读取设备…</p> : null}
+      </div>
+      {!manage ? (
+        <button
+          className="generation-manage-link"
+          type="button"
+          onClick={() => openSettings("connections")}
+        >
+          管理设备
+        </button>
+      ) : (
+        <>
+          <div className="settings-actions">
             <button
               type="button"
-              disabled={busy || connection.workerId === connection.localWorkerId}
-              onClick={() => void connect({ workerId: connection.localWorkerId })}
+              disabled={busy}
+              onClick={() => void operate(refresh, "设备状态已更新", false)}
             >
-              使用原有服务配置
+              刷新状态
             </button>
+            {canManage ? (
+              <button type="button" disabled={busy} onClick={() => setAdding((value) => !value)}>
+                {adding ? "取消添加" : "添加设备"}
+              </button>
+            ) : null}
           </div>
-        ) : null}
-      </details>
+          {adding && canManage ? (
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (
+                  kind === "ssh" &&
+                  (!/^\d+$/.test(port) || Number(port) < 1 || Number(port) > 65535)
+                ) {
+                  setError("端口需要是 1–65535 的整数");
+                  return;
+                }
+                void connect(
+                  kind === "ssh"
+                    ? { kind, host: address.trim(), port: Number(port), name }
+                    : { kind, url: address.trim(), name },
+                );
+              }}
+            >
+              <fieldset disabled={busy}>
+                <label>
+                  连接方式
+                  <select
+                    value={kind}
+                    onChange={(event) => {
+                      setKind(event.target.value as "ssh" | "url");
+                      setAddress("");
+                    }}
+                  >
+                    <option value="ssh">SSH</option>
+                    <option value="url">ComfyUI 地址</option>
+                  </select>
+                </label>
+                <label>
+                  {kind === "ssh" ? "IP 或 SSH 名称" : "服务地址"}
+                  <input
+                    required
+                    value={address}
+                    autoComplete="off"
+                    placeholder={
+                      kind === "ssh" ? "user@server 或 SSH 别名" : "https://comfy.example.com"
+                    }
+                    onChange={(event) => setAddress(event.target.value)}
+                  />
+                </label>
+                <label>
+                  设备名称（选填）
+                  <input
+                    value={name}
+                    maxLength={100}
+                    onChange={(event) => setName(event.target.value)}
+                  />
+                </label>
+                {kind === "ssh" ? (
+                  <label>
+                    ComfyUI 端口
+                    <input
+                      value={port}
+                      inputMode="numeric"
+                      onChange={(event) => setPort(event.target.value)}
+                    />
+                  </label>
+                ) : null}
+                <small>
+                  {kind === "ssh"
+                    ? "使用项目所在设备的 SSH 配置与可信主机记录，不依赖 VS Code。"
+                    : "远程使用 HTTPS；HTTP 回环地址也可用于已有隧道。"}
+                </small>
+                <button type="submit">{busy ? "验证连接…" : "连接并保存"}</button>
+              </fieldset>
+            </form>
+          ) : null}
+          {worker && canManage ? (
+            <details className="generation-service-control">
+              <summary>服务控制</summary>
+              <p>{connection?.address || "尚未配置地址"}</p>
+              <div className="settings-actions">
+                {worker.startup?.canStart ? (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void operate(() => projectApi.startWorker(), "服务已启动")}
+                  >
+                    安全启动 ComfyUI
+                  </button>
+                ) : null}
+                {worker.control?.canStop ? (
+                  <button type="button" disabled={busy} onClick={() => setStopping(true)}>
+                    停止 ComfyUI
+                  </button>
+                ) : null}
+              </div>
+              {!worker.startup?.canStart && worker.status !== "ready" ? (
+                <p>{worker.startup?.message || "此地址暂无可用服务"}</p>
+              ) : null}
+              {stopping ? (
+                <fieldset aria-label="确认停止 ComfyUI">
+                  <p>停止当前服务？有生成任务或无法确认归属时不会停止。</p>
+                  <button type="button" disabled={busy} onClick={() => setStopping(false)}>
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() =>
+                      void operate(async () => {
+                        await projectApi.stopWorker();
+                        setStopping(false);
+                      }, "服务已停止")
+                    }
+                  >
+                    确认停止
+                  </button>
+                </fieldset>
+              ) : null}
+            </details>
+          ) : null}
+          {canManage &&
+          fleet?.workers.some(
+            (entry) =>
+              entry.status === "ready" ||
+              entry.worker.id !== connection?.localWorkerId ||
+              !entry.worker.enabled,
+          ) ? (
+            <details className="generation-service-control">
+              <summary>调度偏好</summary>
+              {fleet.workers
+                .filter(
+                  (entry) =>
+                    entry.status === "ready" ||
+                    entry.worker.id !== connection?.localWorkerId ||
+                    !entry.worker.enabled,
+                )
+                .map((entry) => (
+                  <GenerationDevicePreferences
+                    key={`${entry.worker.id}:${entry.worker.updatedAt}`}
+                    worker={entry.worker}
+                    canRemove={
+                      !savedIds.has(entry.worker.id) &&
+                      entry.worker.id !== connection?.localWorkerId &&
+                      entry.worker.id !== connection?.workerId
+                    }
+                    onChanged={async () => {
+                      await refresh();
+                      setNotice("设备设置已保存");
+                      window.dispatchEvent(new Event("takeboard:generation-connection-changed"));
+                    }}
+                  />
+                ))}
+            </details>
+          ) : null}
+        </>
+      )}
+      {connection?.error ? <p role="status">{connection.error}</p> : null}
       {error ? <p role="alert">{error}</p> : null}
       {notice ? <p role="status">{notice}</p> : null}
     </section>

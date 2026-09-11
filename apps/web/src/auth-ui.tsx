@@ -556,7 +556,20 @@ export function AccountButton({
         onClick={() => auth.openAccount()}
         title="登录以访问账号项目与已配对设备"
       >
-        <span aria-hidden="true">↗</span>
+        <span aria-hidden="true">
+          <svg
+            aria-hidden="true"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+          >
+            <circle cx="12" cy="8" r="3.5" />
+            <path d="M5 21v-2a7 7 0 0 1 14 0v2" />
+          </svg>
+        </span>
         {compact ? null : <b>登录</b>}
       </button>
     );

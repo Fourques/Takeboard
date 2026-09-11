@@ -33,7 +33,8 @@ export function requestDesktopAction(
       5000,
     );
     window.addEventListener("takeboard:desktop-action", receive);
-    window.location.href = desktopActionUrl(action, { ...parameters, actionId }, modern);
+    const theme = document.documentElement.dataset.theme || "chroma";
+    window.location.href = desktopActionUrl(action, { ...parameters, theme, actionId }, modern);
   });
 }
 

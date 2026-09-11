@@ -1,10 +1,12 @@
 <!doctype html>
 <html lang="zh-CN">
-<head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /><title>TakeBoard · 连接设备</title><link rel="stylesheet" href="connections.css" /></head>
+<head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /><title>TakeBoard · 远程项目</title><script src="appearance.js"></script><link rel="stylesheet" href="connections.css" /></head>
 <body><main>
   <header><span class="mark">T</span><div><p>TAKEBOARD</p><h1>远程项目</h1></div></header>
-  <p class="intro">在服务器上保存和管理项目，需要连接远程 TakeBoard。本机项目留在原窗口；远程项目在独立窗口打开，可选择服务器上的保存文件夹。只需要远程生成？请回到主窗口，在顶栏 ComfyUI 或设置中选择生成设备。</p>
+  <p class="intro">打开保存在另一台设备上的项目。本机项目留在原窗口。</p>
+  <p class="hint">只使用远程 ComfyUI 生成？请在主窗口的「设置 → 设备连接」中添加设备，项目与素材仍保存在本机。</p>
   <button id="open-local" type="button" class="secondary">使用此电脑</button>
+  <section aria-labelledby="recent-title"><h2 id="recent-title">最近连接</h2><div id="recent"></div></section>
   <form id="connect-form">
     <label>设备名称（可选）<input id="device-name" maxlength="100" placeholder="例如：剪辑主机" /></label>
     <label>连接方式<select id="kind"><option value="ssh">SSH 服务器 · IP 或主机别名</option><option value="https">TakeBoard HTTPS 地址</option><option value="portal">Portal · 我的已配对设备</option></select></label>
@@ -15,6 +17,5 @@
   </form>
   <section class="status" aria-live="polite"><span id="status">选择服务器，或从下方打开最近连接。</span><button id="start-needed" type="button" hidden>允许启动并连接</button><button id="reopen" class="secondary" type="button" hidden>打开远程窗口</button></section>
   <details><summary>目标电脑还没有安装 TakeBoard？</summary><p class="hint">在目标电脑安装对应安装包，不需要下载源码或编译。Mac 将 App 放入“应用程序”；Windows 使用安装器的默认位置；Linux 安装 .deb。无桌面的 Linux 也使用 .deb，连接时只运行内置后台服务，不打开桌面窗口。</p><p class="hint">首次安装由设备所有者在目标电脑完成；此处的“允许启动”不是安装授权，不会下载软件、模型或驱动。双方需使用包含远程启动功能的版本。旧版、AppImage 或自定义安装可先启动 TakeBoard，再填实际服务端口连接。</p></details>
-  <section aria-labelledby="recent-title"><h2 id="recent-title">最近连接</h2><div id="recent"></div></section>
   <footer>Portal 需要你或服务提供者部署，并完成首次配对；相同邮箱不会自动授予设备权限。关闭远程窗口会释放本次 SSH 连接，不会取消服务器上的生成任务。</footer>
 </main><script src="connections.js"></script></body></html>

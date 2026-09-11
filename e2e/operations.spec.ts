@@ -3,7 +3,7 @@ import { expect, test } from "./fixtures";
 
 test("global operations center exposes real task and storage state", async ({ page }) => {
   await page.goto("/");
-  const trigger = page.getByRole("button", { name: "打开生成任务、存储与诊断中心" });
+  const trigger = page.getByRole("button", { name: "打开生成任务与存储空间" });
   await expect(trigger).toBeVisible();
   expect(
     await trigger
@@ -12,23 +12,32 @@ test("global operations center exposes real task and storage state", async ({ pa
   ).toBeGreaterThanOrEqual(12);
   await trigger.click();
 
-  const panel = page.getByRole("dialog", { name: "生成任务、存储与诊断中心" });
+  const panel = page.getByRole("dialog", { name: "生成任务与存储空间" });
   await expect(panel).toBeVisible();
   await expect(panel.getByText("运行中心", { exact: true })).toBeVisible();
   await panel.getByRole("tab", { name: "存储空间" }).click();
   await expect(panel.getByText("当前磁盘可用")).toBeVisible();
   await expect(panel.getByText("项目占用")).toBeVisible();
-  await expect(panel.getByText(/安全余量/)).toBeVisible();
+  await expect(panel.getByRole("tab", { name: "运行诊断" })).toHaveCount(0);
 
-  await panel.getByRole("tab", { name: "运行诊断" }).click();
-  await expect(panel.getByText(/当前基础环境正常|项建议处理|项会阻止正常使用/)).toBeVisible();
-  await expect(panel.getByText(/不包含项目名称、账号、素材内容/)).toBeVisible();
-  await page.screenshot({
-    path: "test-results/takeboard-diagnostics.png",
-    animations: "disabled",
+  await page.getByRole("button", { name: "关闭任务中心" }).click();
+  let inspections = 0;
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/operations/diagnostics") inspections++;
   });
+  await page.getByRole("button", { name: "打开工作区选项" }).click();
+  await page.getByRole("button", { name: "设置", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "设置", exact: true });
+  await settings.getByRole("button", { name: "运行诊断", exact: true }).click();
+  await expect(settings.getByRole("button", { name: "开始检测" })).toBeVisible();
+  expect(inspections).toBe(0);
+  await settings.getByRole("button", { name: "开始检测" }).click();
+  await expect(settings.getByRole("button", { name: "下载报告" })).toBeVisible();
+  expect(inspections).toBe(1);
+  await expect(settings.locator(".diagnostic-results article").first()).toBeVisible();
+  await page.screenshot({ path: "test-results/takeboard-diagnostics.png", animations: "disabled" });
   const downloadPromise = page.waitForEvent("download");
-  await panel.getByRole("button", { name: "下载报告" }).click();
+  await settings.getByRole("button", { name: "下载报告" }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/^takeboard-support-\d{4}-\d{2}-\d{2}\.json$/);
 });
@@ -98,17 +107,16 @@ test("homepage chrome and operations center adapt to a short viewport", async ({
       animations: "disabled",
     });
 
-    await page.getByRole("button", { name: "打开生成任务、存储与诊断中心" }).click();
-    const panel = page.getByRole("dialog", { name: "生成任务、存储与诊断中心" });
+    await page.getByRole("button", { name: "打开生成任务与存储空间" }).click();
+    const panel = page.getByRole("dialog", { name: "生成任务与存储空间" });
     await expect(panel).toBeVisible();
     const bounds = await panel.boundingBox();
     if (!bounds) throw new Error("任务中心没有可测量的布局边界");
     expect(bounds.y).toBeGreaterThanOrEqual(0);
     expect(bounds.y + bounds.height).toBeLessThanOrEqual(560);
 
-    await panel.getByRole("tab", { name: "运行诊断" }).click();
-    await expect(panel.getByText(/当前基础环境正常|项建议处理|项会阻止正常使用/)).toBeVisible();
-    await expect(panel.getByRole("button", { name: "下载报告" })).toBeVisible();
+    await panel.getByRole("tab", { name: "存储空间" }).click();
+    await expect(panel.getByText("项目占用", { exact: true })).toBeVisible();
     await page.screenshot({
       path: "test-results/takeboard-operations-short.png",
       animations: "disabled",
@@ -129,8 +137,8 @@ test("homepage production dock remains usable on a narrow viewport", async ({ pa
     scrollWidth: element.scrollWidth,
   }));
   expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth);
-  await expect(page.getByRole("button", { name: "打开生成任务、存储与诊断中心" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "ComfyUI 连接与安全启动" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "打开生成任务与存储空间" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "选择生成设备" })).toBeVisible();
   await expect(page.getByRole("button", { name: "新建项目" })).toBeVisible();
   await expect(page.getByRole("button", { name: "打开工作区选项" })).toBeVisible();
 

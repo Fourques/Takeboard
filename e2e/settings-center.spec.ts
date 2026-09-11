@@ -20,6 +20,7 @@ test("default project location is explicit, survives reopening and fits narrow s
     await page.getByRole("button", { name: "设置", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "设置", exact: true });
     await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "项目与存储", exact: true }).click();
     await expect(dialog.getByRole("button", { name: "保存默认位置" })).toBeDisabled();
     await dialog.getByRole("button", { name: "选择文件夹" }).click();
     await dialog.getByRole("button", { name: `▸ ${folder}`, exact: true }).click();
@@ -36,9 +37,10 @@ test("default project location is explicit, survives reopening and fits narrow s
     expect(bounds.x).toBeGreaterThanOrEqual(0);
     expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
     expect(bounds.height).toBeLessThanOrEqual(620);
-    await expect(dialog.getByRole("link", { name: /查看官方发布/ })).toBeAttached();
-    await dialog.getByRole("link", { name: /查看官方发布/ }).scrollIntoViewIfNeeded();
-    await expect(dialog.getByRole("link", { name: /查看官方发布/ })).toBeInViewport();
+    await dialog.getByRole("button", { name: "关于与更新" }).click();
+    await expect(dialog.getByRole("link", { name: /下载桌面 App/ })).toBeAttached();
+    await dialog.getByRole("link", { name: /下载桌面 App/ }).scrollIntoViewIfNeeded();
+    await expect(dialog.getByRole("link", { name: /下载桌面 App/ })).toBeInViewport();
     const axe = await new AxeBuilder({ page })
       .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
       .analyze();
@@ -81,7 +83,6 @@ test("display controls remain synchronized when storage is blocked", async ({ pa
   await page.getByRole("button", { name: "打开工作区选项" }).click();
   await page.getByRole("button", { name: "设置", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "设置", exact: true });
-  await dialog.getByRole("button", { name: "显示大小：清晰" }).click();
   await dialog.getByRole("button", { name: /大字/ }).click();
   await expect(page.locator("html")).toHaveAttribute("data-display-scale", "1-24");
   await page.reload();

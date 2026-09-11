@@ -415,9 +415,12 @@ export function registerComfyConnections(
   app.post("/api/generation/connection", async (request, reply) => {
     try {
       const body = request.body as { workerId?: unknown } | null;
-      if (body?.workerId === pool.localWorkerId) {
-        if (pool.defaultWorkerId !== pool.localWorkerId) await connections.assertIdle();
-        await pool.selectDefault(pool.localWorkerId);
+      if (typeof body?.workerId === "string") {
+        const target = pool.definition(body.workerId);
+        if (!target?.enabled || target.retiredAt) throw new Error("此设备未配置或已停用");
+        if (pool.defaultWorkerId !== target.id) await connections.assertIdle();
+        await verifyComfy(target.endpoint, AbortSignal.timeout(5000));
+        await pool.selectDefault(target.id);
         await connections.releaseInactive();
       } else {
         if (!connections.isCurrentTarget(body)) await connections.assertIdle();

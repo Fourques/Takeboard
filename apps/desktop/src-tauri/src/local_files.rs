@@ -3,6 +3,13 @@ use tauri_plugin_dialog::DialogExt;
 
 pub const ACTION_CAPABILITY: &str = "window.__takeboardNativeActions = 2;";
 
+pub fn appearance_script(theme: Option<&str>) -> String {
+    match theme.filter(|value| matches!(*value, "noir" | "light" | "chroma")) {
+        Some(theme) => format!("(() => {{ window.__takeboardTheme = '{theme}'; const apply = () => {{ if (document.documentElement) document.documentElement.dataset.theme = '{theme}'; try {{ localStorage.setItem('takeboard.desktop.theme', '{theme}'); }} catch {{}} }}; apply(); document.addEventListener('DOMContentLoaded', apply, {{ once: true }}); }})()"),
+        None => String::new(),
+    }
+}
+
 fn action_name(url: &tauri::Url) -> Option<&str> {
     if url.scheme() == "takeboard-desktop" {
         return url.host_str();
@@ -80,14 +87,19 @@ pub fn navigation(app: &tauri::AppHandle, source: &str, url: &tauri::Url) -> boo
         return false;
     }
     if action == "updates" || action == "connections" {
+        let theme = url
+            .query_pairs()
+            .find(|(key, _)| key == "theme")
+            .map(|(_, value)| value.into_owned())
+            .filter(|value| matches!(value.as_str(), "noir" | "light" | "chroma"));
         let app = app.clone();
         let source = source.to_owned();
         let updates = action == "updates";
         tauri::async_runtime::spawn(async move {
             let result = if updates {
-                crate::updates::open(app.clone()).await
+                crate::updates::open_with_theme(app.clone(), theme.as_deref()).await
             } else {
-                crate::connections::open(app.clone()).await
+                crate::connections::open_with_theme(app.clone(), theme.as_deref()).await
             };
             acknowledge(
                 &app,
@@ -184,6 +196,16 @@ pub fn navigation(app: &tauri::AppHandle, source: &str, url: &tauri::Url) -> boo
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn native_appearance_accepts_only_known_palettes() {
+        for theme in ["noir", "light", "chroma"] {
+            let script = appearance_script(Some(theme));
+            assert!(script.contains("window.__takeboardTheme"));
+            assert!(script.contains(theme));
+        }
+        assert!(appearance_script(None).is_empty());
+        assert!(appearance_script(Some("'; alert(1); //")).is_empty());
+    }
     #[test]
     fn native_action_origin_is_exact_and_legacy_links_still_work() {
         for (url, expected) in [

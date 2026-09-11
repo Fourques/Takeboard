@@ -5,6 +5,8 @@ import { DesktopActionButton } from "./desktop-actions";
 import { readConnectionDisplay } from "./device-context";
 import { DisplaySettings } from "./display-settings";
 import { type ProjectLocationChoice, ProjectLocationPicker } from "./project-location-picker";
+import { RuntimeDiagnostics } from "./runtime-diagnostics";
+import { openSettings, type SettingsSection } from "./settings-navigation";
 import { ThemeSwitcher } from "./theme-switcher";
 import "./settings-center.css";
 
@@ -26,11 +28,7 @@ export function SettingsButton() {
     return () => window.removeEventListener("takeboard:update-available", notice);
   }, []);
   return (
-    <button
-      type="button"
-      className="settings-entry"
-      onClick={() => window.dispatchEvent(new Event("takeboard:open-settings"))}
-    >
+    <button type="button" className="settings-entry" onClick={() => openSettings()}>
       {update ? "设置 · 有新版本" : "设置"}
     </button>
   );
@@ -39,18 +37,36 @@ export function SettingsButton() {
 // The host outlives temporary menus; clicking the modal must not unmount it when
 // the workspace options menu closes on an outside pointerdown.
 export function SettingsHost() {
-  const [open, setOpen] = useState(false);
+  const [section, setSection] = useState<SettingsSection | null>(null);
   useEffect(() => {
-    const show = () => setOpen(true);
+    const show = (event: Event) => {
+      const requested = (event as CustomEvent).detail;
+      setSection(
+        ["appearance", "storage", "connections", "diagnostics", "about"].includes(requested)
+          ? requested
+          : "appearance",
+      );
+    };
     window.addEventListener("takeboard:open-settings", show);
     return () => window.removeEventListener("takeboard:open-settings", show);
   }, []);
-  return open
-    ? createPortal(<SettingsCenter onClose={() => setOpen(false)} />, document.body)
+  return section
+    ? createPortal(
+        <SettingsCenter initialSection={section} onClose={() => setSection(null)} />,
+        document.body,
+      )
     : null;
 }
 
-function SettingsCenter({ onClose }: { onClose: () => void }) {
+function SettingsCenter({
+  onClose,
+  initialSection,
+}: {
+  onClose: () => void;
+  initialSection: SettingsSection;
+}) {
+  const [section, setSection] = useState(initialSection);
+  useEffect(() => setSection(initialSection), [initialSection]);
   const dialog = useRef<HTMLDialogElement>(null);
   const [device, setDevice] = useState<DeviceInfo | null>(null);
   const [settings, setSettings] = useState<DeviceSettings | null>(null);
@@ -87,7 +103,9 @@ function SettingsCenter({ onClose }: { onClose: () => void }) {
     setError("");
     try {
       await deviceApi.saveSettings(settings.revision, location);
-      setSettings(await deviceApi.settings());
+      const next = await deviceApi.settings();
+      setChoice(next.projectLocation);
+      setSettings(next);
       setMessage("默认位置已保存。已有项目保持原位置。");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "保存失败");
@@ -106,115 +124,157 @@ function SettingsCenter({ onClose }: { onClose: () => void }) {
         if (!busy) onClose();
       }}
     >
-      <header>
+      <header className="settings-heading">
         <div>
           <h2 id="settings-title">设置</h2>
-          <p>外观留在当前浏览器，项目设置保存在连接的设备。</p>
+          <p>按你的创作习惯调整 TakeBoard</p>
         </div>
         <button type="button" aria-label="关闭设置" disabled={busy} onClick={onClose}>
           ×
         </button>
       </header>
-      <section>
-        <h3>外观与可读性</h3>
-        <p>不改变素材和生成分辨率；立即生效。</p>
-        <div className="settings-actions">
-          <ThemeSwitcher />
-          <DisplaySettings />
+      <div className="settings-layout">
+        <nav className="settings-nav" aria-label="设置分类">
+          {(
+            [
+              ["appearance", "外观"],
+              ["storage", "项目与存储"],
+              ["connections", "设备连接"],
+              ["diagnostics", "运行诊断"],
+              ["about", "关于与更新"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              aria-current={section === id ? "page" : undefined}
+              disabled={busy}
+              onClick={() => setSection(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
+        <div className="settings-content">
+          {section === "appearance" ? (
+            <section>
+              <h3>外观</h3>
+              <p>主题与显示偏好保留在当前设备。</p>
+              <ThemeSwitcher />
+              <DisplaySettings inline />
+            </section>
+          ) : null}
+          {section === "storage" ? (
+            <>
+              {" "}
+              <section>
+                <h3>
+                  项目与存储{" "}
+                  <small>
+                    · {connection?.name || connection?.address || device?.name || "当前设备"}
+                  </small>
+                </h3>
+                <p>
+                  默认位置用于这台设备上新建的项目，所有获准创建项目的用户共同使用。单次选择其他位置不修改默认值。
+                </p>
+                {settings?.canManage ? (
+                  <>
+                    <fieldset disabled={busy}>
+                      <ProjectLocationPicker
+                        key={settings.revision}
+                        initialChoice={choice ?? settings.projectLocation ?? undefined}
+                        label="默认项目位置"
+                        onChange={setChoice}
+                        onValid={setValid}
+                      />
+                    </fieldset>
+                    <div className="settings-actions">
+                      <button
+                        type="button"
+                        disabled={
+                          !valid ||
+                          !choice ||
+                          busy ||
+                          (choice.storageRootId === settings.projectLocation?.storageRootId &&
+                            choice.storageFolder === settings.projectLocation.storageFolder)
+                        }
+                        onClick={() => choice && void save(choice)}
+                      >
+                        保存默认位置
+                      </button>
+                      <button
+                        type="button"
+                        disabled={
+                          busy ||
+                          (settings.projectLocation?.storageRootId === "instance" &&
+                            settings.projectLocation.storageFolder === "")
+                        }
+                        onClick={() => void save({ storageRootId: "instance", storageFolder: "" })}
+                      >
+                        恢复内置位置
+                      </button>
+                    </div>
+                    <details>
+                      <summary>服务数据目录</summary>
+                      <code>{device?.projectsDirectory}</code>
+                      <p>
+                        账号、项目索引与系统配置仍留在此目录。更改默认项目位置不会迁移这些数据或已有项目。
+                      </p>
+                    </details>
+                  </>
+                ) : settings ? (
+                  <p>
+                    {settings.available
+                      ? "使用设备管理员设置的默认位置。"
+                      : "默认位置不可用，请联系设备管理员。"}
+                  </p>
+                ) : (
+                  <p>{error ? "暂时无法读取设备设置，请关闭后重试。" : "正在读取设备设置…"}</p>
+                )}
+              </section>
+            </>
+          ) : null}
+          {section === "connections" ? (
+            <section>
+              <h3>生成设备</h3>
+              <p>连接 ComfyUI，生成结果保存在当前项目。</p>
+              <Suspense fallback={<p>读取设备…</p>}>
+                <GenerationConnectionPanel manage />
+              </Suspense>
+              <div className="settings-subsection">
+                <h3>远程项目</h3>
+                <p>打开另一台 TakeBoard 上的项目。项目与素材保存在那台设备。</p>
+                {desktop ? (
+                  <DesktopActionButton action="connections">管理远程项目连接</DesktopActionButton>
+                ) : (
+                  <p>在桌面 App 的“连接”菜单管理远程项目。</p>
+                )}
+              </div>
+            </section>
+          ) : null}
+          {section === "diagnostics" ? <RuntimeDiagnostics /> : null}
+          {section === "about" ? (
+            <section>
+              <h3>TakeBoard</h3>
+              <p>项目设备 · {device?.name ?? "读取中"}</p>
+              {desktop ? (
+                <DesktopActionButton action="updates">检查 App 更新</DesktopActionButton>
+              ) : (
+                <a
+                  href="https://github.com/Fourques/Takeboard/releases"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  下载桌面 App
+                </a>
+              )}
+              <p>更新当前电脑上的 App，不会重启远程服务。</p>
+            </section>
+          ) : null}
+          {error ? <p role="alert">{error}</p> : null}
+          {message ? <p role="status">{message}</p> : null}
         </div>
-      </section>
-      <section>
-        <h3>
-          项目与存储{" "}
-          <small>· {connection?.name || connection?.address || device?.name || "当前设备"}</small>
-        </h3>
-        <p>
-          默认位置用于这台设备上新建的项目，所有获准创建项目的用户共同使用。单次选择其他位置不修改默认值。
-        </p>
-        {settings?.canManage ? (
-          <>
-            <fieldset disabled={busy}>
-              <ProjectLocationPicker
-                key={settings.revision}
-                initialChoice={settings.projectLocation ?? undefined}
-                label="默认项目位置"
-                onChange={setChoice}
-                onValid={setValid}
-              />
-            </fieldset>
-            <div className="settings-actions">
-              <button
-                type="button"
-                disabled={
-                  !valid ||
-                  !choice ||
-                  busy ||
-                  (choice.storageRootId === settings.projectLocation?.storageRootId &&
-                    choice.storageFolder === settings.projectLocation.storageFolder)
-                }
-                onClick={() => choice && void save(choice)}
-              >
-                保存默认位置
-              </button>
-              <button
-                type="button"
-                disabled={
-                  busy ||
-                  (settings.projectLocation?.storageRootId === "instance" &&
-                    settings.projectLocation.storageFolder === "")
-                }
-                onClick={() => void save({ storageRootId: "instance", storageFolder: "" })}
-              >
-                恢复内置位置
-              </button>
-            </div>
-            <details>
-              <summary>服务数据目录</summary>
-              <code>{device?.projectsDirectory}</code>
-              <p>
-                账号、项目索引与系统配置仍留在此目录。更改默认项目位置不会迁移这些数据或已有项目。
-              </p>
-            </details>
-          </>
-        ) : settings ? (
-          <p>
-            {settings.available
-              ? "使用设备管理员设置的默认位置。"
-              : "默认位置不可用，请联系设备管理员。"}
-          </p>
-        ) : (
-          <p>{error ? "暂时无法读取设备设置，请关闭后重试。" : "正在读取设备设置…"}</p>
-        )}
-      </section>
-      <section>
-        <Suspense fallback={<p>正在读取生成服务…</p>}>
-          <GenerationConnectionPanel />
-        </Suspense>
-        <h3>远程项目</h3>
-        <p>{connection?.address || window.location.origin}</p>
-        <p>
-          仅需远程生成，请使用上方“生成服务”。如果希望项目和素材也保存在服务器， 可另行打开远程
-          TakeBoard，并在那里选择项目文件夹；需要的文件可下载到当前电脑。
-        </p>
-        {desktop ? (
-          <DesktopActionButton action="connections">打开远程项目 / 管理连接</DesktopActionButton>
-        ) : (
-          <p>使用桌面 App 可管理 SSH、HTTPS 和 Portal 连接。</p>
-        )}
-      </section>
-      <section>
-        <h3>版本与更新</h3>
-        <p>检查当前电脑上的 App，不会更新或重启远程 TakeBoard，也不会中断生成。</p>
-        {desktop ? (
-          <DesktopActionButton action="updates">检查更新与提醒设置</DesktopActionButton>
-        ) : (
-          <a href="https://github.com/Fourques/Takeboard/releases" target="_blank" rel="noreferrer">
-            查看官方发布 · 浏览器不能安装更新
-          </a>
-        )}
-      </section>
-      {error ? <p role="alert">{error}</p> : null}
-      <p role="status">{message}</p>
+      </div>
     </dialog>
   );
 }

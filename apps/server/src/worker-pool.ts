@@ -66,7 +66,7 @@ function defaultWorker(endpoint: string): WorkerDefinition {
   const loopback = loopbackEndpoint(endpoint);
   return workerDefinitionSchema.parse({
     id: deterministicWorkerId(endpoint),
-    name: loopback ? "默认 ComfyUI" : "默认远程 ComfyUI",
+    name: new URL(endpoint).host,
     endpoint: normalizeEndpoint(endpoint),
     kind: loopback ? "local" : "remote",
     transport: loopback ? "loopback" : endpoint.startsWith("https://") ? "https" : "direct_http",
@@ -160,7 +160,9 @@ export class WorkerPool {
           ? {
               ...worker,
               endpoint: primary.endpoint,
-              name: worker.name === "本机 ComfyUI" ? primary.name : worker.name,
+              name: ["本机 ComfyUI", "默认 ComfyUI", "默认远程 ComfyUI"].includes(worker.name)
+                ? primary.name
+                : worker.name,
             }
           : worker,
       );

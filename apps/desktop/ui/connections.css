@@ -1,5 +1,14 @@
 :root {
-  color-scheme: dark;
+  color-scheme: light;
+  --bg: #f7f7fb;
+  --text: #24283b;
+  --muted: #60667b;
+  --surface: #fefeff;
+  --line: #d8d7e8;
+  --accent: #7668c1;
+  --action: #eeeef6;
+  --error: #a23729;
+  --error-bg: #fff0eb;
   font:
     14px / 1.6 ui-sans-serif,
     system-ui,
@@ -7,8 +16,8 @@
     BlinkMacSystemFont,
     "Segoe UI",
     sans-serif;
-  color: #e9e6df;
-  background: #121715;
+  color: var(--text);
+  background: var(--bg);
 }
 * {
   box-sizing: border-box;
@@ -33,7 +42,7 @@ header {
 }
 header p {
   margin: 0;
-  color: #c8b28d;
+  color: var(--muted);
   font-size: 11px;
   letter-spacing: 0.15em;
 }
@@ -48,8 +57,8 @@ h1 {
   width: 48px;
   height: 48px;
   border-radius: 14px;
-  background: #d9c399;
-  color: #151916;
+  background: var(--accent);
+  color: var(--surface);
   font:
     700 28px Georgia,
     serif;
@@ -57,7 +66,7 @@ h1 {
 .intro,
 .hint,
 footer {
-  color: #a9b2ac;
+  color: var(--muted);
 }
 .intro {
   margin: 18px 0 24px;
@@ -75,10 +84,10 @@ select,
 button {
   font: inherit;
   color: inherit;
-  border: 1px solid #3c4740;
+  border: 1px solid var(--line);
   border-radius: 10px;
   padding: 10px 12px;
-  background: #1c241f;
+  background: var(--surface);
   min-width: 0;
 }
 input,
@@ -89,7 +98,7 @@ input:focus-visible,
 select:focus-visible,
 button:focus-visible,
 summary:focus-visible {
-  outline: 2px solid #d9c399;
+  outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
 button {
@@ -100,9 +109,9 @@ button:disabled {
   cursor: wait;
 }
 button[type="submit"] {
-  background: #dac7a2;
-  border-color: #dac7a2;
-  color: #172019;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--surface);
   font-weight: 650;
 }
 .secondary {
@@ -122,20 +131,20 @@ details label {
 }
 summary {
   cursor: pointer;
-  color: #c7d0c9;
+  color: var(--text);
 }
 .status {
   display: grid;
   gap: 12px;
   padding: 16px;
   margin: 22px 0;
-  background: #1b241e;
+  background: var(--action);
   border-radius: 12px;
   overflow-wrap: anywhere;
 }
 .status.error {
-  color: #ffb7a7;
-  background: #30241f;
+  color: var(--error);
+  background: var(--error-bg);
 }
 h2 {
   font-size: 16px;
@@ -154,7 +163,7 @@ h2 {
 }
 .recent-row small {
   display: block;
-  color: #a9b2ac;
+  color: var(--muted);
 }
 footer {
   margin-top: 24px;
@@ -167,4 +176,49 @@ footer {
   button {
     transition: background 0.15s ease;
   }
+}
+
+:root[data-theme="light"] {
+  --bg: #f7f6f2;
+  --surface: #fffefb;
+  --accent: #625542;
+}
+:root[data-theme="noir"] {
+  color-scheme: dark;
+  --bg: #151918;
+  --text: #e9e6df;
+  --muted: #afb7b2;
+  --surface: #202622;
+  --line: #3c4740;
+  --accent: #d9c399;
+  --action: #28312b;
+  --error: #ffb7a7;
+  --error-bg: #30241f;
+}
+:root[data-theme="noir"] button[type="submit"],
+:root[data-theme="noir"] .mark {
+  color: #172019;
+}
+main > button,
+main > section,
+main > details {
+  margin-block: 18px;
+}
+form {
+  padding-block: 22px;
+  border-block: 1px solid var(--line);
+}
+label:has(input[type="checkbox"]) {
+  display: flex;
+  align-items: flex-start;
+}
+input[type="checkbox"] {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 4px 0 0;
+  accent-color: var(--accent);
+}
+header {
+  margin-bottom: 16px;
 }

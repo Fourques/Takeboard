@@ -1,38 +1,109 @@
 .generation-connection-panel {
-  padding: 12px 0;
+  padding: 8px 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: calc(13px * var(--ui-scale, 1));
+}
+.generation-device-list {
+  display: grid;
+  gap: 8px;
+}
+.generation-connection-panel .generation-device-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  text-align: left;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--text-1);
+  cursor: pointer;
+}
+.generation-device-row > span {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  flex: 1;
+}
+.generation-device-row strong {
+  font-weight: 550;
+}
+.generation-device-row small {
+  color: var(--text-2);
   overflow-wrap: anywhere;
 }
-.generation-connection-panel :is(fieldset, label, .generation-recent, button, div:first-child) {
+.generation-device-row em {
+  font-size: 0.85em;
+  font-style: normal;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+.generation-device-row > i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-2);
+  flex: none;
+}
+.generation-device-row > i[data-online="true"] {
+  background: var(--green);
+}
+.generation-connection-panel .generation-device-row:disabled {
+  opacity: 1;
+  cursor: default;
+}
+.generation-device-row[aria-pressed="true"] {
+  border-color: var(--accent);
+}
+.generation-connection-panel :is(fieldset, label) {
   display: grid;
   gap: 8px;
   min-width: 0;
 }
+.generation-connection-panel fieldset {
+  margin: 0;
+  padding: 16px 0;
+  border: 0;
+  gap: 16px;
+}
 .generation-connection-panel :is(input, select, button) {
-  padding: 8px;
+  padding: 10px 12px;
   min-width: 0;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface-2);
-  color: var(--text);
+  color: var(--text-1);
   font: inherit;
 }
-.generation-connection-panel fieldset {
-  margin: 0;
-  padding: 12px 0;
-  border: 0;
-}
-.generation-connection-panel :is(p, small, code) {
-  font-size: 0.85em;
+.generation-connection-panel :is(p, small) {
   line-height: 1.6;
-  color: var(--muted);
+  color: var(--text-2);
 }
-.generation-connection-panel summary {
+.generation-connection-panel [role="alert"] {
+  color: var(--red);
+}
+.generation-empty {
+  text-align: center;
+  padding: 24px 12px;
+}
+.generation-manage-link {
+  margin-top: 14px;
+  width: 100%;
   cursor: pointer;
-  padding: 8px 0;
+}
+.generation-service-control {
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+.generation-service-control summary {
+  cursor: pointer;
 }
 .hub-header .worker-pill > div {
   min-width: 0;
-  max-width: min(180px, 24vw);
+  max-width: min(160px, 24vw);
 }
 .hub-header .worker-pill strong {
   overflow: hidden;

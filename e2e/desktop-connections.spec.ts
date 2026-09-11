@@ -36,7 +36,7 @@ test("connection form keeps pending state, saves verified targets and confirms d
   });
   await page.route("https://desktop.test/**", async (route) => {
     const file = new URL(route.request().url()).pathname.slice(1);
-    if (!["connections.html", "connections.js", "connections.css"].includes(file))
+    if (!["connections.html", "connections.js", "connections.css", "appearance.js"].includes(file))
       return route.abort();
     await route.fulfill({
       body: await readFile(resolve("apps/desktop/ui", file)),
@@ -48,6 +48,8 @@ test("connection form keeps pending state, saves verified targets and confirms d
     });
   });
   await page.goto("https://desktop.test/connections.html");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "chroma");
+  await expect(page.locator("html")).toHaveCSS("color-scheme", "light");
   await page.getByLabel("SSH 主机", { exact: true }).fill("user@server");
   const connect = page.getByRole("button", { name: "连接并打开", exact: true });
   await connect.click();
@@ -102,4 +104,16 @@ test("connection form keeps pending state, saves verified targets and confirms d
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
+  await page.screenshot({ path: "test-results/native-connections-chroma.png" });
+  await page.evaluate(() => localStorage.setItem("takeboard.desktop.theme", "noir"));
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "noir");
+  await expect(page.locator("html")).toHaveCSS("color-scheme", "dark");
+  // Simulate the allowlisted native initialization script; a new app preference wins over stale utility storage.
+  await page.addInitScript(() => {
+    (window as unknown as { __takeboardTheme: string }).__takeboardTheme = "light";
+  });
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await expect(page.locator("html")).toHaveCSS("color-scheme", "light");
 });

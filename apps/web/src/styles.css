@@ -874,6 +874,8 @@ label.auth-remember {
 
 .auth-login-dialog {
   width: min(640px, calc(100vw - 24px));
+  margin: auto;
+  overflow: auto;
   max-height: calc(100dvh - 24px);
   padding: 0;
   border: 0;
@@ -885,8 +887,12 @@ label.auth-remember {
   backdrop-filter: blur(8px);
 }
 .auth-login-dialog .auth-shell {
+  height: auto;
   min-height: 0;
-  padding: 24px;
+  padding: 42px 24px 28px;
+}
+.auth-login-dialog .auth-atmosphere {
+  position: absolute;
 }
 .auth-dialog-close {
   position: absolute;
@@ -4203,93 +4209,6 @@ button.save-status {
   width: 32px;
   padding: 0;
   justify-content: center;
-}
-
-.display-settings-popover {
-  z-index: 120;
-  position: absolute;
-  top: calc(100% + 9px);
-  right: 0;
-  width: 290px;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  color: var(--text-1);
-  background: color-mix(in srgb, var(--surface-1) 96%, transparent);
-  box-shadow: 0 24px 70px var(--shadow);
-  backdrop-filter: blur(22px);
-}
-
-.display-settings-popover header {
-  display: grid;
-  margin: 2px 3px 10px;
-  gap: 3px;
-}
-
-.display-settings-popover header strong {
-  font-size: 12px;
-}
-
-.display-settings-popover header small,
-.display-settings-popover > p {
-  color: var(--text-2);
-  font-size: 9px;
-  line-height: 1.5;
-}
-
-.display-settings-popover > div {
-  display: grid;
-  gap: 4px;
-}
-
-.display-settings-popover > div > button {
-  display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) auto;
-  align-items: center;
-  padding: 8px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  color: var(--text-2);
-  text-align: left;
-  background: transparent;
-  cursor: pointer;
-  gap: 8px;
-}
-
-.display-settings-popover > div > button:hover,
-.display-settings-popover > div > button.active {
-  border-color: var(--line);
-  color: var(--text-1);
-  background: var(--surface-2);
-}
-
-.display-settings-popover > div > button > span {
-  font-family: Georgia, "Songti SC", serif;
-  text-align: center;
-}
-
-.display-settings-popover > div > button > div {
-  display: grid;
-  gap: 2px;
-}
-
-.display-settings-popover > div > button strong {
-  font-size: 10px;
-}
-
-.display-settings-popover > div > button small {
-  color: var(--text-2);
-  font-size: 8px;
-}
-
-.display-settings-popover > div > button i {
-  color: var(--accent-strong);
-  font-size: 8px;
-  font-style: normal;
-}
-
-.display-settings-popover > p {
-  margin: 10px 3px 1px;
 }
 
 .hub-header-actions {
@@ -9839,64 +9758,6 @@ html[data-theme="light"] .project-card-art {
 }
 
 /* Verified workflow, metadata, layout and rendering controls */
-.scene-quality-setting {
-  display: grid;
-  margin-top: 11px;
-  padding-top: 11px;
-  border-top: 1px solid var(--line);
-  gap: 8px;
-}
-
-.scene-quality-setting > div:first-child {
-  display: grid;
-  padding: 0 3px;
-  gap: 2px;
-}
-
-.scene-quality-setting > div:first-child strong {
-  font-size: 10px;
-}
-
-.scene-quality-setting > div:first-child small {
-  color: var(--text-2);
-  font-size: 8px;
-}
-
-.scene-quality-options {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 4px;
-}
-
-.scene-quality-options button {
-  display: grid;
-  padding: 7px 6px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  color: var(--text-2);
-  text-align: left;
-  background: transparent;
-  cursor: pointer;
-  gap: 3px;
-}
-
-.scene-quality-options button.active,
-.scene-quality-options button:hover {
-  border-color: color-mix(in srgb, var(--accent) 58%, var(--line));
-  color: var(--text-1);
-  background: color-mix(in srgb, var(--accent) 9%, var(--surface-2));
-}
-
-.scene-quality-options span {
-  font-size: 9px;
-  font-weight: 650;
-}
-
-.scene-quality-options small {
-  color: var(--text-2);
-  font-size: 7px;
-  line-height: 1.4;
-}
 
 .canvas-arrange-toggle {
   display: flex;
@@ -14694,120 +14555,6 @@ html[data-theme="chroma"] .scene-companions img {
   line-height: 1.55;
 }
 
-.worker-ready-detail {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 18px 2px;
-}
-
-.worker-ready-detail span {
-  display: flex;
-  align-items: center;
-  font-size: 11px;
-  gap: 8px;
-}
-
-.worker-ready-detail span i {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--hub-sage);
-  box-shadow: 0 0 12px var(--hub-sage);
-}
-
-.worker-ready-detail small {
-  color: var(--hub-muted);
-  font-size: 9px;
-}
-
-.worker-safety-checks {
-  display: grid;
-  max-height: 248px;
-  margin: 0;
-  padding: 0;
-  overflow: auto;
-  list-style: none;
-  gap: 6px;
-}
-
-.worker-safety-checks li {
-  display: grid;
-  padding: 9px 10px;
-  border: 1px solid var(--hub-line);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--hub-surface-raised) 54%, transparent);
-  grid-template-columns: 8px minmax(0, 1fr);
-  gap: 9px;
-}
-
-.worker-safety-checks li > i {
-  width: 6px;
-  height: 6px;
-  margin-top: 3px;
-  border-radius: 50%;
-  background: var(--hub-sage);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--hub-sage) 55%, transparent);
-}
-
-.worker-safety-checks li.check-blocked > i {
-  background: var(--red);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--red) 55%, transparent);
-}
-
-.worker-safety-checks li > div {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.worker-safety-checks strong {
-  font-size: 9px;
-  font-weight: 600;
-}
-
-.worker-safety-checks span {
-  color: var(--hub-muted);
-  font-size: 8px;
-  line-height: 1.45;
-}
-
-.worker-panel-actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  margin-top: 13px;
-  gap: 7px;
-}
-
-.worker-panel-actions button {
-  min-height: 36px;
-  border: 1px solid var(--hub-line);
-  border-radius: 6px;
-  color: var(--hub-copy);
-  background: color-mix(in srgb, var(--hub-surface-raised) 72%, transparent);
-  font-size: 9px;
-  cursor: pointer;
-}
-
-.worker-panel-actions .worker-safe-start {
-  border-color: color-mix(in srgb, var(--hub-sage) 56%, var(--hub-line));
-  background: color-mix(in srgb, var(--hub-sage) 15%, var(--hub-surface));
-}
-
-.worker-panel-actions button:disabled {
-  cursor: not-allowed;
-  opacity: 0.42;
-}
-
-.worker-safety-note {
-  display: block;
-  margin-top: 9px;
-  color: color-mix(in srgb, var(--hub-muted) 76%, transparent);
-  font-size: 8px;
-  text-align: center;
-}
-
 @media (max-width: 640px) {
   .operations-panel {
     position: fixed;
@@ -15034,20 +14781,8 @@ html:is([data-display-scale="1-24"], [data-display-scale="1-4"]) .hub-header .wo
   font-size: 17px;
 }
 
-.worker-panel > p,
-.worker-ready-detail span {
+.worker-panel > p {
   font-size: 12px;
-}
-
-.worker-safety-checks strong,
-.worker-panel-actions button {
-  font-size: 10px;
-}
-
-.worker-safety-checks span,
-.worker-safety-note,
-.worker-ready-detail small {
-  font-size: 9px;
 }
 
 @media (max-width: 640px) {
@@ -15441,10 +15176,7 @@ html:is([data-display-scale="1-24"], [data-display-scale="1-4"]) .hub-header .wo
   font-size: calc(10px * var(--ui-scale));
 }
 
-.project-card-copy small,
-.worker-safety-checks span,
-.worker-safety-note,
-.worker-ready-detail small {
+.project-card-copy small {
   font-size: calc(9px * var(--ui-scale));
 }
 

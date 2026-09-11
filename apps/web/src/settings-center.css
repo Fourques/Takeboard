@@ -1,44 +1,88 @@
 .settings-center {
-  width: min(740px, calc(100vw - 24px));
-  max-height: calc(100dvh - 32px);
+  width: min(900px, calc(100vw - 32px));
+  height: min(700px, calc(100dvh - 40px));
+  max-width: none;
+  max-height: calc(100dvh - 40px);
   margin: auto;
-  padding: clamp(18px, 4vw, 32px);
-  overflow: auto;
+  padding: 0;
+  overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 22px;
-  background: var(--panel);
+  border-radius: 20px;
+  background: var(--surface-1);
   color: var(--text-1);
-  box-shadow: 0 24px 90px #0005;
+  box-shadow: 0 24px 90px #0004;
   font-size: calc(14px * var(--ui-scale, 1));
 }
 .settings-center::backdrop {
-  background: #10141866;
+  background: #10141855;
   backdrop-filter: blur(6px);
 }
-.settings-center header,
-.settings-actions {
+.settings-center[open] {
+  display: flex;
+  flex-direction: column;
+}
+.settings-heading {
+  flex: none;
   display: flex;
   align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.settings-center header {
   justify-content: space-between;
-  align-items: flex-start;
-}
-.settings-center header > div {
-  flex: 1;
+  padding: 22px 28px;
+  border-bottom: 1px solid var(--line);
 }
 .settings-center h2,
 .settings-center h3 {
   margin: 0;
 }
+.settings-center h2 {
+  font-size: 1.45em;
+}
+.settings-center h3 {
+  font-size: 1.1em;
+}
 .settings-center p {
   line-height: 1.65;
+  color: var(--text-2);
+  margin: 10px 0 18px;
 }
-.settings-center section {
-  padding: 22px 0;
-  border-bottom: 1px solid var(--line);
+.settings-heading p {
+  margin: 5px 0 0;
+  font-size: 0.85em;
+}
+.settings-layout {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+}
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 20px 12px;
+  border-right: 1px solid var(--line);
+  overflow: auto;
+}
+.settings-content {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 26px 30px;
+  overscroll-behavior: contain;
+}
+.settings-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 16px 0;
+}
+.settings-content section {
+  min-width: 0;
+}
+.settings-content .settings-subsection {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
 }
 .settings-center fieldset {
   min-width: 0;
@@ -51,7 +95,7 @@
   overflow-wrap: anywhere;
 }
 .settings-center small {
-  font-size: 0.8em;
+  font-size: 0.82em;
   font-weight: 400;
 }
 .settings-center button,
@@ -59,10 +103,10 @@
   font: inherit;
 }
 .settings-center button {
-  padding: 8px 12px;
+  padding: 10px 12px;
   border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--panel);
+  border-radius: 9px;
+  background: var(--surface-2);
   color: inherit;
   cursor: pointer;
 }
@@ -73,12 +117,156 @@
 .settings-center a {
   color: inherit;
 }
-.settings-center .display-settings-popover {
-  position: fixed;
-  inset: 12px;
-  width: auto;
-  max-width: 430px;
-  max-height: calc(100dvh - 24px);
-  margin: auto;
-  overflow: auto;
+.settings-nav button {
+  text-align: left;
+  border-color: transparent;
+  background: transparent;
+}
+.settings-nav button[aria-current] {
+  background: var(--surface-2);
+  color: var(--accent-strong);
+  border-color: var(--line);
+}
+.settings-center .theme-switcher {
+  display: flex;
+  gap: 8px;
+  margin: 16px 0 26px;
+}
+.settings-center .theme-switcher button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-height: 44px;
+  justify-content: center;
+  font: inherit;
+  padding: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+}
+.settings-center .theme-switcher i {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+.settings-center .theme-switcher button[aria-pressed="true"] {
+  border-color: var(--accent);
+}
+.display-settings-content {
+  margin-top: 24px;
+}
+.display-settings-content header {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.display-settings-content small {
+  color: var(--text-2);
+}
+.settings-center .display-setting-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.settings-center .display-setting-options button {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  text-align: left;
+}
+.settings-center .display-setting-options button > div {
+  display: grid;
+  gap: 4px;
+  flex: 1;
+}
+.settings-center .display-setting-options button i {
+  font-size: 0.8em;
+  font-style: normal;
+}
+.settings-center .display-setting-options button.active,
+.settings-center .scene-quality-options button.active {
+  border-color: var(--accent);
+}
+.settings-center .scene-quality-setting {
+  padding-top: 24px;
+}
+.settings-center .scene-quality-setting > div:first-child {
+  display: grid;
+  gap: 6px;
+}
+.settings-center .scene-quality-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+.settings-center .scene-quality-options button {
+  display: grid;
+  gap: 6px;
+  text-align: left;
+}
+.diagnostic-results {
+  display: grid;
+  gap: 10px;
+  margin: 20px 0;
+}
+.diagnostic-results article {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.diagnostic-results strong {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.diagnostic-results p {
+  margin: 6px 0 0;
+  font-size: 0.9em;
+}
+.diagnostic-results [data-status="blocked"] {
+  border-color: var(--red);
+}
+.settings-center [role="alert"] {
+  color: var(--red);
+}
+@media (max-width: 640px) {
+  .settings-center {
+    width: calc(100vw - 16px);
+    height: calc(100dvh - 20px);
+    max-height: calc(100dvh - 20px);
+    border-radius: 14px;
+  }
+  .settings-heading {
+    padding: 16px 18px;
+  }
+  .settings-heading p {
+    display: none;
+  }
+  .settings-layout {
+    display: flex;
+    flex-direction: column;
+  }
+  .settings-nav {
+    flex-direction: row;
+    flex: none;
+    padding: 10px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    gap: 2px;
+  }
+  .settings-nav button {
+    flex: none;
+    padding: 8px;
+    font-size: 0.85em;
+  }
+  .settings-content {
+    padding: 20px 18px;
+  }
+  .settings-center .scene-quality-options {
+    grid-template-columns: 1fr;
+  }
+  .settings-center .display-setting-options {
+    grid-template-columns: 1fr;
+  }
 }

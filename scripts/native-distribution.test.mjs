@@ -35,7 +35,19 @@ test("desktop release versions match the server, native host and workspace manif
 test("public preview pipeline builds only native installers and checks final packaged runtimes", async () => {
   const workflow = await read(".github/workflows/desktop-preview.yml");
   assert.doesNotMatch(workflow, /bundle:portable|release\/\*\.tar\.gz|demo:capture/);
-  assert.equal((workflow.match(/platform: /g) ?? []).length, 6);
+  const matrices = [...workflow.matchAll(/'(\[\{"os":[^']+\])'/g)].map((match) =>
+    JSON.parse(match[1]),
+  );
+  assert.equal(matrices.length, 2);
+  assert.deepEqual(
+    matrices[0].map((target) => target.platform),
+    ["macos-arm64"],
+  );
+  assert.equal(matrices[0][0].rust_target, "aarch64-apple-darwin");
+  assert.equal(matrices[0][0].bundles, "dmg");
+  assert.equal(matrices[1].length, 6);
+  assert.match(workflow, /default: macos-arm64/);
+  assert.match(workflow, /inputs.platform == 'macos-arm64'/);
   assert.equal((workflow.match(/node scripts\/verify-desktop-runtime.mjs/g) ?? []).length, 3);
   assert.match(workflow, /hdiutil attach -readonly/);
   assert.match(workflow, /Start-Process -FilePath/);

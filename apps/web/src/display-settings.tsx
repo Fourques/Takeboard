@@ -1,15 +1,21 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { rememberDisplayPreference, savedScale, savedSceneQuality } from "./display-preferences";
 import { type DisplayScale, displayScales } from "./display-scale";
+
+import { openSettings } from "./settings-navigation";
 
 export { resolveDisplayScale } from "./display-scale";
 export type SceneQuality = "auto" | "full" | "lite";
 
-export function DisplaySettings({ compact = false }: { compact?: boolean }) {
+export function DisplaySettings({
+  compact = false,
+  inline = false,
+}: {
+  compact?: boolean;
+  inline?: boolean;
+}) {
   const [scale, setScale] = useState<DisplayScale>(savedScale);
   const [sceneQuality, setSceneQuality] = useState<SceneQuality>(savedSceneQuality);
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     document.documentElement.style.setProperty("--ui-scale", String(scale));
@@ -38,34 +44,25 @@ export function DisplaySettings({ compact = false }: { compact?: boolean }) {
     };
   }, []);
 
-  useEffect(() => {
-    if (!open) return;
-    const close = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
-    };
-    window.addEventListener("pointerdown", close);
-    return () => window.removeEventListener("pointerdown", close);
-  }, [open]);
-
   return (
-    <div className={`display-settings ${compact ? "compact" : ""}`} ref={rootRef}>
-      <button
-        type="button"
-        className={open ? "active" : ""}
-        aria-expanded={open}
-        aria-haspopup="dialog"
-        onClick={() => setOpen((current) => !current)}
-        title="调整界面文字大小"
-        aria-label={`显示大小：${displayScales.find((item) => item.value === scale)?.label ?? "清晰"}`}
-      >
-        <span aria-hidden="true">Aa</span>
-        {compact ? null : "显示"}
-      </button>
-      {open ? (
-        <div className="display-settings-popover" role="dialog" aria-label="显示大小">
+    <div className={`display-settings ${compact ? "compact" : ""}`}>
+      {!inline ? (
+        <button
+          type="button"
+          aria-haspopup="dialog"
+          onClick={() => openSettings("appearance")}
+          title="调整界面文字大小"
+          aria-label={`显示大小：${displayScales.find((item) => item.value === scale)?.label ?? "清晰"}`}
+        >
+          <span aria-hidden="true">Aa</span>
+          {compact ? null : "显示"}
+        </button>
+      ) : null}
+      {inline ? (
+        <section className="display-settings-content" aria-label="显示大小">
           <header>
             <strong>界面文字</strong>
-            <small>只影响当前浏览器，不改变项目与生成分辨率</small>
+            <small>仅调整界面，不改变素材分辨率</small>
           </header>
           <div className="display-setting-options">
             {displayScales.map((item) => (
@@ -73,9 +70,9 @@ export function DisplaySettings({ compact = false }: { compact?: boolean }) {
                 type="button"
                 key={item.value}
                 className={scale === item.value ? "active" : ""}
+                aria-pressed={scale === item.value}
                 onClick={() => {
                   setScale(item.value);
-                  setOpen(false);
                 }}
               >
                 <span style={{ fontSize: `${Math.round(12 * item.value)}px` }}>Aa</span>
@@ -104,6 +101,7 @@ export function DisplaySettings({ compact = false }: { compact?: boolean }) {
                   type="button"
                   key={value}
                   className={sceneQuality === value ? "active" : ""}
+                  aria-pressed={sceneQuality === value}
                   onClick={() => setSceneQuality(value)}
                 >
                   <span>{label}</span>
@@ -112,8 +110,7 @@ export function DisplaySettings({ compact = false }: { compact?: boolean }) {
               ))}
             </div>
           </section>
-          <p>画布坐标与生成分辨率保持不变；窄屏时 TakeBoard 会自动收起两侧面板。</p>
-        </div>
+        </section>
       ) : null}
     </div>
   );

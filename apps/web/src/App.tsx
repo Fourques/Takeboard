@@ -199,8 +199,6 @@ export function App() {
     workflows,
     workflowWarnings,
     comfyEditorUrl,
-    refreshWorker,
-    startWorker,
     refreshWorkflows,
     importWorkflow,
     inventoryBusy,
@@ -1716,10 +1714,8 @@ export function App() {
           onDelete={deleteProject}
           onImport={importProject}
           onOpen={openProject}
-          onRefreshWorker={refreshWorker}
           onRename={renameProject}
           onRestore={restoreProject}
-          onStartWorker={startWorker}
           projects={projects}
           trashedProjects={trashedProjects}
           worker={worker}

@@ -1,9 +1,14 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import Fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
-import { ComfyConnections, parseConnectionTarget } from "../src/comfy-connection.js";
+import {
+  ComfyConnections,
+  parseConnectionTarget,
+  registerComfyConnections,
+} from "../src/comfy-connection.js";
 import { WorkerPool } from "../src/worker-pool.js";
 
 const cleanup: Array<() => Promise<unknown>> = [];
@@ -19,6 +24,57 @@ async function fixture() {
 const target = { kind: "ssh" as const, name: "家里的工作站", host: "user@workstation", port: 8188 };
 
 describe("generation connection ownership", () => {
+  it("verifies registered devices before switching and preserves selection on failure", async () => {
+    const root = await fixture();
+    const pool = new WorkerPool(join(root, "workers.json"), "http://127.0.0.1:8188");
+    const registered = await pool.add({
+      name: "已配对的工作站",
+      endpoint: "https://studio.test",
+      kind: "remote",
+      transport: "https",
+      enabled: true,
+      allowSensitiveInputs: false,
+      qualityTier: "balanced",
+      priority: 0,
+      hourlyRate: null,
+      currency: "CNY",
+      estimatedJobSeconds: 60,
+    });
+    const connections = new ComfyConnections(root, pool);
+    const app = Fastify();
+    registerComfyConnections(app, connections, pool);
+    cleanup.push(() => app.close());
+    const fetchMock = vi.fn(async () => {
+      throw new Error("offline");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const choose = () =>
+      app.inject({
+        method: "POST",
+        url: "/api/generation/connection",
+        payload: { workerId: registered.id },
+      });
+    expect((await choose()).statusCode).toBe(409);
+    expect(pool.defaultWorkerId).toBe(pool.localWorkerId);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ system: { os: "linux" }, devices: [] })),
+    );
+    expect((await choose()).statusCode).toBe(200);
+    expect(pool.defaultWorkerId).toBe(registered.id);
+    await pool.update(registered.id, { enabled: false });
+    expect((await choose()).statusCode).toBe(409);
+    expect(pool.defaultWorkerId).toBe(registered.id);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/api/generation/connection",
+          payload: { workerId: "missing" },
+        })
+      ).statusCode,
+    ).toBe(409);
+  });
   it("does not block local projects or overwrite a damaged optional connection file", async () => {
     const root = await fixture();
     await mkdir(join(root, ".system"));
