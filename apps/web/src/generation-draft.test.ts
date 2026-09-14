@@ -82,7 +82,26 @@ describe("generation input and ownership boundaries", () => {
     const problem = (first: string | null, last: string | null) =>
       generationProblem({
         projectMode: "project",
-        selectedWorkflow: workflow,
+        selectedWorkflow: workflow
+          ? {
+              ...workflow,
+              diagnostic: {
+                health: "ready",
+                executable: true,
+                checks: [],
+                path: workflow.path,
+                workflowHash: "a".repeat(64),
+                nodeCount: 1,
+                capability: workflow.capability,
+                outputMediaType: "video",
+                bindingStatus: "built_in",
+                modelStatus: "ready",
+                models: [],
+                missingModels: [],
+                missingNodeTypes: [],
+              },
+            }
+          : null,
         generationSettings: { ...settings, firstFrameAssetId: first, lastFrameAssetId: last },
         selectedModelProfile: modelProfile(workflow, "16:9"),
         selectedInputCounts: { reference: 0, reference_video: 0, reference_audio: 0 },

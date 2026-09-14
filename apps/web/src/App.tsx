@@ -52,7 +52,9 @@ import { CommandConfirmation } from "./command-confirmation";
 import { DeviceIndicator } from "./device-indicator";
 import { findWorkflow } from "./generation-model";
 import { NumericInput } from "./numeric-input";
+import { RecoveryNotice } from "./recovery-notice";
 import { SettingsButton } from "./settings-center";
+import { openSettings } from "./settings-navigation";
 import { useCanvasConnection } from "./use-canvas-connection";
 import { useEditorSelection } from "./use-editor-selection";
 import { useProjectDocument } from "./use-project-document";
@@ -2635,9 +2637,10 @@ export function App() {
             settings={generationSettings}
             workflow={selectedWorkflow}
             profile={selectedModelProfile}
-            workflowDetected={workflows.some(
-              (workflow) => workflow.path === selectedWorkflow?.path,
+            workflows={workflows.filter(
+              (workflow) => isLibraryWorkflow(workflow) && workflowAvailability(workflow).ready,
             )}
+            onSelectWorkflow={(workflow) => void bindWorkflow(workflow)}
             workflowLocked={workflowLocked}
             inputCounts={selectedInputCounts}
             mentions={promptMentions}
@@ -3100,9 +3103,30 @@ export function App() {
 
       {notice ? <div className="toast success">✓ {notice}</div> : null}
       {error ? (
-        <button className="toast error" type="button" onClick={() => setError(null)}>
-          操作失败：{error} · 点击关闭
-        </button>
+        <RecoveryNotice
+          message={error}
+          onDismiss={() => setError(null)}
+          onAction={(action) => {
+            if (action === "review") setError(null);
+            else if (action === "workflows") setRecipeOpen(true);
+            else if (action === "assets") setAssetLibraryOpen(true);
+            else if (action === "tasks") window.dispatchEvent(new Event("takeboard:open-tasks"));
+            else if (action === "prompt" || action === "parameters") {
+              const target = document.querySelector<HTMLButtonElement>("#inspector-tab-generate");
+              if (target) {
+                selection.inspect(true);
+                target.click();
+                window.requestAnimationFrame(() => {
+                  const field = document.querySelector<HTMLElement>(
+                    action === "prompt" ? ".prompt-with-mentions textarea" : "#generation-width",
+                  );
+                  field?.scrollIntoView({ block: "center" });
+                  field?.focus();
+                });
+              } else openSettings("diagnostics");
+            } else openSettings(action);
+          }}
+        />
       ) : null}
     </main>
   );

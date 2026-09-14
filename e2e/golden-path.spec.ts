@@ -301,7 +301,8 @@ test("fake generation and approval survive reload", async ({ page }) => {
   await reset.click();
   await page.getByRole("button", { name: "确认重置" }).click();
   await page.getByRole("button", { name: "显示检查器", exact: true }).click();
-  await expect(page.getByText("这个镜头还没有生成结果")).toBeVisible();
+  await page.getByRole("tab", { name: "结果" }).click();
+  await expect(page.getByText("还没有生成结果", { exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "开始生成" }).click();
   await expect(page.getByRole("button", { name: "选择候选 1" })).toBeVisible();
@@ -496,8 +497,8 @@ test("a generated shot becomes the full visual node on canvas", async ({ page, r
   await expect(generatedNode.locator(".shot-generated-overlay")).not.toContainText("已批准");
   await expect(page.locator(".react-flow__node-shot")).not.toContainText("未选择模型");
   await page.locator(".react-flow__node-shot").click();
-  await expect(page.locator(".recipe-selector")).toBeDisabled();
-  await expect(page.locator(".recipe-selector")).toContainText("已随镜头锁定");
+  await expect(page.getByLabel("生成模型", { exact: true })).toBeDisabled();
+  await expect(page.locator(".inspector-model-picker")).toContainText("已锁定");
   await page.screenshot({
     path: "test-results/takeboard-generated-shot-node.png",
     fullPage: true,
@@ -836,9 +837,9 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
   await expect(page.locator(".react-flow__node-shot")).toHaveCount(1);
   await expect(page.getByRole("dialog", { name: /删除/ })).toHaveCount(0);
   await expect(page.getByLabel("镜头候选检查器")).toBeVisible();
-  await page.locator(".recipe-selector").click();
+  await page.getByRole("button", { name: "管理模型与工作流" }).click();
   await expect(page.getByRole("heading", { name: "选择工作流" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "模板库", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "可添加", exact: true })).toBeVisible();
   await expect(page.getByText("导入工作流", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("link", { name: "导出工作流包", includeHidden: true }).first(),
@@ -852,9 +853,11 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
   await expect(page.getByLabel("画布工作流")).toHaveValue("Kino/Kino_MiniMaxH3_R2V.json");
   await expect(page.getByLabel("画布提示词")).toBeVisible();
   await page.getByRole("button", { name: "显示检查器", exact: true }).click();
-  await page.locator(".recipe-selector").click();
+  await page.getByRole("button", { name: "管理模型与工作流" }).click();
   await page.getByRole("button", { name: /Qwen Image 2512 T2I/ }).click();
-  await expect(page.locator(".recipe-selector")).toContainText("Qwen Image 2512 T2I");
+  await expect(
+    page.getByLabel("生成模型", { exact: true }).locator("option:checked"),
+  ).toContainText("Qwen Image 2512 T2I");
   await expect(page.locator(".react-flow__node-shot .shot-input")).toHaveCount(0);
   await expect(page.getByLabel("宽度", { exact: true })).toHaveValue("1664");
   const candidateCountControl = page.getByRole("group", { name: "每批候选数量" });
@@ -869,11 +872,7 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
     fullPage: true,
     animations: "disabled",
   });
-  await page
-    .getByRole("button", { name: /Qwen Image 2512 T2I/ })
-    .first()
-    .click();
-  await page.getByRole("button", { name: /Wan22 FLF2V/ }).click();
+  await page.getByLabel("生成模型", { exact: true }).selectOption("Kino/Kino_Wan22_FLF2V.json");
   await expect(page.locator(".react-flow__node-shot .shot-input")).toHaveCount(2);
   await expect(page.locator(".react-flow__node-shot")).toContainText("首帧 0/1");
   await expect(page.locator(".react-flow__node-shot")).toContainText("尾帧 0/1");
@@ -899,7 +898,7 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
   await canvasDuration.press("Enter");
   await expect(canvasDuration).toHaveValue("3.5");
   await page.getByRole("button", { name: "显示检查器", exact: true }).click();
-  await page.locator(".advanced-generation-settings summary").click();
+  await expect(page.getByRole("region", { name: "生成参数" })).toBeVisible();
   const inspectorWidth = page.getByLabel("宽度", { exact: true });
   await inspectorWidth.fill("");
   await expect(inspectorWidth).toHaveValue("");
@@ -907,16 +906,10 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
   await inspectorWidth.press("Tab");
   await expect(inspectorWidth).toHaveValue("1024");
   await page
-    .getByRole("button", { name: /Wan22 FLF2V/ })
-    .first()
-    .click();
-  await page.getByRole("button", { name: /Qwen Image 2512 T2I/ }).click();
+    .getByLabel("生成模型", { exact: true })
+    .selectOption("Kino/Kino_QwenImage2512_T2I.json");
   await expect(page.getByLabel("宽度", { exact: true })).toHaveValue("1664");
-  await page
-    .getByRole("button", { name: /Qwen Image 2512 T2I/ })
-    .first()
-    .click();
-  await page.getByRole("button", { name: /Wan22 FLF2V/ }).click();
+  await page.getByLabel("生成模型", { exact: true }).selectOption("Kino/Kino_Wan22_FLF2V.json");
   await expect(page.getByLabel("宽度", { exact: true })).toHaveValue("1024");
   await page.screenshot({
     path: "test-results/takeboard-workflow-studio.png",
@@ -1068,7 +1061,7 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
   await shotNodes.first().dblclick();
   const inspector = page.getByLabel("镜头候选检查器");
   await inspector.getByLabel("镜头名称").fill("SH-01A");
-  await inspector.locator("summary").filter({ hasText: "镜头信息" }).click();
+  await expect(inspector.getByRole("region", { name: "镜头信息" })).toBeVisible();
   await inspector.getByLabel("镜头画幅").selectOption("9:16");
   await inspector.getByRole("button", { name: "保存镜头" }).click();
   await expect(page.getByText("SH-01A", { exact: true }).first()).toBeVisible();
@@ -1088,7 +1081,7 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
   const videoNode = page.locator(".react-flow__node-asset").filter({ has: page.locator("video") });
   await expect(videoNode).toBeVisible();
   await shotNodes.first().dblclick();
-  await page.locator(".recipe-selector").click();
+  await page.getByRole("button", { name: "管理模型与工作流" }).click();
   await page.getByRole("button", { name: /MiniMax H3 R2V/ }).click();
   // Opening the inspector narrows the canvas; bring both connection endpoints into view.
   await page.locator(".react-flow__controls-fitview").click();

@@ -43,3 +43,17 @@ export const workflowDiagnosticSchema = z.object({
 
 export type WorkflowDiagnosticCheck = z.infer<typeof workflowDiagnosticCheckSchema>;
 export type WorkflowDiagnostic = z.infer<typeof workflowDiagnosticSchema>;
+
+export type RecommendedWorkflowTemplate = {
+  capability: WorkflowDiagnostic["capability"];
+  id: string;
+  name: string;
+  version: string;
+  path: string;
+  bytes: number;
+  installation: "absent" | "installed" | "different" | "unknown";
+  included: boolean;
+  diagnostic: WorkflowDiagnostic | null;
+  problem: string | null;
+  confirmationToken: string | null;
+};

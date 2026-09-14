@@ -13,6 +13,8 @@ import {
   type WorkflowSummary,
   workflowApi,
 } from "./api";
+import { RecommendedTemplates } from "./recommended-templates";
+import { WorkflowCheckPanel } from "./workflow-check-panel";
 import { compareWorkflows, isLibraryWorkflow, workflowAvailability } from "./workflow-library";
 
 const groups: Array<{ id: "all" | WorkflowCapability; label: string }> = [
@@ -37,7 +39,7 @@ const capabilityIcon: Record<WorkflowCapability, string> = {
 const parameterLabels: Record<WorkflowParameterKey, string> = {
   prompt: "提示词",
   negative_prompt: "负面提示词",
-  seed: "Seed",
+  seed: "种子",
   steps: "采样步数",
   denoise: "重绘强度",
   width: "宽度",
@@ -106,7 +108,7 @@ export function RecipeStudio({
   workflows: WorkflowSummary[];
 }) {
   const [group, setGroup] = useState<"all" | WorkflowCapability>("all");
-  const [origin, setOrigin] = useState<"mine" | "templates" | "all">("mine");
+  const [origin, setOrigin] = useState<"mine" | "templates">("mine");
   const [libraryBusy, setLibraryBusy] = useState<string | null>(null);
   const [renamePath, setRenamePath] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -142,9 +144,25 @@ export function RecipeStudio({
   const [packageNoticePath, setPackageNoticePath] = useState("");
   const [packageBusy, setPackageBusy] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const studioRef = useRef<HTMLElement>(null);
   const inspectionRequest = useRef(0);
   const refreshRef = useRef(onRefresh);
   refreshRef.current = onRefresh;
+  const nestedPanelOpen = Boolean(inspection || archivePreview || archives);
+  useEffect(() => {
+    if (!open) return;
+    const previous = document.activeElement;
+    const studio = studioRef.current;
+    const panel = nestedPanelOpen
+      ? studio?.querySelector<HTMLElement>(".binding-editor, .workflow-archive-dialog")
+      : studio;
+    panel
+      ?.querySelector<HTMLElement>("button:not([disabled]), input:not([disabled]), a[href]")
+      ?.focus();
+    return () => {
+      if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
+    };
+  }, [open, nestedPanelOpen]);
   useEffect(() => {
     if (!open) return;
     let active = true;
@@ -161,8 +179,7 @@ export function RecipeStudio({
         .filter(
           (workflow) =>
             (group === "all" || workflow.capability === group) &&
-            (origin === "all" ||
-              (origin === "mine" ? isLibraryWorkflow(workflow) : workflow.origin === "built_in")) &&
+            (origin === "mine" ? isLibraryWorkflow(workflow) : !isLibraryWorkflow(workflow)) &&
             (!onlyReady || workflowAvailability(workflow).ready) &&
             `${workflow.name} ${workflow.models.join(" ")}`
               .toLowerCase()
@@ -186,6 +203,7 @@ export function RecipeStudio({
       if (ticket !== inspectionRequest.current) return;
       setInspection(result);
       setBindingDraft(result.binding ?? result.suggested ?? null);
+      await onRefresh();
     } catch (error) {
       if (ticket !== inspectionRequest.current) return;
       setBindingError(error instanceof Error ? error.message : "无法分析该工作流");
@@ -193,6 +211,15 @@ export function RecipeStudio({
       setBindingDraft(null);
     } finally {
       if (ticket === inspectionRequest.current) setBindingBusy(false);
+    }
+  };
+
+  const refreshLibrary = async () => {
+    setBindingError("");
+    try {
+      await onRefresh();
+    } catch (error) {
+      setBindingError(error instanceof Error ? error.message : "检查失败，请重试");
     }
   };
 
@@ -371,31 +398,61 @@ export function RecipeStudio({
   if (!open) return null;
   return (
     <div className="studio-backdrop">
-      <aside className="recipe-studio">
+      <aside
+        className="recipe-studio"
+        ref={studioRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="选择工作流"
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            event.stopPropagation();
+            if (bindingBusy || packageBusy || archiveBusy) return;
+            if (inspection) {
+              inspectionRequest.current++;
+              setInspection(null);
+            } else if (archivePreview) setArchivePreview(null);
+            else if (archives) setArchives(null);
+            else onClose();
+          }
+          if (event.key !== "Tab") return;
+          const scope =
+            studioRef.current?.querySelector<HTMLElement>(
+              ".binding-editor, .workflow-archive-dialog",
+            ) ?? studioRef.current;
+          const focusable = Array.from(
+            scope?.querySelectorAll<HTMLElement>(
+              'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex="0"]',
+            ) ?? [],
+          ).filter((node) => node.getClientRects().length > 0);
+          const first = focusable[0];
+          const last = focusable.at(-1);
+          if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last?.focus();
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first?.focus();
+          }
+        }}
+      >
         <header className="studio-header">
           <div>
-            <span className="section-kicker">RECIPE LIBRARY</span>
             <h2>选择工作流</h2>
             <p>
-              {selectionLocked ? "当前镜头已有结果，工作流已锁定" : `${workflows.length} 个工作流`}
-              {warnings.length > 0 ? ` · ${warnings.length} 条检查提示` : ""}
+              {selectionLocked
+                ? "当前镜头的工作流已锁定"
+                : `${workflows.filter((item) => isLibraryWorkflow(item) && workflowAvailability(item).ready).length} 个可用`}
             </p>
           </div>
           <div className="studio-actions">
-            <button
-              type="button"
-              aria-pressed={advanced}
-              onClick={() => setAdvanced((current) => !current)}
-              title="显示文件名、节点编号与诊断代码"
-            >
-              {advanced ? "简洁" : "高级"}
-            </button>
             {canManageWorkflows ? (
               <button type="button" onClick={() => void openArchives()} disabled={archiveBusy}>
-                归档
+                已归档
               </button>
             ) : null}
-            <button type="button" onClick={() => void onRefresh()} disabled={busy}>
+            <button type="button" onClick={() => void refreshLibrary()} disabled={busy}>
               {busy ? "检查中…" : "重新检查"}
             </button>
             <button type="button" onClick={onClose} aria-label="关闭工作流面板">
@@ -408,8 +465,7 @@ export function RecipeStudio({
             <legend>工作流来源</legend>
             {[
               ["mine", "我的工作流"],
-              ["templates", "模板库"],
-              ["all", "全部发现"],
+              ["templates", "可添加"],
             ].map(([id, label]) => (
               <button
                 type="button"
@@ -449,19 +505,27 @@ export function RecipeStudio({
           </label>
         </div>
         <div className="recipe-body">
+          {origin === "templates" ? (
+            <RecommendedTemplates
+              canManage={canManageWorkflows}
+              query={query}
+              capability={group}
+              onlyReady={onlyReady}
+              onAdded={onRefresh}
+            />
+          ) : null}
           <div className="recipe-list">
+            {origin === "templates" && filtered.length > 0 ? (
+              <h3 className="recipe-source-heading">设备中的工作流</h3>
+            ) : null}
             {filtered.map((workflow) => (
               <div className="recipe-card-wrap" key={workflow.path}>
                 <button
                   type="button"
                   className={`recipe-card ${selectedPath === workflow.path ? "selected" : ""}`}
-                  disabled={selectionLocked || !isLibraryWorkflow(workflow)}
+                  disabled={selectionLocked || !isLibraryWorkflow(workflow) || busy}
                   onClick={() => {
-                    if (
-                      !workflowAvailability(workflow).ready ||
-                      workflow.diagnostic?.health === "attention"
-                    )
-                      void configureBinding(workflow);
+                    if (!workflowAvailability(workflow).ready) void configureBinding(workflow);
                     else onSelect(workflow);
                   }}
                 >
@@ -474,29 +538,14 @@ export function RecipeStudio({
                       {workflow.name}
                     </strong>
                     <small>{workflow.capabilityLabel}</small>
-                    <span>
-                      {workflow.models
-                        .slice(0, 2)
-                        .map((model) => model.replace(/\.safetensors$/i, ""))
-                        .join(" · ") || "未检测到固定模型"}
-                    </span>
                   </span>
-                  <i
-                    className={`${workflow.execution === "native" || workflow.execution === "bound" ? "native" : "comfy"} model-${workflow.modelStatus ?? "unknown"}`}
-                  >
+                  <i className={workflowAvailability(workflow).ready ? "native" : "comfy"}>
                     {workflowAvailability(workflow).label}
                   </i>
-                  <b className={`workflow-origin origin-${workflow.origin ?? "comfyui"}`}>
-                    {workflow.origin === "built_in"
-                      ? "模板"
-                      : workflow.origin === "imported"
-                        ? "我的"
-                        : "ComfyUI"}
-                  </b>
                 </button>
                 <div className="recipe-library-actions">
                   <button type="button" onClick={() => void configureBinding(workflow)}>
-                    {workflow.execution === "native" ? "查看检查" : "检查与配置"}
+                    {workflowAvailability(workflow).ready ? "设置" : "解决问题"}
                   </button>
                   {canManageWorkflows ? (
                     <>
@@ -585,10 +634,10 @@ export function RecipeStudio({
                 ) : null}
               </div>
             ))}
-            {filtered.length === 0 ? (
+            {filtered.length === 0 && origin === "mine" ? (
               <div className="recipe-empty">
                 {origin === "mine"
-                  ? "还没有匹配的工作流。可以从模板库添加，或导入自己的工作流。"
+                  ? "还没有匹配的工作流。从“可添加”中选取，或导入自己的工作流。"
                   : "没有匹配的工作流。"}
               </div>
             ) : null}
@@ -626,7 +675,6 @@ export function RecipeStudio({
                 <span>↧</span>
                 <strong>{packageBusy ? "正在导入…" : "导入工作流"}</strong>
                 <p>JSON、包含工作流的 PNG，或 TakeBoard 工作流包</p>
-                <i>导入后检查依赖与输入配置</i>
               </button>
               {bindingError && !inspection ? (
                 <p className="workflow-package-error">{bindingError}</p>
@@ -641,9 +689,17 @@ export function RecipeStudio({
         <footer className="studio-footer">
           <div>
             {selectionLocked ? "当前镜头保留原工作流，确保结果可复现" : "选择后将绑定到当前镜头"}
+            {warnings.length > 0 ? (
+              <details>
+                <summary>部分模板未能读取</summary>
+                {warnings.map((warning) => (
+                  <p key={warning}>{warning}</p>
+                ))}
+              </details>
+            ) : null}
           </div>
           <a href={selectedEditorUrl} target="_blank" rel="noreferrer">
-            进入 ComfyUI 深度编辑 ↗
+            打开 ComfyUI ↗
           </a>
         </footer>
         {inspection ? (
@@ -651,14 +707,10 @@ export function RecipeStudio({
             <section className="binding-editor">
               <header>
                 <div>
-                  <span className="section-kicker">
-                    {advanced ? "WORKFLOW BINDING · V1" : "WORKFLOW SETUP"}
-                  </span>
                   <h3>{inspection.status === "built_in" ? "工作流检查" : "工作流配置"}</h3>
                   <p>
-                    {advanced || inspection.status === "built_in"
-                      ? inspection.path
-                      : "设置画布参数与工作流的对应关系"}
+                    {workflows.find((item) => item.path === inspection.path)?.name ??
+                      "导入的工作流"}
                   </p>
                   {inspection.path === packageNoticePath && packageNotice ? (
                     <div className="recipe-package-notice">{packageNotice}</div>
@@ -702,6 +754,12 @@ export function RecipeStudio({
               {bindingBusy && !bindingDraft ? (
                 <div className="binding-loading">正在读取真实工作流与节点定义…</div>
               ) : null}
+              {!bindingBusy && !bindingDraft && inspection.status !== "built_in" ? (
+                <div className="binding-editor-body">
+                  <p>暂时无法读取模板设置。请在 ComfyUI 中检查后保存，再重新检查。</p>
+                  <small>若没有自动打开模板，可下载 JSON 后拖入 ComfyUI。</small>
+                </div>
+              ) : null}
               {inspection.status === "built_in" && inspection.diagnostic ? (
                 <div className="binding-editor-body">
                   <p>
@@ -717,18 +775,7 @@ export function RecipeStudio({
                       创建可编辑副本
                     </button>
                   ) : null}
-                  <div className="workflow-diagnostic-grid">
-                    {inspection.diagnostic.checks.map((check) => (
-                      <article key={check.id} className={`diagnostic-${check.status}`}>
-                        <i>{check.status === "pass" ? "✓" : "!"}</i>
-                        <div>
-                          <strong>{check.title}</strong>
-                          <p>{check.detail}</p>
-                          {check.remediation ? <small>{check.remediation}</small> : null}
-                        </div>
-                      </article>
-                    ))}
-                  </div>
+                  <WorkflowCheckPanel diagnostic={inspection.diagnostic} />
                 </div>
               ) : null}
               {inspection.status !== "built_in" && bindingDraft && inspection.candidates ? (
@@ -767,31 +814,24 @@ export function RecipeStudio({
                         <option value="video">视频</option>
                       </select>
                     </label>
-                    <span>{inspection.nodeCount ?? 0} 个可执行节点</span>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={advanced}
+                        onChange={(event) => setAdvanced(event.target.checked)}
+                      />
+                      显示节点编号与换算
+                    </label>
                   </div>
                   {inspection.diagnostic ? (
-                    <div className="workflow-diagnostic-grid">
-                      {inspection.diagnostic.checks.map((item) => (
-                        <article className={`diagnostic-${item.status}`} key={item.id}>
-                          <i aria-hidden="true">
-                            {item.status === "pass" ? "✓" : item.status === "blocked" ? "!" : "·"}
-                          </i>
-                          <div>
-                            <strong>{item.title}</strong>
-                            <p>{item.detail}</p>
-                            {item.remediation ? <small>{item.remediation}</small> : null}
-                          </div>
-                          {advanced ? <code>{item.code}</code> : null}
-                        </article>
-                      ))}
-                    </div>
+                    <WorkflowCheckPanel diagnostic={inspection.diagnostic} />
                   ) : (inspection.conversionIssues?.length ?? 0) > 0 ? (
-                    <div className="binding-issues">
-                      <strong>转换预检尚未通过</strong>
+                    <details className="binding-issues">
+                      <summary>模板需要检查 · 技术详情</summary>
                       {inspection.conversionIssues?.slice(0, 8).map((issue) => (
                         <p key={issue}>{issue}</p>
                       ))}
-                    </div>
+                    </details>
                   ) : null}
                   <div className="binding-map-groups">
                     <div>
@@ -910,13 +950,29 @@ export function RecipeStudio({
                 </div>
               ) : null}
               <footer>
-                <p>{inspection.warning ?? bindingError}</p>
-                {bindingError ? <strong>{bindingError}</strong> : null}
+                {inspection.warning ? (
+                  <details>
+                    <summary>技术详情</summary>
+                    <p>{inspection.warning}</p>
+                  </details>
+                ) : null}
+                {bindingError ? (
+                  <div>
+                    <p>检查或保存未完成。请核对模板设置后重试。</p>
+                    <details>
+                      <summary>错误详情</summary>
+                      <p>{bindingError}</p>
+                    </details>
+                  </div>
+                ) : null}
                 {inspection.diagnostic?.executable &&
                 !bindingBusy &&
                 !selectionLocked &&
                 workflows.some(
-                  (item) => item.path === inspection.path && isLibraryWorkflow(item),
+                  (item) =>
+                    item.path === inspection.path &&
+                    isLibraryWorkflow(item) &&
+                    workflowAvailability(item).ready,
                 ) ? (
                   <button
                     type="button"

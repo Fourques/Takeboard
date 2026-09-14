@@ -24,6 +24,7 @@ import type {
   ProjectRole,
   ProjectSnapshot,
   PublicInvitation,
+  RecommendedWorkflowTemplate,
   RecoveryCodeStatus,
   RemoteAccessStatus,
   RunCost,
@@ -1210,6 +1211,18 @@ export const authApi = {
 };
 
 export const workflowApi = {
+  templates: () =>
+    jsonRequest<{ templates: RecommendedWorkflowTemplate[] }>("/api/workflows/templates"),
+  installTemplate: (id: string, confirmationToken: string) =>
+    jsonRequest<{ path: string; version: string; installed: true }>(
+      `/api/workflows/templates/${encodeURIComponent(id)}/install`,
+      {
+        method: "POST",
+        body: JSON.stringify({ confirmationToken }),
+      },
+    ),
+  templateDownloadUrl: (id: string) =>
+    `/api/workflows/templates/${encodeURIComponent(id)}/download`,
   copy: (path: string) =>
     jsonRequest<WorkflowImport>("/api/workflows/copy", {
       method: "POST",

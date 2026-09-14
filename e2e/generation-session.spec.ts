@@ -77,7 +77,29 @@ async function sessionFixture(
   await page.route(`**/api/projects/${key}`, (route) => route.fulfill({ json: payload }));
   await page.route(`**/api/projects/${key}/sync`, (route) => route.fulfill({ status: 304 }));
   await page.route("**/api/workflows", (route) =>
-    route.fulfill({ json: { workflows: [], editorUrl: "http://127.0.0.1:8188" } }),
+    route.fulfill({
+      json: {
+        workflows: [
+          {
+            id: "qwen-fixture",
+            path: "Kino/Kino_QwenImage2512_T2I.json",
+            name: "Qwen Image 2512 T2I",
+            capability: "text_to_image",
+            capabilityLabel: "文生图",
+            execution: "native",
+            origin: "built_in",
+            inputs: ["prompt", "resolution", "seed", "steps"],
+            models: [],
+            modelStatus: "ready",
+            library: { included: true, favorite: false },
+            nodeCount: 1,
+            source: "comfyui",
+            diagnostic: { health: "ready", executable: true, checks: [] },
+          },
+        ],
+        editorUrl: "http://127.0.0.1:8188",
+      },
+    }),
   );
   await page.route(`**/api/projects/${key}/shots/*/generate`, async (route) => {
     submissions++;

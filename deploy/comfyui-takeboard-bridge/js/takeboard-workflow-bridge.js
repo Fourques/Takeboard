@@ -32,7 +32,10 @@ app.registerExtension({
         `/userdata/${encodeURIComponent(`workflows/${workflowPath}`)}`,
       );
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      await app.loadGraphData(await response.json());
+      const workflow = await response.json();
+      if (Array.isArray(workflow.nodes)) await app.loadGraphData(workflow);
+      else if (typeof app.loadApiJson === "function") await app.loadApiJson(workflow);
+      else throw new Error("当前 ComfyUI 前端不支持打开 API 模板，请更新 ComfyUI 后重试");
       console.info(`[TakeBoard] Loaded workflow ${workflowPath}`);
     } catch (error) {
       console.error(`[TakeBoard] Unable to load workflow ${workflowPath}`, error);

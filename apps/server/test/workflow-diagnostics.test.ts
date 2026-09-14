@@ -19,6 +19,104 @@ const objectInfo = {
 } as unknown as ComfyObjectInfo;
 
 describe("workflow diagnostics", () => {
+  it("blocks incompatible actual native prompts and invalid model loader choices", () => {
+    const input = {
+      path: "Kino/Test_T2I.json",
+      workflowHash: "d".repeat(64),
+      prompt,
+      objectInfo,
+      capability: "text_to_image" as const,
+      outputMediaType: "image" as const,
+      bindingStatus: "built_in" as const,
+      executionSource: "native_prompt" as const,
+      binding: null,
+      models: [],
+      inventory: new Set<string>(),
+    };
+    const changed = buildWorkflowDiagnostic({
+      ...input,
+      objectInfo: {
+        ...objectInfo,
+        SaveImage: { input: { required: { images: ["IMAGE"], new_required: ["STRING"] } } },
+      },
+    });
+    expect(changed.executable).toBe(false);
+    expect(changed.checks).toContainEqual(
+      expect.objectContaining({
+        code: "TAKEBOARD_NATIVE_TEMPLATE_INCOMPATIBLE",
+        status: "blocked",
+      }),
+    );
+    const wrongFolder = buildWorkflowDiagnostic({
+      ...input,
+      prompt: { ...prompt, "3": { class_type: "Loader", inputs: { model: "model.safetensors" } } },
+      objectInfo: {
+        ...objectInfo,
+        Loader: { input: { required: { model: [["other.safetensors"]] } } },
+      },
+      models: ["model.safetensors"],
+      inventory: new Set(["model.safetensors"]),
+    });
+    expect(wrongFolder).toMatchObject({
+      executable: false,
+      modelStatus: "missing",
+      missingModels: ["model.safetensors"],
+    });
+  });
+  it("does not claim executable when model inventory could not be read", () => {
+    const diagnostic = buildWorkflowDiagnostic({
+      path: "Kino/Test_T2I.json",
+      workflowHash: "d".repeat(64),
+      prompt,
+      objectInfo,
+      capability: "text_to_image",
+      outputMediaType: "image",
+      bindingStatus: "built_in",
+      binding: null,
+      models: ["model.safetensors"],
+      inventory: null,
+    });
+    expect(diagnostic.executable).toBe(false);
+  });
+
+  it("accepts real dynamic inputs but blocks a lost source in custom workflows", () => {
+    const custom = {
+      ...prompt,
+      "3": { class_type: "Dynamic", inputs: { "values.image": ["1", 0] } },
+    };
+    const input = {
+      path: "TakeBoard/custom.json",
+      workflowHash: "e".repeat(64),
+      prompt: custom,
+      objectInfo: {
+        ...objectInfo,
+        Dynamic: { input: { required: { values: ["COMFY_AUTOGROW_V3"] } } },
+      },
+      capability: "text_to_image" as const,
+      outputMediaType: "image" as const,
+      bindingStatus: "ready" as const,
+      binding: {
+        version: 1 as const,
+        workflowPath: "TakeBoard/custom.json",
+        workflowHash: "e".repeat(64),
+        capability: "text_to_image" as const,
+        outputMediaType: "image" as const,
+        trusted: true as const,
+        verifiedAt: "2026-09-14T00:00:00.000Z",
+        parameters: { prompt: [{ nodeId: "1", input: "text" }] },
+        media: {},
+      },
+      models: [],
+      inventory: new Set<string>(),
+    };
+    expect(buildWorkflowDiagnostic(input).executable).toBe(true);
+    expect(
+      buildWorkflowDiagnostic({
+        ...input,
+        prompt: { ...custom, "3": { ...custom["3"], inputs: { "values.image": ["missing", 0] } } },
+      }).executable,
+    ).toBe(false);
+  });
   it("returns stable, structured checks for an executable native workflow", () => {
     const diagnostic = buildWorkflowDiagnostic({
       path: "Kino/Test_T2I.json",

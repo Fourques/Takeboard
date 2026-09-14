@@ -2,6 +2,7 @@ import type { ProjectSnapshot } from "@takeboard/contracts";
 import type { WorkflowSummary } from "./api";
 import type { GenerationSettings } from "./generation-model";
 import type { modelProfile } from "./model-profiles";
+import { workflowAvailability } from "./workflow-library";
 
 export function generationProblem({
   projectMode,
@@ -24,11 +25,10 @@ export function generationProblem({
   const lastFrameAvailable = assets.some(
     (asset) => asset.mediaType === "image" && asset.id === generationSettings.lastFrameAssetId,
   );
-  if (projectMode === "demo" || selectedWorkflow?.execution === "comfy_only") return null;
-  if (!selectedWorkflow) return "请先选择一个可用 Workflow";
-  if (selectedWorkflow.modelStatus === "missing") {
-    return `当前电脑缺少模型：${(selectedWorkflow.missingModels ?? []).slice(0, 2).join("、")}`;
-  }
+  if (projectMode === "demo") return null;
+  if (!selectedWorkflow) return "请先选择可用模型";
+  const availability = workflowAvailability(selectedWorkflow);
+  if (!availability.ready) return `工作流${availability.label}：${availability.reason}`;
   if (!generationSettings.prompt.trim()) return "请先输入镜头提示词";
   if (selectedWorkflow.inputs.includes("first_frame") && !firstFrameAvailable) {
     return "请从资产库选择一张起始帧";

@@ -124,13 +124,8 @@ export function useGenerationEnvironment(
     }
   }, [onError, refreshWorker]);
   const refreshWorkflows = useCallback(async () => {
-    try {
-      const detected = await refreshInventory();
-      if (detected) onNotice(`已检测 ${detected.workflows.length} 个 ComfyUI Workflow`);
-    } catch (cause) {
-      onError(cause instanceof Error ? cause.message : "工作流检测失败");
-    }
-  }, [onError, onNotice, refreshInventory]);
+    await refreshInventory();
+  }, [refreshInventory]);
   const importWorkflow = useCallback(
     async (file: File) => {
       const scope = epoch.current;

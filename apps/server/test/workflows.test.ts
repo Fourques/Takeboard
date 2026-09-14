@@ -501,7 +501,7 @@ describe("ComfyUI workflow detection", () => {
     });
   });
 
-  it("turns workflow JSON into a user-facing recipe summary", async () => {
+  it("checks all native execution models instead of the source graph's partial model list", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: string | URL | Request) => {
@@ -544,9 +544,18 @@ describe("ComfyUI workflow detection", () => {
           capabilityLabel: "首尾帧视频",
           execution: "native",
           inputs: expect.arrayContaining(["prompt", "first_frame", "last_frame"]),
-          models: ["wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors"],
-          modelStatus: "ready",
-          missingModels: [],
+          models: expect.arrayContaining([
+            "wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors",
+            "wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors",
+            "wan_2.1_vae.safetensors",
+            "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+          ]),
+          modelStatus: "missing",
+          missingModels: expect.arrayContaining([
+            "wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors",
+            "wan_2.1_vae.safetensors",
+            "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+          ]),
         },
       ],
     });

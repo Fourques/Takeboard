@@ -1,7 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import type { ComfyPrompt } from "@takeboard/executor-comfy";
+import {
+  type ComfyObjectInfo,
+  type ComfyPrompt,
+  nativeRecipeForPath,
+  nativeRecipePrompt,
+} from "@takeboard/executor-comfy";
 import type { FastifyInstance } from "fastify";
 import { projectDirectory } from "./project-locations.js";
 import { ProjectStore } from "./storage/project-store.js";
@@ -38,6 +43,7 @@ import {
   parseWorkflowRecipeArchive,
   WorkflowRecipePackageError,
 } from "./workflow-recipe-package.js";
+import { registerWorkflowTemplateRoutes } from "./workflow-templates.js";
 
 type WorkflowNode = {
   type?: string;
@@ -89,6 +95,8 @@ function allNodes(workflow: WorkflowJson): WorkflowNode[] {
 }
 
 function detectCapability(path: string, nodes: WorkflowNode[]): Capability {
+  const native = nativeRecipeForPath(path);
+  if (native) return native.capability;
   const normalizedPath = path.toLowerCase();
   if (/reference.*video|ref2v|r2v/.test(normalizedPath)) return "reference_video";
   if (/first.*last.*video|firstlast|flf2v|首尾帧/.test(normalizedPath)) {
@@ -226,18 +234,9 @@ function displayName(path: string) {
 }
 
 function isNativeWorkflow(path: string) {
-  if (!path.startsWith("Kino/")) return false;
   return (
-    path.endsWith("Kino_Wan22_I2V.json") ||
-    path.endsWith("Kino_Wan22_FLF2V.json") ||
-    path.endsWith("Kino_Wan22_I2V_Preview.json") ||
-    path.endsWith("Kino_Wan22_FLF2V_Preview.json") ||
-    path.endsWith("Kino_MinimaxH3_I2V.json") ||
-    path.endsWith("Kino_MinimaxH3_T2V.json") ||
-    path.endsWith("Kino_MinimaxH3_R2V.json") ||
-    path.endsWith("Kino_LTX23_I2V_Draft.json") ||
-    path.endsWith("Kino_QwenImage2512_T2I.json") ||
-    path.endsWith("Kino_QwenImage2512_I2I.json")
+    Boolean(nativeRecipeForPath(path)) ||
+    (path.startsWith("Kino/") && path.endsWith("/Kino_LTX23_I2V_Draft.json"))
   );
 }
 
@@ -248,7 +247,7 @@ function workflowSummary(
   inventory: Set<string> | null,
   binding: WorkflowBinding | null = null,
 ) {
-  const nodes = allNodes(workflow);
+  const nodes = allNodes(nativeRecipePrompt(path) ?? workflow);
   const hash = workflowHash(workflow);
   const native = isNativeWorkflow(path);
   const activeBinding = binding?.workflowHash === hash ? binding : null;
@@ -503,6 +502,25 @@ export function registerWorkflowRoutes(
   const getComfyUrl = () => (typeof comfyEndpoint === "string" ? comfyEndpoint : comfyEndpoint());
   const getEditorUrl = () =>
     typeof editorEndpoint === "string" ? editorEndpoint : editorEndpoint();
+  registerWorkflowTemplateRoutes(app, getComfyUrl, (path, prompt, objectInfo: ComfyObjectInfo) => {
+    const inventory = installedModels(objectInfo);
+    const summary = workflowSummary(path, prompt, getEditorUrl(), inventory);
+    return buildWorkflowDiagnostic({
+      path,
+      prompt,
+      objectInfo,
+      workflowHash: summary.workflowHash,
+      capability: summary.capability,
+      outputMediaType: ["text_to_image", "image_to_image"].includes(summary.capability)
+        ? "image"
+        : "video",
+      bindingStatus: "built_in",
+      binding: null,
+      models: summary.models,
+      inventory,
+      executionSource: "native_prompt",
+    });
+  });
   app.put<{ Querystring: { path?: string } }>("/api/workflows/library", async (request, reply) => {
     const path = request.query.path;
     const parsed = workflowLibrarySchema.strict().safeParse(request.body);
@@ -532,7 +550,12 @@ export function registerWorkflowRoutes(
     ]);
     const inventory = installedModels(objectInfo);
     const summary = workflowSummary(path, workflow, editorUrl, inventory, current);
-    const inspected = inspectWorkflowDocument(workflow, objectInfo, summary.workflowHash);
+    const nativePrompt = nativeRecipePrompt(path);
+    const inspected = inspectWorkflowDocument(
+      nativePrompt ?? workflow,
+      objectInfo,
+      summary.workflowHash,
+    );
     const outputMediaType = detectedOutputMediaType(summary.capability, inspected.prompt, current);
     const activeProposal = proposal?.workflowHash === inspected.workflowHash ? proposal : null;
     const suggested = suggestedBinding(
@@ -543,6 +566,7 @@ export function registerWorkflowRoutes(
       inspected.candidates,
     );
     const diagnostic = buildWorkflowDiagnostic({
+      executionSource: nativePrompt ? "native_prompt" : "source_workflow",
       path,
       workflowHash: inspected.workflowHash,
       prompt: inspected.prompt,
@@ -610,7 +634,11 @@ export function registerWorkflowRoutes(
           if (!objectInfo) return summary;
           let inspected: ReturnType<typeof inspectWorkflowDocument>;
           try {
-            inspected = inspectWorkflowDocument(workflow, objectInfo, summary.workflowHash);
+            inspected = inspectWorkflowDocument(
+              nativeRecipePrompt(path) ?? workflow,
+              objectInfo,
+              summary.workflowHash,
+            );
           } catch (error) {
             return {
               ...summary,
@@ -656,6 +684,7 @@ export function registerWorkflowRoutes(
                 ? workflowDefaults(inspected.prompt, binding)
                 : undefined,
             diagnostic: buildWorkflowDiagnostic({
+              executionSource: nativeRecipePrompt(path) ? "native_prompt" : "source_workflow",
               path,
               workflowHash: inspected.workflowHash,
               prompt: inspected.prompt,

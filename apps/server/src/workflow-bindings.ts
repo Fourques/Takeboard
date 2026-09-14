@@ -3,6 +3,7 @@ import {
   type ComfyObjectInfo,
   type ComfyPrompt,
   convertUiWorkflowToPrompt,
+  inspectPromptInputs,
   type UiWorkflow,
 } from "@takeboard/executor-comfy";
 
@@ -484,18 +485,13 @@ export function inspectWorkflowDocument(
 }
 
 export function preflightPromptAgainstObjectInfo(prompt: ComfyPrompt, objectInfo: ComfyObjectInfo) {
-  const issues: string[] = [];
-  for (const [nodeId, node] of Object.entries(prompt)) {
-    const definition = objectInfo[node.class_type];
-    if (!definition) {
-      issues.push(`${nodeId}：当前 ComfyUI 缺少节点 ${node.class_type}`);
-      continue;
-    }
-    for (const field of Object.keys(definition.input?.required ?? {})) {
-      if (!(field in node.inputs)) issues.push(`${nodeId}：缺少必需输入 ${field}`);
-    }
-  }
-  return issues;
+  return inspectPromptInputs(prompt, objectInfo).map((issue) =>
+    issue.kind === "missing_node"
+      ? `${issue.nodeId}：当前 ComfyUI 缺少节点 ${issue.detail}`
+      : issue.kind === "missing_input"
+        ? `${issue.nodeId}：缺少必需输入 ${issue.detail}`
+        : `${issue.nodeId}：输入 ${issue.field} 连接的节点 ${issue.detail} 不存在`,
+  );
 }
 
 export async function loadExecutableWorkflow(comfyUrl: string, path: string) {

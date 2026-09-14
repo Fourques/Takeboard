@@ -18,6 +18,7 @@ type BuildWorkflowDiagnosticInput = {
   binding: WorkflowBinding | null;
   models: string[];
   inventory: Set<string> | null;
+  executionSource?: "native_prompt" | "source_workflow";
 };
 
 function check(
@@ -44,6 +45,7 @@ function modelMissing(models: string[], inventory: Set<string> | null) {
 
 export function buildWorkflowDiagnostic(input: BuildWorkflowDiagnosticInput): WorkflowDiagnostic {
   const usesNativeAdapter = input.bindingStatus === "built_in";
+  const checksNativePrompt = usesNativeAdapter && input.executionSource === "native_prompt";
   const checks: WorkflowDiagnosticCheck[] = [
     check(
       "document.valid",
@@ -58,9 +60,15 @@ export function buildWorkflowDiagnostic(input: BuildWorkflowDiagnosticInput): Wo
       "conversion",
       "pass",
       usesNativeAdapter ? "TAKEBOARD_NATIVE_PROMPT_READY" : "WORKFLOW_PROMPT_CONVERTED",
-      usesNativeAdapter ? "原生执行协议就绪" : "已转换为 API Prompt",
+      checksNativePrompt
+        ? "已检查实际生成配置"
+        : usesNativeAdapter
+          ? "原生执行协议就绪"
+          : "已转换为 API Prompt",
       usesNativeAdapter
-        ? "生成时由 TakeBoard 的版本化原生适配器构建 API Prompt；源工作流用于依赖发现与在 ComfyUI 中编辑。"
+        ? checksNativePrompt
+          ? "检查对象由实际生成使用的同一构建器产生，未提交生成任务。"
+          : "生成时由 TakeBoard 的版本化原生适配器构建 API Prompt；源工作流用于依赖发现与在 ComfyUI 中编辑。"
         : "画布节点、子图和连线已转换为 ComfyUI 后端可接收的结构。",
     ),
   ];
@@ -99,15 +107,23 @@ export function buildWorkflowDiagnostic(input: BuildWorkflowDiagnosticInput): Wo
       ? check(
           "nodes.required_inputs",
           "nodes",
-          usesNativeAdapter ? "warning" : "blocked",
-          usesNativeAdapter ? "SOURCE_WORKFLOW_INPUTS_DIFFER" : "COMFY_REQUIRED_INPUTS_MISSING",
-          usesNativeAdapter ? "源工作流与当前节点定义存在差异" : "节点必需输入不完整",
-          usesNativeAdapter
+          usesNativeAdapter && !checksNativePrompt ? "warning" : "blocked",
+          checksNativePrompt
+            ? "TAKEBOARD_NATIVE_TEMPLATE_INCOMPATIBLE"
+            : usesNativeAdapter
+              ? "SOURCE_WORKFLOW_INPUTS_DIFFER"
+              : "COMFY_REQUIRED_INPUTS_MISSING",
+          usesNativeAdapter && !checksNativePrompt
+            ? "源工作流与当前节点定义存在差异"
+            : "节点必需输入不完整",
+          usesNativeAdapter && !checksNativePrompt
             ? `${missingInputIssues.slice(0, 8).join("；")}。原生生成不会直接提交这份源画布，但建议在 ComfyUI 中同步模板。`
             : missingInputIssues.slice(0, 8).join("；"),
-          usesNativeAdapter
-            ? "需要编辑模板时，在 ComfyUI 中打开并保存一次；生成仍由 TakeBoard 原生适配器负责。"
-            : "返回 ComfyUI 检查断开的连线或节点版本差异。",
+          checksNativePrompt
+            ? "检查 TakeBoard 与 ComfyUI 的版本兼容性并更新后重试；修改源模板不会改变内置执行器。"
+            : usesNativeAdapter
+              ? "需要编辑模板时，在 ComfyUI 中打开并保存一次；生成仍由 TakeBoard 原生适配器负责。"
+              : "返回 ComfyUI 检查断开的连线或节点版本差异。",
           missingInputIssues.map((issue) => issue.split("：")[0] ?? "").filter(Boolean),
         )
       : check(
@@ -121,11 +137,24 @@ export function buildWorkflowDiagnostic(input: BuildWorkflowDiagnosticInput): Wo
   );
 
   const missingModels = modelMissing(input.models, input.inventory);
+  // A basename found in another loader's folder does not make this choice valid.
+  // Compare exact advertised choices when ComfyUI exposes them, not just inventory.
+  for (const node of Object.values(input.prompt)) {
+    const definition = input.objectInfo[node.class_type]?.input;
+    for (const [field, value] of Object.entries(node.inputs)) {
+      if (typeof value !== "string" || !/\.(safetensors|ckpt|pt|pth|bin|gguf)$/i.test(value))
+        continue;
+      const fieldDefinition = definition?.required?.[field] ?? definition?.optional?.[field];
+      const choices = Array.isArray(fieldDefinition) ? fieldDefinition[0] : undefined;
+      if (Array.isArray(choices) && !choices.includes(value) && !missingModels.includes(value))
+        missingModels.push(value);
+    }
+  }
   const modelStatus =
-    input.inventory === null || input.models.length === 0
-      ? ("unknown" as const)
-      : missingModels.length > 0
-        ? ("missing" as const)
+    missingModels.length > 0
+      ? ("missing" as const)
+      : input.inventory === null || input.models.length === 0
+        ? ("unknown" as const)
         : ("ready" as const);
   checks.push(
     modelStatus === "missing"
@@ -261,7 +290,7 @@ export function buildWorkflowDiagnostic(input: BuildWorkflowDiagnosticInput): Wo
     path: input.path,
     workflowHash: input.workflowHash,
     health,
-    executable: health !== "blocked",
+    executable: health !== "blocked" && !(input.inventory === null && input.models.length > 0),
     nodeCount: Object.keys(input.prompt).length,
     capability: input.capability,
     outputMediaType: input.outputMediaType,

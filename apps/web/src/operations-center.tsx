@@ -503,6 +503,14 @@ export function OperationsCenter({
 }) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"tasks" | "storage">("tasks");
+  useEffect(() => {
+    const showTasks = () => {
+      setTab("tasks");
+      setOpen(true);
+    };
+    window.addEventListener("takeboard:open-tasks", showTasks);
+    return () => window.removeEventListener("takeboard:open-tasks", showTasks);
+  }, []);
   const [center, setCenter] = useState<OperationsTaskCenter | null>(null);
   const [storage, setStorage] = useState<OperationsStorage | null>(null);
   const [progress, setProgress] = useState<Record<string, number | null>>({});

@@ -1,7 +1,10 @@
 import { resolveGenerationResolution } from "@takeboard/contracts";
 import { ComfyProgressTracker } from "./progress.js";
+import { inspectPromptInputs } from "./prompt-preflight.js";
 
+export { nativeRecipeForPath, nativeRecipePrompt, nativeRecipes } from "./native-recipes.js";
 export type { ComfyExecutionProgress } from "./progress.js";
+export { inspectPromptInputs } from "./prompt-preflight.js";
 
 export type ComfyPromptNode = {
   inputs: Record<string, unknown>;
@@ -633,8 +636,17 @@ function normalizedLinks(
 }
 
 function widgetValues(node: UiWorkflowNode) {
-  if (Array.isArray(node.widgets_values)) return node.widgets_values;
-  return node.widgets_values ? Object.values(node.widgets_values) : [];
+  // Named values must never be assigned by property order: a schema update can
+  // insert a widget and silently shift every subsequent parameter.
+  return Array.isArray(node.widgets_values) ? node.widgets_values : [];
+}
+
+function hasInputLink(node: UiWorkflowNode, field: string) {
+  return (
+    node.inputs?.some(
+      (input) => (input.widget?.name || input.name) === field && input.link != null,
+    ) ?? false
+  );
 }
 
 const widgetControlValues = new Set(["fixed", "increment", "decrement", "randomize"]);
@@ -687,6 +699,66 @@ function schemaWidgetNames(definition: ComfyObjectInfo[string] | undefined) {
   });
 }
 
+/** Recover named widget values and explicit scalar defaults, never missing connections.
+ * This only adapts the execution copy; the user's document and trust hash stay intact.
+ * API prompts are already serialized and deliberately bypass this UI compatibility step.
+ */
+function completeWidgetInputs(
+  node: UiWorkflowNode,
+  inputs: Record<string, unknown>,
+  definition: ComfyObjectInfo[string] | undefined,
+  hasUnmappedValues = false,
+) {
+  const named =
+    node.widgets_values && !Array.isArray(node.widgets_values) ? node.widgets_values : null;
+  if (named) {
+    for (const source of node.inputs ?? []) {
+      const field = source.widget?.name || source.name;
+      if (source.widget && source.link == null && Object.hasOwn(named, field))
+        inputs[field] = structuredClone(named[field]);
+    }
+  }
+  for (const [field, raw] of Object.entries({
+    ...definition?.input?.required,
+    ...definition?.input?.optional,
+  })) {
+    if (!Array.isArray(raw)) continue;
+    const source = node.inputs?.find((input) => (input.widget?.name || input.name) === field);
+    if (source?.link != null || (source && !source.widget)) continue;
+    const [type, options] = raw;
+    if (named && Object.hasOwn(named, field)) {
+      inputs[field] = structuredClone(named[field]);
+      continue;
+    }
+    if (field in inputs || hasUnmappedValues || !(field in (definition?.input?.required ?? {})))
+      continue;
+    if (
+      !options ||
+      typeof options !== "object" ||
+      options.forceInput ||
+      options.defaultInput ||
+      !("default" in options)
+    )
+      continue;
+    const value = options.default;
+    // No guessed text, model names, media paths, custom data, or connection substitutes.
+    if (/model|ckpt|lora|image$|video$|audio$|filename|path/i.test(field)) continue;
+    const valid =
+      type === "BOOLEAN"
+        ? typeof value === "boolean"
+        : type === "INT" || type === "FLOAT"
+          ? typeof value === "number" &&
+            Number.isFinite(value) &&
+            (type !== "INT" || Number.isSafeInteger(value)) &&
+            (typeof options.min !== "number" || value >= options.min) &&
+            (typeof options.max !== "number" || value <= options.max)
+          : Array.isArray(type) &&
+            type.includes(value) &&
+            ["string", "number", "boolean"].includes(typeof value);
+    if (valid) inputs[field] = value;
+  }
+}
+
 function expandSubgraphWorkflow(workflow: UiWorkflow, objectInfo: ComfyObjectInfo): ComfyPrompt {
   const definitions = new Map(
     (workflow.definitions?.subgraphs ?? []).map((definition) => [definition.id, definition]),
@@ -731,14 +803,16 @@ function expandSubgraphWorkflow(workflow: UiWorkflow, objectInfo: ComfyObjectInf
           input.link == null ? null : graphLinks.find((candidate) => candidate.id === input.link);
         const origin = link ? resolveOrigin(link) : null;
         if (origin) inputs[input.name] = origin;
-        else if (input.widget && widgetValue !== undefined) {
+        else if (input.link == null && input.widget && widgetValue !== undefined) {
           inputs[input.widget.name || input.name] = widgetValue;
         }
       }
       for (const name of widgetNames) {
-        if (name in inputs || values[widgetIndex] === undefined) continue;
+        if (name in inputs || values[widgetIndex] === undefined || hasInputLink(node, name))
+          continue;
         inputs[name] = values[widgetIndex++];
       }
+      completeWidgetInputs(node, inputs, objectInfo[node.type], widgetIndex < values.length);
       prompt[`${prefix}${node.id}`] = {
         class_type: node.type,
         inputs,
@@ -859,14 +933,15 @@ export function convertUiWorkflowToPrompt(
         input.link == null ? null : links.find((candidate) => candidate.id === input.link);
       const origin = link ? resolveOrigin(link) : null;
       if (origin) inputs[input.name] = origin;
-      else if (input.widget && widgetValue !== undefined) {
+      else if (input.link == null && input.widget && widgetValue !== undefined) {
         inputs[input.widget.name || input.name] = widgetValue;
       }
     }
     for (const name of widgetNames) {
-      if (name in inputs || values[widgetIndex] === undefined) continue;
+      if (name in inputs || values[widgetIndex] === undefined || hasInputLink(node, name)) continue;
       inputs[name] = values[widgetIndex++];
     }
+    completeWidgetInputs(node, inputs, objectInfo[node.type], widgetIndex < values.length);
     prompt[String(node.id)] = {
       class_type: node.type,
       inputs,
@@ -946,12 +1021,14 @@ export function expandSingleSubgraphWorkflow(
         input.link == null ? null : links.find((candidate) => candidate.id === input.link);
       const origin = link ? resolve(link) : null;
       if (origin) inputs[input.name] = origin;
-      else if (input.widget && widgetValue !== undefined) inputs[input.name] = widgetValue;
+      else if (input.link == null && input.widget && widgetValue !== undefined)
+        inputs[input.name] = widgetValue;
     }
     for (const name of widgetNames) {
-      if (name in inputs || values[widgetIndex] === undefined) continue;
+      if (name in inputs || values[widgetIndex] === undefined || hasInputLink(node, name)) continue;
       inputs[name] = values[widgetIndex++];
     }
+    completeWidgetInputs(node, inputs, objectInfo[node.type], widgetIndex < values.length);
     prompt[id] = {
       class_type: node.type,
       inputs,
@@ -1230,26 +1307,13 @@ export class ComfyClient {
       string,
       { input?: { required?: Record<string, unknown> } }
     >;
-    const errors: string[] = [];
-    for (const [nodeId, node] of Object.entries(prompt)) {
-      const definition = objectInfo[node.class_type];
-      if (!definition) {
-        errors.push(`${nodeId}: missing node class ${node.class_type}`);
-        continue;
-      }
-      for (const field of Object.keys(definition.input?.required ?? {})) {
-        const present =
-          field in node.inputs ||
-          Object.keys(node.inputs).some((inputField) => inputField.startsWith(`${field}.`));
-        if (!present) errors.push(`${nodeId}: missing required input ${field}`);
-      }
-      for (const [field, value] of Object.entries(node.inputs)) {
-        if (Array.isArray(value) && value.length === 2 && typeof value[0] === "string") {
-          if (!prompt[value[0]]) errors.push(`${nodeId}.${field}: missing origin node ${value[0]}`);
-        }
-      }
-    }
-    return errors;
+    return inspectPromptInputs(prompt, objectInfo).map((issue) =>
+      issue.kind === "missing_node"
+        ? `${issue.nodeId}: missing node class ${issue.detail}`
+        : issue.kind === "missing_input"
+          ? `${issue.nodeId}: missing required input ${issue.detail}`
+          : `${issue.nodeId}.${issue.field}: missing origin node ${issue.detail}`,
+    );
   }
 
   async history(promptId: string) {

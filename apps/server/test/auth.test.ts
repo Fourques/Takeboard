@@ -271,6 +271,13 @@ describe("TakeBoard authentication and authorization", () => {
       headers: { cookie: member.cookie },
     });
     expect(deniedRecipeExport.statusCode).toBe(403);
+    const deniedTemplateInstall = await app.inject({
+      method: "POST",
+      url: "/api/workflows/templates/h3-t2v/install",
+      headers: { cookie: member.cookie, "x-takeboard-csrf": member.csrf },
+      payload: { confirmationToken: "not-admin" },
+    });
+    expect(deniedTemplateInstall.statusCode).toBe(403);
     for (const method of ["PATCH", "DELETE"] as const) {
       const deniedConnectionEdit = await app.inject({
         method,

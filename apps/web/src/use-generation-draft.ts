@@ -13,6 +13,7 @@ import {
 } from "./generation-model";
 import { generationProblem } from "./generation-readiness";
 import { loadModelPreferences, modelProfile, saveModelPreferences } from "./model-profiles";
+import { workflowAvailability } from "./workflow-library";
 
 export function useGenerationDraft(context: GenerationContext, workflows: WorkflowSummary[]) {
   const {
@@ -344,6 +345,10 @@ export function useGenerationDraft(context: GenerationContext, workflows: Workfl
 
   const bindWorkflow = useCallback(
     async (workflow: WorkflowSummary) => {
+      if (projectMode !== "demo" && !workflowAvailability(workflow).ready) {
+        onError(workflowAvailability(workflow).reason);
+        return false;
+      }
       if (!selectedShot || !snapshot || !context.canEdit || workflowLocked) {
         onNotice("这个镜头已有运行记录或不可编辑；工作流未改变");
         return false;

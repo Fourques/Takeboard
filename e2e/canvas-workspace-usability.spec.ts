@@ -29,7 +29,7 @@ test("opening workflows refreshes dependency checks and native recipes expose re
         id: "models",
         category: "models",
         status: "blocked",
-        code: "MISSING_MODEL",
+        code: "COMFY_MODELS_MISSING",
         title: "缺少模型",
         detail: "missing.safetensors",
         remediation: "在生成设备安装此模型",
@@ -83,12 +83,20 @@ test("opening workflows refreshes dependency checks and native recipes expose re
     await page.locator(".react-flow__node-shot").dblclick();
     await expect.poll(() => checks).toBeGreaterThan(0);
     const before = checks;
-    await page.locator(".recipe-selector").click();
+    await page.getByRole("button", { name: "管理模型与工作流" }).click();
     await expect.poll(() => checks).toBeGreaterThan(before);
-    await page.getByRole("button", { name: "模板库", exact: true }).click();
-    await page.getByRole("button", { name: "查看检查", exact: true }).click();
-    await expect(page.locator(".binding-editor")).toContainText("缺少模型");
-    await expect(page.locator(".binding-editor")).toContainText("missing.safetensors");
+    await page.getByRole("button", { name: "可添加", exact: true }).click();
+    await page.getByRole("button", { name: "解决问题", exact: true }).click();
+    await expect(
+      page.locator(".binding-editor").getByText("需要补齐模型", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.locator(".binding-editor").getByText("missing.safetensors", { exact: true }),
+    ).not.toBeVisible();
+    await page.locator(".workflow-check-details summary").click();
+    await expect(
+      page.locator(".binding-editor").getByText("missing.safetensors", { exact: true }),
+    ).toBeVisible();
     await expect(page.getByRole("button", { name: "信任此工作流并启用" })).toHaveCount(0);
   } finally {
     expect((await request.delete(`/api/projects/${key}`)).ok()).toBeTruthy();
@@ -293,6 +301,24 @@ test("real project results can be revoked and individually dragged or added with
         }),
       );
     }
+    const batchRun = initial.snapshot.runs[0];
+    if (!batchRun) throw new Error("Missing completed run fixture");
+    batchRun.parameters = {
+      ...batchRun.parameters,
+      candidateBatchId: "inspector-batch",
+      candidateIndex: 1,
+      candidateCount: 4,
+    };
+    for (let index = 2; index <= 4; index++) {
+      initial.snapshot.runs.push(
+        runSchema.parse({
+          ...batchRun,
+          id: createTakeBoardId("run"),
+          status: "cancelled",
+          parameters: { ...batchRun.parameters, seed: 4200 + index, candidateIndex: index },
+        }),
+      );
+    }
     shot.status = "review";
     try {
       await store.save(initial.snapshot, { type: "test.completed_results_fixture" });
@@ -307,6 +333,43 @@ test("real project results can be revoked and individually dragged or added with
       .click();
     const shotNode = page.locator(".react-flow__node-shot");
     await shotNode.dblclick();
+    const inspector = page.getByLabel("镜头候选检查器");
+    await expect(inspector.getByRole("tab", { name: /结果/ })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await expect(inspector).toContainText("3 个已停止");
+    await expect(inspector).not.toContainText("需要处理");
+    await expect(inspector).not.toContainText("LATEST BATCH");
+    await expect(inspector).not.toContainText("调度依据可追溯");
+    await expect(inspector.getByRole("button", { name: "重试", exact: true })).toHaveCount(3);
+    await inspector.getByRole("tab", { name: "生成", exact: true }).click();
+    await expect(inspector.locator(".candidate-batch-status")).toBeHidden();
+    await expect(inspector.getByLabel("镜头备注")).toBeVisible();
+    await inspector.getByLabel("镜头备注").fill("保留这段尚未提交的编辑");
+    await inspector.getByRole("tab", { name: /结果/ }).click();
+    await inspector.getByRole("tab", { name: /结果/ }).press("ArrowLeft");
+    await expect(inspector.getByLabel("镜头备注")).toHaveValue("保留这段尚未提交的编辑");
+    await inspector.getByRole("tab", { name: "生成", exact: true }).press("ArrowRight");
+    for (const width of [1440, 900, 390]) {
+      await page.setViewportSize({ width, height: 800 });
+      // Explicitly opening details must keep it reachable, including narrow windows.
+      await expect(async () => {
+        if (!(await inspector.isVisible()))
+          await page.getByRole("button", { name: "显示检查器", exact: true }).click();
+        // Resize can finish after the visibility probe. Retry the whole open-and-measure
+        // sequence instead of spending the outer retry budget waiting on a closed panel.
+        expect(await inspector.isVisible()).toBe(true);
+        const box = await inspector.boundingBox();
+        expect(box?.x).toBeGreaterThanOrEqual(0);
+        expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(width + 1);
+      }).toPass({ timeout: 5000 });
+      expect(await inspector.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(
+        true,
+      );
+      await page.screenshot({ path: `test-results/inspector-results-${width}.png` });
+    }
+    await page.setViewportSize({ width: 1600, height: 900 });
     await page.getByRole("button", { name: "选择候选 1" }).click();
     await page.getByRole("button", { name: "采用此结果" }).click();
     await page.getByRole("button", { name: "不采用", exact: true }).click();
@@ -319,7 +382,7 @@ test("real project results can be revoked and individually dragged or added with
       )
       .toBeNull();
     await page.getByRole("button", { name: "采用此结果" }).click();
-    await page.getByText("生成记录", { exact: true }).click();
+    await expect(page.getByRole("region", { name: "生成记录" })).toBeVisible();
     await expect(page.locator(".inspector")).toContainText("4200");
     await expect(page.locator(".inspector")).toContainText("fixture-model.safetensors");
     await expect(page.locator(".run-prompt")).toContainText("柔和的晨光");

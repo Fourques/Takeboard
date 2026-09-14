@@ -121,10 +121,9 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
       <main className="fatal-error-shell" role="alert" aria-labelledby="fatal-error-title">
         <style>{recoveryCss}</style>
         <section>
-          <span>RECOVERY MODE</span>
-          <h1 id="fatal-error-title">页面遇到异常。先保留现场，再重新进入。</h1>
+          <h1 id="fatal-error-title">页面暂时无法显示</h1>
           <p>
-            已经保存的项目内容仍在服务端。当前页面里尚未提交的文字可能没有保存，请先下载诊断报告，再重新加载。
+            已保存的项目仍保留，未提交的文字可能丢失。请先下载异常报告，再重新加载；若刚提交生成，请检查任务状态，不要重复提交。
           </p>
           <div className="fatal-error-actions">
             <button
