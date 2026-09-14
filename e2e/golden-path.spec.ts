@@ -498,7 +498,11 @@ test("a generated shot becomes the full visual node on canvas", async ({ page, r
   await expect(page.locator(".react-flow__node-shot")).not.toContainText("未选择模型");
   await page.locator(".react-flow__node-shot").click();
   await expect(page.getByLabel("生成模型", { exact: true })).toBeDisabled();
-  await expect(page.locator(".inspector-model-picker")).toContainText("已锁定");
+  await expect(
+    page
+      .locator(".inspector-model-picker")
+      .filter({ has: page.getByLabel("生成模型", { exact: true }) }),
+  ).toContainText("已锁定");
   await page.screenshot({
     path: "test-results/takeboard-generated-shot-node.png",
     fullPage: true,
@@ -837,7 +841,7 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
   await expect(page.locator(".react-flow__node-shot")).toHaveCount(1);
   await expect(page.getByRole("dialog", { name: /删除/ })).toHaveCount(0);
   await expect(page.getByLabel("镜头候选检查器")).toBeVisible();
-  await page.getByRole("button", { name: "管理模型与工作流" }).click();
+  await page.getByRole("button", { name: "管理工作流", exact: true }).click();
   await expect(page.getByRole("heading", { name: "选择工作流" })).toBeVisible();
   await expect(page.getByRole("button", { name: "可添加", exact: true })).toBeVisible();
   await expect(page.getByText("导入工作流", { exact: true })).toBeVisible();
@@ -853,7 +857,7 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
   await expect(page.getByLabel("画布工作流")).toHaveValue("Kino/Kino_MiniMaxH3_R2V.json");
   await expect(page.getByLabel("画布提示词")).toBeVisible();
   await page.getByRole("button", { name: "显示检查器", exact: true }).click();
-  await page.getByRole("button", { name: "管理模型与工作流" }).click();
+  await page.getByRole("button", { name: "管理工作流", exact: true }).click();
   await page.getByRole("button", { name: /Qwen Image 2512 T2I/ }).click();
   await expect(
     page.getByLabel("生成模型", { exact: true }).locator("option:checked"),
@@ -872,7 +876,10 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
     fullPage: true,
     animations: "disabled",
   });
-  await page.getByLabel("生成模型", { exact: true }).selectOption("Kino/Kino_Wan22_FLF2V.json");
+  await page.getByLabel("生成类型", { exact: true }).selectOption("first_last_video");
+  await expect(page.getByLabel("生成模型", { exact: true })).toHaveValue(
+    "Kino/Kino_Wan22_FLF2V.json",
+  );
   await expect(page.locator(".react-flow__node-shot .shot-input")).toHaveCount(2);
   await expect(page.locator(".react-flow__node-shot")).toContainText("首帧 0/1");
   await expect(page.locator(".react-flow__node-shot")).toContainText("尾帧 0/1");
@@ -905,11 +912,9 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
   await inspectorWidth.fill("1024");
   await inspectorWidth.press("Tab");
   await expect(inspectorWidth).toHaveValue("1024");
-  await page
-    .getByLabel("生成模型", { exact: true })
-    .selectOption("Kino/Kino_QwenImage2512_T2I.json");
+  await page.getByLabel("生成类型", { exact: true }).selectOption("text_to_image");
   await expect(page.getByLabel("宽度", { exact: true })).toHaveValue("1664");
-  await page.getByLabel("生成模型", { exact: true }).selectOption("Kino/Kino_Wan22_FLF2V.json");
+  await page.getByLabel("生成类型", { exact: true }).selectOption("first_last_video");
   await expect(page.getByLabel("宽度", { exact: true })).toHaveValue("1024");
   await page.screenshot({
     path: "test-results/takeboard-workflow-studio.png",
@@ -946,15 +951,19 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
   await renamedAssetCard.click({ button: "right" });
   await expect(page.locator(".asset-context-menu")).toBeVisible();
   await expect(page.locator(".asset-context-menu")).toContainText("连接到");
+  const downloadStarted = page.waitForEvent("download");
+  await page.getByRole("menuitem", { name: "下载到本地" }).click();
+  const downloadedAsset = await downloadStarted;
+  expect(await downloadedAsset.failure()).toBeNull();
+  expect(downloadedAsset.suggestedFilename()).toMatch(/\.png$/);
+  await renamedAssetCard.click({ button: "right" });
   await page.screenshot({
     path: "test-results/takeboard-asset-context-menu.png",
     animations: "disabled",
   });
   await page.locator(".asset-context-kinds").getByRole("button", { name: "场景" }).click();
   await expect(page.getByLabel("整理分类")).toHaveValue("location");
-  await page.getByRole("button", { name: "整理方法" }).click();
-  await expect(page.getByText("一套够用的整理方式")).toBeVisible();
-  await page.getByRole("button", { name: "整理方法" }).click();
+  await expect(page.getByRole("button", { name: "整理方法" })).toHaveCount(0);
   await page.getByRole("button", { name: "列表视图" }).click();
   await expect(page.locator(".asset-results-list")).toBeVisible();
   await page.getByLabel("搜索资产").fill("氛围参考");
@@ -1081,7 +1090,7 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
   const videoNode = page.locator(".react-flow__node-asset").filter({ has: page.locator("video") });
   await expect(videoNode).toBeVisible();
   await shotNodes.first().dblclick();
-  await page.getByRole("button", { name: "管理模型与工作流" }).click();
+  await page.getByRole("button", { name: "管理工作流", exact: true }).click();
   await page.getByRole("button", { name: /MiniMax H3 R2V/ }).click();
   // Opening the inspector narrows the canvas; bring both connection endpoints into view.
   await page.locator(".react-flow__controls-fitview").click();

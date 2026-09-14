@@ -25,6 +25,77 @@ async function fixture() {
 }
 
 describe("project command API", () => {
+  it("replays document history without changing ids, and rejects redo after another edit", async () => {
+    const { app, key } = await fixture();
+    const execute = (command: unknown) =>
+      app.inject({
+        method: "POST",
+        url: `/api/projects/${key}/commands`,
+        payload: { command, requestId: crypto.randomUUID() },
+      });
+    const undo = (id: string) =>
+      app.inject({ method: "POST", url: `/api/projects/${key}/commands/${id}/undo` });
+    const created = await execute({ type: "canvas.create_shot" });
+    const undone = await undo(created.json().commandId);
+    expect(undone.statusCode, undone.body).toBe(200);
+    expect(undone.json().snapshot.shots).toHaveLength(0);
+    const redone = await undo(undone.json().commandId);
+    expect(redone.statusCode, redone.body).toBe(200);
+    expect(redone.json().snapshot.shots[0].id).toBe(created.json().snapshot.shots[0].id);
+    expect(redone.json().snapshot.runs).toHaveLength(0);
+    const undoneAgain = await undo(redone.json().commandId);
+    expect(undoneAgain.statusCode, undoneAgain.body).toBe(200);
+    await execute({ type: "canvas.create_text", body: "new edit" });
+    const conflict = await undo(undoneAgain.json().commandId);
+    expect(conflict.statusCode, conflict.body).toBe(409);
+    const saved = (await app.inject({ method: "GET", url: `/api/projects/${key}` })).json();
+    expect(saved.snapshot.shots).toHaveLength(0);
+    expect(saved.snapshot.textItems[0].body).toBe("new edit");
+  });
+
+  it("applies a group atomically and undoes the whole group in one step", async () => {
+    const { app, key } = await fixture();
+    const execute = (command: unknown) =>
+      app.inject({
+        method: "POST",
+        url: `/api/projects/${key}/commands`,
+        payload: { command, requestId: crypto.randomUUID() },
+      });
+    const created = await execute({
+      type: "canvas.batch",
+      commands: [
+        { type: "canvas.create_shot", x: 100, y: 120 },
+        { type: "canvas.create_text", body: "note", x: 500, y: 120 },
+      ],
+    });
+    expect(created.statusCode, created.body).toBe(200);
+    expect(created.json().snapshot.canvasItems).toHaveLength(2);
+    const copied = await execute({
+      type: "canvas.batch",
+      commands: created.json().snapshot.canvasItems.map((item: { id: string }) => ({
+        type: "canvas.duplicate_item",
+        itemId: item.id,
+      })),
+    });
+    expect(copied.statusCode, copied.body).toBe(200);
+    expect(copied.json().snapshot.canvasItems).toHaveLength(4);
+    const undone = await app.inject({
+      method: "POST",
+      url: `/api/projects/${key}/commands/${copied.json().commandId}/undo`,
+    });
+    expect(undone.statusCode, undone.body).toBe(200);
+    expect(undone.json().snapshot.canvasItems).toHaveLength(2);
+    const invalid = await execute({
+      type: "canvas.batch",
+      commands: [
+        { type: "canvas.create_shot" },
+        { type: "canvas.move_item", itemId: "missing", x: 20, y: 20 },
+      ],
+    });
+    expect(invalid.statusCode).toBeGreaterThanOrEqual(400);
+    const saved = (await app.inject({ method: "GET", url: `/api/projects/${key}` })).json();
+    expect(saved.snapshot.canvasItems).toHaveLength(2);
+  });
   it("persists resize geometry, can undo it, and rejects out-of-range sizes", async () => {
     const { app, key } = await fixture();
     const execute = (command: unknown) =>

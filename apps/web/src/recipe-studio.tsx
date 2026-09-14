@@ -13,6 +13,8 @@ import {
   type WorkflowSummary,
   workflowApi,
 } from "./api";
+import { ExternalLink } from "./external-link";
+import { LayerBackdrop } from "./layer-backdrop";
 import { RecommendedTemplates } from "./recommended-templates";
 import { WorkflowCheckPanel } from "./workflow-check-panel";
 import { compareWorkflows, isLibraryWorkflow, workflowAvailability } from "./workflow-library";
@@ -397,7 +399,10 @@ export function RecipeStudio({
 
   if (!open) return null;
   return (
-    <div className="studio-backdrop">
+    <LayerBackdrop
+      onClose={onClose}
+      locked={Boolean(nestedPanelOpen || bindingBusy || packageBusy || archiveBusy || libraryBusy)}
+    >
       <aside
         className="recipe-studio"
         ref={studioRef}
@@ -523,6 +528,7 @@ export function RecipeStudio({
                 <button
                   type="button"
                   className={`recipe-card ${selectedPath === workflow.path ? "selected" : ""}`}
+                  aria-pressed={selectedPath === workflow.path}
                   disabled={selectionLocked || !isLibraryWorkflow(workflow) || busy}
                   onClick={() => {
                     if (!workflowAvailability(workflow).ready) void configureBinding(workflow);
@@ -560,53 +566,48 @@ export function RecipeStudio({
                           添加到我的工作流
                         </button>
                       ) : null}
-                      <details>
-                        <summary>更多</summary>
-                        <div className="recipe-library-actions">
-                          <button
-                            type="button"
-                            disabled={libraryBusy !== null}
-                            aria-pressed={Boolean(workflow.library?.favorite)}
-                            onClick={() =>
-                              void updateLibrary(workflow, {
-                                favorite: !workflow.library?.favorite,
-                              })
-                            }
-                          >
-                            {workflow.library?.favorite ? "取消收藏" : "收藏"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setRenamePath(workflow.path);
-                              setRenameValue(workflow.name);
-                            }}
-                          >
-                            重命名
-                          </button>
-                          {isLibraryWorkflow(workflow) ? (
-                            <button
-                              type="button"
-                              disabled={libraryBusy !== null}
-                              onClick={() => void updateLibrary(workflow, { included: false })}
-                            >
-                              从列表移除
-                            </button>
-                          ) : null}
-                          <a href={workflowApi.recipePackageUrl(workflow.path)} download>
-                            导出工作流包
-                          </a>
-                          {workflow.origin === "imported" ? (
-                            <button
-                              type="button"
-                              disabled={archiveBusy}
-                              onClick={() => void previewArchive(workflow)}
-                            >
-                              归档文件
-                            </button>
-                          ) : null}
-                        </div>
-                      </details>
+                      <button
+                        type="button"
+                        disabled={libraryBusy !== null}
+                        aria-pressed={Boolean(workflow.library?.favorite)}
+                        onClick={() =>
+                          void updateLibrary(workflow, {
+                            favorite: !workflow.library?.favorite,
+                          })
+                        }
+                      >
+                        {workflow.library?.favorite ? "取消收藏" : "收藏"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRenamePath(workflow.path);
+                          setRenameValue(workflow.name);
+                        }}
+                      >
+                        重命名
+                      </button>
+                      {isLibraryWorkflow(workflow) ? (
+                        <button
+                          type="button"
+                          disabled={libraryBusy !== null}
+                          onClick={() => void updateLibrary(workflow, { included: false })}
+                        >
+                          从列表移除
+                        </button>
+                      ) : null}
+                      <a href={workflowApi.recipePackageUrl(workflow.path)} download>
+                        导出工作流包
+                      </a>
+                      {workflow.origin === "imported" ? (
+                        <button
+                          type="button"
+                          disabled={archiveBusy}
+                          onClick={() => void previewArchive(workflow)}
+                        >
+                          归档文件
+                        </button>
+                      ) : null}
                     </>
                   ) : null}
                 </div>
@@ -676,9 +677,6 @@ export function RecipeStudio({
                 <strong>{packageBusy ? "正在导入…" : "导入工作流"}</strong>
                 <p>JSON、包含工作流的 PNG，或 TakeBoard 工作流包</p>
               </button>
-              {bindingError && !inspection ? (
-                <p className="workflow-package-error">{bindingError}</p>
-              ) : null}
             </div>
           ) : (
             <div className="workflow-readonly-note">
@@ -688,6 +686,11 @@ export function RecipeStudio({
         </div>
         <footer className="studio-footer">
           <div>
+            {bindingError && !inspection ? (
+              <p className="workflow-package-error" role="alert">
+                {bindingError}
+              </p>
+            ) : null}
             {selectionLocked ? "当前镜头保留原工作流，确保结果可复现" : "选择后将绑定到当前镜头"}
             {warnings.length > 0 ? (
               <details>
@@ -698,9 +701,9 @@ export function RecipeStudio({
               </details>
             ) : null}
           </div>
-          <a href={selectedEditorUrl} target="_blank" rel="noreferrer">
+          <ExternalLink href={selectedEditorUrl} onError={setBindingError}>
             打开 ComfyUI ↗
-          </a>
+          </ExternalLink>
         </footer>
         {inspection ? (
           <div className="binding-editor-backdrop">
@@ -740,13 +743,12 @@ export function RecipeStudio({
                 >
                   重新检查
                 </button>
-                <a
+                <ExternalLink
                   href={`${editorUrl}/?takeboard_workflow=${encodeURIComponent(inspection.path)}`}
-                  target="_blank"
-                  rel="noreferrer"
+                  onError={setBindingError}
                 >
                   在 ComfyUI 编辑 ↗
-                </a>
+                </ExternalLink>
                 <a href={workflowApi.rawUrl(inspection.path)} download>
                   下载 JSON
                 </a>
@@ -1119,6 +1121,6 @@ export function RecipeStudio({
           </div>
         ) : null}
       </aside>
-    </div>
+    </LayerBackdrop>
   );
 }

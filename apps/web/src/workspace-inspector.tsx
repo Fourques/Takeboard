@@ -681,6 +681,38 @@ export function Inspector({
               <section className="inspector-section" aria-label="生成设置">
                 <section className="generation-console">
                   <label className="inspector-model-picker">
+                    <span>生成类型</span>
+                    <select
+                      aria-label="生成类型"
+                      disabled={workflowLocked || busy}
+                      value={workflow?.capability ?? ""}
+                      onChange={(event) => {
+                        const next = workflows.find(
+                          (item) => item.capability === event.target.value,
+                        );
+                        if (next) onSelectWorkflow(next);
+                      }}
+                    >
+                      {!workflow ? (
+                        <option value="" disabled>
+                          选择生成类型
+                        </option>
+                      ) : null}
+                      {Array.from(
+                        new Map(
+                          [...workflows, ...(workflow ? [workflow] : [])].map((item) => [
+                            item.capability,
+                            item.capabilityLabel,
+                          ]),
+                        ),
+                      ).map(([id, label]) => (
+                        <option key={id} value={id}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="inspector-model-picker">
                     <span>模型 {workflowLocked ? <small>已锁定</small> : null}</span>
                     <select
                       aria-label="生成模型"
@@ -701,15 +733,17 @@ export function Inspector({
                           {workflow.name} · 暂不可选
                         </option>
                       ) : null}
-                      {workflows.map((item) => (
-                        <option key={item.path} value={item.path}>
-                          {item.name} · {item.capabilityLabel}
-                        </option>
-                      ))}
+                      {workflows
+                        .filter((item) => !workflow || item.capability === workflow.capability)
+                        .map((item) => (
+                          <option key={item.path} value={item.path}>
+                            {item.name}
+                          </option>
+                        ))}
                     </select>
                   </label>
                   <button className="inspector-model-manage" type="button" onClick={onOpenRecipes}>
-                    管理模型与工作流
+                    管理工作流
                   </button>
                   <label className="prompt-field prompt-with-mentions">
                     <span>
@@ -836,11 +870,6 @@ export function Inspector({
                                 {slot.required ? "必需" : "可选"} · {connectedCount}/{slot.maxCount}
                               </small>
                               <strong>{slot.label}</strong>
-                              <em>
-                                {slot.maxCount > 1
-                                  ? `最多 ${slot.maxCount} ${slot.mediaType === "image" ? "张" : "段"}`
-                                  : slot.hint}
-                              </em>
                             </div>
                           </button>
                         );
@@ -959,25 +988,26 @@ export function Inspector({
                     ) : null}
                     {profile.family === "minimax_h3" &&
                     workflow?.capability === "reference_video" ? (
-                      <label className="seed-field" htmlFor="generation-reference-fidelity">
-                        <span>参考图精度</span>
-                        <select
-                          id="generation-reference-fidelity"
-                          value={settings.referenceImageSize}
-                          onChange={(event) =>
-                            onSettingsChange({
-                              ...settings,
-                              referenceImageSize: event.target.value === "max" ? "max" : "match",
-                            })
-                          }
-                        >
-                          <option value="match">平衡 · 匹配输出尺寸</option>
-                          <option value="max">身份优先 · 保留更多参考细节</option>
-                        </select>
-                        <small>
-                          “身份优先”会显著增加显存与采样时间，24 GB 显存建议少量参考图使用。
-                        </small>
-                      </label>
+                      <details className="h3-prompt-guide">
+                        <summary>参考图处理</summary>
+                        <label className="seed-field" htmlFor="generation-reference-fidelity">
+                          <span>参考图精度</span>
+                          <select
+                            id="generation-reference-fidelity"
+                            value={settings.referenceImageSize}
+                            onChange={(event) =>
+                              onSettingsChange({
+                                ...settings,
+                                referenceImageSize: event.target.value === "max" ? "max" : "match",
+                              })
+                            }
+                          >
+                            <option value="match">匹配输出尺寸</option>
+                            <option value="max">保留原图细节</option>
+                          </select>
+                          <small>保留原图细节需要更多显存。</small>
+                        </label>
+                      </details>
                     ) : null}
                     {workflow?.inputs.includes("denoise") ? (
                       <label className="seed-field" htmlFor="generation-denoise">

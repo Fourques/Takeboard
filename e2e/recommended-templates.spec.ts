@@ -121,7 +121,7 @@ test("recommended templates are checked and explicitly added without changing a 
       .getByRole("button", { name: /打开画板/ })
       .click();
     await page.locator(".react-flow__node-shot").dblclick();
-    await page.getByRole("button", { name: "管理模型与工作流" }).click();
+    await page.getByRole("button", { name: "管理工作流", exact: true }).click();
     await page.getByRole("button", { name: "可添加", exact: true }).click();
     const catalog = page.getByRole("region", { name: "TakeBoard 推荐模板" });
     const h3 = catalog.locator("article").filter({ hasText: "MiniMax H3" });

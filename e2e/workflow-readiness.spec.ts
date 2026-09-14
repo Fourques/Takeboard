@@ -103,7 +103,7 @@ test("model picker excludes blockers; template remediation hides raw fields and 
     await expect(picker).toBeVisible();
     await expect(picker.locator("option:not([disabled])")).toHaveCount(1);
     await expect(picker).not.toContainText("我的自定义模板");
-    await page.getByRole("button", { name: "管理模型与工作流" }).click();
+    await page.getByRole("button", { name: "管理工作流", exact: true }).click();
     await expect(page.getByRole("button", { name: "高级", exact: true })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "全部发现", exact: true })).toHaveCount(0);
     const card = page.locator(".recipe-card-wrap").filter({ hasText: "我的自定义模板" });

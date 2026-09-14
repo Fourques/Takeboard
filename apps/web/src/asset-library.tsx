@@ -1,6 +1,7 @@
 import type { Asset, CanvasItem, Entity } from "@takeboard/contracts";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { projectApi } from "./api";
+import { LayerBackdrop } from "./layer-backdrop";
 import { seekPreviewFrame, VideoThumbnail } from "./video-preview";
 
 type AssetKind = "character" | "location" | "prop";
@@ -56,6 +57,8 @@ function VaultIcon({
 }: {
   name:
     | "canvas"
+    | "download"
+    | "audio"
     | "close"
     | "grid"
     | "image"
@@ -68,6 +71,8 @@ function VaultIcon({
     | "video";
 }) {
   const paths = {
+    download: <path d="M12 3v12m-4-4 4 4 4-4M4 16v4h16v-4" />,
+    audio: <path d="M5 9v6m5-10v14m4-12v10m5-8v6" />,
     canvas: (
       <>
         <rect x="3" y="4" width="18" height="16" rx="2" />
@@ -232,7 +237,6 @@ export function AssetLibrary({
   const [renameValue, setRenameValue] = useState("");
   const [tagValue, setTagValue] = useState("");
   const [actionStatus, setActionStatus] = useState("");
-  const [organizeOpen, setOrganizeOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<{
     assetId: string;
     x: number;
@@ -243,6 +247,15 @@ export function AssetLibrary({
     message: string;
   }>({ state: "idle", message: "原文件保持不变；单个文件不超过 100 MB" });
   const input = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const previous = document.activeElement;
+    panelRef.current?.querySelector<HTMLElement>("button:not([disabled]), input")?.focus();
+    return () => {
+      if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!readOnly) return;
@@ -467,8 +480,41 @@ export function AssetLibrary({
 
   if (!open) return null;
   return (
-    <div className="studio-backdrop asset-backdrop">
-      <aside className="asset-library" aria-label="项目资产库">
+    <LayerBackdrop
+      className="asset-backdrop"
+      onClose={onClose}
+      locked={uploadStatus.state === "uploading"}
+    >
+      <aside
+        className="asset-library"
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="项目资产库"
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            event.stopPropagation();
+            if (contextMenu) setContextMenu(null);
+            else if (uploadStatus.state !== "uploading") onClose();
+          }
+          if (event.key !== "Tab") return;
+          const targets = Array.from(
+            panelRef.current?.querySelectorAll<HTMLElement>(
+              "button:not([disabled]), input:not([disabled]), select:not([disabled]), a[href], textarea:not([disabled])",
+            ) ?? [],
+          ).filter((target) => target.getClientRects().length > 0);
+          const first = targets[0];
+          const last = targets.at(-1);
+          if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last?.focus();
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first?.focus();
+          }
+        }}
+      >
         <header className="asset-library-header">
           <div className="asset-library-title">
             <span className="section-kicker">PROJECT ASSETS</span>
@@ -481,36 +527,6 @@ export function AssetLibrary({
             </div>
           </div>
           <div className="asset-header-actions">
-            <div className="asset-organize-help">
-              <button
-                type="button"
-                className="asset-organize-trigger"
-                onClick={() => setOrganizeOpen((current) => !current)}
-                aria-expanded={organizeOpen}
-              >
-                <VaultIcon name="info" />
-                整理方法
-              </button>
-              {organizeOpen ? (
-                <div className="asset-organize-popover">
-                  <strong>一套够用的整理方式</strong>
-                  <ol>
-                    <li>
-                      <b>分类</b>
-                      <span>用人物、场景、道具建立稳定结构</span>
-                    </li>
-                    <li>
-                      <b>标签</b>
-                      <span>记录版本、情绪或用途，方便组合检索</span>
-                    </li>
-                    <li>
-                      <b>右键</b>
-                      <span>快速归类、连接镜头或加入画布</span>
-                    </li>
-                  </ol>
-                </div>
-              ) : null}
-            </div>
             {readOnly ? (
               <span className="asset-read-only-badge">VIEW ONLY</span>
             ) : (
@@ -795,7 +811,7 @@ export function AssetLibrary({
                       setContextMenu({
                         assetId: asset.id,
                         x: Math.max(8, Math.min(event.clientX, window.innerWidth - 230)),
-                        y: Math.max(8, Math.min(event.clientY, window.innerHeight - 390)),
+                        y: Math.max(8, Math.min(event.clientY, window.innerHeight - 440)),
                       });
                     }}
                     aria-haspopup="menu"
@@ -803,13 +819,13 @@ export function AssetLibrary({
                     <div className="asset-card-media">
                       {asset.mediaType === "video" ? (
                         <VideoThumbnail src={projectApi.assetUrl(projectKey, asset.id)} />
+                      ) : asset.mediaType === "audio" ? (
+                        <span className="asset-audio-art">
+                          <VaultIcon name="audio" />
+                        </span>
                       ) : (
                         <img src={projectApi.assetUrl(projectKey, asset.id, true)} alt="" />
                       )}
-                      <span className="asset-media-type">
-                        <VaultIcon name={asset.mediaType === "video" ? "video" : "image"} />
-                        {asset.mediaType === "video" ? "VIDEO" : "IMAGE"}
-                      </span>
                       {canvasAssetIds.has(asset.id) ? (
                         <span className="asset-canvas-state">
                           <VaultIcon name="canvas" />
@@ -820,17 +836,18 @@ export function AssetLibrary({
                     <div className="asset-card-copy">
                       <div>
                         <strong title={asset.originalName}>{assetStem(asset.originalName)}</strong>
-                        <span>{formatDate(asset.createdAt)}</span>
                       </div>
-                      <p>
-                        {related.length
-                          ? related
-                              .map((entity) => `${kindLabels[entity.kind]} · ${entity.name}`)
-                              .join(" / ")
-                          : assetLibraryKind(asset, related)
-                            ? `${kindLabels[assetLibraryKind(asset, related) as AssetKind]}素材`
-                            : "待整理素材"}
-                      </p>
+                      {related.length || assetLibraryKind(asset, related) ? (
+                        <p>
+                          {related.length
+                            ? related
+                                .map((entity) => `${kindLabels[entity.kind]} · ${entity.name}`)
+                                .join(" / ")
+                            : assetLibraryKind(asset, related)
+                              ? `${kindLabels[assetLibraryKind(asset, related) as AssetKind]}素材`
+                              : null}
+                        </p>
+                      ) : null}
                       <div className="asset-card-meta">
                         <span>
                           {asset.width && asset.height
@@ -889,13 +906,19 @@ export function AssetLibrary({
                       preload="metadata"
                       onLoadedData={(event) => seekPreviewFrame(event.currentTarget)}
                     />
+                  ) : selectedAsset.mediaType === "audio" ? (
+                    // biome-ignore lint/a11y/useMediaCaption: Imported audio may not have a transcript.
+                    <audio
+                      src={projectApi.assetUrl(projectKey, selectedAsset.id)}
+                      controls
+                      preload="metadata"
+                    />
                   ) : (
                     <img
                       src={projectApi.assetUrl(projectKey, selectedAsset.id, true)}
                       alt={selectedAsset.originalName}
                     />
                   )}
-                  <span>{selectedAsset.mediaType === "video" ? "VIDEO" : "IMAGE"}</span>
                 </div>
                 <div className="asset-detail-scroll">
                   <form
@@ -1338,6 +1361,15 @@ export function AssetLibrary({
             ) : null}
             <a
               role="menuitem"
+              href={`${projectApi.assetUrl(projectKey, contextAsset.id)}?download=1`}
+              download={contextAsset.originalName}
+              onClick={() => setContextMenu(null)}
+            >
+              <VaultIcon name="download" />
+              下载到本地
+            </a>
+            <a
+              role="menuitem"
               href={projectApi.assetUrl(projectKey, contextAsset.id)}
               target="_blank"
               rel="noreferrer"
@@ -1349,6 +1381,6 @@ export function AssetLibrary({
           </div>
         ) : null}
       </aside>
-    </div>
+    </LayerBackdrop>
   );
 }

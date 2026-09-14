@@ -9,6 +9,7 @@ export type EditorSelection = {
   projectId: string | null;
   target:
     | { kind: "canvas" }
+    | { kind: "items"; ids: string[] }
     | { kind: "item"; id: string }
     | { kind: "edge"; id: string; identity: EdgeIdentity };
   shotContextId: string | null;
@@ -23,6 +24,7 @@ export const emptySelection: EditorSelection = {
   menu: null,
 };
 export type SelectionAction =
+  | { type: "items"; snapshot: ProjectSnapshot; itemIds: string[]; menu?: MenuPosition }
   | { type: "activate"; snapshot: ProjectSnapshot; reveal: boolean }
   | { type: "reconcile"; snapshot: ProjectSnapshot }
   | { type: "item"; snapshot: ProjectSnapshot; itemId: string; menu?: MenuPosition }
@@ -40,6 +42,15 @@ export function reconcileSelection(
 ): EditorSelection {
   if (state.projectId !== snapshot.project.id)
     return { ...emptySelection, projectId: snapshot.project.id };
+  if (state.target.kind === "items") {
+    const ids = state.target.ids.filter((id) =>
+      snapshot.canvasItems.some((item) => item.id === id),
+    );
+    if (!ids.length) return { ...emptySelection, projectId: snapshot.project.id };
+    return ids.length === state.target.ids.length
+      ? state
+      : { ...state, target: { kind: "items", ids } };
+  }
   const shotContextId = snapshot.shots.some((shot) => shot.id === state.shotContextId)
     ? state.shotContextId
     : null;
@@ -70,6 +81,16 @@ export function reduceEditorSelection(
   action: SelectionAction,
 ): EditorSelection {
   switch (action.type) {
+    case "items":
+      return reconcileSelection(
+        {
+          ...emptySelection,
+          projectId: action.snapshot.project.id,
+          target: { kind: "items", ids: [...new Set(action.itemIds)] },
+          menu: action.menu ?? null,
+        },
+        action.snapshot,
+      );
     case "activate": {
       const base = { ...emptySelection, projectId: action.snapshot.project.id };
       const shot = action.snapshot.shots[0];

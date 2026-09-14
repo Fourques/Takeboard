@@ -1,5 +1,6 @@
 use tauri::{Manager, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_shell::ShellExt;
 
 pub const ACTION_CAPABILITY: &str =
     "window.__takeboardNativeActions = 2; window.__takeboardReportSave = true; window.__takeboardRemoteProjects = true;";
@@ -46,6 +47,18 @@ fn acknowledge(app: &tauri::AppHandle, source: &str, action_id: &str, error: Opt
         let payload = serde_json::json!({"actionId": action_id, "error": error});
         let _ = window.eval(&format!("window.dispatchEvent(new CustomEvent('takeboard:desktop-action',{{detail:{payload}}}));"));
     }
+}
+
+fn external_web_url(value: &str) -> Result<String, String> {
+    let target = tauri::Url::parse(value).map_err(|_| "链接格式无效".to_string())?;
+    if !matches!(target.scheme(), "http" | "https")
+        || target.host_str().is_none()
+        || !target.username().is_empty()
+        || target.password().is_some()
+    {
+        return Err("只允许打开 HTTP 或 HTTPS 网页".to_string());
+    }
+    Ok(target.into())
 }
 
 // GTK requires a registered download handler to explicitly choose a destination.
@@ -100,6 +113,20 @@ pub fn navigation(app: &tauri::AppHandle, source: &str, url: &tauri::Url) -> boo
         .map(|(_, value)| value.into_owned())
         .unwrap_or_default();
     if action_id.len() > 64 {
+        return false;
+    }
+    if action == "open-external" {
+        let target = url
+            .query_pairs()
+            .find(|(key, _)| key == "url")
+            .map(|(_, value)| value.into_owned())
+            .unwrap_or_default();
+        let result = external_web_url(&target).and_then(|target| {
+            app.shell()
+                .open(target, None)
+                .map_err(|error| error.to_string())
+        });
+        acknowledge(app, source, &action_id, result.err());
         return false;
     }
     if action == "remote-project" {
@@ -296,6 +323,24 @@ pub fn navigation(app: &tauri::AppHandle, source: &str, url: &tauri::Url) -> boo
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn external_browser_accepts_only_web_links() {
+        for value in [
+            "http://127.0.0.1:8188/?takeboard_workflow=Kino%2Fh3.json",
+            "https://comfy.example.test/",
+        ] {
+            assert!(external_web_url(value).is_ok());
+        }
+        for value in [
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "takeboard-desktop://connections",
+            "https://user:password@example.test/",
+            "not a url",
+        ] {
+            assert!(external_web_url(value).is_err());
+        }
+    }
     #[test]
     fn report_save_accepts_only_bounded_diagnostic_json() {
         assert!(validate_report(r#"{"format":"takeboard.client-crash-report","reportVersion":1,"error":{"message":"test"}}"#).is_ok());

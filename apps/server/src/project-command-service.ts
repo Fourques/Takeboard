@@ -34,6 +34,7 @@ type RestoreItemInverse = {
 };
 
 type ProjectCommandInverse =
+  | { kind: "restore_history_patch"; expected: string; changes: HistoryChange[] }
   | {
       kind: "remove_created_text";
       textId: string;
@@ -104,6 +105,60 @@ type CommandPlan = {
   inverse: ProjectCommandInverse | null;
   result: Record<string, unknown>;
 };
+
+const historyCollections = [
+  "scenes",
+  "textItems",
+  "entities",
+  "assets",
+  "shots",
+  "canvasItems",
+  "canvasEdges",
+] as const;
+type HistoryCollection = (typeof historyCollections)[number];
+type HistoryRecord = ProjectSnapshot[HistoryCollection][number];
+type HistoryChange = {
+  collection: HistoryCollection;
+  id: string;
+  record: HistoryRecord | null;
+  index: number;
+};
+
+// Redo restores document edits, never resubmits a generation or replays external effects.
+// A content guard rejects changes from other sessions (including generation results).
+function historyContent(value: unknown) {
+  return JSON.stringify(value, (key, entry) => {
+    if (key === "updatedAt" || key === "exportedAt") return undefined;
+    // Schema parsing can reorder object keys without changing project content.
+    if (entry && typeof entry === "object" && !Array.isArray(entry)) {
+      return Object.fromEntries(
+        Object.keys(entry)
+          .sort()
+          .map((name) => [name, entry[name]]),
+      );
+    }
+    return entry;
+  });
+}
+function historyPatch(previous: ProjectSnapshot, applied: ProjectSnapshot): ProjectCommandInverse {
+  const changes: HistoryChange[] = [];
+  for (const collection of historyCollections) {
+    const before = previous[collection] as HistoryRecord[];
+    const after = applied[collection] as HistoryRecord[];
+    const ids = new Set([...before, ...after].map((record) => record.id));
+    for (const id of ids) {
+      const index = before.findIndex((record) => record.id === id);
+      const record = before[index] ?? null;
+      if (historyContent(record) !== historyContent(after.find((entry) => entry.id === id) ?? null))
+        changes.push({ collection, id, record, index });
+    }
+  }
+  return {
+    kind: "restore_history_patch",
+    expected: createHash("sha256").update(historyContent(applied)).digest("hex"),
+    changes,
+  };
+}
 
 export type CommandExecutionResult = {
   commandId: string;
@@ -210,6 +265,46 @@ function buildPlan(
   previewMode = false,
 ): CommandPlan {
   const snapshot = clone(snapshotInput);
+  if (command.type === "canvas.batch") {
+    let current = snapshot;
+    const plans: CommandPlan[] = [];
+    for (const child of command.commands) {
+      const plan = buildPlan(current, child, timestamp, previewMode);
+      current = plan.snapshot;
+      plans.push(plan);
+    }
+    if (command.commands.every((child) => child.type === "canvas.duplicate_item")) {
+      const copies = new Map(
+        plans.map((plan) => [String(plan.result.sourceItemId), String(plan.result.itemId)]),
+      );
+      for (const edge of snapshot.canvasEdges) {
+        const sourceItemId = copies.get(edge.sourceItemId);
+        const targetItemId = copies.get(edge.targetItemId);
+        if (!sourceItemId || !targetItemId || edge.immutable || !edge.targetSlot) continue;
+        const plan = buildPlan(
+          current,
+          { type: "canvas.connect_items", sourceItemId, targetItemId, targetSlot: edge.targetSlot },
+          timestamp,
+          previewMode,
+        );
+        current = plan.snapshot;
+        plans.push(plan);
+      }
+    }
+    return {
+      snapshot: current,
+      summary: `${command.commands.every((item) => item.type === "canvas.duplicate_item") ? "复制" : command.commands.every((item) => item.type === "canvas.remove_item") ? "移除" : command.commands.every((item) => item.type === "canvas.move_item") ? "移动" : "修改"} ${command.commands.length} 个节点`,
+      effects: plans.flatMap((plan) => plan.effects),
+      warnings: [...new Set(plans.flatMap((plan) => plan.warnings))],
+      requiresConfirmation: plans.some((plan) => plan.requiresConfirmation),
+      inverse: plans.every((plan) => plan.inverse) ? historyPatch(snapshot, current) : null,
+      result: {
+        itemIds: plans
+          .map((plan) => plan.result.itemId)
+          .filter((id): id is string => typeof id === "string"),
+      },
+    };
+  }
 
   if (command.type === "canvas.create_shot") {
     const scene =
@@ -987,6 +1082,24 @@ function applyInverse(
 ) {
   const snapshot = clone(snapshotInput);
 
+  if (inverse.kind === "restore_history_patch") {
+    if (createHash("sha256").update(historyContent(snapshot)).digest("hex") !== inverse.expected) {
+      throw new ProjectCommandError(
+        409,
+        "项目已有新的修改，无法恢复这一步。请保留当前内容，重新执行所需操作。",
+      );
+    }
+    for (const change of inverse.changes) {
+      const records = snapshot[change.collection] as HistoryRecord[];
+      const index = records.findIndex((record) => record.id === change.id);
+      if (index >= 0) records.splice(index, 1);
+      if (change.record)
+        records.splice(Math.min(change.index, records.length), 0, clone(change.record));
+    }
+    touch(snapshot, timestamp);
+    return snapshot;
+  }
+
   if (inverse.kind === "remove_created_shot") {
     const shot = snapshot.shots.find((candidate) => candidate.id === inverse.shotId);
     const item = snapshot.canvasItems.find((candidate) => candidate.id === inverse.itemId);
@@ -1277,6 +1390,7 @@ export class ProjectCommandService {
     if (!original) throw new ProjectCommandError(404, "操作记录不存在");
     if (original.status === "undone") throw new ProjectCommandError(409, "这条操作已经撤销");
     const inverse = parseInverse(original);
+    const redoing = original.commandType === "command.undo";
     const timestamp = toIsoTimestamp();
     const snapshot = applyInverse(current.snapshot, inverse, timestamp);
     const undoCommandId = createTakeBoardId("command");
@@ -1300,13 +1414,13 @@ export class ProjectCommandService {
       undoesCommandId: original.id,
       command: {
         id: undoCommandId,
-        commandType: "command.undo",
+        commandType: redoing ? "command.redo" : "command.undo",
         requestId: null,
         request: { type: "command.undo", targetCommandId: original.id },
-        inverse: null,
+        inverse: historyPatch(current.snapshot, snapshot),
         result,
         effects,
-        summary: `撤销：${original.summary}`,
+        summary: `${redoing ? "重做" : "撤销"}：${original.summary.replace(/^(撤销|重做)：/, "")}`,
       },
     });
     return {

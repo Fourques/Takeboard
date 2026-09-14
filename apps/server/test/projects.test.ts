@@ -407,6 +407,31 @@ describe("TakeBoard project API", () => {
     expect(connectedVideo.json().snapshot.canvasEdges).toContainEqual(
       expect.objectContaining({ targetSlot: "reference_video", targetSlotIndex: 0 }),
     );
+    const copiedGroup = await executeTestCommand(app, key, {
+      type: "canvas.batch",
+      commands: [videoItem, shotItem].map((item) => ({
+        type: "canvas.duplicate_item" as const,
+        itemId: item.id,
+      })),
+    });
+    expect(copiedGroup.statusCode, copiedGroup.body).toBe(200);
+    const copiedIds = copiedGroup.json().itemIds;
+    expect(copiedIds).toHaveLength(2);
+    expect(copiedGroup.json().snapshot.canvasEdges).toContainEqual(
+      expect.objectContaining({
+        sourceItemId: copiedIds[0],
+        targetItemId: copiedIds[1],
+        targetSlot: "reference_video",
+      }),
+    );
+    const undoneGroup = await app.inject({
+      method: "POST",
+      url: `/api/projects/${key}/commands/${copiedGroup.json().commandId}/undo`,
+    });
+    expect(undoneGroup.statusCode, undoneGroup.body).toBe(200);
+    expect(undoneGroup.json().snapshot.canvasEdges).toEqual(
+      connectedVideo.json().snapshot.canvasEdges,
+    );
   });
 
   it("creates, lists and opens a usable project with a first scene and shot", async () => {

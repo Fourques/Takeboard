@@ -1,6 +1,7 @@
 import { type ReactNode, useState } from "react";
 
 export type DesktopAction =
+  | "open-external"
   | "connections"
   | "updates"
   | "choose-folder"

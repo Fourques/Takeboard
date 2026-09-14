@@ -56,6 +56,7 @@ import { RecoveryNotice } from "./recovery-notice";
 import { SettingsButton } from "./settings-center";
 import { openSettings } from "./settings-navigation";
 import { useCanvasConnection } from "./use-canvas-connection";
+import { useCanvasHistory } from "./use-canvas-history";
 import { useEditorSelection } from "./use-editor-selection";
 import { useProjectDocument } from "./use-project-document";
 import { useShotGeneration } from "./use-shot-generation";
@@ -91,8 +92,12 @@ const ProjectHub = lazy(() =>
   import("./project-hub").then((module) => ({ default: module.ProjectHub })),
 );
 
+const modifierKey =
+  typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl";
 type CanvasClipboardState = {
   itemId: string;
+  itemIds: string[];
+  projectId: string;
   mode: "copy" | "cut";
 };
 
@@ -107,6 +112,7 @@ type NodeEditDraft = {
 
 type PendingCanvasRemoval = {
   itemId: string;
+  command?: ProjectCommand;
   preview: ProjectCommandPreview;
 };
 
@@ -128,6 +134,7 @@ export function App() {
     selection,
     selectedShotId,
     selectedCanvasItemId,
+    selectedCanvasItemIds,
     selectedEdgeId,
     selectedEdgeIdentity,
     canvasContextMenu,
@@ -289,7 +296,12 @@ export function App() {
         acceptPayload(payload);
         const audit = await projectApi.audit(projectKey);
         setCommandHistory(audit.entries);
-        setNotice("操作已撤销");
+        setNotice(
+          audit.entries.find((entry) => entry.id === payload.commandId)?.commandType ===
+            "command.redo"
+            ? "操作已重做"
+            : "操作已撤销",
+        );
       } catch (cause) {
         setCommandHistoryError(cause instanceof Error ? cause.message : "撤销失败");
       } finally {
@@ -298,6 +310,13 @@ export function App() {
     },
     [acceptPayload, projectKey, projectMode],
   );
+  const canvasHistory = useCanvasHistory({
+    projectKey: projectMode === "project" ? projectKey : null,
+    readDocument: readProjectDocument,
+    acceptPayload,
+    onError: setError,
+    onNotice: setNotice,
+  });
 
   useEffect(() => {
     let active = true;
@@ -490,6 +509,14 @@ export function App() {
       const item = snapshot.canvasItems.find((candidate) => candidate.id === node.id);
       if (!item) return;
       cancelNodeClick();
+      if (event.shiftKey || event.metaKey || event.ctrlKey) {
+        selection.items(
+          selectedCanvasItemIds.includes(node.id)
+            ? selectedCanvasItemIds.filter((id) => id !== node.id)
+            : [...selectedCanvasItemIds, node.id],
+        );
+        return;
+      }
       // Opening/closing a panel changes the canvas bounds. Wait briefly so the
       // first click of a double-click cannot move its target out from under it.
       nodeClickTimer.current = setTimeout(() => {
@@ -497,7 +524,7 @@ export function App() {
         selection.quick(item.id);
       }, 220);
     },
-    [snapshot, selection.quick, cancelNodeClick],
+    [snapshot, selection.quick, selection.items, selectedCanvasItemIds, cancelNodeClick],
   );
 
   const openNodeEditor = useCallback(
@@ -689,6 +716,26 @@ export function App() {
       const item = snapshot?.canvasItems.find((candidate) => candidate.id === itemId);
       if (!item) return;
       selection.dismissMenu();
+      if (
+        selectedCanvasItemIds.length > 1 &&
+        selectedCanvasItemIds.includes(itemId) &&
+        projectKey &&
+        projectMode === "project"
+      ) {
+        const command: ProjectCommand = {
+          type: "canvas.batch",
+          commands: selectedCanvasItemIds.map((id) => ({ type: "canvas.remove_item", itemId: id })),
+        };
+        setBusy(true);
+        void projectApi
+          .previewCommand(projectKey, command)
+          .then(({ preview }) => setPendingCanvasRemoval({ itemId, command, preview }))
+          .catch((cause: unknown) =>
+            setError(cause instanceof Error ? cause.message : "无法预览移除影响"),
+          )
+          .finally(() => setBusy(false));
+        return;
+      }
       if (item.refType === "shot") {
         setError(null);
         setDeletingShotPreview(null);
@@ -719,7 +766,14 @@ export function App() {
         )
         .finally(() => setBusy(false));
     },
-    [canEditProject, projectKey, projectMode, snapshot, selection.dismissMenu],
+    [
+      canEditProject,
+      projectKey,
+      projectMode,
+      snapshot,
+      selection.dismissMenu,
+      selectedCanvasItemIds,
+    ],
   );
 
   const confirmDeleteShot = useCallback(async () => {
@@ -806,7 +860,7 @@ export function App() {
   );
 
   const duplicateCanvasItem = useCallback(
-    async (itemId: string, position?: { x: number; y: number }) => {
+    async (itemId: string, position?: { x: number; y: number }, explicitIds?: string[]) => {
       if (!projectKey || projectMode !== "project" || !canEditProject) {
         setNotice("功能示例不会复制节点");
         return;
@@ -814,6 +868,27 @@ export function App() {
       setBusy(true);
       setError(null);
       try {
+        const ids =
+          explicitIds ??
+          (selectedCanvasItemIds.includes(itemId) ? selectedCanvasItemIds : [itemId]);
+        if (ids.length > 1) {
+          const source = snapshot?.canvasItems.find((item) => item.id === itemId);
+          if (!source) throw new Error("原节点已不存在");
+          const dx = position ? position.x - source.x : 36;
+          const dy = position ? position.y - source.y : 36;
+          const payload = await projectApi.executeCommand(projectKey, {
+            type: "canvas.batch",
+            commands: ids.map((id) => {
+              const item = snapshot?.canvasItems.find((item) => item.id === id);
+              if (!item) throw new Error("部分原节点已不存在，请重新复制");
+              return { type: "canvas.duplicate_item", itemId: id, x: item.x + dx, y: item.y + dy };
+            }),
+          });
+          acceptPayload(payload);
+          selection.items(payload.result.itemIds as string[]);
+          setNotice(`已复制 ${ids.length} 个节点`);
+          return;
+        }
         const payload = await projectApi.duplicateCanvasItem(
           projectKey,
           itemId,
@@ -834,17 +909,32 @@ export function App() {
         setBusy(false);
       }
     },
-    [acceptPayload, canEditProject, projectKey, projectMode, selection.item, selection.dismissMenu],
+    [
+      acceptPayload,
+      canEditProject,
+      projectKey,
+      projectMode,
+      selection.item,
+      selection.items,
+      selection.dismissMenu,
+      selectedCanvasItemIds,
+      snapshot,
+    ],
   );
 
   const copyCanvasItem = useCallback(
     (itemId: string, mode: "copy" | "cut") => {
-      if (!canEditProject) return;
-      setCanvasClipboard({ itemId, mode });
+      if (!canEditProject || !snapshot) return;
+      setCanvasClipboard({
+        itemId,
+        itemIds: selectedCanvasItemIds.includes(itemId) ? selectedCanvasItemIds : [itemId],
+        projectId: snapshot.project.id,
+        mode,
+      });
       selection.dismissMenu();
       setNotice(mode === "copy" ? "节点已复制，右键空白处粘贴" : "节点已剪切，粘贴前不会移除");
     },
-    [canEditProject, selection.dismissMenu],
+    [canEditProject, selection.dismissMenu, selectedCanvasItemIds, snapshot],
   );
 
   const pasteCanvasItem = useCallback(
@@ -858,22 +948,34 @@ export function App() {
       )
         return;
       const source = snapshot.canvasItems.find((item) => item.id === canvasClipboard.itemId);
-      if (!source) {
+      if (!source || canvasClipboard.projectId !== snapshot.project.id) {
         setCanvasClipboard(null);
         setError("剪贴板中的节点已经不存在");
         return;
       }
       const target = position ?? { x: source.x + 36, y: source.y + 36 };
       if (canvasClipboard.mode === "copy") {
-        await duplicateCanvasItem(source.id, target);
+        await duplicateCanvasItem(source.id, target, canvasClipboard.itemIds);
         return;
       }
       setBusy(true);
       setError(null);
       try {
-        const payload = await projectApi.move(projectKey, source.id, target.x, target.y);
+        const payload = await projectApi.executeCommand(projectKey, {
+          type: "canvas.batch",
+          commands: canvasClipboard.itemIds.map((id) => {
+            const item = snapshot.canvasItems.find((entry) => entry.id === id);
+            if (!item) throw new Error("部分原节点已不存在，请重新剪切");
+            return {
+              type: "canvas.move_item",
+              itemId: id,
+              x: item.x + target.x - source.x,
+              y: item.y + target.y - source.y,
+            };
+          }),
+        });
         acceptPayload(payload);
-        selection.item(source.id);
+        selection.items(canvasClipboard.itemIds);
         setCanvasClipboard(null);
         selection.dismissMenu();
         setNotice("节点已移动到新的位置");
@@ -891,14 +993,23 @@ export function App() {
       projectKey,
       projectMode,
       snapshot,
-      selection.item,
+      selection.items,
       selection.dismissMenu,
     ],
   );
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || showHub) return;
       const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.closest("dialog[open], .settings-panel") ||
+          (target.closest('[role="dialog"], .studio-backdrop') &&
+            (event.key !== "Escape" ||
+              !(recipeOpen || assetLibraryOpen || storyboardOpen || renameOpen || nodeEditDraft))))
+      )
+        return;
       if (event.key === "Escape") {
         cancelNodeClick();
         const overlayOpen = Boolean(
@@ -937,6 +1048,14 @@ export function App() {
       ) {
         return;
       }
+      if (
+        pendingCanvasRemoval ||
+        pendingCanvasArrange ||
+        deletingShotItemId ||
+        nodeEditDraft ||
+        renameOpen
+      )
+        return;
       if (event.key === "[") {
         setSidebarOpen((current) => !current);
         return;
@@ -950,30 +1069,52 @@ export function App() {
         return;
       }
       const command = event.metaKey || event.ctrlKey;
-      if (!canEditProject) return;
-      if (command && event.key.toLowerCase() === "c" && selectedCanvasItemId) {
+      const itemId = selectedCanvasItemIds[0];
+      if (
+        !canEditProject ||
+        actionBusy ||
+        recipeOpen ||
+        assetLibraryOpen ||
+        storyboardOpen ||
+        renameOpen
+      )
+        return;
+      if (
+        command &&
+        (event.key.toLowerCase() === "z" || (!event.metaKey && event.key.toLowerCase() === "y"))
+      ) {
         event.preventDefault();
-        copyCanvasItem(selectedCanvasItemId, "copy");
-      } else if (command && event.key.toLowerCase() === "x" && selectedCanvasItemId) {
+        void canvasHistory(event.shiftKey || event.key.toLowerCase() === "y" ? "redo" : "undo");
+      } else if (command && event.key.toLowerCase() === "a") {
         event.preventDefault();
-        copyCanvasItem(selectedCanvasItemId, "cut");
+        cancelNodeClick();
+        selection.items(snapshot?.canvasItems.map((item) => item.id) ?? []);
+      } else if (command && event.key.toLowerCase() === "c" && itemId) {
+        event.preventDefault();
+        copyCanvasItem(itemId, "copy");
+      } else if (command && event.key.toLowerCase() === "x" && itemId) {
+        event.preventDefault();
+        copyCanvasItem(itemId, "cut");
       } else if (command && event.key.toLowerCase() === "v" && canvasClipboard) {
         event.preventDefault();
         void pasteCanvasItem();
-      } else if (command && event.key.toLowerCase() === "d" && selectedCanvasItemId) {
+      } else if (command && event.key.toLowerCase() === "d" && itemId) {
         event.preventDefault();
-        void duplicateCanvasItem(selectedCanvasItemId);
+        void duplicateCanvasItem(itemId);
       } else if ((event.key === "Delete" || event.key === "Backspace") && selectedEdgeId) {
         event.preventDefault();
         void deleteCanvasEdge(selectedEdgeId);
-      } else if ((event.key === "Delete" || event.key === "Backspace") && selectedCanvasItemId) {
+      } else if ((event.key === "Delete" || event.key === "Backspace") && itemId) {
         event.preventDefault();
-        void deleteCanvasItem(selectedCanvasItemId);
+        void deleteCanvasItem(itemId);
       }
     };
     window.addEventListener("keydown", handleShortcut);
     return () => window.removeEventListener("keydown", handleShortcut);
   }, [
+    showHub,
+    actionBusy,
+    canvasHistory,
     canvasClipboard,
     canEditProject,
     canvasContextMenu,
@@ -987,7 +1128,9 @@ export function App() {
     deleteCanvasItem,
     duplicateCanvasItem,
     pasteCanvasItem,
-    selectedCanvasItemId,
+    selectedCanvasItemIds,
+    snapshot,
+    selection.items,
     selectedEdgeId,
     inspectorHasContent,
     nodeEditDraft,
@@ -1011,14 +1154,24 @@ export function App() {
         x: node.position.x,
         y: node.position.y,
       };
-      selection.item(node.id, {
+      const menu = {
         clientX: event.clientX,
         clientY: event.clientY,
         flowX: point.x,
         flowY: point.y,
-      });
+      };
+      if (selectedCanvasItemIds.length > 1 && selectedCanvasItemIds.includes(node.id))
+        selection.items(selectedCanvasItemIds, menu);
+      else selection.item(node.id, menu);
     },
-    [canEditProject, flowInstance, selection.item, cancelNodeClick],
+    [
+      canEditProject,
+      flowInstance,
+      selection.item,
+      selection.items,
+      selectedCanvasItemIds,
+      cancelNodeClick,
+    ],
   );
 
   const openPaneContextMenu = useCallback(
@@ -1731,8 +1884,10 @@ export function App() {
     );
     const interactiveNodes = projectedNodes.map((node) => ({
       ...node,
+      selected: selectedCanvasItemIds.includes(node.id),
       data: {
         ...node.data,
+        selected: selectedCanvasItemIds.includes(node.id),
         ...(projectKey && projectMode === "project" && canEditProject
           ? {
               onResizeEnd: (geometry: { x: number; y: number; width: number; height: number }) => {
@@ -1787,6 +1942,7 @@ export function App() {
     promptMentions,
     requestShotGeneration,
     selectedCanvasItemId,
+    selectedCanvasItemIds,
     selectedShot,
     selectedShotId,
     selectedWorkflow,
@@ -1842,9 +1998,21 @@ export function App() {
     >
       <header className="topbar">
         <div className="brand">
-          <span className="brand-mark" title="TakeBoard">
+          <button
+            className="brand-mark"
+            type="button"
+            aria-label="切换项目"
+            title="返回项目主页"
+            onClick={() => {
+              detachGeneration();
+              optionalSessionStorage.removeItem("takeboard.resumeDemo");
+              beginNavigation();
+              setBusy(false);
+              setShowHub(true);
+            }}
+          >
             T
-          </span>
+          </button>
           <DeviceIndicator
             projectKey={projectMode === "project" ? (projectKey ?? undefined) : undefined}
           />
@@ -1891,7 +2059,7 @@ export function App() {
             </span>
           )}
           <Suspense fallback={null}>
-            <OperationsCenter onOpenProject={openProject} />
+            <OperationsCenter compact onOpenProject={openProject} />
           </Suspense>
           <button
             className="density-button"
@@ -1909,19 +2077,6 @@ export function App() {
             projectTitle={projectMode === "project" ? snapshot.project.title : undefined}
             projectRole={projectMode === "project" ? activeProjectRole : undefined}
           />
-          <button
-            className="reset-button"
-            type="button"
-            onClick={() => {
-              detachGeneration();
-              optionalSessionStorage.removeItem("takeboard.resumeDemo");
-              beginNavigation();
-              setBusy(false);
-              setShowHub(true);
-            }}
-          >
-            切换项目
-          </button>
           {projectMode === "demo" ? (
             <button
               className={resetArmed ? "reset-button armed" : "reset-button"}
@@ -2233,7 +2388,7 @@ export function App() {
                 <header>
                   <div>
                     <span>CANVAS GUIDE</span>
-                    <strong>需要时，再看这里。</strong>
+                    <strong>画布快捷键</strong>
                   </div>
                   <button
                     type="button"
@@ -2261,7 +2416,10 @@ export function App() {
                     <dd>右键节点或连线</dd>
                   </div>
                 </dl>
-                <p>复制、粘贴和删除仍支持系统常用快捷键。</p>
+                <p>
+                  ⌘ / Ctrl：A 全选 · C 复制 · V 粘贴 · D 副本 · Z 撤销 · Shift Z 重做。Esc
+                  取消选择。
+                </p>
               </aside>
             ) : null}
           </div>
@@ -2360,7 +2518,34 @@ export function App() {
             selection.canvas();
             setNodeEditDraft(null);
           }}
-          onNodeDragStop={(_event, node) => {
+          onNodeDragStop={(_event, node, draggedNodes) => {
+            if (draggedNodes.length > 1 && projectMode === "project" && projectKey) {
+              void projectApi
+                .executeCommand(projectKey, {
+                  type: "canvas.batch",
+                  commands: draggedNodes.map((item) => ({
+                    type: "canvas.move_item",
+                    itemId: item.id,
+                    x: item.position.x,
+                    y: item.position.y,
+                  })),
+                })
+                .then(acceptPayload)
+                .catch((cause: unknown) => {
+                  setError(cause instanceof Error ? cause.message : "位置保存失败");
+                  const saved = readProjectDocument()?.snapshot;
+                  if (saved)
+                    setNodes((current) =>
+                      current.map((item) => {
+                        const original = saved.canvasItems.find((entry) => entry.id === item.id);
+                        return original
+                          ? { ...item, position: { x: original.x, y: original.y } }
+                          : item;
+                      }),
+                    );
+                });
+              return;
+            }
             const position = gentlyAlignedPosition(node, nodes);
             setNodes((current) =>
               current.map((candidate) =>
@@ -2404,8 +2589,8 @@ export function App() {
           className="canvas-context-menu"
           role="menu"
           style={{
-            left: Math.min(canvasContextMenu.clientX, window.innerWidth - 230),
-            top: Math.min(canvasContextMenu.clientY, window.innerHeight - 330),
+            left: Math.max(8, Math.min(canvasContextMenu.clientX, window.innerWidth - 230)),
+            top: Math.max(8, Math.min(canvasContextMenu.clientY, window.innerHeight - 440)),
           }}
           onContextMenu={(event) => event.preventDefault()}
         >
@@ -2481,7 +2666,7 @@ export function App() {
               >
                 <span>□</span>
                 <strong>复制</strong>
-                <kbd>⌘ C</kbd>
+                <kbd>{modifierKey} C</kbd>
               </button>
               <button
                 type="button"
@@ -2490,7 +2675,7 @@ export function App() {
               >
                 <span>✂</span>
                 <strong>剪切</strong>
-                <kbd>⌘ X</kbd>
+                <kbd>{modifierKey} X</kbd>
               </button>
               <button
                 type="button"
@@ -2504,7 +2689,7 @@ export function App() {
               >
                 <span>＋</span>
                 <strong>创建副本</strong>
-                <kbd>⌘ D</kbd>
+                <kbd>{modifierKey} D</kbd>
               </button>
               <div className="context-menu-separator" />
               <button
@@ -2515,10 +2700,12 @@ export function App() {
               >
                 <span>⌫</span>
                 <strong>
-                  {snapshot.canvasItems.find((item) => item.id === canvasContextMenu.itemId)
-                    ?.refType === "shot"
-                    ? "删除镜头"
-                    : "从画布移除"}
+                  {selectedCanvasItemIds.length > 1
+                    ? "移除选中节点"
+                    : snapshot.canvasItems.find((item) => item.id === canvasContextMenu.itemId)
+                          ?.refType === "shot"
+                      ? "删除镜头"
+                      : "从画布移除"}
                 </strong>
                 <kbd>Delete</kbd>
               </button>
@@ -2575,7 +2762,7 @@ export function App() {
               >
                 <span>▣</span>
                 <strong>粘贴节点</strong>
-                <kbd>⌘ V</kbd>
+                <kbd>{modifierKey} V</kbd>
               </button>
               <p>
                 {canvasClipboard
@@ -2586,6 +2773,33 @@ export function App() {
               </p>
             </>
           )}
+          <div className="context-menu-separator" />
+          <button
+            type="button"
+            role="menuitem"
+            disabled={busy}
+            onClick={() => {
+              selection.dismissMenu();
+              void canvasHistory("undo");
+            }}
+          >
+            <span>↶</span>
+            <strong>撤销</strong>
+            <kbd>{modifierKey} Z</kbd>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            disabled={busy}
+            onClick={() => {
+              selection.dismissMenu();
+              void canvasHistory("redo");
+            }}
+          >
+            <span>↷</span>
+            <strong>重做</strong>
+            <kbd>{modifierKey} ⇧ Z</kbd>
+          </button>
         </div>
       ) : null}
 
@@ -2813,7 +3027,7 @@ export function App() {
           >
             <span className="section-kicker">CANVAS CHANGE</span>
             <h2 id="canvas-remove-title">{pendingCanvasRemoval.preview.summary}？</h2>
-            <p>只移除画布上的呈现；资产、人物或文本本体仍保留在项目中。</p>
+            <p>只移除画布节点；镜头、生成记录和素材仍保留在项目中。</p>
             <div className="shot-delete-preview">
               <span>影响预览</span>
               <ul>
@@ -2835,9 +3049,30 @@ export function App() {
                 className="confirm-shot-delete"
                 type="button"
                 disabled={busy}
-                onClick={() =>
-                  void removeCanvasItem(pendingCanvasRemoval.itemId, pendingCanvasRemoval.preview)
-                }
+                onClick={() => {
+                  if (pendingCanvasRemoval.command && projectKey) {
+                    setBusy(true);
+                    void projectApi
+                      .executeCommand(
+                        projectKey,
+                        pendingCanvasRemoval.command,
+                        pendingCanvasRemoval.preview,
+                      )
+                      .then((payload) => {
+                        acceptPayload(payload);
+                        setPendingCanvasRemoval(null);
+                        selection.canvas();
+                      })
+                      .catch((cause: unknown) =>
+                        setError(cause instanceof Error ? cause.message : "移除失败"),
+                      )
+                      .finally(() => setBusy(false));
+                  } else
+                    void removeCanvasItem(
+                      pendingCanvasRemoval.itemId,
+                      pendingCanvasRemoval.preview,
+                    );
+                }}
               >
                 {busy ? "正在移除…" : "从画布移除"}
               </button>

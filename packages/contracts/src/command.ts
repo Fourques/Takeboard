@@ -19,6 +19,7 @@ export const canvasTargetSlotSchema = z.enum([
 ]);
 
 export const projectCommandTypeSchema = z.enum([
+  "canvas.batch",
   "canvas.create_shot",
   "canvas.create_text",
   "canvas.add_item",
@@ -36,7 +37,7 @@ export const projectCommandTypeSchema = z.enum([
 
 const finiteCoordinateSchema = z.number().finite().min(-1_000_000).max(1_000_000);
 
-export const projectCommandSchema = z.discriminatedUnion("type", [
+const singleProjectCommandSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("canvas.create_shot"),
     sceneId: sceneIdSchema.optional(),
@@ -130,6 +131,14 @@ export const projectCommandSchema = z.discriminatedUnion("type", [
     type: z.literal("shot.reorder"),
     shotId: shotIdSchema,
     toIndex: z.number().int().nonnegative().max(10_000),
+  }),
+]);
+
+export const projectCommandSchema = z.union([
+  singleProjectCommandSchema,
+  z.object({
+    type: z.literal("canvas.batch"),
+    commands: z.array(singleProjectCommandSchema).min(1).max(500),
   }),
 ]);
 

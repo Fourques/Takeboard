@@ -50,14 +50,29 @@ test("templates are opt-in, editable names survive reopening, removal preserves 
       .getByRole("button", { name: /打开画板/ })
       .click();
     await page.locator(".react-flow__node-shot").dblclick();
-    await page.getByRole("button", { name: "管理模型与工作流" }).click();
+    await page.getByRole("button", { name: "管理工作流", exact: true }).click();
     await expect(page.locator(".recipe-card")).toHaveCount(0);
+    await page.locator(".studio-backdrop > .layer-dismiss").click({ position: { x: 100, y: 400 } });
+    await expect(page.getByRole("dialog", { name: "选择工作流" })).toHaveCount(0);
+    await page.getByRole("button", { name: "管理工作流", exact: true }).click();
+    await page
+      .context()
+      .route("http://127.0.0.1:8188/**", (route) =>
+        route.fulfill({ contentType: "text/html", body: "<title>ComfyUI test editor</title>" }),
+      );
+    const editorOpened = page.waitForEvent("popup");
+    await page.getByRole("link", { name: "打开 ComfyUI ↗", exact: true }).click();
+    const editor = await editorOpened;
+    await expect(editor).toHaveTitle("ComfyUI test editor");
+    expect(new URL(editor.url()).origin).toBe("http://127.0.0.1:8188");
+    await editor.close();
+    await expect(page.getByRole("dialog", { name: "选择工作流" })).toBeVisible();
     await page.getByRole("button", { name: "可添加", exact: true }).click();
     await expect(page.locator(".recipe-card")).toBeDisabled();
     await page.getByRole("button", { name: "添加到我的工作流" }).click();
     await expect(page.locator(".recipe-card")).toHaveCount(0);
     await page.getByRole("button", { name: "我的工作流", exact: true }).click();
-    await page.locator(".recipe-library-actions summary").click();
+    await expect(page.locator(".recipe-library-actions summary")).toHaveCount(0);
     await page.getByRole("button", { name: "收藏", exact: true }).click();
     await page.getByRole("button", { name: "重命名", exact: true }).click();
     await page.getByRole("textbox", { name: "工作流名称" }).fill("人物短片");
@@ -81,8 +96,7 @@ test("templates are opt-in, editable names survive reopening, removal preserves 
     await expect(
       page.getByLabel("生成模型", { exact: true }).locator("option:checked"),
     ).toContainText("人物短片");
-    await page.getByRole("button", { name: "管理模型与工作流" }).click();
-    await page.locator(".recipe-library-actions summary").click();
+    await page.getByRole("button", { name: "管理工作流", exact: true }).click();
     await page.getByRole("button", { name: "从列表移除" }).click();
     await expect(page.locator(".recipe-card")).toHaveCount(0);
     await page.getByRole("button", { name: "可添加", exact: true }).click();

@@ -85,7 +85,7 @@ export function CommandHistory({
                 disabled={busy}
                 onClick={() => onUndo(entry.id)}
               >
-                撤销此操作
+                {entry.commandType === "command.undo" ? "重做此操作" : "撤销此操作"}
               </button>
             ) : null}
           </article>

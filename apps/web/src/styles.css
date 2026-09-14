@@ -3962,16 +3962,18 @@ button.save-status {
 .toast {
   z-index: 50;
   position: fixed;
-  right: 24px;
+  left: 50%;
   bottom: 22px;
-  max-width: 420px;
+  max-width: min(420px, calc(100vw - 32px));
+  transform: translateX(-50%);
+  pointer-events: none;
   padding: 11px 14px;
-  border: 1px solid #3f7553;
-  border-radius: 3px;
-  color: #b5e1c3;
-  background: #14251a;
-  box-shadow: 0 10px 30px rgb(0 0 0 / 38%);
-  font-size: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text-1);
+  background: var(--panel-raised);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 16%);
+  font-size: calc(12px * var(--ui-scale));
   animation: toast-in 180ms ease-out;
 }
 
@@ -4027,7 +4029,7 @@ button.save-status {
 @keyframes toast-in {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translate(-50%, 6px);
   }
 }
 
@@ -4427,6 +4429,7 @@ button.save-status {
 
 .inspector-model-picker {
   display: grid;
+  margin-bottom: 14px;
   gap: 9px;
   font-size: calc(12px * var(--ui-scale));
 }
@@ -4642,6 +4645,18 @@ button.save-status {
   font-size: calc(11px * var(--ui-scale));
   line-height: 1.5;
 }
+.generation-validation > span {
+  flex: 1;
+  min-width: 0;
+}
+.generation-validation > button {
+  flex-shrink: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-strong);
+  font: inherit;
+  padding: 6px 0;
+}
 
 .asset-import .vault-button {
   border-color: color-mix(in srgb, var(--accent) 35%, var(--line));
@@ -4655,8 +4670,8 @@ button.save-status {
   inset: 0;
   display: flex;
   justify-content: flex-end;
-  background: rgb(3 5 4 / 62%);
-  backdrop-filter: blur(7px);
+  background: rgb(3 5 4 / 22%);
+  backdrop-filter: blur(2px);
   animation: backdrop-in 180ms ease-out;
 }
 
@@ -4676,7 +4691,7 @@ button.save-status {
       transparent 34%
     ),
     var(--app-bg);
-  box-shadow: -30px 0 90px rgb(0 0 0 / 42%);
+  box-shadow: -18px 0 70px rgb(0 0 0 / 20%);
   animation: studio-in 240ms cubic-bezier(0.22, 0.82, 0.3, 1);
 }
 
@@ -4786,7 +4801,11 @@ button.save-status {
 
 .recipe-card-wrap {
   position: relative;
-  margin-bottom: 8px;
+  margin-bottom: 12px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
 }
 
 .recipe-card {
@@ -4797,8 +4816,8 @@ button.save-status {
   align-items: center;
   margin-bottom: 0;
   padding: 16px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
+  border: 0;
+  border-radius: 0;
   text-align: left;
   background: color-mix(in srgb, var(--panel) 92%, transparent);
   cursor: pointer;
@@ -7869,6 +7888,8 @@ html[data-theme="light"] .universe-vignette {
   z-index: 120;
   position: fixed;
   width: 218px;
+  max-height: min(420px, calc(100dvh - 16px));
+  overflow: auto;
   padding: 7px;
   border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line));
   border-radius: 8px;
@@ -9803,10 +9824,6 @@ html[data-theme="light"] .project-card-art {
   letter-spacing: 0.12em;
 }
 
-.asset-organize-help {
-  position: relative;
-}
-
 .asset-header-actions button {
   display: inline-flex;
   align-items: center;
@@ -9825,80 +9842,6 @@ html[data-theme="light"] .project-card-art {
   color: var(--accent-strong);
   gap: 8px;
   font-size: 11px;
-}
-
-.asset-header-actions .asset-organize-trigger {
-  min-height: 38px;
-  padding: 0 12px;
-  border-color: transparent;
-  border-radius: 7px;
-  color: var(--text-2);
-  background: transparent;
-  gap: 7px;
-  font-size: 10px;
-}
-
-.asset-organize-trigger svg {
-  width: 14px;
-  height: 14px;
-}
-
-.asset-organize-popover {
-  z-index: 8;
-  position: absolute;
-  top: calc(100% + 10px);
-  right: 0;
-  width: 290px;
-  padding: 16px;
-  border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--line));
-  border-radius: 9px;
-  color: var(--text-1);
-  background: color-mix(in srgb, var(--surface-2) 97%, black);
-  box-shadow: 0 18px 50px rgb(0 0 0 / 42%);
-}
-
-.asset-organize-popover::before {
-  position: absolute;
-  top: -5px;
-  right: 28px;
-  width: 9px;
-  height: 9px;
-  border-top: 1px solid color-mix(in srgb, var(--accent) 25%, var(--line));
-  border-left: 1px solid color-mix(in srgb, var(--accent) 25%, var(--line));
-  content: "";
-  background: color-mix(in srgb, var(--surface-2) 97%, black);
-  transform: rotate(45deg);
-}
-
-.asset-organize-popover > strong {
-  font-size: 11px;
-  font-weight: 650;
-}
-
-.asset-organize-popover ol {
-  display: grid;
-  margin: 13px 0 0;
-  padding: 0;
-  list-style: none;
-  gap: 11px;
-}
-
-.asset-organize-popover li {
-  display: grid;
-  grid-template-columns: 42px 1fr;
-  gap: 8px;
-}
-
-.asset-organize-popover b {
-  color: var(--accent-strong);
-  font-size: 9px;
-  font-weight: 600;
-}
-
-.asset-organize-popover span {
-  color: var(--text-2);
-  font-size: 9px;
-  line-height: 1.45;
 }
 
 .asset-import-trigger svg {
@@ -10378,14 +10321,14 @@ html[data-theme="light"] .project-card-art {
 .asset-card-copy {
   display: grid;
   min-width: 0;
-  padding: 11px 11px 10px;
-  gap: 6px;
+  padding: 12px;
+  gap: 8px;
 }
 
 .asset-card-copy > div:first-child {
   display: grid;
   min-width: 0;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
   gap: 8px;
 }
@@ -10393,7 +10336,7 @@ html[data-theme="light"] .project-card-art {
 .asset-card-copy strong {
   overflow: hidden;
   color: var(--text-1);
-  font-size: 11px;
+  font-size: calc(13px * var(--ui-scale));
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -10403,7 +10346,7 @@ html[data-theme="light"] .project-card-art {
 .asset-card-copy > p,
 .asset-card-meta {
   color: var(--faint);
-  font-size: 8px;
+  font-size: calc(11px * var(--ui-scale));
 }
 
 .asset-card-copy > p {
@@ -10430,10 +10373,10 @@ html[data-theme="light"] .project-card-art {
   max-width: 90px;
   padding: 3px 5px;
   border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
-  border-radius: 3px;
+  border-radius: 5px;
   color: var(--accent-strong);
   background: color-mix(in srgb, var(--accent) 6%, transparent);
-  font-size: 7px;
+  font-size: calc(10px * var(--ui-scale));
   font-style: normal;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -10531,19 +10474,22 @@ html[data-theme="light"] .project-card-art {
 .asset-detail-preview {
   position: relative;
   display: grid;
-  min-height: 230px;
-  max-height: 34%;
+  flex: 0 0 auto;
+  min-height: 0;
+  overflow: hidden;
+  padding: 16px;
   place-items: center;
   border-bottom: 1px solid var(--line);
-  background: radial-gradient(circle at 50% 40%, rgb(255 255 255 / 4%), transparent 60%), #080b0a;
+  background: var(--surface-2);
 }
 
 .asset-detail-preview img,
 .asset-detail-preview video {
   display: block;
   width: 100%;
-  height: 100%;
-  max-height: 310px;
+  height: auto;
+  max-height: min(280px, 32dvh);
+  border-radius: 6px;
   object-fit: contain;
 }
 
@@ -10864,6 +10810,8 @@ html[data-theme="light"] .project-card-art {
   position: fixed;
   display: grid;
   width: 218px;
+  max-height: min(420px, calc(100dvh - 16px));
+  overflow: auto;
   padding: 7px;
   border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
   border-radius: 9px;
@@ -10979,7 +10927,8 @@ html[data-theme="light"] .project-card-art {
 .asset-nav-label,
 .asset-detail-label,
 .asset-rename > label {
-  font-size: 9px;
+  color: var(--text-2);
+  font-size: calc(11px * var(--ui-scale));
 }
 
 .asset-nav-section > button span:not(.asset-kind-mark),
@@ -10992,10 +10941,6 @@ html[data-theme="light"] .project-card-art {
   font-size: 11px;
 }
 
-.asset-card-copy strong {
-  font-size: 12px;
-}
-
 .asset-card-copy > div:first-child > span,
 .asset-card-copy > p,
 .asset-card-meta,
@@ -11006,7 +10951,7 @@ html[data-theme="light"] .project-card-art {
 .asset-use-section > p,
 .asset-action-status,
 .asset-original-link {
-  font-size: 9px;
+  font-size: calc(11px * var(--ui-scale));
 }
 
 .asset-rename input,
@@ -11107,7 +11052,7 @@ html[data-theme="light"] .project-card-art {
   }
 
   .asset-detail-preview {
-    min-height: 240px;
+    min-height: 0;
   }
 
   .asset-library-toolbar {
@@ -11218,7 +11163,7 @@ html[data-theme="light"] .project-card-art {
 
 .shot-quick-edit > div {
   display: grid;
-  grid-template-columns: 1fr 1fr auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   align-items: end;
   gap: 7px;
 }
@@ -11232,13 +11177,15 @@ html[data-theme="light"] .project-card-art {
 
 .shot-quick-edit select,
 .shot-quick-edit input {
+  width: 100%;
+  height: 36px;
   min-width: 0;
   padding: 7px 8px;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: 7px;
   color: var(--text-1);
   background: var(--surface-root);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .prompt-with-mentions {

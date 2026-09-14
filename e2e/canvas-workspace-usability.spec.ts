@@ -83,7 +83,7 @@ test("opening workflows refreshes dependency checks and native recipes expose re
     await page.locator(".react-flow__node-shot").dblclick();
     await expect.poll(() => checks).toBeGreaterThan(0);
     const before = checks;
-    await page.getByRole("button", { name: "管理模型与工作流" }).click();
+    await page.getByRole("button", { name: "管理工作流", exact: true }).click();
     await expect.poll(() => checks).toBeGreaterThan(before);
     await page.getByRole("button", { name: "可添加", exact: true }).click();
     await page.getByRole("button", { name: "解决问题", exact: true }).click();
@@ -220,6 +220,7 @@ test("project overview renders source media and asset management opens as a resp
     await expect(drawer).toHaveCSS("transform", "none");
     for (const width of [1600, 900, 390]) {
       await page.setViewportSize({ width, height: 800 });
+      if (width < 1120) await expect(page.locator(".sidebar")).toHaveCSS("display", "none");
       const rect = await drawer.boundingBox();
       expect(rect?.x).toBeGreaterThanOrEqual(0);
       expect((rect?.x ?? 0) + (rect?.width ?? 0)).toBeLessThanOrEqual(width + 1);

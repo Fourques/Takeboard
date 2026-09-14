@@ -115,7 +115,8 @@
   flex-wrap: wrap;
 }
 .recipe-studio {
-  width: min(1020px, 100vw);
+  width: min(960px, calc(100vw - 56px));
+  border-radius: 16px 0 0 16px;
 }
 .recipe-studio .workflow-import :is(p, i),
 .recipe-studio .studio-footer,
@@ -178,14 +179,37 @@
   color: var(--text-2);
   font-size: calc(12px * var(--ui-scale));
 }
-.recipe-library-actions summary {
-  cursor: pointer;
-  padding: 7px;
+.recipe-card-wrap > .recipe-library-actions {
+  margin: 0;
+  padding: 8px 12px;
+  border-top: 1px solid var(--line);
+  gap: 4px;
+}
+.recipe-card-wrap > .recipe-library-actions :is(button, a) {
+  min-height: 32px;
+  padding: 6px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  text-decoration: none;
+}
+.recipe-card-wrap:has(.selected) {
+  border-color: var(--accent);
+}
+.recipe-card-wrap > .recipe-library-actions :is(button, a):hover {
+  background: var(--panel-raised);
+  color: var(--text-1);
 }
 .recipe-library-actions a {
   color: var(--accent-strong);
 }
 @media (max-width: 720px) {
+  .recipe-studio {
+    width: 100%;
+    border-radius: 0;
+  }
   .recipe-studio .studio-header {
     flex-wrap: wrap;
     gap: 12px;
@@ -335,8 +359,11 @@
   justify-content: flex-end;
   align-items: stretch;
   padding: 0;
-  background: #0002;
-  backdrop-filter: none;
+  background: rgb(3 5 4 / 22%);
+  backdrop-filter: blur(2px);
+}
+.studio-backdrop.asset-backdrop {
+  justify-content: flex-start;
 }
 .studio-backdrop.asset-backdrop .asset-library,
 .storyboard-backdrop .storyboard-shell {
@@ -346,6 +373,20 @@
   border-radius: 16px 0 0 16px;
   box-shadow: -18px 0 70px #0003;
   animation: workspace-drawer-in 180ms ease-out;
+}
+.studio-backdrop.asset-backdrop .asset-library {
+  border-radius: 0 16px 16px 0;
+  animation: backdrop-in 180ms ease-out;
+}
+.studio-backdrop > .layer-dismiss {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  cursor: default;
 }
 .asset-library .asset-library-body {
   grid-template-columns: 150px minmax(0, 1fr) 260px;
@@ -363,6 +404,59 @@
 }
 .asset-library .asset-results-grid {
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+}
+.asset-library-toolbar > select {
+  min-width: 112px;
+  height: 38px;
+  font-size: calc(12px * var(--ui-scale));
+}
+.asset-library-toolbar .asset-search input {
+  min-height: 38px;
+  font-size: calc(12px * var(--ui-scale));
+}
+.asset-detail-preview audio {
+  width: 100%;
+}
+.asset-audio-art {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--accent-strong);
+}
+.asset-audio-art svg {
+  width: 42px;
+  height: 42px;
+}
+.asset-canvas-state {
+  font-size: 10px;
+}
+.app-shell .topbar {
+  gap: 16px;
+}
+.app-shell .project-heading {
+  margin-right: auto;
+  min-width: 0;
+}
+.app-shell .project-heading strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app-shell .top-actions {
+  flex-shrink: 0;
+  gap: 8px;
+}
+.app-shell .top-actions > button {
+  min-height: 36px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+.operations-pill {
+  white-space: nowrap;
+}
+.app-shell .brand-mark {
+  border: 0;
+  cursor: pointer;
 }
 @keyframes workspace-drawer-in {
   from {

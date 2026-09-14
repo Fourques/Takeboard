@@ -20,6 +20,10 @@ export function useEditorSelection(
   }, [snapshot]);
   const selection = useMemo(
     () => ({
+      items: (itemIds: string[], menu?: MenuPosition) => {
+        const snapshot = readDocument()?.snapshot;
+        if (snapshot) dispatch({ type: "items", snapshot, itemIds, ...(menu ? { menu } : {}) });
+      },
       activate: (snapshot: ProjectSnapshot) =>
         dispatch({ type: "activate", snapshot, reveal: false }),
       quick: (itemId: string, toggle = true) => {
@@ -43,12 +47,26 @@ export function useEditorSelection(
     }),
     [readDocument],
   );
+  const selectedCanvasItemIds = useMemo(
+    () =>
+      state.target.kind === "items"
+        ? state.target.ids
+        : state.target.kind === "item"
+          ? [state.target.id]
+          : [],
+    [state.target],
+  );
   return {
     selection,
     canvasContextMenu: state.menu
       ? {
           ...state.menu,
-          itemId: state.target.kind === "item" ? state.target.id : null,
+          itemId:
+            state.target.kind === "item"
+              ? state.target.id
+              : state.target.kind === "items"
+                ? state.target.ids[0]
+                : null,
           edge:
             state.target.kind === "edge"
               ? {
@@ -64,6 +82,7 @@ export function useEditorSelection(
       : null,
     selectedShotId: state.shotContextId,
     selectedCanvasItemId: state.target.kind === "item" ? state.target.id : null,
+    selectedCanvasItemIds,
     selectedEdgeId: state.target.kind === "edge" ? state.target.id : null,
     selectedEdgeIdentity: state.target.kind === "edge" ? state.target.identity : null,
     inspectorOpen: state.inspectorOpen,
