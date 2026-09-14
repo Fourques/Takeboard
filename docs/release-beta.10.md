@@ -8,4 +8,8 @@
 
 本版仍为临时签名调试包，没有 Apple 公证。最终 DMG 需要通过包内运行验证；不宣称本轮完成 Mac 人工交互或 GPU 生成质量验收。
 
+来源提交 `403992dbbca664525b220ea04fcf684b9e0b6ef2`；[Mac 构建与最终包内运行验证](https://github.com/Fourques/Takeboard/actions/runs/34811991726)通过。本地发布门禁及无真实 ComfyUI 的 58 项浏览器回归全部通过。
+
+[云端 CI](https://github.com/Fourques/Takeboard/actions/runs/34811991035)的三系统代码检查和画布性能检查通过；发布准备时浏览器回归仍在进行，不将其记为已通过，最终状态以链接为准。
+
 已知其他平台验证缺口：Linux 原生窗口验收仍在等待已迁入设置的旧远程项目独立窗口，需另行更新验收。此次不发布 Linux 安装包。
