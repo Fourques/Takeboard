@@ -1,5 +1,28 @@
 import { expect, test } from "./fixtures";
 
+test("offline workflow feedback leaves generation controls usable", async ({ page }) => {
+  await page.route("**/api/workflows", (route) =>
+    route.fulfill({ status: 503, json: { error: "无法连接 ComfyUI 服务" } }),
+  );
+  await page.addInitScript(() => window.sessionStorage.setItem("takeboard.resumeDemo", "1"));
+  await page.goto("/");
+  await expect(page.locator(".recovery-toast")).toBeVisible();
+  await page.getByRole("button", { name: "显示检查器", exact: true }).click();
+  const generate = page.getByRole("button", { name: "开始生成", exact: true });
+  for (const viewport of [
+    { width: 1600, height: 900 },
+    { width: 920, height: 620 },
+  ]) {
+    await page.setViewportSize(viewport);
+    if (!(await generate.isVisible()))
+      await page.getByRole("button", { name: "显示检查器", exact: true }).click();
+    await generate.click({ trial: true });
+    await expect(page.locator(".recovery-toast")).toBeVisible();
+  }
+  await generate.click();
+  await expect(page.getByRole("button", { name: "选择候选 1" })).toBeVisible();
+});
+
 test("failed edits keep drafts and offer a real recovery destination without automatic retry", async ({
   page,
   request,

@@ -4005,10 +4005,11 @@ button.save-status {
 .recovery-toast {
   position: fixed;
   z-index: 60;
-  right: 16px;
-  bottom: 16px;
+  top: 76px;
+  left: 50%;
+  transform: translateX(-50%);
   width: min(370px, calc(100vw - 32px));
-  max-height: calc(100dvh - 32px);
+  max-height: min(320px, 40dvh);
   overflow: auto;
   box-shadow: 0 12px 40px var(--shadow);
 }

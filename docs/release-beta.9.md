@@ -1,5 +1,7 @@
 # v0.2.0-beta.9 · 模板库与镜头详情
 
+此版本是未公开的构建候选：离线 ComfyUI 提示遮挡了生成按钮，云端与本地无 ComfyUI 回归均复现。修复后的安装包改用 beta.10，不覆盖已有标签或发布失败候选。
+
 本版仅提供 Mac Apple Silicon（M1 / M2 / M3 / M4 等 M 系列）DMG 调试安装包。Intel Mac、Windows 和 Linux 不发布本次安装包。
 
 ## 更新内容
@@ -19,3 +21,7 @@
 源码已通过类型检查、构建、单元测试及浏览器回归。9 份推荐配置在当前 ComfyUI 上通过只读节点与模型选项检查，不代表本轮完成 GPU 生成质量验证或 Mac 人工交互验收。
 
 构建流程还会挂载最终 DMG，使用包内 Node 运行时检查服务、静态页面及原生依赖。仅该检查成功后上传安装包。
+
+Mac DMG [构建及最终包内验证](https://github.com/Fourques/Takeboard/actions/runs/34810486418)通过，来源提交 `fc07cb6013a042ff7e76793884d0eb5620733e83`。
+
+额外 [Desktop check](https://github.com/Fourques/Takeboard/actions/runs/34810478427) 的 Linux 窗口测试仍等待旧的独立「远程项目」窗口并超时，需跟进设置内新入口的验收；不能计为 Linux 原生验收通过。其中 Mac / Windows 包内运行检查通过。本版只发布上述独立构建中的 Mac M 系列 DMG。
