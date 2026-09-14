@@ -262,55 +262,11 @@
   opacity: 0.85;
   box-shadow: 0 1px 6px #0001;
 }
-.manually-sized .board-node-shell {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
-}
-.manually-sized .board-card {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-}
-.manually-sized :is(.shot-generated-media, .asset-node .node-media) {
-  height: 100%;
-  max-height: none;
-  min-height: 0;
-}
-.manually-sized :is(.shot-generated-media, .asset-node .node-media) > :is(img, video) {
-  height: 100%;
-  max-height: none;
-  min-height: 0;
-  object-fit: contain;
-}
-.manually-sized .shot-planning-surface {
-  height: 100%;
-  min-height: 0;
-}
-.manually-sized .shot-inline-console {
-  flex: 0 0 auto;
-  max-height: 65%;
-  overflow: auto;
-}
-.react-flow__resize-control.handle {
-  width: 9px;
-  height: 9px;
-  border-radius: 3px;
-  background: var(--accent);
-}
-.react-flow__resize-control.line {
-  border-color: var(--accent);
-}
 .inspector .prompt-mention-chips small,
 .inspector .prompt-mention-menu small {
   font-size: 0.8em;
   font-weight: 400;
   opacity: 0.7;
-}
-.inspector .h3-prompt-guide code {
-  font-size: 11px;
-  line-height: 1.7;
 }
 .run-prompt {
   margin-block: 14px;
@@ -326,8 +282,88 @@
   border-radius: 8px;
   background: var(--surface-root);
   font-family: inherit;
-  font-size: 12px;
+  font-size: calc(13px * var(--ui-scale));
   line-height: 1.6;
+}
+.run-identity {
+  margin-bottom: 20px;
+}
+.run-identity > span,
+.run-identity > small {
+  color: var(--text-2);
+  font-size: calc(11px * var(--ui-scale));
+}
+.run-identity h3 {
+  margin: 8px 0;
+  font-size: calc(15px * var(--ui-scale));
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.run-record h4 {
+  margin: 0 0 8px;
+  font-size: calc(12px * var(--ui-scale));
+  font-weight: 600;
+}
+.run-inputs,
+.run-settings {
+  margin-block: 20px;
+}
+.run-inputs ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.run-inputs li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  font-size: calc(12px * var(--ui-scale));
+}
+.run-inputs strong {
+  overflow-wrap: anywhere;
+  font-weight: 400;
+}
+.run-inputs span {
+  flex-shrink: 0;
+  color: var(--text-2);
+}
+.run-settings dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 18px;
+  margin: 0;
+}
+.run-settings dt {
+  color: var(--text-2);
+  font-size: calc(11px * var(--ui-scale));
+}
+.run-settings dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  font-size: calc(13px * var(--ui-scale));
+  font-variant-numeric: tabular-nums;
+}
+.run-raw summary {
+  padding-block: 10px;
+  color: var(--text-2);
+  font-size: calc(12px * var(--ui-scale));
+  cursor: pointer;
+}
+.run-raw pre {
+  font-size: calc(11px * var(--ui-scale));
+}
+.run-model-files {
+  font-size: calc(11px * var(--ui-scale));
+  line-height: 1.7;
+}
+.run-model-files dt {
+  color: var(--text-2);
+}
+.run-model-files dd {
+  margin: 4px 0 12px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 .take-to-canvas {
   width: 100%;
@@ -414,9 +450,6 @@
   min-height: 38px;
   font-size: calc(12px * var(--ui-scale));
 }
-.asset-detail-preview audio {
-  width: 100%;
-}
 .asset-audio-art {
   display: grid;
   place-items: center;
@@ -470,12 +503,7 @@
 }
 @media (max-width: 1050px) {
   .asset-library .asset-library-body {
-    grid-template-columns: 120px minmax(0, 1fr);
-    overflow: auto;
-  }
-  .asset-library .asset-detail-panel {
-    grid-column: 1 / -1;
-    min-height: 200px;
+    grid-template-columns: 150px minmax(0, 1fr) 250px;
   }
   .app-shell .top-actions .save-status {
     display: none;
@@ -489,6 +517,13 @@
   }
   .asset-library .asset-library-body {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .asset-library .asset-detail-panel {
+    overflow: visible;
+    min-height: 0;
+  }
+  .asset-library .asset-detail-scroll {
+    overflow: visible;
   }
   .app-shell .topbar {
     padding-inline: 10px;

@@ -19,6 +19,20 @@ const activated = reduceEditorSelection(emptySelection, {
   reveal: true,
 });
 describe("editor selection transitions", () => {
+  it("preserves the active viewing mode across shots and sources until the canvas is selected", () => {
+    for (const inspectorOpen of [true, false]) {
+      let state = { ...activated, inspectorOpen };
+      for (const itemId of ["node-b", "image", "note", "node-a"]) {
+        state = reduceEditorSelection(state, { type: "quick", snapshot, itemId, toggle: true });
+        expect(state.target).toEqual({ kind: "item", id: itemId });
+        expect(state.inspectorOpen).toBe(inspectorOpen);
+      }
+      expect(reduceEditorSelection(state, { type: "canvas" }).inspectorOpen).toBe(false);
+    }
+    expect(
+      reduceEditorSelection(activated, { type: "quick", snapshot, itemId: "node-a", toggle: true }),
+    ).toMatchObject({ target: { kind: "item", id: "node-a" }, inspectorOpen: true });
+  });
   it("single click toggles quick controls, while explicit inspection is a separate state", () => {
     const first = reduceEditorSelection(
       { ...emptySelection, projectId: "project-a" },

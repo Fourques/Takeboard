@@ -8,7 +8,7 @@ import type {
   ProjectRole,
   RecoveryCodeStatus,
 } from "@takeboard/contracts";
-import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import {
   authApi,
   type BackupAutomationStatus,
@@ -17,6 +17,7 @@ import {
 } from "./api";
 
 import { type CenterContext, ChangePassword } from "./auth-ui";
+import { LayerBackdrop } from "./layer-backdrop";
 
 const RemoteAccessPanel = lazy(() => import("./remote-access-panel"));
 
@@ -923,37 +924,69 @@ export default function AccountCenter({
     ...(user.instanceRole === "admin" ? ["remote", "team", "backup", "activity"] : []),
     ...(hasProjectAccess ? ["project"] : []),
   ] as const;
-  const [tab, setTab] = useState<(typeof tabs)[number]>(hasProjectAccess ? "project" : "profile");
+  const [tab, setTab] = useState<(typeof tabs)[number]>("profile");
   const [name, setName] = useState(user.name);
   const [message, setMessage] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const previousFocus =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    dialogRef.current?.focus();
+    return () => previousFocus?.focus();
+  }, []);
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+      }
+      if (event.key !== "Tab") return;
+      const targets = Array.from(
+        dialogRef.current?.querySelectorAll<HTMLElement>(
+          'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex="0"]',
+        ) ?? [],
+      ).filter((element) => element.getClientRects().length > 0);
+      const first = targets[0];
+      const last = targets.at(-1);
+      if (!first) {
+        event.preventDefault();
+        return;
+      }
+      if (
+        event.shiftKey &&
+        (document.activeElement === first || document.activeElement === dialogRef.current)
+      ) {
+        event.preventDefault();
+        last?.focus();
+      } else if (
+        !event.shiftKey &&
+        (document.activeElement === last || document.activeElement === dialogRef.current)
+      ) {
+        event.preventDefault();
+        first.focus();
+      }
     };
     window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("keydown", closeOnEscape);
+    };
   }, [onClose]);
   return (
-    <div className="modal-backdrop account-backdrop">
-      <button
-        className="account-dismiss-layer"
-        type="button"
-        aria-label="关闭账号设置"
-        onClick={onClose}
-      />
+    <LayerBackdrop className="account-backdrop" onClose={onClose}>
       <section
         className="account-center"
         role="dialog"
         aria-modal="true"
         aria-labelledby="account-title"
+        ref={dialogRef}
+        tabIndex={-1}
       >
         <header>
           <div>
             <span className="account-avatar large">{user.name.slice(0, 1).toUpperCase()}</span>
             <div>
-              <small>TAKEBOARD ACCOUNT</small>
-              <h2 id="account-title">{context.projectTitle ?? user.name}</h2>
-              <p>{context.projectTitle ? "项目访问与工作室账号" : user.email}</p>
+              <h2 id="account-title">我的账号</h2>
+              <p>{user.email}</p>
             </div>
           </div>
           <button type="button" aria-label="关闭账号设置" onClick={onClose}>
@@ -1130,6 +1163,6 @@ export default function AccountCenter({
           </div>
         </div>
       </section>
-    </div>
+    </LayerBackdrop>
   );
 }

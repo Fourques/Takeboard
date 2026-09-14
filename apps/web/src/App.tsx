@@ -1888,45 +1888,6 @@ export function App() {
       data: {
         ...node.data,
         selected: selectedCanvasItemIds.includes(node.id),
-        ...(projectKey && projectMode === "project" && canEditProject
-          ? {
-              onResizeEnd: (geometry: { x: number; y: number; width: number; height: number }) => {
-                void projectApi
-                  .executeCommand(projectKey, {
-                    type: "canvas.resize_item",
-                    itemId: node.id,
-                    ...geometry,
-                  })
-                  .then(acceptPayload)
-                  .catch((cause: unknown) => {
-                    const current = readProjectDocument();
-                    if (current?.snapshot.project.id !== snapshot.project.id) return;
-                    setError(cause instanceof Error ? cause.message : "尺寸保存失败");
-                    const restored = boardNodes(
-                      current.snapshot,
-                      selectedCanvasItemId,
-                      projectKey,
-                      workflows,
-                      selectedWorkflow,
-                      selectedShot?.id ?? null,
-                      null,
-                    ).find((item) => item.id === node.id);
-                    if (restored)
-                      setNodes((previous) =>
-                        previous.map((item) =>
-                          item.id === node.id
-                            ? {
-                                ...restored,
-                                data: item.data,
-                                selected: item.selected ?? false,
-                              }
-                            : item,
-                        ),
-                      );
-                  });
-              },
-            }
-          : {}),
       },
     }));
     setNodes((previous) => retainNodeMeasurements(previous, interactiveNodes));
@@ -1956,8 +1917,6 @@ export function App() {
     bindWorkflow,
     inspectorVisible,
     focusMode,
-    acceptPayload,
-    readProjectDocument,
   ]);
 
   if (showHub) {
@@ -2132,7 +2091,7 @@ export function App() {
             <button
               type="button"
               aria-label="打开分镜墙"
-              title="打开分镜墙"
+              title="镜头总览 · 排序与粗剪"
               onClick={() => setStoryboardOpen(true)}
             >
               ▦

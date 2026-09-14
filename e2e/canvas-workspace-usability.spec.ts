@@ -103,7 +103,10 @@ test("opening workflows refreshes dependency checks and native recipes expose re
   }
 });
 
-test("new shots use the visible viewport and node resizing persists", async ({ page, request }) => {
+test("new shots use the visible viewport and legacy manual sizing cannot distort their layout", async ({
+  page,
+  request,
+}) => {
   const title = `视野与缩放 ${Date.now()}`;
   const created = await request.post("/api/projects", { data: { title } });
   expect(created.ok()).toBeTruthy();
@@ -126,24 +129,27 @@ test("new shots use the visible viewport and node resizing persists", async ({ p
     const shot = page.locator(".react-flow__node-shot");
     await expect(shot).toHaveCount(1);
     await expect(shot.locator(".shot-planning-surface")).toBeInViewport();
-    const handle = shot.locator(".react-flow__resize-control.handle.bottom.right");
-    await expect(handle).toBeVisible();
-    const corner = await handle.boundingBox();
-    if (!corner) throw new Error("Missing resize handle");
-    await page.mouse.move(corner.x + corner.width / 2, corner.y + corner.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(corner.x + 110, corner.y + 70, { steps: 12 });
-    await page.mouse.up();
-    await expect
-      .poll(
-        async () =>
-          (await (await request.get(`/api/projects/${key}`)).json()).snapshot.canvasItems[0]
-            .sizeMode,
-      )
-      .toBe("manual");
-    const resized = (await (await request.get(`/api/projects/${key}`)).json()).snapshot
+    await expect(shot.locator(".react-flow__resize-control")).toHaveCount(0);
+    const original = (await (await request.get(`/api/projects/${key}`)).json()).snapshot
       .canvasItems[0];
-    expect(resized.width).toBeGreaterThan(470);
+    // Simulate a legacy project, including dimensions that previously broke the controls.
+    expect(
+      (
+        await request.post(`/api/projects/${key}/commands`, {
+          data: {
+            requestId: crypto.randomUUID(),
+            command: {
+              type: "canvas.resize_item",
+              itemId: original.id,
+              x: original.x,
+              y: original.y,
+              width: 180,
+              height: 100,
+            },
+          },
+        })
+      ).ok(),
+    ).toBeTruthy();
     await page.getByRole("button", { name: "专注", exact: true }).click();
     await expect(page.locator(".inspector")).toBeHidden();
     const focused = await canvas.boundingBox();
@@ -155,10 +161,13 @@ test("new shots use the visible viewport and node resizing persists", async ({ p
       .filter({ hasText: title })
       .getByRole("button", { name: /打开画板/ })
       .click();
-    await expect(page.locator(".react-flow__node-shot")).toHaveClass(/manually-sized/);
+    await expect(shot).not.toHaveClass(/manually-sized/);
+    await expect(shot).toHaveCSS("width", "470px");
+    expect(await shot.evaluate((node) => node.style.height)).toBe("");
+    await expect(shot.locator(".shot-planning-surface")).toBeVisible();
     expect(
       (await (await request.get(`/api/projects/${key}`)).json()).snapshot.canvasItems[0].width,
-    ).toBe(resized.width);
+    ).toBe(180);
   } finally {
     expect((await request.delete(`/api/projects/${key}`)).ok()).toBeTruthy();
   }
@@ -188,27 +197,8 @@ test("project overview renders source media and asset management opens as a resp
     await card.getByRole("button", { name: /打开画板/ }).click();
     const asset = page.locator(".react-flow__node-asset");
     await asset.click();
-    const initial = await asset.boundingBox();
-    const handle = await asset
-      .locator(".react-flow__resize-control.handle.bottom.right")
-      .boundingBox();
-    if (!initial || !handle) throw new Error("Missing media resize geometry");
-    await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(handle.x + 75, handle.y + 35, { steps: 12 });
-    await page.mouse.up();
-    await expect
-      .poll(
-        async () =>
-          (await (await request.get(`/api/projects/${key}`)).json()).snapshot.canvasItems[0]
-            .sizeMode,
-      )
-      .toBe("manual");
+    await expect(asset.locator(".react-flow__resize-control")).toHaveCount(0);
     const state = (await (await request.get(`/api/projects/${key}`)).json()).snapshot;
-    expect(state.canvasItems[0].width / state.canvasItems[0].height).toBeCloseTo(
-      initial.width / initial.height,
-      1,
-    );
     expect(state.assets[0]).toMatchObject({
       width: 750,
       height: 900,
@@ -387,6 +377,18 @@ test("real project results can be revoked and individually dragged or added with
     await expect(page.locator(".inspector")).toContainText("4200");
     await expect(page.locator(".inspector")).toContainText("fixture-model.safetensors");
     await expect(page.locator(".run-prompt")).toContainText("柔和的晨光");
+    await page.locator(".run-record").scrollIntoViewIfNeeded();
+    await expect(page.locator(".run-identity h3")).toHaveText("fixture-model");
+    await expect(page.locator(".run-settings")).toContainText("4200");
+    await expect(page.locator(".run-settings")).not.toContainText("帧率");
+    await page.locator(".run-raw summary").click();
+    await expect(page.locator(".run-model-files")).toBeVisible();
+    await expect(page.locator(".run-model-files")).toContainText("fixture-model.safetensors");
+    await page.locator(".run-raw summary").click();
+    await page.screenshot({
+      path: "test-results/generation-record-details.png",
+      animations: "disabled",
+    });
     await page.getByRole("button", { name: "加入画布", exact: true }).click();
     await expect(page.locator(".react-flow__node-asset")).toHaveCount(1);
     await shotNode.dblclick();

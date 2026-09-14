@@ -317,9 +317,9 @@ test("fake generation and approval survive reload", async ({ page }) => {
 
   await page.getByRole("button", { name: "选择候选 2" }).click();
   await page.locator(".react-flow__node-shot").first().click();
-  await expect(page.getByLabel("镜头候选检查器")).toBeHidden();
+  await expect(page.getByLabel("镜头候选检查器")).toBeVisible();
   await expect(page.locator(".shot-inline-console")).toHaveCount(0);
-  await page.locator(".react-flow__node-shot").first().click();
+  await page.getByRole("button", { name: "收起检查器" }).click();
   await expect(page.locator(".shot-inline-console")).toBeVisible();
   await page.locator(".react-flow__node-shot").first().dblclick();
   await page.getByRole("button", { name: "选择候选 2" }).click();
@@ -328,6 +328,7 @@ test("fake generation and approval survive reload", async ({ page }) => {
   await expect(page.getByText("镜头完成度").locator("..").getByText("1/3")).toBeVisible();
   await expect(page.locator(".shot-inline-console")).toHaveCount(0);
 
+  await page.getByRole("button", { name: "收起检查器" }).click();
   await page.locator(".react-flow__node-shot").first().click();
   await expect(page.locator(".shot-inline-console")).toBeVisible();
   page.once("dialog", async (dialog) => {
@@ -493,7 +494,8 @@ test("a generated shot becomes the full visual node on canvas", async ({ page, r
   await expect(generatedNode.locator(".shot-generated-overlay")).toContainText(
     /Qwen\s*Image\s*2512 T2I/,
   );
-  await expect(generatedNode.locator(".shot-generated-overlay")).toContainText("5 秒");
+  await expect(generatedNode.locator(".shot-generated-overlay")).toContainText("图片");
+  await expect(generatedNode.locator(".shot-generated-overlay")).not.toContainText("秒");
   await expect(generatedNode.locator(".shot-generated-overlay")).not.toContainText("已批准");
   await expect(page.locator(".react-flow__node-shot")).not.toContainText("未选择模型");
   await page.locator(".react-flow__node-shot").click();
@@ -670,6 +672,27 @@ test("a generated video loads and remains controllable on canvas", async ({ page
   await expect
     .poll(() => assetVideo.evaluate((element: HTMLVideoElement) => element.currentTime))
     .toBeGreaterThan(0);
+  await page.locator(".asset-vault-card").filter({ hasText: "generated-shot" }).click();
+  const detailVideo = page.locator(".asset-detail-panel .detail-media video");
+  await expect
+    .poll(() => detailVideo.evaluate((element: HTMLVideoElement) => element.readyState))
+    .toBeGreaterThanOrEqual(2);
+  const detailRatio = await detailVideo.evaluate((element: HTMLVideoElement) => {
+    const bounds = element.getBoundingClientRect();
+    return {
+      actual: bounds.width / bounds.height,
+      intrinsic: element.videoWidth / element.videoHeight,
+    };
+  });
+  expect(detailRatio.actual).toBeCloseTo(detailRatio.intrinsic, 2);
+  await expect(detailVideo).toHaveCSS("border-width", "0px");
+  await expect(detailVideo).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await detailVideo.evaluate((element: HTMLVideoElement) => element.play());
+  await expect
+    .poll(() => detailVideo.evaluate((element: HTMLVideoElement) => element.paused))
+    .toBe(false);
+  await page.screenshot({ path: "test-results/detail-video-playing.png", animations: "disabled" });
+  await detailVideo.evaluate((element: HTMLVideoElement) => element.pause());
   await page.getByRole("button", { name: "关闭资产库" }).click();
   await page.screenshot({
     path: "test-results/takeboard-generated-video-node.png",
@@ -988,7 +1011,8 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
     "contain",
   );
   await originalAssetNode.dblclick();
-  await expect(page.getByText("原始文件只读保存")).toBeVisible();
+  await expect(page.locator(".inspector .detail-media img")).toBeVisible();
+  await expect(page.getByRole("link", { name: "下载原图", exact: true })).toBeVisible();
   await expect(page.getByText("尚未连接到模型输入")).toBeVisible();
   const customTagInput = page.getByLabel("新增自定义标签");
   await customTagInput.fill("夜景");

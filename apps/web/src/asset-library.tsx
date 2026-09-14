@@ -1,8 +1,9 @@
 import type { Asset, CanvasItem, Entity } from "@takeboard/contracts";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { projectApi } from "./api";
+import { DetailMedia } from "./detail-media";
 import { LayerBackdrop } from "./layer-backdrop";
-import { seekPreviewFrame, VideoThumbnail } from "./video-preview";
+import { VideoThumbnail } from "./video-preview";
 
 type AssetKind = "character" | "location" | "prop";
 type AssetScope = "all" | "image" | "video" | "character" | "location" | "prop" | "loose";
@@ -896,30 +897,11 @@ export function AssetLibrary({
           <section className="asset-detail-panel" aria-label="素材详情">
             {selectedAsset ? (
               <>
-                <div className="asset-detail-preview">
-                  {selectedAsset.mediaType === "video" ? (
-                    // biome-ignore lint/a11y/useMediaCaption: User-imported reference clips do not necessarily include caption tracks.
-                    <video
-                      src={projectApi.assetUrl(projectKey, selectedAsset.id)}
-                      controls
-                      playsInline
-                      preload="metadata"
-                      onLoadedData={(event) => seekPreviewFrame(event.currentTarget)}
-                    />
-                  ) : selectedAsset.mediaType === "audio" ? (
-                    // biome-ignore lint/a11y/useMediaCaption: Imported audio may not have a transcript.
-                    <audio
-                      src={projectApi.assetUrl(projectKey, selectedAsset.id)}
-                      controls
-                      preload="metadata"
-                    />
-                  ) : (
-                    <img
-                      src={projectApi.assetUrl(projectKey, selectedAsset.id, true)}
-                      alt={selectedAsset.originalName}
-                    />
-                  )}
-                </div>
+                <DetailMedia
+                  src={projectApi.assetUrl(projectKey, selectedAsset.id)}
+                  kind={selectedAsset.mediaType}
+                  label={selectedAsset.originalName}
+                />
                 <div className="asset-detail-scroll">
                   <form
                     className="asset-rename"

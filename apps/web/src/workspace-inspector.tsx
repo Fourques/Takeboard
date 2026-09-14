@@ -1,19 +1,23 @@
 import type { Asset, CanvasItem, ProjectSnapshot, Run, Shot, Take } from "@takeboard/contracts";
 import { resolveGenerationResolution } from "@takeboard/contracts";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { projectApi, type WorkflowSummary } from "./api";
-import type { GenerationProgress, GenerationSettings, PromptMention } from "./generation-model";
+import { DetailMedia } from "./detail-media";
+import {
+  type GenerationProgress,
+  type GenerationSettings,
+  generationPromptPlaceholder,
+  type PromptMention,
+} from "./generation-model";
+import { GenerationRecord } from "./generation-record";
 import type { ModelProfile } from "./model-profiles";
 import { NumericInput } from "./numeric-input";
 import { type RecoveryAction, recoveryGuidance } from "./recovery-guidance";
 import { RecoveryNotice } from "./recovery-notice";
 import { openSettings } from "./settings-navigation";
-import { seekPreviewFrame, VideoThumbnail } from "./video-preview";
+import { VideoThumbnail } from "./video-preview";
 
 const rejectionReasons = ["角色漂移", "运动方向错误", "构图不稳定", "细节异常"];
-const ExecutionProvenance = lazy(() =>
-  import("./execution-provenance").then((module) => ({ default: module.ExecutionProvenance })),
-);
 
 function CandidateArt({
   source,
@@ -80,23 +84,19 @@ export function NodeContextInspector({
     return (
       <aside className="inspector node-context-inspector" aria-label="剧本节点检查器">
         <div className="context-hero context-hero-text">
-          <div className="context-icon">文</div>
           <div>
-            <span className="section-kicker">SCRIPT SOURCE</span>
             <h2>{text?.title || "未命名文本"}</h2>
             <p>
               {scene?.label ?? "场景"} · {text?.kind === "script" ? "剧本" : "创作笔记"}
             </p>
           </div>
           <div className="context-hero-actions">
-            <span className="context-type-pill">TEXT</span>
             <InspectorDismiss onClose={onClose} />
           </div>
         </div>
         <section className="context-section">
           <div className="context-section-heading">
             <div>
-              <span className="section-kicker">CONTENT</span>
               <h3>文本内容</h3>
             </div>
             <span>{text?.body.length ?? 0} 字</span>
@@ -121,7 +121,6 @@ export function NodeContextInspector({
             只读访问 · 可以查看文本内容，不能改写镜头提示词。
           </div>
         )}
-        <ContextSelectionHint />
       </aside>
     );
   }
@@ -132,6 +131,7 @@ export function NodeContextInspector({
       entity?.referenceAssetIds.includes(asset.id),
     );
     const firstImage = references.find((asset) => asset.mediaType === "image");
+    const firstImageUrl = firstImage ? sourceUrl(firstImage, false) : undefined;
     const typeLabel =
       entity?.kind === "character"
         ? "人物资产"
@@ -141,36 +141,22 @@ export function NodeContextInspector({
     return (
       <aside className="inspector node-context-inspector" aria-label="实体节点检查器">
         <div className="context-hero context-hero-entity">
-          <div className="context-icon">
-            {entity?.kind === "character" ? "角" : entity?.kind === "location" ? "景" : "物"}
-          </div>
           <div>
-            <span className="section-kicker">ASSET IDENTITY</span>
             <h2>{entity?.name ?? "未命名资产"}</h2>
             <p>
               {typeLabel} · {references.length} 张参考
             </p>
           </div>
           <div className="context-hero-actions">
-            <span className="context-type-pill">ENTITY</span>
             <InspectorDismiss onClose={onClose} />
           </div>
         </div>
-        {firstImage && sourceUrl(firstImage) ? (
-          <div className="context-media context-media-portrait">
-            <img src={sourceUrl(firstImage)} alt={`${entity?.name ?? "资产"}参考图`} />
-            <span>PRIMARY REFERENCE</span>
-          </div>
-        ) : (
-          <div className="context-media context-media-empty">
-            <span>{entity?.kind === "character" ? "人物参考位" : "视觉参考位"}</span>
-            <small>可从资产库补充参考图片</small>
-          </div>
-        )}
+        {firstImageUrl ? (
+          <DetailMedia src={firstImageUrl} kind="image" label={`${entity?.name ?? "资产"}参考图`} />
+        ) : null}
         <section className="context-section">
           <div className="context-section-heading">
             <div>
-              <span className="section-kicker">PROFILE</span>
               <h3>设定描述</h3>
             </div>
           </div>
@@ -206,7 +192,6 @@ export function NodeContextInspector({
             </button>
           ) : null}
         </section>
-        <ContextSelectionHint />
       </aside>
     );
   }
@@ -233,9 +218,7 @@ export function NodeContextInspector({
   return (
     <aside className="inspector node-context-inspector" aria-label="素材节点检查器">
       <div className="context-hero context-hero-asset">
-        <div className="context-icon">素</div>
         <div>
-          <span className="section-kicker">SOURCE ASSET</span>
           <h2>{asset?.originalName ?? "素材"}</h2>
           <p>
             {asset?.mediaType.toUpperCase() ?? "FILE"} ·{" "}
@@ -243,32 +226,14 @@ export function NodeContextInspector({
           </p>
         </div>
         <div className="context-hero-actions">
-          <span className="context-type-pill">ASSET</span>
           <InspectorDismiss onClose={onClose} />
         </div>
       </div>
-      <div className="context-media context-media-asset">
-        {assetUrl && asset?.mediaType === "image" ? (
-          <img src={assetUrl} alt={asset.originalName} />
-        ) : assetUrl && asset?.mediaType === "video" ? (
-          <video src={assetUrl} controls muted playsInline />
-        ) : assetUrl && asset?.mediaType === "audio" ? (
-          <div className="context-audio-preview">
-            <span aria-hidden="true">♪</span>
-            {/* biome-ignore lint/a11y/useMediaCaption: raw reference audio has no authored caption track */}
-            <audio src={assetUrl} controls preload="metadata" />
-          </div>
-        ) : (
-          <div className="context-media-empty">
-            <span>{asset?.mediaType === "audio" ? "音频素材" : "素材预览"}</span>
-            <small>{projectKey ? "暂时无法生成预览" : "Demo 不读取本地文件"}</small>
-          </div>
-        )}
-        <span className="context-media-label">{asset?.mimeType ?? "MEDIA"}</span>
-      </div>
+      {assetUrl && asset ? (
+        <DetailMedia src={assetUrl} kind={asset.mediaType} label={asset.originalName} />
+      ) : null}
       {assetUrl && asset?.mediaType === "image" ? (
         <div className="original-asset-actions">
-          <span>原始文件只读保存；后续裁切、扩图或重绘将创建新的衍生节点。</span>
           <div>
             <a href={assetUrl} target="_blank" rel="noreferrer">
               查看原图 ↗
@@ -282,7 +247,6 @@ export function NodeContextInspector({
       <section className="context-section">
         <div className="context-section-heading">
           <div>
-            <span className="section-kicker">METADATA</span>
             <h3>素材信息</h3>
           </div>
         </div>
@@ -305,7 +269,6 @@ export function NodeContextInspector({
         <>
           <section className="context-connection-roles">
             <div>
-              <span className="section-kicker">CONNECTED AS</span>
               <h3>连接用途</h3>
             </div>
             <div className="connection-role-badges">
@@ -314,11 +277,9 @@ export function NodeContextInspector({
               {connectedRoles.has("reference") ? <span>参考图</span> : null}
               {connectedRoles.size === 0 ? <em>尚未连接到模型输入</em> : null}
             </div>
-            <p>从照片右侧端口拖到模型输入，系统会自动记录用途并占用对应输入。</p>
           </section>
           <section className="context-custom-tags">
             <div>
-              <span className="section-kicker">CUSTOM TAGS</span>
               <h3>自定义标签</h3>
             </div>
             {asset.customTags.length ? (
@@ -367,27 +328,10 @@ export function NodeContextInspector({
                 </button>
               </div>
             ) : null}
-            <p>
-              {readOnly
-                ? "标签由项目编辑者维护。"
-                : "自定义标签只用于整理与检索，不会改变模型输入。"}
-            </p>
           </section>
         </>
       ) : null}
-      <ContextSelectionHint />
     </aside>
-  );
-}
-
-function ContextSelectionHint() {
-  return (
-    <div className="context-selection-hint">
-      <span>⌁</span>
-      <p>
-        <strong>节点已选中</strong>点击其他卡片切换内容；点击画布空白处即可收起。
-      </p>
-    </div>
   );
 }
 
@@ -555,6 +499,7 @@ export function Inspector({
   };
   const mediaType = (assetId: string) =>
     assets.find((candidate) => candidate.id === assetId)?.mediaType;
+  const selectedMediaUrl = selectedTake ? mediaSource(selectedTake.assetId) : undefined;
   const resolutionPolicy =
     workflow?.execution !== "native"
       ? "exact"
@@ -760,13 +705,11 @@ export function Inspector({
                         if (event.key === "@" && mentions.length > 0) setMentionOpen(true);
                         if (event.key === "Escape") setMentionOpen(false);
                       }}
-                      placeholder={
-                        profile.family === "minimax_h3"
-                          ? "按时间线描述画面与声音，例如 [0s-2s] 动作、运镜、对白与环境声…"
-                          : mentions.length
-                            ? "输入 @ 引用已连接画面…"
-                            : "描述一个主要动作、运镜、速度和光线连续性…"
-                      }
+                      placeholder={generationPromptPlaceholder(
+                        profile.family,
+                        workflow?.capability,
+                        mentions.length > 0,
+                      )}
                     />
                     {mentions.length ? (
                       <div className={`prompt-mention-menu ${mentionOpen ? "open" : ""}`}>
@@ -821,26 +764,6 @@ export function Inspector({
                       </div>
                     ) : null}
                   </label>
-                  {profile.family === "minimax_h3" ? (
-                    <details className="h3-prompt-guide">
-                      <summary>H3 音画提示词结构</summary>
-                      {workflow?.capability === "reference_video" ? (
-                        <p>
-                          先定义参考素材提供的人物、场景、动作或声线，再按播放顺序写镜头。使用上方的
-                          @素材名；提交时会自动转换为 H3 所需的 Picture / Video / Audio 标签。
-                        </p>
-                      ) : (
-                        <p>
-                          按镜头时间线描述画面、动作、运镜、对白和同步声音；最后分别说明整体环境声与非画内配乐。
-                        </p>
-                      )}
-                      <code>
-                        {workflow?.capability === "reference_video"
-                          ? "subject_definitions → summary → retention_analysis → detailed_description → overall_soundscape → non_diegetic_music"
-                          : "integrated_multimodal_description → overall_soundscape → non_diegetic_music"}
-                      </code>
-                    </details>
-                  ) : null}
                   {workflow?.inputs.includes("negative_prompt") ? (
                     <label className="negative-field">
                       <span>负面提示词</span>
@@ -988,7 +911,7 @@ export function Inspector({
                     ) : null}
                     {profile.family === "minimax_h3" &&
                     workflow?.capability === "reference_video" ? (
-                      <details className="h3-prompt-guide">
+                      <details className="reference-processing">
                         <summary>参考图处理</summary>
                         <label className="seed-field" htmlFor="generation-reference-fidelity">
                           <span>参考图精度</span>
@@ -1137,25 +1060,12 @@ export function Inspector({
               </div>
               {selectedTake ? (
                 <>
-                  {selectedTake.status !== "media_missing" &&
-                  mediaType(selectedTake.assetId) === "image" ? (
-                    <div className="selected-take-preview">
-                      <img src={mediaSource(selectedTake.assetId)} alt="当前生成结果" />
-                    </div>
-                  ) : selectedTake.status !== "media_missing" &&
-                    mediaType(selectedTake.assetId) === "video" ? (
-                    <div className="selected-take-preview">
-                      <video
-                        src={mediaSource(selectedTake.assetId)}
-                        controls
-                        muted
-                        playsInline
-                        preload="metadata"
-                        aria-label="当前生成结果"
-                        onLoadedMetadata={(event) => seekPreviewFrame(event.currentTarget)}
-                        onLoadedData={(event) => seekPreviewFrame(event.currentTarget)}
-                      />
-                    </div>
+                  {selectedTake.status !== "media_missing" && selectedMediaUrl ? (
+                    <DetailMedia
+                      src={selectedMediaUrl}
+                      kind={mediaType(selectedTake.assetId) ?? "image"}
+                      label="当前生成结果"
+                    />
                   ) : null}
                   <div className="decision-panel">
                     <div className="decision-id">
@@ -1221,84 +1131,12 @@ export function Inspector({
                 </>
               ) : null}
               {selectedTakeRun ? (
-                <section className="inspector-section run-record" aria-label="生成记录">
-                  <h3>生成记录</h3>
-                  <div className="context-facts context-facts-wide">
-                    <span>
-                      <small>工作流</small>
-                      {String(selectedTakeRun.parameters.recipePath ?? selectedTakeRun.recipeId)}
-                    </span>
-                    <span>
-                      <small>模型文件</small>
-                      {Array.isArray(selectedTakeRun.parameters.models) &&
-                      selectedTakeRun.parameters.models.length
-                        ? selectedTakeRun.parameters.models.join(" · ")
-                        : "未记录"}
-                    </span>
-                    <span>
-                      <small>工作流版本</small>
-                      {selectedTakeRun.recipeVersion}
-                    </span>
-                    <span>
-                      <small>种子</small>
-                      {String(selectedTakeRun.parameters.seed ?? "未记录")}
-                    </span>
-                    <span>
-                      <small>尺寸</small>
-                      {String(selectedTakeRun.parameters.width ?? "—")} ×{" "}
-                      {String(selectedTakeRun.parameters.height ?? "—")}
-                    </span>
-                    <span>
-                      <small>时长 / 帧率</small>
-                      {String(selectedTakeRun.parameters.durationSeconds ?? "—")} s ·{" "}
-                      {String(selectedTakeRun.parameters.fps ?? "—")} fps
-                    </span>
-                    <span>
-                      <small>步数</small>
-                      {String(selectedTakeRun.parameters.steps ?? "—")}
-                    </span>
-                    <span>
-                      <small>生成时间</small>
-                      {new Date(selectedTakeRun.createdAt).toLocaleString()}
-                    </span>
-                  </div>
-                  <div className="run-prompt">
-                    <small>提示词</small>
-                    <pre>{String(selectedTakeRun.parameters.prompt ?? "未记录")}</pre>
-                  </div>
-                  {selectedTakeRun.parameters.negativePrompt ||
-                  selectedTakeRun.parameters.negative_prompt ? (
-                    <div className="run-prompt">
-                      <small>负向提示词</small>
-                      <pre>
-                        {String(
-                          selectedTakeRun.parameters.negativePrompt ??
-                            selectedTakeRun.parameters.negative_prompt,
-                        )}
-                      </pre>
-                    </div>
-                  ) : null}
-                  <details className="run-raw">
-                    <summary>完整参数与输入</summary>
-                    <pre>
-                      {JSON.stringify(
-                        {
-                          parameters: selectedTakeRun.parameters,
-                          inputs: selectedTakeRun.inputs,
-                          workflowSha256: selectedTakeRun.workflowSha256,
-                          promptId: selectedTakeRun.promptId,
-                        },
-                        null,
-                        2,
-                      )}
-                    </pre>
-                    {selectedTakeRun.execution ? (
-                      <Suspense fallback={null}>
-                        <ExecutionProvenance run={selectedTakeRun} />
-                      </Suspense>
-                    ) : null}
-                  </details>
-                </section>
+                <GenerationRecord
+                  run={selectedTakeRun}
+                  assets={assets}
+                  workflows={workflows}
+                  outputType={selectedTake ? mediaType(selectedTake.assetId) : undefined}
+                />
               ) : null}
             </>
           )}

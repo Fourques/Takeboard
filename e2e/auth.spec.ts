@@ -134,7 +134,7 @@ test("administrator can understand and operate external backup protection", asyn
   await page.goto("/");
   await page.locator(".account-button").first().click();
   await page.getByRole("button", { name: "备份与恢复" }).click();
-  const account = page.getByRole("dialog", { name: /TakeBoard E2E/ });
+  const account = page.getByRole("dialog", { name: "我的账号" });
   await expect(account.getByRole("heading", { name: "外部副本与恢复演练" })).toBeVisible();
   await expect(account.getByText("保护正常")).toBeVisible();
   await expect(account.getByText("3 份")).toBeVisible();

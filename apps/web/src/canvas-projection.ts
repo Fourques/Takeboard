@@ -5,6 +5,7 @@ import { projectApi, type WorkflowSummary } from "./api";
 import type { BoardNode } from "./board-nodes";
 import {
   findWorkflow,
+  generationPromptPlaceholder,
   type PromptMention,
   runWorkflowPath,
   type ShotCanvasControls,
@@ -41,7 +42,9 @@ export function boardNodes(
     const common = {
       id: item.id,
       position: { x: item.x, y: item.y },
-      style: { width: item.width },
+      // Old free-form sizes remain in storage for compatibility, not in presentation.
+      // Media owns its aspect ratio; controls and text own their natural height.
+      style: { width: item.sizeMode === "manual" ? 320 : item.width },
       type: item.refType,
       selected: selectedCanvasItemId === item.id,
     };
@@ -145,7 +148,7 @@ export function boardNodes(
     return {
       ...common,
       style: {
-        width: Math.max(item.width, 470),
+        width: item.sizeMode === "manual" ? 470 : Math.max(item.width, 470),
       },
       data: {
         kind: "shot",
@@ -192,6 +195,11 @@ export function boardNodes(
                 })),
                 workflowLocked: controls.workflowLocked,
                 prompt: controls.settings.prompt,
+                promptPlaceholder: generationPromptPlaceholder(
+                  profile.family,
+                  workflow?.capability,
+                  controls.mentionAliases.length > 0,
+                ),
                 width: controls.settings.width,
                 height: controls.settings.height,
                 durationSeconds: controls.settings.durationSeconds,
@@ -214,16 +222,7 @@ export function boardNodes(
       },
     };
   });
-  return projected.map((node, index) => {
-    const item = snapshot.canvasItems[index];
-    return item?.sizeMode === "manual"
-      ? {
-          ...node,
-          className: "manually-sized",
-          style: { ...node.style, width: item.width, height: item.height },
-        }
-      : node;
-  });
+  return projected;
 }
 
 export function boardEdges(

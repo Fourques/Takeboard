@@ -269,7 +269,7 @@ function AuthScreen({
                 autoComplete="name"
                 maxLength={120}
                 onChange={(event) => setName(event.target.value)}
-                placeholder="例如：Duan"
+                placeholder="你的称呼"
                 required
                 value={name}
               />
@@ -607,10 +607,22 @@ function LoginDialog({ children, onClose }: { children: ReactNode; onClose?: () 
     return () => dialog?.close();
   }, []);
   return (
+    // biome-ignore lint/a11y/useKeyWithClickEvents: native dialog onCancel supplies the Escape equivalent to outside-click dismissal.
     <dialog
       ref={ref}
       className="auth-login-dialog"
       aria-label="账号登录"
+      onClick={(event) => {
+        if (event.target !== event.currentTarget || !onClose) return;
+        const box = event.currentTarget.getBoundingClientRect();
+        if (
+          event.clientX < box.left ||
+          event.clientX > box.right ||
+          event.clientY < box.top ||
+          event.clientY > box.bottom
+        )
+          onClose();
+      }}
       onCancel={(event) => {
         event.preventDefault();
         onClose?.();

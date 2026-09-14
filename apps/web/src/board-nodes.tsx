@@ -1,17 +1,9 @@
-import {
-  Handle,
-  type Node,
-  type NodeProps,
-  NodeResizer,
-  Position,
-  useUpdateNodeInternals,
-} from "@xyflow/react";
+import { Handle, type Node, type NodeProps, Position, useUpdateNodeInternals } from "@xyflow/react";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { NumericInput } from "./numeric-input";
 import { CanvasVideo } from "./video-preview";
 
 export type BoardNodeData = {
-  onResizeEnd?: (geometry: { x: number; y: number; width: number; height: number }) => void;
   kind: "text" | "entity" | "asset" | "shot" | "take_stack";
   eyebrow: string;
   title: string;
@@ -46,6 +38,7 @@ export type BoardNodeData = {
     }>;
     workflowLocked: boolean;
     prompt: string;
+    promptPlaceholder?: string;
     width: number;
     height: number;
     durationSeconds: number;
@@ -401,9 +394,7 @@ function ShotNode({ data, id }: NodeProps<BoardNode>) {
               <span className="shot-label">{data.title}</span>
               <span className="shot-generated-facts">
                 <strong>{data.engine}</strong>
-                <i>
-                  {data.duration} 秒 · {data.mediaType === "image" ? "图片" : "视频"}
-                </i>
+                <i>{data.mediaType === "image" ? "图片" : `${data.duration} 秒 · 视频`}</i>
               </span>
             </div>
           </div>
@@ -517,11 +508,7 @@ function ShotNode({ data, id }: NodeProps<BoardNode>) {
           <textarea
             aria-label="画布提示词"
             value={settingsDraft.prompt}
-            placeholder={
-              data.inlineControls.minDurationSeconds === 4
-                ? "按时间线描述画面、对白、环境声和配乐"
-                : "描述一个主要动作、运镜与光线；@ 引用素材"
-            }
+            placeholder={data.inlineControls.promptPlaceholder}
             onChange={(event) => updateSettingsDraft({ prompt: event.target.value })}
           />
           {data.inlineControls.mentionAliases.length ? (
@@ -684,31 +671,10 @@ function TakeStackNode({ data }: NodeProps<BoardNode>) {
   );
 }
 
-function resizable(Component: typeof TextNode) {
-  return function ResizableNode(props: NodeProps<BoardNode>) {
-    const { data } = props;
-    const fixedRatio = Boolean(data.mediaUrl && data.mediaType !== "audio");
-    return (
-      <>
-        <NodeResizer
-          isVisible={Boolean(data.selected && data.onResizeEnd)}
-          minWidth={props.type === "shot" ? 360 : 180}
-          minHeight={120}
-          maxWidth={4000}
-          maxHeight={4000}
-          keepAspectRatio={fixedRatio}
-          onResizeEnd={(_, geometry) => data.onResizeEnd?.(geometry)}
-        />
-        <Component {...props} />
-      </>
-    );
-  };
-}
-
 export const boardNodeTypes = {
-  text: resizable(TextNode),
-  entity: resizable(EntityNode),
-  asset: resizable(AssetNode),
-  shot: resizable(ShotNode),
-  take_stack: resizable(TakeStackNode),
+  text: TextNode,
+  entity: EntityNode,
+  asset: AssetNode,
+  shot: ShotNode,
+  take_stack: TakeStackNode,
 };

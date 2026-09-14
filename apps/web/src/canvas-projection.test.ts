@@ -1,9 +1,47 @@
 import type { ProjectSnapshot } from "@takeboard/contracts";
 import { describe, expect, it } from "vitest";
 import type { BoardNode } from "./board-nodes";
-import { resolveSnapshotEdge, retainNodeMeasurements } from "./canvas-projection";
+import { boardNodes, resolveSnapshotEdge, retainNodeMeasurements } from "./canvas-projection";
 
 describe("canvas measurement reconciliation", () => {
+  it("renders legacy resized items at stable widths without mutating stored dimensions", () => {
+    const legacy = {
+      canvasItems: [
+        {
+          id: "shot-node",
+          refType: "shot",
+          refId: "missing",
+          x: 80,
+          y: 90,
+          width: 180,
+          height: 100,
+          sizeMode: "manual",
+        },
+        {
+          id: "image-node",
+          refType: "asset",
+          refId: "missing",
+          x: 700,
+          y: 90,
+          width: 4000,
+          height: 3000,
+          sizeMode: "manual",
+        },
+      ],
+      shots: [],
+      takes: [],
+      runs: [],
+      assets: [],
+      entities: [],
+      textItems: [],
+      canvasEdges: [],
+    } as unknown as ProjectSnapshot;
+    const before = structuredClone(legacy);
+    const nodes = boardNodes(legacy, null, null, [], null, null, null);
+    expect(nodes.map((node) => node.style)).toEqual([{ width: 470 }, { width: 320 }]);
+    expect(nodes[0]?.position).toEqual({ x: 80, y: 90 });
+    expect(legacy).toEqual(before);
+  });
   const node: BoardNode = {
     id: "shot",
     type: "shot",

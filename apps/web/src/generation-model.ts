@@ -1,6 +1,24 @@
 import type { ExecutionPolicy, ProjectSnapshot } from "@takeboard/contracts";
 import type { WorkflowSummary } from "./api";
 
+export function generationPromptPlaceholder(
+  family: string,
+  capability?: string,
+  hasReferences = false,
+) {
+  if (capability === "reference_video")
+    return "用 @素材名指定人物、场景或声音，再描述动作、运镜和对白。\n例如：@人物走进 @场景，镜头缓慢推进。";
+  if (capability === "text_to_image" || capability === "image_to_image")
+    return hasReferences
+      ? "描述希望保留的内容和要改变的部分；输入 @ 引用素材。"
+      : "描述主体、场景、构图、光线和画面风格。";
+  if (family === "minimax_h3")
+    return "描述画面、动作和声音。\n例如：[0–2秒] 镜头缓慢推进，人物转身；[2–5秒] 人物说出台词，远处传来雨声。";
+  return hasReferences
+    ? "描述动作与运镜；输入 @ 引用已连接素材。"
+    : "描述主要动作、运镜、速度和光线连续性。";
+}
+
 export type GenerationSettings = {
   recipePath: string;
   prompt: string;

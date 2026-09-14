@@ -30,6 +30,9 @@ test("device creation needs no signup; optional login can close, switch identity
     await expect(page.getByRole("dialog", { name: "账号登录" })).toBeVisible();
     await page.getByRole("button", { name: "关闭登录" }).click();
     await expect(page.getByRole("dialog", { name: "账号登录" })).toHaveCount(0);
+    await page.getByRole("button", { name: "登录", exact: true }).click();
+    await page.mouse.click(2, 2);
+    await expect(page.getByRole("dialog", { name: "账号登录" })).toHaveCount(0);
     const name = page.getByLabel("项目名称");
     if (!(await name.isVisible()))
       await page

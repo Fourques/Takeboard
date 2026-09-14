@@ -119,14 +119,19 @@ export function reduceEditorSelection(
     }
     case "quick": {
       const next = reconcileSelection(state, action.snapshot);
-      if (action.toggle && next.target.kind === "item" && next.target.id === action.itemId)
+      if (
+        action.toggle &&
+        !next.inspectorOpen &&
+        next.target.kind === "item" &&
+        next.target.id === action.itemId
+      )
         return { ...emptySelection, projectId: next.projectId, shotContextId: next.shotContextId };
       const chosen = reduceEditorSelection(next, {
         type: "item",
         snapshot: action.snapshot,
         itemId: action.itemId,
       });
-      return { ...chosen, inspectorOpen: false };
+      return { ...chosen, inspectorOpen: next.inspectorOpen };
     }
     case "shot": {
       if (!action.snapshot.shots.some((shot) => shot.id === action.shotId))
