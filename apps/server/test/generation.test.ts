@@ -1234,12 +1234,10 @@ describe("real generation routes", () => {
       },
     });
 
-    const polled = await app.inject({
-      method: "GET",
-      url: `/api/projects/${key}/runs/${submitted.json().runId}`,
-    });
-    expect(polled.statusCode, polled.body).toBe(200);
-    expect(polled.json()).toMatchObject({
+    // Collection may still be running after the first GET, especially on Windows.
+    // Require persisted completion without changing the asynchronous API contract.
+    const polled = await waitForRun(app, key, submitted.json().runId);
+    expect(polled).toMatchObject({
       status: "completed",
       snapshot: {
         runs: [
