@@ -4,12 +4,12 @@
 
 ## Download TakeBoard
 
-**v0.2.0-beta.10** is an Apple Silicon Mac testing build improving template checks, recommended workflow installation and shot details. Other platforms remain on **beta.4**. Choose your computer and download
+**v0.2.0-beta.11** is an Apple Silicon Mac testing build improving workflow selection, the asset library and canvas interactions. Other platforms remain on **beta.4**. Choose your computer and download
 one file. No portable folder to manage and no separate Node.js, pnpm or Rust installation.
 
 | Your computer | Download |
 | --- | --- |
-| Mac · Apple 芯片 / Apple silicon | [DMG · beta.10](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.10/TakeBoard-v0.2.0-beta.10-macos-arm64.dmg) |
+| Mac · Apple 芯片 / Apple silicon | [DMG · beta.11](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.11/TakeBoard-v0.2.0-beta.11-macos-arm64.dmg) |
 | Mac · Intel | [DMG](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.4/TakeBoard-v0.2.0-beta.4-macos-x64.dmg) |
 | Windows · Intel / AMD | [EXE](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.4/TakeBoard-v0.2.0-beta.4-windows-x64.exe) |
 | Windows · ARM64 | [EXE](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.4/TakeBoard-v0.2.0-beta.4-windows-arm64.exe) |
@@ -18,7 +18,7 @@ one file. No portable folder to manage and no separate Node.js, pnpm or Rust ins
 
 Check **About This Mac** or Windows **Settings → System → About** for your processor.
 DEB packages target Debian/Ubuntu, not every Linux distribution. Other environments can use
-[source setup](../CONTRIBUTING.md). See [Apple Silicon beta.10](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.10) or [other platforms on beta.4](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.4) for release details.
+[source setup](../CONTRIBUTING.md). See [Apple Silicon beta.11](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.11) or [other platforms on beta.4](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.4) for release details.
 **Source code** at the bottom is for developers, not an installer.
 
 ## Install and open
