@@ -83,11 +83,13 @@ TakeBoard 需要扩展库，但不应该一开始就做“安装后可在服务�
 
 | feature | 含义 | 权限 |
 | --- | --- | --- |
-| `storyboard.rough_cut` | 在分镜墙增加只读粗剪和节奏时间线 | `project.read` |
+| `storyboard.rough_cut` | 提供镜头编排、只读粗剪和节奏时间线 | `project.read` |
 | `production.cost_insights` | 增加项目、镜头与成片分钟成本工作台 | `project.read` |
 | `production.batch_approval` | 增加跨镜头预览与原子批准 | `project.read` + `project.write` |
 
 TakeBoard 自带的“粗剪预览”“成本洞察”“批量审片”和“成片完整性质检”也使用同一注册表，而不是硬编码为永远出现的页面。四项均默认关闭，管理员按实例用途启用；成本和批量审批在关闭时不仅隐藏 UI，对应服务接口也会返回 `EXTENSION_DISABLED`。Run 来源、单镜头采用和其他核心项目数据不受启停影响。
+
+项目内启用粗剪、成本洞察或批量审片后，扩展卡片提供“打开镜头编排”。默认镜头导航不再另设总览入口；素材导入、分类和定位统一由资产库承担。
 
 ### `contributions.qcRules`
 

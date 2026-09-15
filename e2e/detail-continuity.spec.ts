@@ -151,6 +151,14 @@ test("account details fit normal and small windows, dismiss outside and restore 
     expect(box?.y).toBeGreaterThanOrEqual(0);
     expect((box?.y ?? 0) + (box?.height ?? 0)).toBeLessThanOrEqual(size.height + 1);
     expect(await dialog.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+    if (size.width >= 900) {
+      expect(
+        await dialog
+          .locator(".account-content")
+          .evaluate((node) => node.scrollHeight - node.clientHeight),
+      ).toBeLessThanOrEqual(1);
+      await expect(dialog.getByRole("button", { name: "保存资料" })).toBeInViewport();
+    }
     await page.keyboard.press("Tab");
     expect(await dialog.evaluate((node) => node.contains(document.activeElement))).toBe(true);
     await page.screenshot({

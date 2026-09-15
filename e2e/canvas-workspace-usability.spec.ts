@@ -83,6 +83,12 @@ test("opening workflows refreshes dependency checks and native recipes expose re
     await page.locator(".react-flow__node-shot").dblclick();
     await expect.poll(() => checks).toBeGreaterThan(0);
     const before = checks;
+    const workflowEntry = page.getByRole("button", { name: "管理工作流", exact: true });
+    await expect(workflowEntry.locator("..")).toHaveClass("model-picker-heading");
+    await page.screenshot({
+      path: "test-results/generation-model-entry.png",
+      animations: "disabled",
+    });
     await page.getByRole("button", { name: "管理工作流", exact: true }).click();
     await expect.poll(() => checks).toBeGreaterThan(before);
     await page.getByRole("button", { name: "可添加", exact: true }).click();

@@ -1,6 +1,9 @@
 import type { Asset, Run } from "@takeboard/contracts";
 import { lazy, Suspense } from "react";
 import type { WorkflowSummary } from "./api";
+import { projectApi } from "./api";
+import { assetDisplayNames } from "./asset-navigation";
+import { recordedInputAsset, recordedPromptParts } from "./recorded-prompt";
 
 const ExecutionProvenance = lazy(() =>
   import("./execution-provenance").then((m) => ({ default: m.ExecutionProvenance })),
@@ -10,13 +13,18 @@ export function GenerationRecord({
   assets,
   workflows,
   outputType,
+  onLocateAsset,
+  projectKey,
 }: {
   run: Run;
   assets: Asset[];
   workflows: WorkflowSummary[];
   outputType: Asset["mediaType"] | undefined;
+  onLocateAsset: (assetId: string) => void;
+  projectKey: string | null;
 }) {
   const p = run.parameters;
+  const names = assetDisplayNames(assets);
   const path = typeof p.recipePath === "string" ? p.recipePath : "";
   const modelFile = Array.isArray(p.models)
     ? p.models.find((value) => typeof value === "string")
@@ -46,40 +54,69 @@ export function GenerationRecord({
       </header>
       <div className="run-prompt">
         <h4>提示词</h4>
-        <pre>{String(p.promptSource ?? p.prompt ?? "未记录")}</pre>
+        <pre>
+          {recordedPromptParts(run, assets).map((part) =>
+            part.assetId ? (
+              <button
+                className="record-mention"
+                type="button"
+                key={`${part.offset}-${part.assetId}`}
+                onClick={() => part.assetId && onLocateAsset(part.assetId)}
+                title={`查看 ${names.get(part.assetId)}`}
+              >
+                {part.text}
+              </button>
+            ) : (
+              part.text
+            ),
+          )}
+        </pre>
       </div>
       {run.inputs.length > 0 ? (
         <div className="run-inputs">
           <h4>输入素材</h4>
           <ul>
-            {run.inputs.map((input) => (
-              <li key={`${input.slot}-${input.refId}`}>
-                <strong>
-                  {assets.find(
-                    (asset) =>
-                      asset.id === input.refId ||
-                      (input.assetSha256 && asset.sha256 === input.assetSha256),
-                  )?.originalName ??
-                    (input.refType === "asset"
-                      ? "原始素材已不可用"
-                      : {
-                          text: "文本输入",
-                          entity: "角色或场景",
-                          shot: "镜头输入",
-                          take: "生成结果",
-                        }[input.refType])}
-                </strong>
-                <span>
-                  {input.slot
-                    .replace(/first_frame/, "首帧")
-                    .replace(/last_frame/, "尾帧")
-                    .replace(/reference_image/, "参考图")
-                    .replace(/reference_video/, "参考视频")
-                    .replace(/reference_audio/, "参考音频")
-                    .replace(/^reference$/, "参考图")}
-                </span>
-              </li>
-            ))}
+            {run.inputs.map((input) => {
+              const asset = recordedInputAsset(input, assets);
+              return (
+                <li key={`${input.slot}-${input.refId}`}>
+                  {asset ? (
+                    <button
+                      className="record-input-link"
+                      type="button"
+                      onClick={() => onLocateAsset(asset.id)}
+                    >
+                      {projectKey && asset.mediaType === "image" ? (
+                        <img src={projectApi.assetUrl(projectKey, asset.id, true)} alt="" />
+                      ) : (
+                        <span aria-hidden="true">{asset.mediaType === "video" ? "▷" : "♪"}</span>
+                      )}
+                      <strong>{names.get(asset.id)}</strong>
+                    </button>
+                  ) : (
+                    <strong>
+                      {input.refType === "asset"
+                        ? "原始素材已不可用"
+                        : {
+                            text: "文本输入",
+                            entity: "角色或场景",
+                            shot: "镜头输入",
+                            take: "生成结果",
+                          }[input.refType]}
+                    </strong>
+                  )}
+                  <span>
+                    {input.slot
+                      .replace(/first_frame/, "首帧")
+                      .replace(/last_frame/, "尾帧")
+                      .replace(/reference_image/, "参考图")
+                      .replace(/reference_video/, "参考视频")
+                      .replace(/reference_audio/, "参考音频")
+                      .replace(/^reference$/, "参考图")}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         </div>
       ) : null}

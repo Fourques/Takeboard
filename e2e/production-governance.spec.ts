@@ -4,6 +4,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { ProjectStore } from "../apps/server/dist/storage/project-store.js";
 import { createTakeBoardId, toIsoTimestamp } from "../packages/domain/dist/index.js";
 import { expect, test } from "./fixtures";
+import { openShotTools } from "./shot-tools";
 
 const onePixelPng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
@@ -106,7 +107,7 @@ test("declarative extensions require review, start disabled and remain keyboard-
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
     await expect(extensionButton).toBeFocused();
-    await page.getByRole("button", { name: "打开分镜墙" }).click();
+    await openShotTools(page);
     const storyboard = page.getByRole("dialog", { name: "项目分镜墙" });
     await expect(storyboard.getByRole("tab", { name: "粗剪预览" })).toBeVisible();
     await storyboard.getByRole("button", { name: "关闭分镜墙" }).click();
@@ -310,7 +311,7 @@ test("cost ledger and cross-shot approval preview apply as one visible decision"
     await page.goto("/");
     const card = page.locator(".project-card").filter({ hasText: title });
     await card.getByRole("button", { name: /打开画板/ }).click();
-    await page.getByRole("button", { name: "打开分镜墙" }).click();
+    await openShotTools(page);
     const storyboard = page.getByRole("dialog", { name: "项目分镜墙" });
     await storyboard.getByRole("tab", { name: "批量审片与成本" }).click();
     await expect(storyboard.getByRole("heading", { name: "成本与采用决策" })).toBeVisible();

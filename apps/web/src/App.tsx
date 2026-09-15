@@ -34,6 +34,7 @@ import {
   projectApi,
   type TrashedProjectItem,
 } from "./api";
+import { locateAsset } from "./asset-navigation";
 import { AccountButton, useAuth } from "./auth-ui";
 import { type BoardNode, boardNodeTypes } from "./board-nodes";
 import { optionalLocalStorage, optionalSessionStorage } from "./browser-storage";
@@ -170,6 +171,9 @@ export function App() {
   const [showHub, setShowHub] = useState(true);
   const [recipeOpen, setRecipeOpen] = useState(false);
   const [assetLibraryOpen, setAssetLibraryOpen] = useState(false);
+  const [assetReveal, setAssetReveal] = useState<{ assetId: string; requestId: number } | null>(
+    null,
+  );
   const [storyboardOpen, setStoryboardOpen] = useState(false);
   const [extensionLibraryOpen, setExtensionLibraryOpen] = useState(false);
   const [syncStatus, setSyncStatus] = useState<"current" | "updated" | "pending" | "offline">(
@@ -1379,6 +1383,28 @@ export function App() {
     [flowInstance],
   );
 
+  const revealAsset = useCallback(
+    (assetId: string) => {
+      if (!snapshot?.assets.some((asset) => asset.id === assetId)) return false;
+      setAssetReveal({ assetId, requestId: Date.now() });
+      const location = locateAsset(snapshot, assetId);
+      if (!location) {
+        setAssetLibraryOpen(true);
+        return false;
+      }
+      selection.item(location.itemId);
+      void flowInstance?.fitView({
+        nodes: [{ id: location.itemId }],
+        maxZoom: 1,
+        padding: 0.3,
+        duration: 180,
+      });
+      setAssetLibraryOpen(false);
+      return true;
+    },
+    [snapshot, selection, flowInstance],
+  );
+
   const addAssetToCanvasFromLibrary = useCallback(
     async (assetId: string, position?: { x: number; y: number }) => {
       if (!projectKey || projectMode !== "project" || !snapshot || !canEditProject) {
@@ -2088,14 +2114,6 @@ export function App() {
           <span className="section-kicker">SHOTS</span>
           <div className="shot-list-heading-actions">
             <span>{snapshot.shots.length}</span>
-            <button
-              type="button"
-              aria-label="打开分镜墙"
-              title="镜头总览 · 排序与粗剪"
-              onClick={() => setStoryboardOpen(true)}
-            >
-              ▦
-            </button>
             {projectMode === "project" && canEditProject ? (
               <button
                 type="button"
@@ -2278,8 +2296,6 @@ export function App() {
             >
               {sidebarOpen ? "←" : "→"}
             </button>
-            <span className="scene-chip">{activeScene?.label ?? "SC-01"}</span>
-            <strong>{activeScene?.title || "未命名场景"}</strong>
           </div>
           <div className="canvas-utility">
             {inspectorHasContent && !focusMode ? (
@@ -2804,6 +2820,10 @@ export function App() {
             takes={selectedTakes}
             busy={busy || generationBusy || Boolean(activeRun)}
             assets={snapshot.assets}
+            revealAsset={assetReveal}
+            onLocateAsset={(assetId) => {
+              revealAsset(assetId);
+            }}
             projectKey={projectMode === "project" ? projectKey : null}
             isDemo={projectMode === "demo"}
             runs={snapshot.runs}
@@ -2896,6 +2916,10 @@ export function App() {
             projectKey={projectMode === "project" ? projectKey : null}
             canManage={!authUser || authUser.instanceRole === "admin"}
             onClose={() => setExtensionLibraryOpen(false)}
+            onOpenStoryboard={() => {
+              setExtensionLibraryOpen(false);
+              setStoryboardOpen(true);
+            }}
           />
         ) : null}
         {recipeOpen ? (
@@ -2934,7 +2958,16 @@ export function App() {
             busy={busy}
             canvasItems={snapshot.canvasItems}
             entities={snapshot.entities}
-            onAddToCanvas={addAssetToCanvasFromLibrary}
+            shots={snapshot.shots}
+            takes={snapshot.takes}
+            initialAssetId={assetReveal?.assetId}
+            onActivateAsset={async (assetId) => {
+              if (locateAsset(snapshot, assetId)) {
+                revealAsset(assetId);
+                return { ok: true };
+              }
+              return addAssetToCanvasFromLibrary(assetId);
+            }}
             onClose={() => setAssetLibraryOpen(false)}
             onPickFrame={(assetId, slot) => void connectAssetFromLibrary(assetId, slot)}
             onInspectMetadata={inspectHistoricalAssetMetadata}

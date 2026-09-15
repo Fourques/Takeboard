@@ -61,10 +61,12 @@ export function ExtensionLibrary({
   projectKey,
   canManage,
   onClose,
+  onOpenStoryboard,
 }: {
   projectKey: string | null;
   canManage: boolean;
   onClose: () => void;
+  onOpenStoryboard?: () => void;
 }) {
   const [tab, setTab] = useState<"library" | "qc">("library");
   const [extensions, setExtensions] = useState<InstalledExtension[]>([]);
@@ -361,6 +363,18 @@ export function ExtensionLibrary({
                       </div>
                     ) : null}
                     <div className="extension-card-actions">
+                      {onOpenStoryboard &&
+                      extension.enabled &&
+                      extension.manifest.contributions.features.some(
+                        (feature) =>
+                          feature === "storyboard.rough_cut" ||
+                          feature === "production.batch_approval" ||
+                          feature === "production.cost_insights",
+                      ) ? (
+                        <button type="button" onClick={onOpenStoryboard}>
+                          打开镜头编排
+                        </button>
+                      ) : null}
                       {removingId === extension.manifest.id ? (
                         <p>再次点击“确认移除”；清单可重新导入。</p>
                       ) : null}

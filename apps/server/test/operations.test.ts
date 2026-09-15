@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createTakeBoardId, toIsoTimestamp } from "@takeboard/domain";
@@ -129,7 +129,8 @@ describe("production operations center", () => {
       format: "takeboard.support-report",
       reportVersion: 1,
       application: {
-        version: "0.2.0-beta.11",
+        version: JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"))
+          .version,
         nodeVersion: expect.stringMatching(/^v/),
         platform: expect.any(String),
         architecture: expect.any(String),

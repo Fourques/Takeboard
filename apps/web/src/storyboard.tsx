@@ -835,7 +835,7 @@ export function Storyboard({
       >
         <header className="storyboard-header">
           <div>
-            <span className="section-kicker">镜头总览</span>
+            <span className="section-kicker">镜头编排</span>
             <h2>{snapshot.project.title}</h2>
             <p>镜头排序 · 已采用画面{roughCutEnabled ? " · 粗剪" : ""}</p>
             {reorderError ? (

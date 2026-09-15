@@ -1,6 +1,7 @@
-import type { Asset, CanvasItem, Entity } from "@takeboard/contracts";
+import type { Asset, CanvasItem, Entity, Shot, Take } from "@takeboard/contracts";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { projectApi } from "./api";
+import { assetDisplayNames, locateAsset } from "./asset-navigation";
 import { DetailMedia } from "./detail-media";
 import { LayerBackdrop } from "./layer-backdrop";
 import { VideoThumbnail } from "./video-preview";
@@ -42,10 +43,6 @@ function formatDuration(value: number | null | undefined) {
   return minutes > 0
     ? `${minutes}:${seconds.toFixed(seconds < 10 ? 1 : 0).padStart(4, "0")}`
     : `${seconds.toFixed(seconds < 10 ? 1 : 0)} 秒`;
-}
-
-function assetStem(name: string) {
-  return name.replace(/\.[^.]+$/, "") || name;
 }
 
 function assetLibraryKind(asset: Asset, related: Entity[]): AssetKind | null {
@@ -164,7 +161,10 @@ export function AssetLibrary({
   busy,
   canvasItems,
   entities,
-  onAddToCanvas,
+  shots,
+  takes,
+  initialAssetId,
+  onActivateAsset,
   onClose,
   onInspectMetadata,
   onPickFrame,
@@ -186,7 +186,10 @@ export function AssetLibrary({
   busy: boolean;
   canvasItems: CanvasItem[];
   entities: Entity[];
-  onAddToCanvas: (assetId: string) => Promise<{ ok: boolean; error?: string }>;
+  shots: Shot[];
+  takes: Take[];
+  initialAssetId?: string | undefined;
+  onActivateAsset: (assetId: string) => Promise<{ ok: boolean; error?: string }>;
   onClose: () => void;
   onInspectMetadata: () => Promise<{
     ok: boolean;
@@ -292,22 +295,35 @@ export function AssetLibrary({
     return result;
   }, [entities]);
 
-  const canvasAssetIds = useMemo(() => {
-    const result = new Set<string>();
-    for (const item of canvasItems) {
-      if (item.refType === "asset") result.add(item.refId);
-      if (item.refType === "entity") {
-        const entity = entities.find((candidate) => candidate.id === item.refId);
-        for (const assetId of entity?.referenceAssetIds ?? []) result.add(assetId);
-      }
-    }
-    return result;
-  }, [canvasItems, entities]);
-
-  const availableAssets = useMemo(
-    () => assets.filter((asset) => asset.mediaType === "image" || asset.mediaType === "video"),
-    [assets],
+  const locations = useMemo(
+    () =>
+      new Map(
+        assets.map((asset) => [
+          asset.id,
+          locateAsset({ canvasItems, entities, shots, takes }, asset.id),
+        ]),
+      ),
+    [assets, canvasItems, entities, shots, takes],
   );
+  const displayNames = useMemo(() => assetDisplayNames(assets), [assets]);
+  const canvasAssetIds = useMemo(
+    () =>
+      new Set(
+        [...locations].filter(([, location]) => location?.state === "canvas").map(([id]) => id),
+      ),
+    [locations],
+  );
+  const actionLabel = (assetId: string) =>
+    locations.get(assetId)?.state === "canvas"
+      ? "在画布中查看"
+      : locations.get(assetId)
+        ? "查看镜头结果"
+        : "加入当前画布";
+  useEffect(() => {
+    if (initialAssetId) setSelectedAssetId(initialAssetId);
+  }, [initialAssetId]);
+
+  const availableAssets = assets;
   const videosMissingMetadata = useMemo(
     () =>
       availableAssets.filter((asset) => asset.mediaType === "video" && !asset.metadataInspectedAt)
@@ -800,10 +816,10 @@ export function AssetLibrary({
                     className={`asset-vault-card ${asset.id === selectedAssetId ? "selected" : ""}`}
                     onClick={() => setSelectedAssetId(asset.id)}
                     onDoubleClick={() => {
-                      if (readOnly) return;
+                      if (busy || (readOnly && !locations.get(asset.id))) return;
                       setSelectedAssetId(asset.id);
-                      void onAddToCanvas(asset.id).then((result) =>
-                        setActionStatus(result.ok ? "已加入画布" : (result.error ?? "操作失败")),
+                      void onActivateAsset(asset.id).then((result) =>
+                        setActionStatus(result.ok ? "" : (result.error ?? "操作失败")),
                       );
                     }}
                     onContextMenu={(event) => {
@@ -832,11 +848,13 @@ export function AssetLibrary({
                           <VaultIcon name="canvas" />
                           画布中
                         </span>
+                      ) : locations.get(asset.id) ? (
+                        <span className="asset-canvas-state">镜头结果</span>
                       ) : null}
                     </div>
                     <div className="asset-card-copy">
                       <div>
-                        <strong title={asset.originalName}>{assetStem(asset.originalName)}</strong>
+                        <strong title={asset.originalName}>{displayNames.get(asset.id)}</strong>
                       </div>
                       {related.length || assetLibraryKind(asset, related) ? (
                         <p>
@@ -900,9 +918,10 @@ export function AssetLibrary({
                 <DetailMedia
                   src={projectApi.assetUrl(projectKey, selectedAsset.id)}
                   kind={selectedAsset.mediaType}
-                  label={selectedAsset.originalName}
+                  label={displayNames.get(selectedAsset.id) ?? selectedAsset.originalName}
                 />
                 <div className="asset-detail-scroll">
+                  <h3 className="asset-display-name">{displayNames.get(selectedAsset.id)}</h3>
                   <form
                     className="asset-rename"
                     onSubmit={(event) => {
@@ -1079,7 +1098,7 @@ export function AssetLibrary({
                     </dl>
                   </div>
 
-                  {!readOnly ? (
+                  {!readOnly || locations.get(selectedAsset.id) ? (
                     <div className="asset-detail-section asset-use-section">
                       <span className="asset-detail-label">用于创作</span>
                       <button
@@ -1087,17 +1106,15 @@ export function AssetLibrary({
                         className="asset-primary-action"
                         disabled={busy}
                         onClick={() =>
-                          void onAddToCanvas(selectedAsset.id).then((result) =>
-                            setActionStatus(
-                              result.ok ? "已加入画布" : (result.error ?? "操作失败"),
-                            ),
+                          void onActivateAsset(selectedAsset.id).then((result) =>
+                            setActionStatus(result.ok ? "" : (result.error ?? "操作失败")),
                           )
                         }
                       >
                         <VaultIcon name="canvas" />
-                        {canvasAssetIds.has(selectedAsset.id) ? "定位画布节点" : "加入当前画布"}
+                        {actionLabel(selectedAsset.id)}
                       </button>
-                      {selectedShotLabel ? (
+                      {!readOnly && selectedShotLabel ? (
                         <>
                           <p>连接到「{selectedShotLabel}」</p>
                           <div className="asset-connect-actions">
@@ -1215,7 +1232,7 @@ export function AssetLibrary({
             onContextMenu={(event) => event.preventDefault()}
           >
             <div className="asset-context-heading">
-              <strong>{assetStem(contextAsset.originalName)}</strong>
+              <strong>{displayNames.get(contextAsset.id)}</strong>
               <span>素材操作</span>
             </div>
             <button
@@ -1229,20 +1246,20 @@ export function AssetLibrary({
               <VaultIcon name="info" />
               查看详情
             </button>
-            {!readOnly ? (
+            {!readOnly || locations.get(contextAsset.id) ? (
               <button
                 type="button"
                 role="menuitem"
                 disabled={busy}
                 onClick={() =>
-                  void onAddToCanvas(contextAsset.id).then((result) => {
-                    setActionStatus(result.ok ? "已加入画布" : (result.error ?? "操作失败"));
+                  void onActivateAsset(contextAsset.id).then((result) => {
+                    setActionStatus(result.ok ? "" : (result.error ?? "操作失败"));
                     setContextMenu(null);
                   })
                 }
               >
                 <VaultIcon name="canvas" />
-                {canvasAssetIds.has(contextAsset.id) ? "定位画布节点" : "加入当前画布"}
+                {actionLabel(contextAsset.id)}
               </button>
             ) : null}
             {!readOnly && selectedShotLabel ? (

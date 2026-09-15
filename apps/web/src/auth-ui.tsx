@@ -269,7 +269,7 @@ function AuthScreen({
                 autoComplete="name"
                 maxLength={120}
                 onChange={(event) => setName(event.target.value)}
-                placeholder="你的称呼"
+                placeholder="Your name"
                 required
                 value={name}
               />
@@ -344,12 +344,6 @@ function AuthScreen({
             </button>
           ) : null}
         </form>
-        <footer>
-          <span>
-            <i /> 服务端会话
-          </span>
-          <span>HttpOnly · SameSite</span>
-        </footer>
       </section>
     </main>
   );

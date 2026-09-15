@@ -875,7 +875,7 @@ label.auth-remember {
 }
 
 .auth-login-dialog {
-  width: min(640px, calc(100vw - 24px));
+  width: min(820px, calc(100vw - 24px));
   margin: auto;
   overflow: auto;
   max-height: calc(100dvh - 24px);
@@ -891,7 +891,62 @@ label.auth-remember {
 .auth-login-dialog .auth-shell {
   height: auto;
   min-height: 0;
-  padding: 42px 24px 28px;
+  padding: 30px 24px 24px;
+}
+.auth-login-dialog .auth-card {
+  display: grid;
+  grid-template-columns: minmax(170px, 0.8fr) minmax(240px, 1fr);
+  align-items: start;
+  gap: 24px;
+  width: 100%;
+  padding: 20px;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+.auth-login-dialog .auth-brand {
+  grid-column: 1;
+}
+.auth-login-dialog .auth-card-copy {
+  grid-column: 1;
+  margin: 0;
+}
+.auth-login-dialog .auth-card-copy h1 {
+  font-size: 28px;
+  line-height: 1.25;
+}
+.auth-login-dialog .auth-card-copy p {
+  font-size: 13px;
+  line-height: 1.65;
+}
+.auth-login-dialog .auth-form {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+  gap: 12px;
+}
+.auth-login-dialog .auth-form input {
+  min-height: 40px;
+}
+.auth-login-dialog .auth-primary {
+  min-height: 42px;
+}
+@media (max-width: 600px) {
+  .auth-login-dialog .auth-shell {
+    padding: 32px 12px 16px;
+  }
+  .auth-login-dialog .auth-card {
+    display: flex;
+    flex-direction: column;
+    padding: 8px;
+    gap: 14px;
+  }
+  .auth-login-dialog .auth-form {
+    width: 100%;
+  }
+  .auth-login-dialog .auth-card-copy h1 {
+    font-size: 24px;
+  }
 }
 .auth-login-dialog .auth-atmosphere {
   position: absolute;
@@ -2594,20 +2649,6 @@ button.save-status {
   display: flex;
   align-items: center;
   gap: 9px;
-}
-
-.scene-chip {
-  padding: 4px 6px;
-  border: 1px solid #5b4b33;
-  color: #d8b671;
-  background: rgb(32 28 21 / 75%);
-  font-size: 8px;
-}
-
-.canvas-toolbar strong {
-  color: #929a96;
-  font-size: 10px;
-  font-weight: 500;
 }
 
 .canvas-utility {
@@ -4445,16 +4486,28 @@ button.save-status {
   background: var(--surface-1);
 }
 .inspector-model-manage {
-  margin: 0 0 8px;
-  min-height: 34px;
-  padding: 6px 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  color: var(--text-1);
-  background: var(--surface-2);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text-2);
+  background: transparent;
   font: inherit;
   font-size: calc(11px * var(--ui-scale));
   cursor: pointer;
+}
+.model-picker-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.inspector-model-manage:hover {
+  color: var(--text-1);
+  background: var(--surface-2);
 }
 
 .prompt-field,
@@ -4608,6 +4661,33 @@ button.save-status {
   padding: 7px;
   border-radius: 3px;
   font-size: 9px;
+}
+
+.seed-field select {
+  grid-column: 2 / -1;
+  width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text-1);
+  background: var(--surface-2);
+  font: inherit;
+}
+
+.seed-field:has(input[type="checkbox"]) {
+  display: flex;
+  gap: 8px;
+  min-height: 32px;
+}
+
+.seed-field input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  margin: 0;
+  accent-color: var(--accent-strong);
 }
 
 .seed-field button {
@@ -5317,11 +5397,6 @@ button.save-status {
   font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.asset-vault-card span {
-  color: var(--muted);
-  font-size: 7px;
 }
 
 .asset-slot-actions {
@@ -6487,19 +6562,6 @@ html[data-theme="chroma"] .loading-mark {
   color: var(--warning);
   font-size: 7px;
   line-height: 1.4;
-}
-
-.reference-processing {
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
-  color: var(--text-2);
-}
-
-.reference-processing summary {
-  color: var(--text-1);
-  font-size: calc(12px * var(--ui-scale));
-  cursor: pointer;
 }
 
 .shot-inline-console > .shot-inline-progress-detail {

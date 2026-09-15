@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
 
@@ -18,7 +19,8 @@ describe("GET /api/health", () => {
     expect(response.json()).toEqual({
       service: "takeboard-server",
       status: "ok",
-      version: "0.2.0-beta.11",
+      version: JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"))
+        .version,
       instanceId: null,
     });
   });

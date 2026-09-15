@@ -328,6 +328,46 @@
   flex-shrink: 0;
   color: var(--text-2);
 }
+.record-mention {
+  border: 0;
+  padding: 0;
+  color: var(--accent-strong);
+  background: transparent;
+  font: inherit;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent-strong) 35%, transparent);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.record-input-link {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 4px;
+  border: 0;
+  border-radius: 6px;
+  text-align: left;
+  color: var(--text-1);
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+.record-input-link:hover {
+  background: var(--surface-2);
+}
+.record-input-link img,
+.record-input-link > span {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+.asset-display-name {
+  margin: 0 0 14px;
+  font-size: calc(14px * var(--ui-scale));
+  overflow-wrap: anywhere;
+}
 .run-settings dl {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -460,8 +500,10 @@
   width: 42px;
   height: 42px;
 }
-.asset-canvas-state {
-  font-size: 10px;
+.asset-vault-card .asset-canvas-state {
+  color: #fff;
+  background: rgb(24 23 40 / 85%);
+  font-size: calc(10px * var(--ui-scale));
 }
 .app-shell .topbar {
   gap: 16px;

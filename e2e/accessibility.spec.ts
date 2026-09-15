@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "./fixtures";
+import { openShotTools } from "./shot-tools";
 
 test("homepage has no serious WCAG A/AA violations", async ({ page }) => {
   await page.goto("/");
@@ -78,10 +79,18 @@ test("workspace, operations and storyboard have no serious WCAG A/AA violations"
     ).toEqual([]);
     await page.getByRole("button", { name: "关闭任务中心" }).click();
 
-    await page.getByRole("button", { name: "打开分镜墙" }).click();
+    await expect(page.getByRole("button", { name: "打开分镜墙" })).toHaveCount(0);
+    expect(
+      (
+        await request.patch("/api/admin/extensions/studio.takeboard.rough-cut", {
+          data: { enabled: true },
+        })
+      ).ok(),
+    ).toBeTruthy();
+    await openShotTools(page);
     const storyboard = page.getByRole("dialog", { name: "项目分镜墙" });
     await expect(storyboard).toBeVisible();
-    await expect(storyboard.getByRole("tablist", { name: "分镜查看方式" })).toHaveCount(0);
+    await expect(storyboard.getByRole("tab", { name: "粗剪预览" })).toBeVisible();
     await expect(storyboard.getByText("成本台账", { exact: true })).toHaveCount(0);
     const storyboardResults = await new AxeBuilder({ page })
       .include(".storyboard-shell")

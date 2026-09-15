@@ -28,6 +28,21 @@ test("device creation needs no signup; optional login can close, switch identity
     await expect(page.getByRole("heading", { name: "创建 TakeBoard 账号" })).toHaveCount(0);
     await page.getByRole("button", { name: "登录", exact: true }).click();
     await expect(page.getByRole("dialog", { name: "账号登录" })).toBeVisible();
+    await expect(page.getByPlaceholder("Your name")).toBeVisible();
+    for (const size of [
+      { width: 1440, height: 900 },
+      { width: 1000, height: 700 },
+      { width: 920, height: 620 },
+    ]) {
+      await page.setViewportSize(size);
+      const dialog = page.getByRole("dialog", { name: "账号登录" });
+      await expect
+        .poll(() => dialog.evaluate((element) => element.scrollHeight - element.clientHeight))
+        .toBeLessThanOrEqual(1);
+      await expect(page.getByRole("button", { name: "创建账号", exact: true })).toBeInViewport();
+    }
+    await page.screenshot({ path: "test-results/login-920.png" });
+    await page.setViewportSize({ width: 1600, height: 900 });
     await page.getByRole("button", { name: "关闭登录" }).click();
     await expect(page.getByRole("dialog", { name: "账号登录" })).toHaveCount(0);
     await page.getByRole("button", { name: "登录", exact: true }).click();

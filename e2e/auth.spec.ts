@@ -1,4 +1,5 @@
 import { expect, test } from "./fixtures";
+import { openShotTools } from "./shot-tools";
 
 test("unauthenticated visitors see the login boundary and can sign in", async ({
   browser,
@@ -157,6 +158,13 @@ test("viewer and editor see coherent project actions for their roles", async ({
   request,
 }) => {
   const suffix = Date.now().toString(36);
+  expect(
+    (
+      await request.patch("/api/admin/extensions/studio.takeboard.rough-cut", {
+        data: { enabled: true },
+      })
+    ).ok(),
+  ).toBeTruthy();
   const title = `只读验收 ${suffix}`;
   const email = `viewer-${suffix}@takeboard.local`;
   const initialPassword = `viewer initial passphrase ${suffix}`;
@@ -210,7 +218,7 @@ test("viewer and editor see coherent project actions for their roles", async ({
     await expect(library.getByText("VIEW ONLY", { exact: true })).toBeVisible();
     await expect(library.getByRole("button", { name: "导入素材" })).toHaveCount(0);
     await page.getByRole("button", { name: "关闭资产库" }).click();
-    await page.getByRole("button", { name: "打开分镜墙" }).click();
+    await openShotTools(page);
     const viewerStoryboard = page.getByRole("dialog", { name: "项目分镜墙" });
     await expect(viewerStoryboard.getByText("VIEW ONLY", { exact: true })).toBeVisible();
     await expect(viewerStoryboard.locator(".storyboard-order-actions")).toHaveCount(0);

@@ -874,6 +874,18 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
   await expect(page.getByRole("button", { name: /Wan22 FLF2V/ })).toContainText("首尾帧视频");
   await expect(page.getByRole("button", { name: /MiniMax H3 R2V/ })).toContainText("参考图生视频");
   await page.getByRole("button", { name: /MiniMax H3 R2V/ }).click();
+  const referencePrecision = page.getByRole("combobox", { name: "参考图精度", exact: true });
+  await expect(referencePrecision).toBeVisible();
+  expect((await referencePrecision.boundingBox())?.height).toBeGreaterThanOrEqual(32);
+  expect(await referencePrecision.evaluate((node) => node.closest("details"))).toBeNull();
+  await referencePrecision.selectOption("max");
+  await expect(referencePrecision).toHaveValue("max");
+  await referencePrecision.selectOption("match");
+  await referencePrecision.scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: "test-results/reference-processing-inline.png",
+    animations: "disabled",
+  });
   await page.getByRole("button", { name: "收起检查器" }).click();
   await expect(page.locator(".react-flow__node-shot")).toContainText("参考 0/9");
   await expect(page.locator(".react-flow__node-shot")).toContainText("参考视频 0/3");
@@ -1158,7 +1170,8 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
   await page.keyboard.press("Meta+V");
   await expect(shotNodes).toHaveCount(originalShotCount + 1);
 
-  await page.getByRole("button", { name: "打开分镜墙" }).click();
+  await page.getByRole("button", { name: "扩展", exact: true }).click();
+  await page.getByRole("button", { name: "打开镜头编排" }).first().click();
   const storyboard = page.getByRole("dialog", { name: "项目分镜墙" });
   await expect(storyboard).toBeVisible();
   await expect(storyboard.getByLabel("整片覆盖率")).toContainText("APPROVED");

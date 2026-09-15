@@ -363,6 +363,8 @@ type InspectorProps = {
   assets: Asset[];
   projectKey: string | null;
   isDemo: boolean;
+  revealAsset: { assetId: string; requestId: number } | null;
+  onLocateAsset: (assetId: string) => void;
   runs: Run[];
   settings: GenerationSettings;
   workflow: WorkflowSummary | null;
@@ -407,6 +409,8 @@ export function Inspector({
   assets,
   projectKey,
   isDemo,
+  revealAsset,
+  onLocateAsset,
   runs,
   settings,
   workflow,
@@ -459,6 +463,14 @@ export function Inspector({
     } else openSettings(action);
   }
   const [selectedTakeId, setSelectedTakeId] = useState<string | null>(null);
+  const revealedTakeId = takes.find((take) => take.assetId === revealAsset?.assetId)?.id;
+  const revealRequestId = revealAsset?.requestId;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: an explicit navigation request, not background snapshot refreshes, selects the recorded result.
+  useEffect(() => {
+    if (!revealedTakeId) return;
+    setSelectedTakeId(revealedTakeId);
+    setInspectorTab("results");
+  }, [revealedTakeId, revealRequestId]);
   const [reason, setReason] = useState("");
   const [rejecting, setRejecting] = useState(false);
   // biome-ignore lint/correctness/useExhaustiveDependencies: a different result starts a fresh, optional review note.
@@ -657,9 +669,36 @@ export function Inspector({
                       ))}
                     </select>
                   </label>
-                  <label className="inspector-model-picker">
-                    <span>模型 {workflowLocked ? <small>已锁定</small> : null}</span>
+                  <div className="inspector-model-picker">
+                    <div className="model-picker-heading">
+                      <label htmlFor="inspector-generation-model">
+                        模型 {workflowLocked ? <small>已锁定</small> : null}
+                      </label>
+                      <button
+                        className="inspector-model-manage"
+                        type="button"
+                        onClick={onOpenRecipes}
+                        aria-label="管理工作流"
+                      >
+                        <svg
+                          viewBox="0 0 24 24"
+                          width="14"
+                          height="14"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                          aria-hidden="true"
+                        >
+                          <rect x="3" y="3" width="7" height="7" rx="1.5" />
+                          <rect x="14" y="3" width="7" height="7" rx="1.5" />
+                          <rect x="3" y="14" width="7" height="7" rx="1.5" />
+                          <path d="M14 17.5h7m-3.5-3.5v7" />
+                        </svg>
+                        工作流库
+                      </button>
+                    </div>
                     <select
+                      id="inspector-generation-model"
                       aria-label="生成模型"
                       disabled={workflowLocked || busy}
                       value={workflow?.path ?? ""}
@@ -686,10 +725,7 @@ export function Inspector({
                           </option>
                         ))}
                     </select>
-                  </label>
-                  <button className="inspector-model-manage" type="button" onClick={onOpenRecipes}>
-                    管理工作流
-                  </button>
+                  </div>
                   <label className="prompt-field prompt-with-mentions">
                     <span>
                       镜头提示词 <small>{settings.prompt.length}/20000</small>
@@ -911,26 +947,22 @@ export function Inspector({
                     ) : null}
                     {profile.family === "minimax_h3" &&
                     workflow?.capability === "reference_video" ? (
-                      <details className="reference-processing">
-                        <summary>参考图处理</summary>
-                        <label className="seed-field" htmlFor="generation-reference-fidelity">
-                          <span>参考图精度</span>
-                          <select
-                            id="generation-reference-fidelity"
-                            value={settings.referenceImageSize}
-                            onChange={(event) =>
-                              onSettingsChange({
-                                ...settings,
-                                referenceImageSize: event.target.value === "max" ? "max" : "match",
-                              })
-                            }
-                          >
-                            <option value="match">匹配输出尺寸</option>
-                            <option value="max">保留原图细节</option>
-                          </select>
-                          <small>保留原图细节需要更多显存。</small>
-                        </label>
-                      </details>
+                      <label className="seed-field" htmlFor="generation-reference-fidelity">
+                        <span>参考图精度</span>
+                        <select
+                          id="generation-reference-fidelity"
+                          value={settings.referenceImageSize}
+                          onChange={(event) =>
+                            onSettingsChange({
+                              ...settings,
+                              referenceImageSize: event.target.value === "max" ? "max" : "match",
+                            })
+                          }
+                        >
+                          <option value="match">匹配输出尺寸</option>
+                          <option value="max">保留原图细节</option>
+                        </select>
+                      </label>
                     ) : null}
                     {workflow?.inputs.includes("denoise") ? (
                       <label className="seed-field" htmlFor="generation-denoise">
@@ -1135,6 +1167,8 @@ export function Inspector({
                   run={selectedTakeRun}
                   assets={assets}
                   workflows={workflows}
+                  onLocateAsset={onLocateAsset}
+                  projectKey={projectKey}
                   outputType={selectedTake ? mediaType(selectedTake.assetId) : undefined}
                 />
               ) : null}
