@@ -1,7 +1,37 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ComfyProgressTracker } from "../src/progress.js";
 
 describe("ComfyUI live progress", () => {
+  it("does not recursively close a failed WebSocket handshake", () => {
+    let latest: Socket | undefined;
+    class Socket extends EventTarget {
+      static OPEN = 1;
+      readyState = 0;
+      closes = 0;
+      constructor(_url: string) {
+        super();
+        latest = this;
+      }
+      close() {
+        this.closes++;
+        this.dispatchEvent(new Event("error"));
+      }
+    }
+    vi.stubGlobal("WebSocket", Socket);
+    try {
+      const tracker = new ComfyProgressTracker("http://unused.test");
+      tracker.connect("a");
+      latest?.dispatchEvent(new Event("error"));
+      expect(latest?.closes).toBe(0);
+      tracker.connect("b");
+      if (!latest) throw new Error("Missing socket");
+      latest.readyState = 1;
+      latest.dispatchEvent(new Event("error"));
+      expect(latest.closes).toBe(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
   it("uses real sampler value/max and never invents a percentage for opaque nodes", () => {
     const tracker = new ComfyProgressTracker("http://comfy.test", false);
     tracker.connect("client-1", {

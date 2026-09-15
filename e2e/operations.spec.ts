@@ -3,7 +3,7 @@ import { expect, test } from "./fixtures";
 
 test("global operations center exposes real task and storage state", async ({ page }) => {
   await page.goto("/");
-  const trigger = page.getByRole("button", { name: "打开生成任务与存储空间" });
+  const trigger = page.getByRole("button", { name: "打开运行中心" });
   await expect(trigger).toBeVisible();
   expect(
     await trigger
@@ -12,7 +12,7 @@ test("global operations center exposes real task and storage state", async ({ pa
   ).toBeGreaterThanOrEqual(12);
   await trigger.click();
 
-  const panel = page.getByRole("dialog", { name: "生成任务与存储空间" });
+  const panel = page.getByRole("dialog", { name: "运行中心" });
   await expect(panel).toBeVisible();
   await expect(panel.getByText("运行中心", { exact: true })).toBeVisible();
   await panel.getByRole("tab", { name: "存储空间" }).click();
@@ -111,8 +111,8 @@ test("homepage chrome and operations center adapt to a short viewport", async ({
       animations: "disabled",
     });
 
-    await page.getByRole("button", { name: "打开生成任务与存储空间" }).click();
-    const panel = page.getByRole("dialog", { name: "生成任务与存储空间" });
+    await page.getByRole("button", { name: "打开运行中心" }).click();
+    const panel = page.getByRole("dialog", { name: "运行中心" });
     await expect(panel).toBeVisible();
     const bounds = await panel.boundingBox();
     if (!bounds) throw new Error("任务中心没有可测量的布局边界");
@@ -141,7 +141,7 @@ test("homepage production dock remains usable on a narrow viewport", async ({ pa
     scrollWidth: element.scrollWidth,
   }));
   expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth);
-  await expect(page.getByRole("button", { name: "打开生成任务与存储空间" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "打开运行中心" })).toBeVisible();
   await expect(page.getByRole("button", { name: "选择生成设备" })).toBeVisible();
   await expect(page.getByRole("button", { name: "新建项目" })).toBeVisible();
   await expect(page.getByRole("button", { name: "打开工作区选项" })).toBeVisible();

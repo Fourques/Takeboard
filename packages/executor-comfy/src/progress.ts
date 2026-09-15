@@ -72,7 +72,16 @@ export class ComfyProgressTracker {
       socket.addEventListener("close", () => {
         if (this.sockets.get(clientId) === socket) this.sockets.delete(clientId);
       });
-      socket.addEventListener("error", () => socket.close());
+      socket.addEventListener(
+        "error",
+        () => {
+          if (this.sockets.get(clientId) === socket) this.sockets.delete(clientId);
+          // A failed handshake already closes itself. Closing while CONNECTING
+          // can synchronously dispatch another error in Node's WebSocket.
+          if (socket.readyState === WebSocket.OPEN) socket.close();
+        },
+        { once: true },
+      );
     } catch {
       // Generation remains available when live progress cannot connect.
     }

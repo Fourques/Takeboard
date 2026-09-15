@@ -2,6 +2,15 @@ import { describe, expect, it } from "vitest";
 import { gentlyArrange } from "../src/gentle-arrange.js";
 
 describe("gentle canvas arrangement", () => {
+  it("aligns media-sized nodes with visible offsets, without pulling distant groups together", () => {
+    const items = [
+      { id: "a", x: 0, y: 0, width: 470, height: 300 },
+      { id: "b", x: 720, y: 50, width: 470, height: 300 },
+      { id: "c", x: 1800, y: 2500, width: 470, height: 300 },
+    ];
+    expect(gentlyArrange(items).get("b")).toEqual({ x: 720, y: 0 });
+    expect(gentlyArrange(items).get("c")).toEqual({ x: 1800, y: 2500 });
+  });
   it("keeps spaced nodes in their existing regions and aligns only nearby axes", () => {
     const items = [
       { id: "a", x: 100, y: 100, width: 470, height: 264 },

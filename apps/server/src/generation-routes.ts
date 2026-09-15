@@ -24,6 +24,8 @@ import {
 } from "@takeboard/executor-comfy";
 import type { FastifyInstance } from "fastify";
 import { createImageProxy, inspectImage, inspectVideo } from "./asset-inspection.js";
+import { generatedAssetName } from "./generated-asset-name.js";
+import { IdleResourceCleaner } from "./idle-resource-cleaner.js";
 import {
   cleanupInterruptedOutput,
   readMediaMetadata,
@@ -144,6 +146,24 @@ export function registerGenerationRoutes(
   storage: GenerationStorageOptions = { inputRoot: null, outputRoot: null },
 ) {
   const root = resolve(projectsRoot);
+  const idleResources = new IdleResourceCleaner();
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+  let idleFlight: Promise<void> | undefined;
+  let idleClosing = false;
+  const scheduleIdleCleanup = () => {
+    if (idleClosing) return;
+    idleTimer = setTimeout(() => {
+      idleFlight = idleResources.tick().finally(scheduleIdleCleanup);
+    }, 15_000);
+    idleTimer.unref();
+  };
+  app.addHook("onReady", async () => scheduleIdleCleanup());
+  app.addHook("preClose", async () => {
+    idleClosing = true;
+    clearTimeout(idleTimer);
+    await idleFlight;
+    await idleResources.releaseOnExit();
+  });
   const localStorageFor = (workerId: string | null) =>
     workerId === workerPool.localWorkerId ? storage : { inputRoot: null, outputRoot: null };
   const transfers = new Map<string, TransferProgress>();
@@ -210,9 +230,12 @@ export function registerGenerationRoutes(
       comfy.progress(run.promptId) ??
       (!terminalRunStatuses.has(run.status)
         ? {
-            phase: "running",
-            label: "ComfyUI 正在执行工作流",
-            detail: "当前节点未提供实时步进；任务状态来自执行端 History",
+            phase: run.status === "queued" ? "queued" : "running",
+            label: run.status === "queued" ? "等待设备执行" : "正在生成",
+            detail:
+              run.status === "queued"
+                ? "任务已提交，可继续编辑或提交其他任务"
+                : "当前节点未提供步进进度",
             percent: null,
             nodeId: null,
             queueRemaining: null,
@@ -674,6 +697,7 @@ export function registerGenerationRoutes(
           ),
         ]);
         if (run.promptId) comfy.forgetProgress(run.promptId);
+        idleResources.track(comfy);
         let resourcesReleased = false;
         for (let attempt = 0; attempt < 8 && !resourcesReleased; attempt += 1) {
           resourcesReleased = await comfy.freeResourcesIfIdle().catch(() => false);
@@ -975,11 +999,15 @@ export function registerGenerationRoutes(
         const fallbackSize = resolution(shot.aspectRatio);
         const width =
           typeof body.width === "number" && body.width >= 256 && body.width <= 2048
-            ? Math.round(body.width / 32) * 32
+            ? boundWorkflow
+              ? Math.round(body.width)
+              : Math.round(body.width / 32) * 32
             : fallbackSize.width;
         const height =
           typeof body.height === "number" && body.height >= 256 && body.height <= 2048
-            ? Math.round(body.height / 32) * 32
+            ? boundWorkflow
+              ? Math.round(body.height)
+              : Math.round(body.height / 32) * 32
             : fallbackSize.height;
         const durationSeconds =
           typeof body.durationSeconds === "number" &&
@@ -1330,6 +1358,7 @@ export function registerGenerationRoutes(
             })),
           ],
           parameters: {
+            shotLabel: shot.label,
             models: submittedModelFiles(prompt),
             seed,
             width: effectiveSize.width,
@@ -1423,7 +1452,8 @@ export function registerGenerationRoutes(
         const preparedRun = current.snapshot.runs.find((run) => run.id === runId);
         if (!preparedRun) throw new Error("准备好的运行记录意外丢失");
         preparedRun.promptId = promptId;
-        preparedRun.status = "running";
+        // Acceptance is not execution. Queue/history polling determines when it actually starts.
+        preparedRun.status = "queued";
         preparedRun.updatedAt = toIsoTimestamp();
         current.snapshot.project.updatedAt = preparedRun.updatedAt;
         current.snapshot.exportedAt = preparedRun.updatedAt;
@@ -1558,7 +1588,10 @@ export function registerGenerationRoutes(
             delete run.parameters.missingFromWorkerSince;
             changed = true;
           }
-          if (run.errorCode === "WORKER_TASK_MISSING") {
+          if (
+            run.status !== (state.running ? "running" : "queued") ||
+            run.errorCode === "WORKER_TASK_MISSING"
+          ) {
             run.status = state.running ? "running" : "queued";
             run.errorCode = null;
             run.errorMessage = null;
@@ -1636,6 +1669,7 @@ export function registerGenerationRoutes(
           ),
         ]);
         comfy.forgetProgress(run.promptId);
+        idleResources.track(comfy);
         return { key, runId: run.id, status: run.status, progress: null, ...saved };
       }
 
@@ -1684,6 +1718,7 @@ export function registerGenerationRoutes(
           ),
         ]);
         comfy.forgetProgress(run.promptId);
+        idleResources.track(comfy);
         return { key, runId: run.id, status: run.status, progress: null, ...saved };
       }
       const plannedAssetId = run.parameters.outputAssetId;
@@ -1808,7 +1843,7 @@ export function registerGenerationRoutes(
           id: assetId,
           projectId: current.snapshot.project.id,
           mediaType: expectsImage ? "image" : "video",
-          originalName: basename(output.filename).slice(0, 512),
+          originalName: generatedAssetName(current.snapshot, run, output.filename, expectsImage),
           mimeType,
           byteSize: downloaded.byteSize,
           sha256: downloaded.sha256,
@@ -1863,6 +1898,7 @@ export function registerGenerationRoutes(
       downloads.delete(`${key}:${run.id}`);
       transfers.delete(`${key}:${run.id}`);
       comfy.forgetProgress(run.promptId);
+      idleResources.track(comfy);
       return { key, runId: run.id, status: run.status, progress: null, ...saved };
     } finally {
       store.close();

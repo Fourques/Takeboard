@@ -4,13 +4,19 @@ on:
   workflow_dispatch:
     inputs:
       platform:
-        description: Installer targets (Mac M-series only during UI testing)
+        description: Installer targets
         required: true
         type: choice
         default: macos-arm64
         options:
           - macos-arm64
+          - macos-windows
           - all
+      publish:
+        description: Publish verified installers to a new prerelease (version tag only)
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -23,7 +29,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(inputs.platform == 'macos-arm64' && '[{"os":"macos-15","platform":"macos-arm64","rust_target":"aarch64-apple-darwin","bundles":"dmg","extension":"dmg"}]' || '[{"os":"ubuntu-latest","platform":"linux-x64","rust_target":"x86_64-unknown-linux-gnu","bundles":"deb","extension":"deb"},{"os":"ubuntu-24.04-arm","platform":"linux-arm64","rust_target":"aarch64-unknown-linux-gnu","bundles":"deb","extension":"deb"},{"os":"macos-15-intel","platform":"macos-x64","rust_target":"x86_64-apple-darwin","bundles":"dmg","extension":"dmg"},{"os":"macos-15","platform":"macos-arm64","rust_target":"aarch64-apple-darwin","bundles":"dmg","extension":"dmg"},{"os":"windows-latest","platform":"windows-x64","rust_target":"x86_64-pc-windows-msvc","bundles":"nsis","extension":"exe"},{"os":"windows-11-arm","platform":"windows-arm64","rust_target":"aarch64-pc-windows-msvc","bundles":"nsis","extension":"exe"}]') }}
+        include: ${{ fromJSON(inputs.platform == 'macos-windows' && '[{"os":"macos-15","platform":"macos-arm64","rust_target":"aarch64-apple-darwin","bundles":"dmg","extension":"dmg"},{"os":"windows-latest","platform":"windows-x64","rust_target":"x86_64-pc-windows-msvc","bundles":"nsis","extension":"exe"},{"os":"windows-11-arm","platform":"windows-arm64","rust_target":"aarch64-pc-windows-msvc","bundles":"nsis","extension":"exe"}]' || inputs.platform == 'macos-arm64' && '[{"os":"macos-15","platform":"macos-arm64","rust_target":"aarch64-apple-darwin","bundles":"dmg","extension":"dmg"}]' || '[{"os":"ubuntu-latest","platform":"linux-x64","rust_target":"x86_64-unknown-linux-gnu","bundles":"deb","extension":"deb"},{"os":"ubuntu-24.04-arm","platform":"linux-arm64","rust_target":"aarch64-unknown-linux-gnu","bundles":"deb","extension":"deb"},{"os":"macos-15-intel","platform":"macos-x64","rust_target":"x86_64-apple-darwin","bundles":"dmg","extension":"dmg"},{"os":"macos-15","platform":"macos-arm64","rust_target":"aarch64-apple-darwin","bundles":"dmg","extension":"dmg"},{"os":"windows-latest","platform":"windows-x64","rust_target":"x86_64-pc-windows-msvc","bundles":"nsis","extension":"exe"},{"os":"windows-11-arm","platform":"windows-arm64","rust_target":"aarch64-pc-windows-msvc","bundles":"nsis","extension":"exe"}]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
@@ -99,3 +105,33 @@ jobs:
             apps/desktop/src-tauri/target/${{ matrix.rust_target }}/release/bundle/**/*.${{ matrix.extension }}
             apps/desktop/src-tauri/target/${{ matrix.rust_target }}/release/bundle/**/*.sha256
           if-no-files-found: error
+
+  publish:
+    name: Publish verified preview installers
+    needs: desktop
+    if: inputs.publish && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: takeboard-desktop-*
+          path: release
+      - name: Verify and publish installers
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').version")
+          test "$RELEASE_TAG" = "v$version"
+          installers=()
+          while IFS= read -r -d '' installer; do
+            (cd "$(dirname "$installer")" && sha256sum --check "$(basename "$installer").sha256")
+            installers+=("$installer")
+          done < <(find release -type f \( -name '*.dmg' -o -name '*.exe' -o -name '*.deb' \) -print0)
+          test "${#installers[@]}" -gt 0
+          gh release create "$RELEASE_TAG" --verify-tag --prerelease --title "TakeBoard $RELEASE_TAG" --notes-file "docs/releases/$RELEASE_TAG.md" "${installers[@]}"

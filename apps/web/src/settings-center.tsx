@@ -16,6 +16,7 @@ const GenerationConnectionPanel = lazy(() =>
   })),
 );
 const RemoteProjectSettings = lazy(() => import("./remote-project-settings"));
+const GpuPoolSettings = lazy(() => import("./gpu-pool-settings"));
 
 export function SettingsButton() {
   const [update, setUpdate] = useState(() =>
@@ -269,6 +270,7 @@ function SettingsCenter({
               <p>连接 ComfyUI，生成结果保存在当前项目。</p>
               <Suspense fallback={<p>读取设备…</p>}>
                 <GenerationConnectionPanel manage />
+                <GpuPoolSettings />
               </Suspense>
               <div className="settings-subsection">
                 <h3>远程项目</h3>

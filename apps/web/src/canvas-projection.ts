@@ -11,6 +11,7 @@ import {
   type ShotCanvasControls,
 } from "./generation-model";
 import { modelProfile, workflowInputSlots } from "./model-profiles";
+import { generationResolutionPolicy, resolutionPresets } from "./resolution-presets";
 
 const alignmentThreshold = 7;
 export const canvasSnapGrid: [number, number] = [12, 12];
@@ -156,7 +157,10 @@ export function boardNodes(
         title: shot?.label ?? "镜头",
         body: shot?.intent ?? "",
         status: shot?.status,
-        duration: shot?.durationSeconds,
+        duration:
+          previewAsset?.mediaType === "video"
+            ? (previewAsset.durationSeconds ?? undefined)
+            : undefined,
         takeCount: takes.length,
         engine: workflow?.name ?? "未选择模型",
         mediaUrl:
@@ -164,10 +168,12 @@ export function boardNodes(
         mediaType: previewAsset?.mediaType,
         mediaWidth: previewAsset?.width ?? undefined,
         mediaHeight: previewAsset?.height ?? undefined,
-        aspectRatio: shot?.aspectRatio,
+        aspectRatio:
+          previewAsset?.width && previewAsset.height
+            ? `${previewAsset.width}/${previewAsset.height}`
+            : undefined,
         selected: selectedCanvasItemId === item.id,
         details: [
-          shot?.aspectRatio ?? "未设画幅",
           profile.slots.length
             ? `${profile.slots.reduce((sum, slot) => sum + slot.maxCount, 0)} 个画面位置`
             : "纯文字输入",
@@ -206,6 +212,14 @@ export function boardNodes(
                 seed: controls.settings.seed,
                 outputLabel: profile.outputLabel,
                 minDurationSeconds: profile.family === "minimax_h3" ? 4 : 1,
+                supportsDuration: workflow?.inputs.includes("duration") ?? false,
+                resolutionOptions: workflow?.inputs.includes("resolution")
+                  ? resolutionPresets(
+                      profile.defaults.width,
+                      profile.defaults.height,
+                      generationResolutionPolicy(workflow.execution === "native", profile.family),
+                    )
+                  : [],
                 mentionAliases: controls.mentionAliases,
                 busy: controls.busy,
                 progress: controls.progress,
@@ -249,34 +263,43 @@ export function boardEdges(
         (shot?.id === selectedShotId ? selectedWorkflow : null);
       return workflowInputSlots(workflow).some((slot) => slot.id === edge.targetSlot);
     })
-    .map((edge) => ({
-      id: edge.id,
-      source: edge.sourceItemId,
-      target: edge.targetItemId,
-      ...(edge.targetSlot ? { sourceHandle: "media", targetHandle: edge.targetSlot } : {}),
-      selected: edge.id === selectedEdgeId,
-      label: edge.targetSlot ? slotMeta[edge.targetSlot].label : undefined,
-      labelStyle: {
-        fill: edge.targetSlot ? slotMeta[edge.targetSlot].color : "#89928f",
-        fontSize: 10,
-        fontWeight: 700,
-      },
-      labelBgStyle: { fill: "rgba(15, 19, 18, .88)", fillOpacity: 1 },
-      labelBgPadding: [5, 3],
-      labelBgBorderRadius: 5,
-      type: "smoothstep",
-      animated: edge.relation === "generated_from",
-      markerEnd: { type: MarkerType.ArrowClosed, color: "#66716e", width: 16, height: 16 },
-      style: {
-        stroke:
-          edge.relation === "generated_from"
-            ? "#d6a95f"
-            : edge.targetSlot
-              ? slotMeta[edge.targetSlot].color
-              : "#58635f",
-        strokeWidth: edge.relation === "generated_from" ? 2 : 1.25,
-      },
-    }));
+    .map((edge) => {
+      const target = snapshot.canvasItems.find((item) => item.id === edge.targetItemId);
+      const shot = snapshot.shots.find((item) => item.id === target?.refId);
+      const workflow =
+        findWorkflow(shot?.workflowPath ?? runWorkflowPath(snapshot, shot?.id ?? ""), workflows) ??
+        (shot?.id === selectedShotId ? selectedWorkflow : null);
+      const label = workflowInputSlots(workflow).find((slot) => slot.id === edge.targetSlot)?.label;
+      return {
+        id: edge.id,
+        source: edge.sourceItemId,
+        target: edge.targetItemId,
+        ...(edge.targetSlot ? { sourceHandle: "media", targetHandle: edge.targetSlot } : {}),
+        selected: edge.id === selectedEdgeId,
+        // Ports already identify their role. Only the focused connection repeats its label.
+        label: edge.id === selectedEdgeId ? label : undefined,
+        labelStyle: {
+          fill: edge.targetSlot ? slotMeta[edge.targetSlot].color : "#89928f",
+          fontSize: 10,
+          fontWeight: 700,
+        },
+        labelBgStyle: { fill: "rgba(15, 19, 18, .88)", fillOpacity: 1 },
+        labelBgPadding: [5, 3],
+        labelBgBorderRadius: 5,
+        type: "smoothstep",
+        animated: edge.relation === "generated_from",
+        markerEnd: { type: MarkerType.ArrowClosed, color: "#66716e", width: 16, height: 16 },
+        style: {
+          stroke:
+            edge.relation === "generated_from"
+              ? "#d6a95f"
+              : edge.targetSlot
+                ? slotMeta[edge.targetSlot].color
+                : "#58635f",
+          strokeWidth: edge.relation === "generated_from" ? 2 : 1.25,
+        },
+      };
+    });
 }
 
 export function resolveSnapshotEdge(snapshot: ProjectSnapshot, edge: Edge) {
@@ -309,7 +332,7 @@ export function edgeIdentityFromPointer(event: ReactMouseEvent): CanvasEdgeIdent
     ? "reference_audio"
     : visibleLabel.includes("参考视频")
       ? "reference_video"
-      : visibleLabel.includes("首帧")
+      : visibleLabel.includes("首帧") || visibleLabel.includes("源图")
         ? "first_frame"
         : visibleLabel.includes("尾帧")
           ? "last_frame"

@@ -250,14 +250,15 @@
 }
 .shot-inputs .shot-input > span {
   left: auto;
-  right: 13px;
+  right: 10px;
+  bottom: 8px;
   width: max-content;
   max-width: 140px;
   padding: 3px 6px;
   border-radius: 5px;
   color: var(--text-2);
   background: var(--surface-1);
-  font-size: 10px;
+  font-size: 11px;
   white-space: nowrap;
   opacity: 0.85;
   box-shadow: 0 1px 6px #0001;
@@ -275,18 +276,20 @@
 .run-raw pre {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  max-height: 240px;
-  overflow: auto;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface-root);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
   font-family: inherit;
   font-size: calc(13px * var(--ui-scale));
   line-height: 1.6;
 }
 .run-identity {
-  margin-bottom: 20px;
+  display: grid;
+  gap: 6px;
+  padding-block: 18px;
+  border-block: 1px solid var(--line);
+  margin-bottom: 18px;
 }
 .run-identity > span,
 .run-identity > small {
@@ -294,7 +297,7 @@
   font-size: calc(11px * var(--ui-scale));
 }
 .run-identity h3 {
-  margin: 8px 0;
+  margin: 0;
   font-size: calc(15px * var(--ui-scale));
   line-height: 1.5;
   overflow-wrap: anywhere;
@@ -363,16 +366,15 @@
   object-fit: contain;
   flex-shrink: 0;
 }
-.asset-display-name {
-  margin: 0 0 14px;
-  font-size: calc(14px * var(--ui-scale));
-  overflow-wrap: anywhere;
-}
 .run-settings dl {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px 18px;
+  gap: 0 18px;
   margin: 0;
+}
+.run-settings dl > div {
+  padding-block: 10px;
+  border-bottom: 1px solid var(--line);
 }
 .run-settings dt {
   color: var(--text-2);
@@ -392,6 +394,8 @@
 }
 .run-raw pre {
   font-size: calc(11px * var(--ui-scale));
+  max-height: 320px;
+  overflow: auto;
 }
 .run-model-files {
   font-size: calc(11px * var(--ui-scale));
@@ -405,9 +409,126 @@
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
-.take-to-canvas {
+
+.shot-intent {
+  padding: 0 18px 14px;
+  flex: none;
+}
+.shot-intent textarea {
   width: 100%;
-  margin-block: 8px 16px;
+  min-height: 54px;
+  max-height: 100px;
+  resize: vertical;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text-1);
+  background: var(--surface-2);
+  font: inherit;
+  font-size: calc(12px * var(--ui-scale));
+  line-height: 1.5;
+}
+.generation-aspect {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.generation-aspect > span {
+  color: var(--text-2);
+  font-size: calc(12px * var(--ui-scale));
+}
+.generation-aspect select {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 0 10px;
+  background: var(--surface-2);
+  color: var(--text-1);
+  font: inherit;
+}
+.shot-inline-aspect {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.shot-inline-aspect > span {
+  color: var(--text-2);
+  font-size: 12px;
+}
+.shot-inline-aspect select {
+  flex: 1;
+  min-width: 0;
+  min-height: 32px;
+  color: var(--text-1);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+.shot-inspector .decision-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 12px 0;
+  border: 0;
+  background: transparent;
+}
+.shot-inspector .decision-id {
+  flex: 1;
+  min-width: 70px;
+}
+.shot-inspector .decision-panel :is(button, select) {
+  min-height: 34px;
+  border-radius: 7px;
+  font-size: calc(12px * var(--ui-scale));
+}
+.shot-inspector .run-record {
+  padding-top: 0;
+}
+.asset-library .asset-detail-scroll {
+  flex: 1;
+  padding: 16px 18px;
+  scrollbar-width: none;
+}
+.asset-library .asset-detail-scroll::-webkit-scrollbar {
+  display: none;
+}
+.asset-detail-scroll .detail-media {
+  margin: 0 0 18px;
+}
+.asset-detail-scroll .detail-media > :is(img, video) {
+  max-height: min(260px, 30dvh);
+}
+.asset-library .asset-rename {
+  padding-bottom: 14px;
+}
+.asset-library .asset-detail-section {
+  padding-block: 12px;
+}
+.asset-library :is(.asset-detail-label, .asset-rename > label, .asset-detail-section dt) {
+  color: var(--text-2);
+  font-size: calc(11px * var(--ui-scale));
+}
+.asset-library
+  :is(.asset-rename input, .asset-tag-input input, .asset-kind-select, .asset-detail-section dd) {
+  font-size: calc(13px * var(--ui-scale));
+}
+.asset-library :is(.asset-rename button, .asset-tag-input button, .asset-detail-tags button) {
+  font-size: calc(11px * var(--ui-scale));
+}
+.asset-library :is(.asset-rename input, .asset-tag-input input) {
+  min-height: 34px;
+  padding: 6px 9px;
+}
+.asset-library .asset-detail-section dl {
+  gap: 10px 16px;
+}
+.take-to-canvas {
+  width: calc(100% - 36px);
+  margin: 8px 18px 16px;
   padding: 9px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -437,6 +558,7 @@
   padding: 0;
   background: rgb(3 5 4 / 22%);
   backdrop-filter: blur(2px);
+  animation: none;
 }
 .studio-backdrop.asset-backdrop {
   justify-content: flex-start;
@@ -452,7 +574,7 @@
 }
 .studio-backdrop.asset-backdrop .asset-library {
   border-radius: 0 16px 16px 0;
-  animation: backdrop-in 180ms ease-out;
+  animation: none;
 }
 .studio-backdrop > .layer-dismiss {
   position: absolute;
@@ -536,11 +658,9 @@
 @keyframes workspace-drawer-in {
   from {
     transform: translateX(28px);
-    opacity: 0;
   }
   to {
     transform: translateX(0);
-    opacity: 1;
   }
 }
 @media (max-width: 1050px) {

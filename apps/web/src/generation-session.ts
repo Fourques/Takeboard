@@ -27,11 +27,12 @@ export function batchGenerationProgress(
   const failed = current.filter((run) =>
     ["failed", "cancelled", "orphaned"].includes(run.status),
   ).length;
-  const running = current.length - completed - collecting - failed;
+  const queued = current.filter((run) => run.status === "queued").length;
+  const running = current.length - completed - collecting - failed - queued;
   return {
-    phase: running ? "running" : "collecting",
+    phase: running ? "running" : queued ? "queued" : "collecting",
     label: `候选结果 · ${completed}/${current.length} 已保存`,
-    detail: `${running} 生成中 · ${collecting} 保存中${failed ? ` · ${failed} 失败` : ""}`,
+    detail: `${running} 生成中${queued ? ` · ${queued} 排队中` : ""} · ${collecting} 保存中${failed ? ` · ${failed} 失败` : ""}`,
     percent: Math.round((completed / current.length) * 100),
     elapsedSeconds: Math.max(
       0,

@@ -52,7 +52,6 @@ import {
 import { CommandConfirmation } from "./command-confirmation";
 import { DeviceIndicator } from "./device-indicator";
 import { findWorkflow } from "./generation-model";
-import { NumericInput } from "./numeric-input";
 import { RecoveryNotice } from "./recovery-notice";
 import { SettingsButton } from "./settings-center";
 import { openSettings } from "./settings-navigation";
@@ -118,7 +117,11 @@ type PendingCanvasRemoval = {
 };
 
 export function App() {
-  const { user: authUser } = useAuth();
+  const { user: authUser, enabled: authEnabled, local: authLocal } = useAuth();
+  useEffect(() => {
+    if (authEnabled && !authLocal && !authUser) return;
+    void projectApi.resumeRuntime().catch(() => {});
+  }, [authUser, authEnabled, authLocal]);
   const {
     document: projectDocument,
     read: readProjectDocument,
@@ -238,7 +241,6 @@ export function App() {
     bindWorkflow,
     bindingBusy,
     updateSelectedShot,
-    activeRun,
     generationBusy,
     generationCancelling,
     canCancelGeneration,
@@ -486,7 +488,6 @@ export function App() {
       );
   }, [shotFilter, shotQuery, snapshot?.scenes, snapshot?.shots]);
   const approvedCount = snapshot?.shots.filter((shot) => shot.status === "approved").length ?? 0;
-  const totalDuration = snapshot?.shots.reduce((sum, shot) => sum + shot.durationSeconds, 0) ?? 0;
   const activeScene =
     snapshot?.scenes.find((scene) => scene.id === selectedShot?.sceneId) ?? snapshot?.scenes[0];
   const contextEdge = canvasContextMenu?.edge ?? null;
@@ -1213,13 +1214,18 @@ export function App() {
         edge.targetHandle === "reference_audio"
           ? edge.targetHandle
           : null);
-      const identity =
-        edgeIdentityFromPointer(event) ??
-        ({
-          sourceItemId: snapshotEdge?.sourceItemId ?? edge.source,
-          targetItemId: snapshotEdge?.targetItemId ?? edge.target,
-          targetSlot,
-        } satisfies CanvasEdgeIdentity);
+      const identity = snapshotEdge
+        ? {
+            sourceItemId: snapshotEdge.sourceItemId,
+            targetItemId: snapshotEdge.targetItemId,
+            targetSlot: snapshotEdge.targetSlot,
+          }
+        : (edgeIdentityFromPointer(event) ??
+          ({
+            sourceItemId: edge.source,
+            targetItemId: edge.target,
+            targetSlot,
+          } satisfies CanvasEdgeIdentity));
       const point = flowInstance?.screenToFlowPosition({ x: event.clientX, y: event.clientY }) ?? {
         x: 180,
         y: 180,
@@ -1248,7 +1254,7 @@ export function App() {
         selection.item(targetItem.id);
       }
       setNotice(
-        `已连接为${slot === "first_frame" ? "首帧" : slot === "last_frame" ? "尾帧" : slot === "reference_video" ? "参考视频" : slot === "reference_audio" ? "参考音频" : "参考图"}`,
+        `已连接${slot === "first_frame" ? "输入图" : slot === "last_frame" ? "尾帧" : slot === "reference_video" ? "参考视频" : slot === "reference_audio" ? "参考音频" : "参考图"}`,
       );
     },
     [acceptPayload, selection.item],
@@ -1879,7 +1885,7 @@ export function App() {
             workflows: availableWorkflows,
             workflowLocked,
             mentionAliases: promptMentions.map((mention) => mention.alias),
-            busy: busy || generationBusy || Boolean(activeRun),
+            busy: busy || generationBusy || generationCancelling,
             progress: generationProgress,
             disabledReason:
               projectMode === "project" && selectedWorkflow?.execution === "comfy_only"
@@ -1918,7 +1924,7 @@ export function App() {
     }));
     setNodes((previous) => retainNodeMeasurements(previous, interactiveNodes));
   }, [
-    activeRun,
+    generationCancelling,
     busy,
     canEditProject,
     generationBusy,
@@ -2089,9 +2095,7 @@ export function App() {
             <span className="cover-number">01</span>
             <div>
               <strong>{snapshot.project.title}</strong>
-              <span>
-                {snapshot.scenes.length} 场 · {totalDuration.toFixed(totalDuration % 1 ? 1 : 0)} 秒
-              </span>
+              <span>{snapshot.shots.length} 个镜头</span>
             </div>
           </div>
         </div>
@@ -2789,6 +2793,7 @@ export function App() {
         selectedCanvasItem.refType !== "shot" &&
         selectedCanvasItem.refType !== "take_stack" ? (
           <NodeContextInspector
+            workflows={workflows}
             key={selectedCanvasItem.id}
             item={selectedCanvasItem}
             snapshot={snapshot}
@@ -2818,7 +2823,7 @@ export function App() {
             key={selectedCanvasItem?.id ?? selectedShot.id}
             shot={selectedShot}
             takes={selectedTakes}
-            busy={busy || generationBusy || Boolean(activeRun)}
+            busy={busy || generationBusy || generationCancelling}
             assets={snapshot.assets}
             revealAsset={assetReveal}
             onLocateAsset={(assetId) => {
@@ -3209,7 +3214,7 @@ export function App() {
               </button>
             </div>
             <label>
-              <span>{nodeEditDraft.kind === "shot" ? "镜头编号" : "名称"}</span>
+              <span>{nodeEditDraft.kind === "shot" ? "镜头名称" : "名称"}</span>
               <input
                 value={nodeEditDraft.title}
                 maxLength={nodeEditDraft.kind === "asset" ? 512 : 200}
@@ -3235,47 +3240,6 @@ export function App() {
             ) : (
               <p className="node-editor-note">这里只修改项目中的显示名称，不会改变原始文件内容。</p>
             )}
-            {nodeEditDraft.kind === "shot" ? (
-              <div className="node-editor-field-row">
-                <label>
-                  <span>镜头画幅</span>
-                  <select
-                    value={nodeEditDraft.aspectRatio ?? "16:9"}
-                    onChange={(event) =>
-                      setNodeEditDraft((current) =>
-                        current
-                          ? {
-                              ...current,
-                              aspectRatio: event.target.value as Shot["aspectRatio"],
-                            }
-                          : current,
-                      )
-                    }
-                  >
-                    <option value="16:9">16:9 · 横屏</option>
-                    <option value="9:16">9:16 · 竖屏</option>
-                    <option value="1:1">1:1 · 方形</option>
-                    <option value="4:5">4:5 · 社交媒体</option>
-                    <option value="2.35:1">2.35:1 · 宽银幕</option>
-                  </select>
-                </label>
-                <label htmlFor="node-editor-duration">
-                  <span>镜头时长（秒）</span>
-                  <NumericInput
-                    id="node-editor-duration"
-                    min={0.5}
-                    max={300}
-                    step={0.5}
-                    value={nodeEditDraft.durationSeconds ?? 5}
-                    onValueChange={(durationSeconds) =>
-                      setNodeEditDraft((current) =>
-                        current ? { ...current, durationSeconds } : current,
-                      )
-                    }
-                  />
-                </label>
-              </div>
-            ) : null}
             <div className="node-editor-actions">
               <button type="button" onClick={() => setNodeEditDraft(null)}>
                 取消

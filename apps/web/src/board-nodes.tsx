@@ -1,6 +1,7 @@
 import { Handle, type Node, type NodeProps, Position, useUpdateNodeInternals } from "@xyflow/react";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { NumericInput } from "./numeric-input";
+import { closestAspectRatio } from "./resolution-presets";
 import { CanvasVideo } from "./video-preview";
 
 export type BoardNodeData = {
@@ -45,6 +46,8 @@ export type BoardNodeData = {
     seed: number;
     outputLabel: "图片" | "视频";
     minDurationSeconds: number;
+    resolutionOptions?: Array<{ label: string; width: number; height: number }>;
+    supportsDuration?: boolean;
     mentionAliases: string[];
     busy: boolean;
     progress: {
@@ -307,7 +310,9 @@ function ShotNode({ data, id }: NodeProps<BoardNode>) {
     !numericDraftValidity.width ||
     !numericDraftValidity.height ||
     !numericDraftValidity.seed ||
-    (data.inlineControls?.outputLabel === "视频" && !numericDraftValidity.duration) ||
+    (data.inlineControls?.outputLabel === "视频" &&
+      data.inlineControls.supportsDuration !== false &&
+      !numericDraftValidity.duration) ||
     !Number.isFinite(settingsDraft.width) ||
     settingsDraft.width < 256 ||
     settingsDraft.width > 2048 ||
@@ -317,6 +322,7 @@ function ShotNode({ data, id }: NodeProps<BoardNode>) {
     !Number.isSafeInteger(settingsDraft.seed) ||
     settingsDraft.seed < 0 ||
     (data.inlineControls?.outputLabel === "视频" &&
+      data.inlineControls.supportsDuration !== false &&
       (!Number.isFinite(settingsDraft.durationSeconds) ||
         settingsDraft.durationSeconds < (data.inlineControls?.minDurationSeconds ?? 1) ||
         settingsDraft.durationSeconds > 15));
@@ -394,7 +400,13 @@ function ShotNode({ data, id }: NodeProps<BoardNode>) {
               <span className="shot-label">{data.title}</span>
               <span className="shot-generated-facts">
                 <strong>{data.engine}</strong>
-                <i>{data.mediaType === "image" ? "图片" : `${data.duration} 秒 · 视频`}</i>
+                <i>
+                  {data.mediaType === "image"
+                    ? "图片"
+                    : data.duration
+                      ? `${Number(data.duration.toFixed(2))} 秒 · 视频`
+                      : "视频"}
+                </i>
               </span>
             </div>
           </div>
@@ -417,7 +429,7 @@ function ShotNode({ data, id }: NodeProps<BoardNode>) {
             </div>
             <NodeFacts details={data.details} />
             <footer>
-              <span>{data.duration} 秒</span>
+              {data.duration ? <span>{Number(data.duration.toFixed(2))} 秒</span> : null}
               <span>{data.takeCount ?? 0} Takes</span>
               <span>{data.engine ?? "I2V"}</span>
             </footer>
@@ -511,6 +523,30 @@ function ShotNode({ data, id }: NodeProps<BoardNode>) {
             placeholder={data.inlineControls.promptPlaceholder}
             onChange={(event) => updateSettingsDraft({ prompt: event.target.value })}
           />
+          {data.inlineControls.resolutionOptions?.length ? (
+            <label className="shot-inline-aspect">
+              <span>比例</span>
+              <select
+                aria-label="画布生成比例"
+                value={closestAspectRatio(settingsDraft.width, settingsDraft.height)}
+                onChange={(event) => {
+                  const preset = data.inlineControls?.resolutionOptions?.find(
+                    (item) => item.label === event.target.value,
+                  );
+                  if (preset) updateSettingsDraft({ width: preset.width, height: preset.height });
+                }}
+              >
+                <option value="custom" disabled>
+                  自定义
+                </option>
+                {data.inlineControls.resolutionOptions.map((preset) => (
+                  <option key={preset.label} value={preset.label}>
+                    {preset.label} · {preset.width} × {preset.height}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           {data.inlineControls.mentionAliases.length ? (
             <div className="shot-inline-mentions">
               {data.inlineControls.mentionAliases.map((alias) => (
@@ -560,7 +596,8 @@ function ShotNode({ data, id }: NodeProps<BoardNode>) {
                 />
               </div>
             </label>
-            {data.inlineControls.outputLabel === "视频" ? (
+            {data.inlineControls.outputLabel === "视频" &&
+            data.inlineControls.supportsDuration !== false ? (
               <label htmlFor={`${quickSettingsId}-duration`}>
                 <span>时长</span>
                 <NumericInput
@@ -632,7 +669,8 @@ function ShotNode({ data, id }: NodeProps<BoardNode>) {
           </button>
           {data.inlineControls.progress ? (
             <small className="shot-inline-progress-detail" aria-live="polite">
-              {data.inlineControls.progress.detail} · {data.inlineControls.progress.elapsedSeconds}s
+              {data.inlineControls.progress.label} · {data.inlineControls.progress.detail} ·{" "}
+              {data.inlineControls.progress.elapsedSeconds}s
             </small>
           ) : draftDisabledReason ? (
             <small>{draftDisabledReason}</small>

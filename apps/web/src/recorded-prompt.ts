@@ -1,5 +1,16 @@
 import type { Asset, Run } from "@takeboard/contracts";
 
+export function recordedInputLabel(slot: string, outputType?: Asset["mediaType"]) {
+  if (slot === "first_frame" || slot === "start_image")
+    return outputType === "image" ? "源图" : "首帧";
+  if (slot === "last_frame" || slot === "last_image") return "尾帧";
+  if (slot === "reference") return "参考图";
+  const match = /^reference_(image|video|audio)(?:_(\d+))?$/.exec(slot);
+  if (!match) return slot;
+  const label = match[1] === "image" ? "参考图" : match[1] === "video" ? "参考视频" : "参考音频";
+  return `${label}${match[2] === undefined ? "" : ` ${Number(match[2]) + 1}`}`;
+}
+
 export function recordedInputAsset(input: Run["inputs"][number], assets: Asset[]) {
   const exact = assets.find((asset) => asset.id === input.refId);
   if (exact) return exact;

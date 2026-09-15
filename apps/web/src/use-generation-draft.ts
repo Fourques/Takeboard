@@ -193,7 +193,9 @@ export function useGenerationDraft(context: GenerationContext, workflows: Workfl
         canonicalToken,
         role:
           edge.targetSlot === "first_frame"
-            ? "首帧"
+            ? selectedWorkflow?.capability === "image_to_image"
+              ? "源图"
+              : "首帧"
             : edge.targetSlot === "last_frame"
               ? "尾帧"
               : edge.targetSlot === "reference_video"
@@ -213,6 +215,7 @@ export function useGenerationDraft(context: GenerationContext, workflows: Workfl
     projectMode,
     selectedShotInputEdges,
     snapshot,
+    selectedWorkflow?.capability,
     generationSettings.referenceVideoAudio,
   ]);
   const selectedInputCounts = useMemo(

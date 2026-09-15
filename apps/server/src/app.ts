@@ -6,6 +6,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { resolveAuthDatabasePath } from "./auth-database-path.js";
 import { type AuthOptions, registerAuth } from "./auth-routes.js";
 import type { AuthMode } from "./auth-service.js";
+import { registerBackgroundCompletion } from "./background-completion.js";
 import { type BackupAutomationConfig, registerBackupAutomation } from "./backup-automation.js";
 import { ComfyConnections, registerComfyConnections } from "./comfy-connection.js";
 import { registerDemoRoutes } from "./demo/routes.js";
@@ -22,13 +23,16 @@ import { registerProjectRoutes } from "./project-routes.js";
 import { registerRemoteAccessRoutes } from "./remote-access-routes.js";
 import { type RequestSecurityOptions, registerRequestSecurity } from "./request-security.js";
 import { registerRunReconciler } from "./run-reconciler.js";
+import { registerSameGpuPool } from "./same-gpu-routes.js";
+import type { GpuPoolConfig, GpuRuntime } from "./same-gpu-runtime.js";
 import { WorkerPool } from "./worker-pool.js";
 import { registerWorkerRoutes, type WorkerRouteOptions } from "./worker-routes.js";
 import { registerWorkflowRoutes } from "./workflow-routes.js";
 
-export const takeBoardVersion = "0.2.0-beta.13";
+export const takeBoardVersion = "0.2.0-beta.14";
 
 export type AppOptions = {
+  gpuPool?: { config: GpuPoolConfig; runtime?: GpuRuntime };
   demoDirectory?: string;
   projectsRoot?: string;
   comfyUrl?: string;
@@ -151,6 +155,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     if (!endpoint) throw new Error("尚未选择生成服务");
     return endpoint;
   };
+  registerSameGpuPool(app, projectsRoot, options.gpuPool, activeComfyUrl);
   registerProjectRoutes(app, projectsRoot, {
     comfyUrl,
     comfyInputRoot,
@@ -166,6 +171,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     backupAutomation,
   });
   registerProjectCommandRoutes(app, projectsRoot);
+  registerBackgroundCompletion(app);
   registerExtensionRoutes(app, projectsRoot, extensionRegistry);
   registerWorkerRoutes(app, comfyUrl, options.workerOptions, workerPool, projectsRoot);
   registerComfyConnections(app, comfyConnections, workerPool);

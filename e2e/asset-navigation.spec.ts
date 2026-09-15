@@ -143,6 +143,15 @@ test("library locates displayed and historical results, disambiguates names and 
       await page.getByRole("button", { name: /打开资产库/ }).click();
       const card = library.locator(".asset-vault-card").filter({ hasText: display });
       await expect(card.locator(".asset-canvas-state")).toHaveText(state ?? "");
+      if (seed === "101") {
+        await card.click();
+        await expect(library.locator(".asset-detail-panel video")).toBeVisible();
+        await expect(library.locator(".asset-detail-scroll")).toHaveCSS("scrollbar-width", "none");
+        await page.screenshot({
+          path: "test-results/asset-video-details.png",
+          animations: "disabled",
+        });
+      }
       if (seed === "101")
         await page.screenshot({ path: "test-results/asset-locations.png", animations: "disabled" });
       await card.dblclick();
@@ -163,6 +172,11 @@ test("library locates displayed and historical results, disambiguates names and 
         .toBe(160);
       await expect(page.locator(".run-prompt .record-mention")).toHaveText("@person");
     }
+    await page.locator(".run-record").scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: "test-results/result-record-details.png",
+      animations: "disabled",
+    });
     await page.locator(".record-mention").click();
     await expect(page.getByLabel("素材节点检查器")).toContainText("portrait-renamed.webp");
     const after = (await (await request.get(`/api/projects/${key}`)).json()).snapshot;

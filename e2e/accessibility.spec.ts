@@ -65,8 +65,8 @@ test("workspace, operations and storyboard have no serious WCAG A/AA violations"
       JSON.stringify(workspaceResults.violations, null, 2),
     ).toEqual([]);
 
-    await page.getByRole("button", { name: "打开生成任务与存储空间" }).click();
-    await expect(page.getByRole("dialog", { name: "生成任务与存储空间" })).toBeVisible();
+    await page.getByRole("button", { name: "打开运行中心" }).click();
+    await expect(page.getByRole("dialog", { name: "运行中心" })).toBeVisible();
     const operationsResults = await new AxeBuilder({ page })
       .include(".operations-panel")
       .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])

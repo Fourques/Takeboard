@@ -1,8 +1,10 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { ComfyClient } from "@takeboard/executor-comfy";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
+import { completionFor } from "../src/background-completion.js";
 import type { ComfyLauncher } from "../src/comfy-launcher.js";
 
 const cleanup: Array<() => Promise<unknown>> = [];
@@ -44,6 +46,80 @@ async function fixture(options: { owned?: boolean; queue?: unknown; wait?: Promi
   return { app, launcher };
 }
 describe("safe managed ComfyUI stop", () => {
+  it("stops owned service after interrupted exit cleanup, but never an external one", async () => {
+    for (const owned of [true, false]) {
+      const { app, launcher } = await fixture({ owned, queue: {} });
+      await app.ready();
+      completionFor(app).interrupted = true;
+      await app.close();
+      expect(launcher.stop).toHaveBeenCalledTimes(owned ? 1 : 0);
+    }
+  });
+  it("releases the selected idle service without stopping it and rejects stale device selections", async () => {
+    const { app, launcher } = await fixture({ owned: false });
+    const workerId = (await app.inject("/api/workers")).json().defaultWorkerId;
+    const release = vi.spyOn(ComfyClient.prototype, "freeResourcesIfIdle").mockResolvedValue(true);
+    try {
+      expect(
+        (
+          await app.inject({
+            method: "POST",
+            url: "/api/workers/comfy/release",
+            payload: { workerId: "old" },
+          })
+        ).statusCode,
+      ).toBe(409);
+      expect(release).not.toHaveBeenCalled();
+      expect(
+        (
+          await app.inject({
+            method: "POST",
+            url: "/api/workers/comfy/release",
+            payload: { workerId },
+          })
+        ).json(),
+      ).toMatchObject({ requested: true });
+      expect(release).toHaveBeenCalledOnce();
+      expect(launcher.stop).not.toHaveBeenCalled();
+    } finally {
+      release.mockRestore();
+    }
+  });
+  it("never releases models when the selected service has queued work", async () => {
+    const { app } = await fixture({ queue: { queue_running: [], queue_pending: [[1]] } });
+    const workerId = (await app.inject("/api/workers")).json().defaultWorkerId;
+    const release = vi.spyOn(ComfyClient.prototype, "freeResourcesIfIdle").mockResolvedValue(true);
+    try {
+      expect(
+        (
+          await app.inject({
+            method: "POST",
+            url: "/api/workers/comfy/release",
+            payload: { workerId },
+          })
+        ).statusCode,
+      ).toBe(409);
+      expect(release).not.toHaveBeenCalled();
+    } finally {
+      release.mockRestore();
+    }
+  });
+  it("stops an idle owned service when its TakeBoard server exits", async () => {
+    const { app, launcher } = await fixture();
+    await app.ready();
+    await app.close();
+    expect(launcher.stop).toHaveBeenCalledOnce();
+  });
+  it.each([
+    { owned: false },
+    { queue: { queue_running: [[1]], queue_pending: [] } },
+    { queue: {} },
+  ])("preserves external, busy and uncertain services on exit", async (options) => {
+    const { app, launcher } = await fixture(options);
+    await app.ready();
+    await app.close();
+    expect(launcher.stop).not.toHaveBeenCalled();
+  });
   it("requires explicit confirmation and never stops an external service", async () => {
     const { app, launcher } = await fixture({ owned: false });
     expect(

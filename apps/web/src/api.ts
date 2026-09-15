@@ -947,6 +947,12 @@ export const projectApi = {
       method: "POST",
       body: JSON.stringify({ action: "safe-stop" }),
     }),
+  releaseWorkerMemory: (workerId: string) =>
+    jsonRequest<{ requested: boolean; workerId: string }>("/api/workers/comfy/release", {
+      method: "POST",
+      body: JSON.stringify({ workerId }),
+    }),
+  resumeRuntime: () => jsonRequest<{ resumed: boolean }>("/api/runtime/resume", { method: "POST" }),
 };
 
 export type GenerationConnectionTarget =
@@ -989,6 +995,27 @@ export const generationConnectionApi = {
       method: "POST",
       body: JSON.stringify(target),
     }),
+};
+
+export type GpuPoolStatus = {
+  configured: boolean;
+  remote?: boolean;
+  enabled?: boolean;
+  paused?: string | null;
+  waiting?: string;
+  poisoned?: boolean;
+  endpoint?: string;
+  instanceMemoryMiB?: number;
+  headroomMiB?: number;
+  running?: number;
+  reserved?: number;
+  queued?: number;
+  instances?: Array<{ index: number; active: number }>;
+};
+export const gpuPoolApi = {
+  status: () => jsonRequest<GpuPoolStatus>("/api/admin/gpu-pool"),
+  start: () => jsonRequest<GpuPoolStatus>("/api/admin/gpu-pool/start", { method: "POST" }),
+  stop: () => jsonRequest<GpuPoolStatus>("/api/admin/gpu-pool/stop", { method: "POST" }),
 };
 
 export const workerApi = {

@@ -1,17 +1,19 @@
 import { execFile as execFileCallback } from "node:child_process";
-import { readdir } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, readFile } from "node:fs/promises";
 import { arch, freemem } from "node:os";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import { executionPolicySchema, workerDefinitionSchema } from "@takeboard/contracts";
 import type { FastifyInstance } from "fastify";
+import { completionFor } from "./background-completion.js";
 import {
   type ComfyLauncher,
   createComfyLauncher,
   launcherConfigFromEnvironment,
 } from "./comfy-launcher.js";
-import { projectDirectory } from "./project-locations.js";
-import { projectKey } from "./project-routes.js";
-import { ProjectStore } from "./storage/project-store.js";
+import { assertComfyIdle, recordInterruptedExit, stopOwnedIdleComfy } from "./comfy-lifecycle.js";
+import { atomicGpuJson } from "./same-gpu-pool.js";
 import { WorkerPool, WorkerSelectionError } from "./worker-pool.js";
 
 const execFile = promisify(execFileCallback);
@@ -317,6 +319,79 @@ export function registerWorkerRoutes(
   let starting = false;
   let lifecycleBusy = false;
   let submissions = 0;
+  let closing = false;
+  let restoring: Promise<void> | null = null;
+  const preferencePath = projectsRoot
+    ? join(projectsRoot, ".system", "comfy-lifecycle.json")
+    : null;
+  const serviceIdentity = createHash("sha256")
+    .update(
+      JSON.stringify({
+        endpoint: comfyUrl,
+        platform,
+        launcher: launcher.kind,
+        config: launcherConfigFromEnvironment(),
+      }),
+    )
+    .digest("hex");
+  const rememberManagedService = async (enabled: boolean) => {
+    if (!preferencePath || !projectsRoot) return;
+    await mkdir(join(projectsRoot, ".system"), { recursive: true });
+    await atomicGpuJson(preferencePath, { version: 1, serviceIdentity, enabled });
+  };
+  const launchAndWait = async () => {
+    await launcher.start();
+    const startedAt = Date.now();
+    while (!closing && Date.now() - startedAt < options.startupTimeoutMs) {
+      await runtime.delay(1000);
+      const worker = await probeWorker(runtime, comfyUrl, platform, launcher);
+      if (worker) return worker;
+    }
+    return null;
+  };
+  app.addHook("onListen", async () => {
+    // A prior successful explicit start is consent to restore this exact local service.
+    // Restoring is background work: the app can still display startup diagnostics.
+    if (
+      !preferencePath ||
+      workerPool.defaultWorkerId !== workerPool.localWorkerId ||
+      !workerPool.definition(workerPool.localWorkerId)?.enabled ||
+      !localEndpoint(comfyUrl)
+    )
+      return;
+    restoring = (async () => {
+      const saved = await readFile(preferencePath, "utf8")
+        .then(JSON.parse)
+        .catch(() => null);
+      if (
+        !saved?.enabled ||
+        saved.serviceIdentity !== serviceIdentity ||
+        closing ||
+        lifecycleBusy ||
+        submissions
+      )
+        return;
+      lifecycleBusy = true;
+      starting = true;
+      let launched = false;
+      try {
+        if (await probeWorker(runtime, comfyUrl, platform, launcher)) return;
+        const check = await preflight(runtime, comfyUrl, launcher, options);
+        if (!check.canStart || closing) return;
+        launched = true;
+        if (!(await launchAndWait())) throw new Error("恢复生成服务超时");
+      } catch (error) {
+        if (launched)
+          await launcher
+            .stop()
+            .catch((cause) => app.log.warn({ err: cause }, "ComfyUI restore rollback failed"));
+        app.log.warn({ err: error }, "ComfyUI restore deferred; explicit retry remains available");
+      } finally {
+        starting = false;
+        lifecycleBusy = false;
+      }
+    })();
+  });
   // Hold the gate until the handler itself completes, even if a client aborts.
   // HTTP response/abort hooks alone would release it while an upload still runs.
   app.addHook("onRoute", (route) => {
@@ -327,6 +402,7 @@ export function registerWorkerRoutes(
         [
           "/api/workers/comfy/start",
           "/api/workers/comfy/stop",
+          "/api/workers/comfy/release",
           "/api/generation/connection",
         ].includes(route.url));
     const generation =
@@ -360,6 +436,29 @@ export function registerWorkerRoutes(
         : "此服务不属于可验证的受管进程，只连接，不代为关闭",
     };
   };
+  app.addHook("onClose", async () => {
+    // Only the actual server owner closes this process. Closing a remote browser
+    // does not close the shared server or its GPU service.
+    closing = true;
+    await restoring;
+    if (!projectsRoot || !localEndpoint(comfyUrl)) return;
+    try {
+      if (completionFor(app).interrupted && (await launcher.canStop?.())) {
+        await launcher.stop();
+        await recordInterruptedExit(projectsRoot, workerPool.localWorkerId);
+        return;
+      }
+      await stopOwnedIdleComfy(launcher, async () => {
+        if (starting || submissions || lifecycleBusy) throw new Error("启停或提交尚未结束");
+        await assertComfyIdle(projectsRoot, workerPool.localWorkerId, comfyUrl, runtime.fetch);
+      });
+    } catch (error) {
+      app.log.warn(
+        { err: error },
+        "ComfyUI retained: work or ownership could not be safely cleared",
+      );
+    }
+  });
 
   app.get("/api/workers", async () => ({
     defaultWorkerId: workerPool.defaultWorkerId,
@@ -526,6 +625,29 @@ export function registerWorkerRoutes(
     } satisfies WorkerPayload;
   });
 
+  app.post<{ Body: { workerId?: string } }>(
+    "/api/workers/comfy/release",
+    async (request, reply) => {
+      const workerId = workerPool.defaultWorkerId;
+      if (request.body?.workerId !== workerId)
+        return reply.code(409).send({ error: "生成设备已变化，请刷新后重试" });
+      if (!projectsRoot || !workerPool.definition(workerId)?.enabled)
+        return reply.code(409).send({ error: "请先连接生成设备" });
+      try {
+        const endpoint = workerPool.endpoint(workerId);
+        if (!endpoint) throw new Error("生成设备地址不可用");
+        await assertComfyIdle(projectsRoot, workerId, endpoint, runtime.fetch);
+        const accepted = await workerPool.client(workerId, false).freeResourcesIfIdle();
+        if (!accepted)
+          return reply.code(409).send({ error: "设备仍有任务或未接受释放请求，请稍后重试" });
+        return { requested: true, workerId };
+      } catch (error) {
+        return reply
+          .code(409)
+          .send({ error: error instanceof Error ? error.message : "无法确认设备空闲，未释放显存" });
+      }
+    },
+  );
   app.post<{ Body: { action?: string } }>("/api/workers/comfy/stop", async (request, reply) => {
     if (request.body?.action !== "safe-stop")
       return await reply.code(400).send({ error: "请确认停止生成服务" });
@@ -534,40 +656,10 @@ export function registerWorkerRoutes(
     if (!projectsRoot)
       return await reply.code(409).send({ error: "无法检查项目任务，已阻止停止服务" });
     try {
-      const entries = await readdir(projectsRoot, { withFileTypes: true });
-      for (const entry of entries) {
-        if (!entry.isDirectory() || !projectKey(entry.name)) continue;
-        const store = ProjectStore.openExisting(projectDirectory(projectsRoot, entry.name));
-        if (!store) throw new Error("存在无法检查的项目，已阻止停止服务");
-        try {
-          const snapshot = store.loadCurrent()?.snapshot;
-          if (!snapshot) throw new Error("项目任务状态不可读，已阻止停止服务");
-          if (
-            snapshot.runs.some(
-              (run) =>
-                (!run.workerId || run.workerId === workerPool.defaultWorkerId) &&
-                !["completed", "failed", "cancelled"].includes(run.status),
-            )
-          )
-            throw new Error("仍有生成或结果收集任务，请完成或取消后再停止服务");
-        } finally {
-          store.close();
-        }
-      }
-      const response = await runtime.fetch(`${comfyUrl}/queue`, {
-        signal: AbortSignal.timeout(3000),
-      });
-      if (!response.ok) throw new Error("无法检查 ComfyUI 队列，已阻止停止服务");
-      const queue = (await response.json()) as {
-        queue_running?: unknown[];
-        queue_pending?: unknown[];
-      };
-      if (!Array.isArray(queue.queue_running) || !Array.isArray(queue.queue_pending))
-        throw new Error("ComfyUI 队列响应无效，已阻止停止服务");
-      if (queue.queue_running.length || queue.queue_pending.length)
-        throw new Error("ComfyUI 仍有任务，不会中断其他生成");
+      await assertComfyIdle(projectsRoot, workerPool.localWorkerId, comfyUrl, runtime.fetch);
       if (!(await controlStatus()).canStop) throw new Error("服务归属已变化，已取消停止操作");
       await launcher.stop();
+      await rememberManagedService(false);
       for (let attempt = 0; attempt < 10; attempt += 1) {
         if (!(await probeWorker(runtime, comfyUrl, platform, launcher))) return { stopped: true };
         await runtime.delay(500);
@@ -624,12 +716,10 @@ export function registerWorkerRoutes(
 
     starting = true;
     try {
-      await launcher.start();
-      const startedAt = Date.now();
-      while (Date.now() - startedAt < options.startupTimeoutMs) {
-        await runtime.delay(1_000);
-        const worker = await probeWorker(runtime, comfyUrl, platform, launcher);
-        if (worker) return worker;
+      const worker = await launchAndWait();
+      if (worker) {
+        if (await launcher.canStop?.()) await rememberManagedService(true);
+        return worker;
       }
       try {
         await launcher.stop();

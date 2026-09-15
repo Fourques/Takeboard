@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { authModeFromEnvironment, buildApp, takeBoardVersion } from "./app.js";
+import { completionFor, hasUnfinishedWork } from "./background-completion.js";
 import { acquireInstanceLease } from "./instance-lease.js";
 import { assertSafeBindHost } from "./request-security.js";
 
@@ -29,7 +30,7 @@ function disconnectParent() {
   if (process.connected) process.disconnect();
 }
 
-function shutdown(reason: string) {
+function closeServer(reason: string) {
   shutdownPromise ??= (async () => {
     app.log.info({ reason }, "TakeBoard server is stopping");
     try {
@@ -43,6 +44,29 @@ function shutdown(reason: string) {
     }
   })();
   return shutdownPromise;
+}
+let completing: Promise<void> | null = null;
+function shutdown(reason: string) {
+  if (process.env.TAKEBOARD_DESKTOP !== "1" || reason === "startup-failure")
+    return closeServer(reason);
+  // Acknowledge before scanning databases; the launcher must not escalate to SIGKILL.
+  if (process.connected) {
+    try {
+      process.send?.({ type: "takeboard.server.background" }, () => {});
+    } catch {
+      /* parent already exited */
+    }
+  }
+  completing ??= completionFor(app)
+    .drain(
+      () =>
+        hasUnfinishedWork(resolve(process.env.TAKEBOARD_DATA_ROOT ?? ".takeboard-data/projects")),
+      () => closeServer(reason),
+    )
+    .finally(() => {
+      completing = null;
+    });
+  return completing;
 }
 
 const onControlMessage = (message: unknown) => {

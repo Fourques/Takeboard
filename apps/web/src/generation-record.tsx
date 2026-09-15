@@ -3,7 +3,7 @@ import { lazy, Suspense } from "react";
 import type { WorkflowSummary } from "./api";
 import { projectApi } from "./api";
 import { assetDisplayNames } from "./asset-navigation";
-import { recordedInputAsset, recordedPromptParts } from "./recorded-prompt";
+import { recordedInputAsset, recordedInputLabel, recordedPromptParts } from "./recorded-prompt";
 
 const ExecutionProvenance = lazy(() =>
   import("./execution-provenance").then((m) => ({ default: m.ExecutionProvenance })),
@@ -13,6 +13,7 @@ export function GenerationRecord({
   assets,
   workflows,
   outputType,
+  outputAssetId,
   onLocateAsset,
   projectKey,
 }: {
@@ -20,10 +21,12 @@ export function GenerationRecord({
   assets: Asset[];
   workflows: WorkflowSummary[];
   outputType: Asset["mediaType"] | undefined;
+  outputAssetId?: string | undefined;
   onLocateAsset: (assetId: string) => void;
   projectKey: string | null;
 }) {
   const p = run.parameters;
+  const output = assets.find((asset) => asset.id === (outputAssetId ?? p.outputAssetId));
   const names = assetDisplayNames(assets);
   const path = typeof p.recipePath === "string" ? p.recipePath : "";
   const modelFile = Array.isArray(p.models)
@@ -39,9 +42,26 @@ export function GenerationRecord({
       "未记录工作流");
   const facts = [
     ["种子", p.seed],
-    ["尺寸", p.width && p.height ? `${p.width} × ${p.height}` : null],
-    ["时长", outputType !== "image" && p.durationSeconds ? `${p.durationSeconds} 秒` : null],
-    ["帧率", outputType !== "image" && p.fps ? `${p.fps} fps` : null],
+    [
+      "尺寸",
+      output?.width && output.height
+        ? `${output.width} × ${output.height}`
+        : p.width && p.height
+          ? `${p.width} × ${p.height}`
+          : null,
+    ],
+    [
+      "时长",
+      outputType !== "image" && (output?.durationSeconds ?? p.durationSeconds)
+        ? `${Number(Number(output?.durationSeconds ?? p.durationSeconds).toFixed(2))} 秒`
+        : null,
+    ],
+    [
+      "帧率",
+      outputType !== "image" && (output?.frameRate ?? p.fps)
+        ? `${output?.frameRate ?? p.fps} fps`
+        : null,
+    ],
     ["步数", p.steps],
     ["引导系数", p.cfg ?? p.guidance],
   ].filter(([, value]) => value !== null && value !== undefined);
@@ -105,15 +125,7 @@ export function GenerationRecord({
                           }[input.refType]}
                     </strong>
                   )}
-                  <span>
-                    {input.slot
-                      .replace(/first_frame/, "首帧")
-                      .replace(/last_frame/, "尾帧")
-                      .replace(/reference_image/, "参考图")
-                      .replace(/reference_video/, "参考视频")
-                      .replace(/reference_audio/, "参考音频")
-                      .replace(/^reference$/, "参考图")}
-                  </span>
+                  <span>{recordedInputLabel(input.slot, outputType)}</span>
                 </li>
               );
             })}

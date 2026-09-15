@@ -399,7 +399,7 @@ test("reopening a project resumes and reconciles an active generation", async ({
   await page.getByRole("button", { name: `打开 ${title} 的SC-01` }).click();
   await expect(page.getByText("SH-01", { exact: true }).first()).toBeVisible();
   await expect(page.locator(".shot-inline-progress-track")).toBeVisible();
-  await expect(page.locator(".shot-inline-generate")).toContainText("已恢复后台生成任务");
+  await expect(page.locator(".shot-inline-progress-detail")).toContainText("已恢复后台生成任务");
   await page.screenshot({
     path: "test-results/takeboard-canvas-generation-progress.png",
     animations: "disabled",
@@ -1055,7 +1055,7 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
     steps: 12,
   });
   await page.mouse.up();
-  await expect(page.getByText("已连接为首帧")).toBeVisible();
+  await expect(page.getByText("已连接输入图")).toBeVisible();
   await expect(page.locator(".react-flow__edge")).toHaveCount(1);
   const shotNodes = page.locator(".react-flow__node-shot");
   // Connecting selects the target shot; dismiss its detail panel to continue
@@ -1107,7 +1107,8 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
   const inspector = page.getByLabel("镜头候选检查器");
   await inspector.getByLabel("镜头名称").fill("SH-01A");
   await expect(inspector.getByRole("region", { name: "镜头信息" })).toBeVisible();
-  await inspector.getByLabel("镜头画幅").selectOption("9:16");
+  await inspector.getByLabel("镜头备注").fill("保持人物在画面中央");
+  await expect(inspector.getByLabel("镜头画幅")).toHaveCount(0);
   await inspector.getByRole("button", { name: "保存镜头" }).click();
   await expect(page.getByText("SH-01A", { exact: true }).first()).toBeVisible();
 
@@ -1147,7 +1148,7 @@ test("a user can create and reopen a real project", async ({ page, request }) =>
     { steps: 12 },
   );
   await page.mouse.up();
-  await expect(page.getByText("已连接为参考视频")).toBeVisible();
+  await expect(page.getByText("已连接参考视频")).toBeVisible();
   await expect(page.locator(".react-flow__node-shot")).toContainText("参考视频 1/3");
   await page.getByRole("button", { name: "收起检查器" }).click();
   await expect(page.locator(".shot-inline-mentions")).toContainText("@camera-motion-reference");

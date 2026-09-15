@@ -196,18 +196,26 @@ async function waitForServer(child, port, instanceId) {
   throw new Error("服务在 30 秒内没有完成启动");
 }
 
-function waitForExit(child, timeout) {
+const backgroundChildren = new WeakSet();
+function waitForExit(child, timeout, allowBackground = false) {
+  if (allowBackground && backgroundChildren.has(child)) return Promise.resolve(true);
   if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve(true);
   return new Promise((resolveExit) => {
     const completed = () => {
       clearTimeout(timer);
+      child.removeListener("message", background);
       resolveExit(true);
+    };
+    const background = (message) => {
+      if (allowBackground && message?.type === "takeboard.server.background") completed();
     };
     const timer = setTimeout(() => {
       child.removeListener("exit", completed);
+      child.removeListener("message", background);
       resolveExit(false);
     }, timeout);
     child.once("exit", completed);
+    child.on("message", background);
   });
 }
 
@@ -226,7 +234,7 @@ async function stopOwnedServer(child) {
   if (child.exitCode !== null || child.signalCode !== null) return;
   if (
     (await sendControlMessage(child, { type: "takeboard.server.shutdown" })) &&
-    (await waitForExit(child, 10_000))
+    (await waitForExit(child, 10_000, true))
   ) {
     return;
   }
@@ -247,6 +255,11 @@ async function start() {
     if (openRequested) openBrowser(url);
     return;
   }
+  const desktop = process.env.TAKEBOARD_DESKTOP === "1";
+  if (desktop) await mkdir(join(dataRoot, ".system"), { recursive: true, mode: 0o700 });
+  const serverLog = desktop
+    ? await open(join(dataRoot, ".system", "runtime.log"), "a", 0o600)
+    : null;
   const child = spawn(process.execPath, [serverEntry], {
     cwd: serverRoot,
     env: {
@@ -258,11 +271,27 @@ async function start() {
       TAKEBOARD_PORT: String(selected.port),
       TAKEBOARD_WEB_ROOT: webRoot,
     },
-    stdio: ["inherit", "inherit", "inherit", "ipc"],
+    stdio: serverLog
+      ? ["ignore", serverLog.fd, serverLog.fd, "ipc"]
+      : ["inherit", "inherit", "inherit", "ipc"],
+    detached: desktop,
     windowsHide: false,
   });
+  await serverLog?.close();
   let stopPromise = null;
-  const childExit = new Promise((resolveExit) => child.once("exit", resolveExit));
+  const childExit = new Promise((resolveExit) => {
+    child.once("exit", resolveExit);
+    child.on("message", (message) => {
+      if (!desktop || message?.type !== "takeboard.server.background") return;
+      backgroundChildren.add(child);
+      child.unref();
+      // Defer disconnect so the stop waiter can observe the acknowledgement too.
+      setImmediate(() => {
+        if (child.connected) child.disconnect();
+      });
+      resolveExit(0);
+    });
+  });
   const terminate = () => {
     stopPromise ??= stopOwnedServer(child);
     void stopPromise.catch(() => undefined);

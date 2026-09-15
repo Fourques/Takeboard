@@ -1138,13 +1138,17 @@ export class ComfyClient {
     this.progressTracker.forget(promptId);
   }
 
-  async submit(prompt: ComfyPrompt, clientId = this.createClientId()) {
+  async submit(prompt: ComfyPrompt, clientId = this.createClientId(), requestedPromptId?: string) {
     this.progressTracker.connect(clientId, prompt);
     try {
       const response = await fetch(`${this.baseUrl}/prompt`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ prompt, client_id: clientId }),
+        body: JSON.stringify({
+          prompt,
+          client_id: clientId,
+          ...(requestedPromptId ? { prompt_id: requestedPromptId } : {}),
+        }),
         signal: AbortSignal.timeout(30_000),
       });
       const result = (await response.json()) as {
@@ -1156,6 +1160,8 @@ export class ComfyClient {
       if (!response.ok || !result.prompt_id) {
         throw new Error(`ComfyUI rejected prompt: ${JSON.stringify(result)}`);
       }
+      if (requestedPromptId && result.prompt_id !== requestedPromptId)
+        throw new Error("ComfyUI did not preserve the requested task identity");
       this.progressTracker.register(result.prompt_id, clientId, result.number);
       return result.prompt_id;
     } catch (error) {
@@ -1257,23 +1263,30 @@ export class ComfyClient {
     if (!response.ok) throw new Error(`ComfyUI history cleanup failed: ${response.status}`);
   }
 
-  async freeResourcesIfIdle() {
+  async isIdle(signal: AbortSignal = AbortSignal.timeout(3000)) {
     const queueResponse = await fetch(`${this.baseUrl}/queue`, {
-      signal: AbortSignal.timeout(30_000),
+      signal,
     });
     if (!queueResponse.ok) return false;
     const queue = (await queueResponse.json()) as {
       queue_running?: unknown[];
       queue_pending?: unknown[];
     };
-    if ((queue.queue_running?.length ?? 0) > 0 || (queue.queue_pending?.length ?? 0) > 0) {
-      return false;
-    }
+    return (
+      Array.isArray(queue.queue_running) &&
+      Array.isArray(queue.queue_pending) &&
+      queue.queue_running.length === 0 &&
+      queue.queue_pending.length === 0
+    );
+  }
+
+  async freeResourcesIfIdle(signal: AbortSignal = AbortSignal.timeout(3000)) {
+    if (!(await this.isIdle(signal))) return false;
     const response = await fetch(`${this.baseUrl}/free`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ unload_models: true, free_memory: true }),
-      signal: AbortSignal.timeout(30_000),
+      signal,
     });
     return response.ok;
   }

@@ -426,6 +426,21 @@ export function GenerationConnectionPanel({ manage = false }: { manage?: boolean
               <summary>服务控制</summary>
               <p>{connection?.address || "尚未配置地址"}</p>
               <div className="settings-actions">
+                {worker.status === "ready" ? (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    title="卸载空闲模型，保持服务连接"
+                    onClick={() =>
+                      void operate(
+                        () => projectApi.releaseWorkerMemory(connection.workerId),
+                        "已请求释放空闲显存，服务保持连接",
+                      )
+                    }
+                  >
+                    释放显存
+                  </button>
+                ) : null}
                 {worker.startup?.canStart ? (
                   <button
                     type="button"

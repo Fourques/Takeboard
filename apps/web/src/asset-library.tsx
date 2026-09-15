@@ -914,305 +914,290 @@ export function AssetLibrary({
 
           <section className="asset-detail-panel" aria-label="素材详情">
             {selectedAsset ? (
-              <>
+              <div className="asset-detail-scroll">
                 <DetailMedia
                   src={projectApi.assetUrl(projectKey, selectedAsset.id)}
                   kind={selectedAsset.mediaType}
                   label={displayNames.get(selectedAsset.id) ?? selectedAsset.originalName}
                 />
-                <div className="asset-detail-scroll">
-                  <h3 className="asset-display-name">{displayNames.get(selectedAsset.id)}</h3>
-                  <form
-                    className="asset-rename"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      if (readOnly) return;
-                      const title = renameValue.trim();
-                      if (!title || title === selectedAsset.originalName) return;
-                      void onUpdateAsset(selectedAsset.id, { title }).then((result) =>
-                        setActionStatus(result.ok ? "名称已保存" : (result.error ?? "保存失败")),
-                      );
-                    }}
-                  >
-                    <label htmlFor="asset-detail-name">素材名称</label>
-                    <div>
-                      <input
-                        id="asset-detail-name"
-                        readOnly={readOnly}
-                        value={renameValue}
-                        onChange={(event) => setRenameValue(event.target.value)}
-                      />
-                      {!readOnly ? (
-                        <button
-                          type="submit"
-                          disabled={
-                            busy ||
-                            !renameValue.trim() ||
-                            renameValue.trim() === selectedAsset.originalName
-                          }
-                        >
-                          保存
-                        </button>
-                      ) : null}
-                    </div>
-                  </form>
-
-                  <div className="asset-detail-section">
-                    <span className="asset-detail-label">整理分类</span>
-                    <select
-                      className="asset-kind-select"
-                      value={selectedKind ?? "loose"}
-                      disabled={busy || readOnly}
-                      onChange={(event) =>
-                        void updateKind(
-                          selectedAsset.id,
-                          event.target.value === "loose" ? null : (event.target.value as AssetKind),
-                        )
-                      }
-                      aria-label="整理分类"
-                    >
-                      <option value="loose">待整理</option>
-                      <option value="character">人物</option>
-                      <option value="location">场景</option>
-                      <option value="prop">道具</option>
-                    </select>
-                    {selectedEntities.length ? (
-                      <span className="asset-detail-label asset-related-label">关联档案</span>
-                    ) : null}
-                    <div className="asset-entity-links">
-                      {selectedEntities.length
-                        ? selectedEntities.map((entity) => (
-                            <span key={entity.id}>
-                              <i className={`asset-kind-mark ${entity.kind}`} />
-                              {kindLabels[entity.kind]} · {entity.name}
-                            </span>
-                          ))
-                        : null}
-                    </div>
-                  </div>
-
-                  <div className="asset-detail-section">
-                    <span className="asset-detail-label">标签</span>
-                    <div className="asset-detail-tags">
-                      {selectedAsset.customTags.map((tag) =>
-                        readOnly ? (
-                          <span className="asset-read-only-tag" key={tag}>
-                            {tag}
-                          </span>
-                        ) : (
-                          <button
-                            type="button"
-                            key={tag}
-                            onClick={() =>
-                              void updateTags(
-                                selectedAsset.customTags.filter((candidate) => candidate !== tag),
-                              )
-                            }
-                            aria-label={`移除标签 ${tag}`}
-                          >
-                            {tag}
-                            <b>×</b>
-                          </button>
-                        ),
-                      )}
-                    </div>
+                <form
+                  className="asset-rename"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    if (readOnly) return;
+                    const title = renameValue.trim();
+                    if (!title || title === selectedAsset.originalName) return;
+                    void onUpdateAsset(selectedAsset.id, { title }).then((result) =>
+                      setActionStatus(result.ok ? "名称已保存" : (result.error ?? "保存失败")),
+                    );
+                  }}
+                >
+                  <label htmlFor="asset-detail-name">素材名称</label>
+                  <div>
+                    <input
+                      id="asset-detail-name"
+                      readOnly={readOnly}
+                      value={renameValue}
+                      onChange={(event) => setRenameValue(event.target.value)}
+                    />
                     {!readOnly ? (
-                      <form
-                        className="asset-tag-input"
-                        onSubmit={(event) => {
-                          event.preventDefault();
-                          const tag = tagValue.trim();
-                          if (
-                            !tag ||
-                            selectedAsset.customTags.includes(tag) ||
-                            selectedAsset.customTags.length >= 24
-                          )
-                            return;
-                          setTagValue("");
-                          void updateTags([...selectedAsset.customTags, tag]);
-                        }}
-                      >
-                        <input
-                          value={tagValue}
-                          onChange={(event) => setTagValue(event.target.value)}
-                          placeholder="输入标签后回车"
-                          aria-label="新增资产标签"
-                          maxLength={40}
-                        />
-                        <button type="submit" disabled={!tagValue.trim()}>
-                          ＋
-                        </button>
-                      </form>
-                    ) : null}
-                  </div>
-
-                  <div className="asset-detail-section">
-                    <span className="asset-detail-label">文件信息</span>
-                    <dl>
-                      <div>
-                        <dt>类型</dt>
-                        <dd>{selectedAsset.mimeType}</dd>
-                      </div>
-                      <div>
-                        <dt>尺寸</dt>
-                        <dd>
-                          {selectedAsset.width && selectedAsset.height
-                            ? `${selectedAsset.width} × ${selectedAsset.height}`
-                            : "—"}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>大小</dt>
-                        <dd>{formatBytes(selectedAsset.byteSize)}</dd>
-                      </div>
-                      {selectedAsset.mediaType === "video" ? (
-                        <>
-                          <div>
-                            <dt>时长</dt>
-                            <dd>{formatDuration(selectedAsset.durationSeconds) ?? "—"}</dd>
-                          </div>
-                          <div>
-                            <dt>帧率</dt>
-                            <dd>
-                              {selectedAsset.frameRate
-                                ? `${selectedAsset.frameRate.toFixed(2).replace(/\.00$/, "")} fps`
-                                : "—"}
-                            </dd>
-                          </div>
-                          <div>
-                            <dt>识别</dt>
-                            <dd title={selectedAsset.metadataInspectionError ?? undefined}>
-                              {selectedAsset.metadataInspectionError
-                                ? "原文件已保留 · 部分信息不可读"
-                                : selectedAsset.metadataInspectedAt
-                                  ? "已从原文件读取"
-                                  : "等待识别"}
-                            </dd>
-                          </div>
-                        </>
-                      ) : null}
-                      <div>
-                        <dt>导入</dt>
-                        <dd>{formatDate(selectedAsset.createdAt)}</dd>
-                      </div>
-                    </dl>
-                  </div>
-
-                  {!readOnly || locations.get(selectedAsset.id) ? (
-                    <div className="asset-detail-section asset-use-section">
-                      <span className="asset-detail-label">用于创作</span>
                       <button
-                        type="button"
-                        className="asset-primary-action"
-                        disabled={busy}
-                        onClick={() =>
-                          void onActivateAsset(selectedAsset.id).then((result) =>
-                            setActionStatus(result.ok ? "" : (result.error ?? "操作失败")),
-                          )
+                        type="submit"
+                        disabled={
+                          busy ||
+                          !renameValue.trim() ||
+                          renameValue.trim() === selectedAsset.originalName
                         }
                       >
-                        <VaultIcon name="canvas" />
-                        {actionLabel(selectedAsset.id)}
+                        保存
                       </button>
-                      {!readOnly && selectedShotLabel ? (
-                        <>
-                          <p>连接到「{selectedShotLabel}」</p>
-                          <div className="asset-connect-actions">
-                            {selectedAsset.mediaType === "image" && allowedSlots.first ? (
-                              <button
-                                type="button"
-                                className={
-                                  selectedAsset.id === selectedFirstFrameId ? "active" : ""
-                                }
-                                onClick={() => onPickFrame(selectedAsset.id, "first")}
-                              >
-                                首帧
-                              </button>
-                            ) : null}
-                            {selectedAsset.mediaType === "image" && allowedSlots.last ? (
-                              <button
-                                type="button"
-                                className={selectedAsset.id === selectedLastFrameId ? "active" : ""}
-                                onClick={() => onPickFrame(selectedAsset.id, "last")}
-                              >
-                                尾帧
-                              </button>
-                            ) : null}
-                            {selectedAsset.mediaType === "image" && allowedSlots.reference ? (
-                              <button
-                                type="button"
-                                className={
-                                  selectedReferenceImageIds.includes(selectedAsset.id) ||
-                                  selectedAsset.id === selectedReferenceId
-                                    ? "active"
-                                    : ""
-                                }
-                                onClick={() => onPickFrame(selectedAsset.id, "reference")}
-                              >
-                                参考图
-                              </button>
-                            ) : null}
-                            {selectedAsset.mediaType === "video" && allowedSlots.referenceVideo ? (
-                              <button
-                                type="button"
-                                className={
-                                  selectedReferenceVideoIds.includes(selectedAsset.id)
-                                    ? "active"
-                                    : ""
-                                }
-                                onClick={() => onPickFrame(selectedAsset.id, "referenceVideo")}
-                              >
-                                参考视频
-                              </button>
-                            ) : null}
-                            {selectedAsset.mediaType === "audio" && allowedSlots.referenceAudio ? (
-                              <button
-                                type="button"
-                                className={
-                                  selectedReferenceAudioIds.includes(selectedAsset.id)
-                                    ? "active"
-                                    : ""
-                                }
-                                onClick={() => onPickFrame(selectedAsset.id, "referenceAudio")}
-                              >
-                                参考音频
-                              </button>
-                            ) : null}
-                          </div>
-                        </>
-                      ) : (
-                        <p>选择一个镜头后，可直接连接到模型输入。</p>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="asset-detail-section asset-view-only-note">
-                      <span className="asset-detail-label">只读访问</span>
-                      <p>可以检查、播放和下载素材；项目编辑者可整理分类或连接镜头。</p>
-                    </div>
-                  )}
-                  {actionStatus ? (
-                    <div className="asset-action-status" aria-live="polite">
-                      {actionStatus}
-                    </div>
+                    ) : null}
+                  </div>
+                </form>
+
+                <div className="asset-detail-section">
+                  <span className="asset-detail-label">整理分类</span>
+                  <select
+                    className="asset-kind-select"
+                    value={selectedKind ?? "loose"}
+                    disabled={busy || readOnly}
+                    onChange={(event) =>
+                      void updateKind(
+                        selectedAsset.id,
+                        event.target.value === "loose" ? null : (event.target.value as AssetKind),
+                      )
+                    }
+                    aria-label="整理分类"
+                  >
+                    <option value="loose">待整理</option>
+                    <option value="character">人物</option>
+                    <option value="location">场景</option>
+                    <option value="prop">道具</option>
+                  </select>
+                  {selectedEntities.length ? (
+                    <span className="asset-detail-label asset-related-label">关联档案</span>
                   ) : null}
-                  <a
-                    className="asset-original-link"
-                    href={`${projectApi.assetUrl(projectKey, selectedAsset.id)}?download=1`}
-                    download={selectedAsset.originalName}
-                  >
-                    下载到当前电脑
-                  </a>
-                  <a
-                    className="asset-original-link"
-                    href={projectApi.assetUrl(projectKey, selectedAsset.id)}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    <VaultIcon name="link" />
-                    查看原文件
-                  </a>
+                  <div className="asset-entity-links">
+                    {selectedEntities.length
+                      ? selectedEntities.map((entity) => (
+                          <span key={entity.id}>
+                            <i className={`asset-kind-mark ${entity.kind}`} />
+                            {kindLabels[entity.kind]} · {entity.name}
+                          </span>
+                        ))
+                      : null}
+                  </div>
                 </div>
-              </>
+
+                <div className="asset-detail-section">
+                  <span className="asset-detail-label">标签</span>
+                  <div className="asset-detail-tags">
+                    {selectedAsset.customTags.map((tag) =>
+                      readOnly ? (
+                        <span className="asset-read-only-tag" key={tag}>
+                          {tag}
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          key={tag}
+                          onClick={() =>
+                            void updateTags(
+                              selectedAsset.customTags.filter((candidate) => candidate !== tag),
+                            )
+                          }
+                          aria-label={`移除标签 ${tag}`}
+                        >
+                          {tag}
+                          <b>×</b>
+                        </button>
+                      ),
+                    )}
+                  </div>
+                  {!readOnly ? (
+                    <form
+                      className="asset-tag-input"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        const tag = tagValue.trim();
+                        if (
+                          !tag ||
+                          selectedAsset.customTags.includes(tag) ||
+                          selectedAsset.customTags.length >= 24
+                        )
+                          return;
+                        setTagValue("");
+                        void updateTags([...selectedAsset.customTags, tag]);
+                      }}
+                    >
+                      <input
+                        value={tagValue}
+                        onChange={(event) => setTagValue(event.target.value)}
+                        placeholder="输入标签后回车"
+                        aria-label="新增资产标签"
+                        maxLength={40}
+                      />
+                      <button type="submit" disabled={!tagValue.trim()}>
+                        ＋
+                      </button>
+                    </form>
+                  ) : null}
+                </div>
+
+                <div className="asset-detail-section">
+                  <span className="asset-detail-label">文件信息</span>
+                  <dl>
+                    <div>
+                      <dt>类型</dt>
+                      <dd>{selectedAsset.mimeType}</dd>
+                    </div>
+                    <div>
+                      <dt>尺寸</dt>
+                      <dd>
+                        {selectedAsset.width && selectedAsset.height
+                          ? `${selectedAsset.width} × ${selectedAsset.height}`
+                          : "—"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>大小</dt>
+                      <dd>{formatBytes(selectedAsset.byteSize)}</dd>
+                    </div>
+                    {selectedAsset.mediaType === "video" ? (
+                      <>
+                        <div>
+                          <dt>时长</dt>
+                          <dd>{formatDuration(selectedAsset.durationSeconds) ?? "—"}</dd>
+                        </div>
+                        <div>
+                          <dt>帧率</dt>
+                          <dd>
+                            {selectedAsset.frameRate
+                              ? `${selectedAsset.frameRate.toFixed(2).replace(/\.00$/, "")} fps`
+                              : "—"}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>格式</dt>
+                          <dd>{selectedAsset.originalName.split(".").at(-1)?.toUpperCase()}</dd>
+                        </div>
+                      </>
+                    ) : null}
+                    <div>
+                      <dt>导入</dt>
+                      <dd>{formatDate(selectedAsset.createdAt)}</dd>
+                    </div>
+                  </dl>
+                </div>
+
+                {!readOnly || locations.get(selectedAsset.id) ? (
+                  <div className="asset-detail-section asset-use-section">
+                    <span className="asset-detail-label">用于创作</span>
+                    <button
+                      type="button"
+                      className="asset-primary-action"
+                      disabled={busy}
+                      onClick={() =>
+                        void onActivateAsset(selectedAsset.id).then((result) =>
+                          setActionStatus(result.ok ? "" : (result.error ?? "操作失败")),
+                        )
+                      }
+                    >
+                      <VaultIcon name="canvas" />
+                      {actionLabel(selectedAsset.id)}
+                    </button>
+                    {!readOnly && selectedShotLabel ? (
+                      <>
+                        <p>连接到「{selectedShotLabel}」</p>
+                        <div className="asset-connect-actions">
+                          {selectedAsset.mediaType === "image" && allowedSlots.first ? (
+                            <button
+                              type="button"
+                              className={selectedAsset.id === selectedFirstFrameId ? "active" : ""}
+                              onClick={() => onPickFrame(selectedAsset.id, "first")}
+                            >
+                              首帧
+                            </button>
+                          ) : null}
+                          {selectedAsset.mediaType === "image" && allowedSlots.last ? (
+                            <button
+                              type="button"
+                              className={selectedAsset.id === selectedLastFrameId ? "active" : ""}
+                              onClick={() => onPickFrame(selectedAsset.id, "last")}
+                            >
+                              尾帧
+                            </button>
+                          ) : null}
+                          {selectedAsset.mediaType === "image" && allowedSlots.reference ? (
+                            <button
+                              type="button"
+                              className={
+                                selectedReferenceImageIds.includes(selectedAsset.id) ||
+                                selectedAsset.id === selectedReferenceId
+                                  ? "active"
+                                  : ""
+                              }
+                              onClick={() => onPickFrame(selectedAsset.id, "reference")}
+                            >
+                              参考图
+                            </button>
+                          ) : null}
+                          {selectedAsset.mediaType === "video" && allowedSlots.referenceVideo ? (
+                            <button
+                              type="button"
+                              className={
+                                selectedReferenceVideoIds.includes(selectedAsset.id) ? "active" : ""
+                              }
+                              onClick={() => onPickFrame(selectedAsset.id, "referenceVideo")}
+                            >
+                              参考视频
+                            </button>
+                          ) : null}
+                          {selectedAsset.mediaType === "audio" && allowedSlots.referenceAudio ? (
+                            <button
+                              type="button"
+                              className={
+                                selectedReferenceAudioIds.includes(selectedAsset.id) ? "active" : ""
+                              }
+                              onClick={() => onPickFrame(selectedAsset.id, "referenceAudio")}
+                            >
+                              参考音频
+                            </button>
+                          ) : null}
+                        </div>
+                      </>
+                    ) : (
+                      <p>选择一个镜头后，可直接连接到模型输入。</p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="asset-detail-section asset-view-only-note">
+                    <span className="asset-detail-label">只读访问</span>
+                    <p>可以检查、播放和下载素材；项目编辑者可整理分类或连接镜头。</p>
+                  </div>
+                )}
+                {actionStatus ? (
+                  <div className="asset-action-status" aria-live="polite">
+                    {actionStatus}
+                  </div>
+                ) : null}
+                <a
+                  className="asset-original-link"
+                  href={`${projectApi.assetUrl(projectKey, selectedAsset.id)}?download=1`}
+                  download={selectedAsset.originalName}
+                >
+                  下载到当前电脑
+                </a>
+                <a
+                  className="asset-original-link"
+                  href={projectApi.assetUrl(projectKey, selectedAsset.id)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <VaultIcon name="link" />
+                  查看原文件
+                </a>
+              </div>
             ) : (
               <div className="asset-detail-empty">
                 <VaultIcon name="info" />

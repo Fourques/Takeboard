@@ -38,14 +38,21 @@ test("public preview pipeline builds only native installers and checks final pac
   const matrices = [...workflow.matchAll(/'(\[\{"os":[^']+\])'/g)].map((match) =>
     JSON.parse(match[1]),
   );
-  assert.equal(matrices.length, 2);
+  assert.equal(matrices.length, 3);
   assert.deepEqual(
     matrices[0].map((target) => target.platform),
+    ["macos-arm64", "windows-x64", "windows-arm64"],
+  );
+  assert.deepEqual(
+    matrices[1].map((target) => target.platform),
     ["macos-arm64"],
   );
-  assert.equal(matrices[0][0].rust_target, "aarch64-apple-darwin");
-  assert.equal(matrices[0][0].bundles, "dmg");
-  assert.equal(matrices[1].length, 6);
+  assert.equal(matrices[1][0].rust_target, "aarch64-apple-darwin");
+  assert.equal(matrices[1][0].bundles, "dmg");
+  assert.equal(matrices[2].length, 6);
+  assert.match(workflow, /needs: desktop/);
+  assert.match(workflow, /sha256sum --check/);
+  assert.match(workflow, /--verify-tag --prerelease/);
   assert.match(workflow, /default: macos-arm64/);
   assert.match(workflow, /inputs.platform == 'macos-arm64'/);
   assert.equal((workflow.match(/node scripts\/verify-desktop-runtime.mjs/g) ?? []).length, 3);

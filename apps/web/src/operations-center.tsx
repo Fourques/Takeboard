@@ -3,12 +3,68 @@ import type {
   OperationsTaskCenter,
   OperationTask,
   RunStatus,
+  WorkerHealth,
 } from "@takeboard/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { projectApi } from "./api";
+import { projectApi, workerApi } from "./api";
 import { optionalLocalStorage } from "./browser-storage";
 
-const operationsCss = `.operations-control {
+const operationsCss = `.operations-device-view {
+  min-height: 0;
+  overflow: auto;
+  padding: 16px 18px;
+  display: grid;
+  gap: 12px;
+}
+.device-memory-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+.device-memory-card > header,
+.device-memory-card > footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: calc(12px * var(--ui-scale));
+}
+.device-memory-card > header span,
+.device-memory-card > footer {
+  color: var(--text-2);
+}
+.device-memory-card > header strong {
+  overflow-wrap: anywhere;
+}
+.device-memory-value {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.device-memory-value strong {
+  font-size: calc(22px * var(--ui-scale));
+  font-variant-numeric: tabular-nums;
+}
+.device-memory-value span {
+  color: var(--text-2);
+  font-size: calc(11px * var(--ui-scale));
+}
+.device-memory-card meter {
+  width: 100%;
+  height: 8px;
+  accent-color: var(--accent);
+  appearance: none;
+  border: 0;
+  border-radius: 8px;
+  background: var(--line);
+  overflow: hidden;
+}
+.device-memory-card meter::-webkit-meter-bar { border: 0; background: var(--line); }
+.device-memory-card meter::-webkit-meter-optimum-value { background: var(--accent); }
+.device-memory-card meter::-moz-meter-bar { background: var(--accent); }
+.operations-control {
   position: relative;
   z-index: 32;
 }
@@ -436,7 +492,7 @@ const activeStatuses = new Set<RunStatus>([
   "reconciling",
 ]);
 
-const operationsTabs = ["tasks", "storage"] as const;
+const operationsTabs = ["tasks", "devices", "storage"] as const;
 
 const statusLabel: Record<RunStatus, string> = {
   draft: "准备中",
@@ -502,7 +558,36 @@ export function OperationsCenter({
   compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState<"tasks" | "storage">("tasks");
+  const [tab, setTab] = useState<(typeof operationsTabs)[number]>("tasks");
+  const [devices, setDevices] = useState<WorkerHealth[] | null>(null);
+  const [deviceError, setDeviceError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!open || tab !== "devices") return;
+    let cancelled = false;
+    let timer: number | undefined;
+    const refresh = async () => {
+      if (document.visibilityState === "visible") {
+        try {
+          const fleet = await workerApi.fleet();
+          if (!cancelled) {
+            setDevices(fleet.workers);
+            setDeviceError(null);
+          }
+        } catch {
+          if (!cancelled) {
+            setDevices(null);
+            setDeviceError("暂时无法读取设备状态");
+          }
+        }
+      }
+      if (!cancelled) timer = window.setTimeout(refresh, 5_000);
+    };
+    void refresh();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [open, tab]);
   useEffect(() => {
     const showTasks = () => {
       setTab("tasks");
@@ -639,7 +724,7 @@ export function OperationsCenter({
         type="button"
         aria-expanded={open}
         aria-haspopup="dialog"
-        aria-label="打开生成任务与存储空间"
+        aria-label="打开运行中心"
         onClick={() => setOpen((current) => !current)}
       >
         <span className="operations-mark" aria-hidden="true">
@@ -658,13 +743,13 @@ export function OperationsCenter({
               {center?.activeCount ? `${center.activeCount} 个任务运行中` : "任务中心"}
             </strong>
             <small>
-              {center?.failedCount ? `${center.failedCount} 项需要检查` : "生成 · 存储"}
+              {center?.failedCount ? `${center.failedCount} 项需要检查` : "任务 · 设备"}
             </small>
           </div>
         )}
       </button>
       {open ? (
-        <aside className="operations-panel" role="dialog" aria-label="生成任务与存储空间">
+        <aside className="operations-panel" role="dialog" aria-label="运行中心">
           <header>
             <div>
               <span>PRODUCTION STATUS</span>
@@ -710,6 +795,18 @@ export function OperationsCenter({
               onClick={() => setTab("tasks")}
             >
               生成任务 {center?.activeCount ? <b>{center.activeCount}</b> : null}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="operations-tab-devices"
+              aria-controls="operations-panel-devices"
+              aria-selected={tab === "devices"}
+              tabIndex={tab === "devices" ? 0 : -1}
+              className={tab === "devices" ? "active" : ""}
+              onClick={() => setTab("devices")}
+            >
+              设备显存
             </button>
             <button
               type="button"
@@ -806,6 +903,67 @@ export function OperationsCenter({
                   </div>
                 ) : null}
               </div>
+            </div>
+          ) : tab === "devices" ? (
+            <div
+              className="operations-device-view"
+              role="tabpanel"
+              id="operations-panel-devices"
+              aria-labelledby="operations-tab-devices"
+            >
+              {deviceError ? (
+                <p role="status">{deviceError}</p>
+              ) : !devices ? (
+                <p>正在读取设备…</p>
+              ) : null}
+              {devices
+                ?.filter((entry) => entry.worker.enabled)
+                .map((entry) => {
+                  const total = entry.vramTotal;
+                  const free = entry.vramFree;
+                  const known =
+                    entry.status === "ready" &&
+                    total !== null &&
+                    total > 0 &&
+                    free !== null &&
+                    free >= 0 &&
+                    free <= total;
+                  const used = known ? total - free : null;
+                  return (
+                    <section className="device-memory-card" key={entry.worker.id}>
+                      <header>
+                        <strong>{entry.worker.name}</strong>
+                        <span>{entry.status === "ready" ? "在线" : "未连接"}</span>
+                      </header>
+                      {entry.status === "ready" ? (
+                        <>
+                          <small>{entry.device}</small>
+                          <div className="device-memory-value">
+                            <strong>{used === null ? "—" : formatBytes(used)}</strong>
+                            <span>
+                              {known ? `/ ${formatBytes(total)} 已用` : "设备未提供显存数据"}
+                            </span>
+                          </div>
+                          {known ? (
+                            <meter
+                              aria-label={`${entry.worker.name} 显存用量`}
+                              min={0}
+                              max={total}
+                              value={used ?? 0}
+                            />
+                          ) : null}
+                          <footer>
+                            <span>{entry.queueRunning} 执行中</span>
+                            <span>{entry.queuePending} 排队中</span>
+                          </footer>
+                        </>
+                      ) : null}
+                    </section>
+                  );
+                })}
+              {devices && !devices.some((entry) => entry.worker.enabled) ? (
+                <p>尚未配置生成设备</p>
+              ) : null}
             </div>
           ) : (
             <div

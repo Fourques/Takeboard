@@ -10,10 +10,15 @@ import {
   type PromptMention,
 } from "./generation-model";
 import { GenerationRecord } from "./generation-record";
-import type { ModelProfile } from "./model-profiles";
+import { type ModelProfile, workflowInputSlots } from "./model-profiles";
 import { NumericInput } from "./numeric-input";
 import { type RecoveryAction, recoveryGuidance } from "./recovery-guidance";
 import { RecoveryNotice } from "./recovery-notice";
+import {
+  closestAspectRatio,
+  generationResolutionPolicy,
+  resolutionPresets,
+} from "./resolution-presets";
 import { openSettings } from "./settings-navigation";
 import { VideoThumbnail } from "./video-preview";
 
@@ -41,6 +46,7 @@ function CandidateArt({
 }
 
 type ContextInspectorProps = {
+  workflows: WorkflowSummary[];
   item: CanvasItem;
   snapshot: ProjectSnapshot;
   projectKey: string | null;
@@ -63,6 +69,7 @@ function formatBytes(byteSize: number) {
 }
 
 export function NodeContextInspector({
+  workflows,
   item,
   snapshot,
   projectKey,
@@ -272,7 +279,32 @@ export function NodeContextInspector({
               <h3>连接用途</h3>
             </div>
             <div className="connection-role-badges">
-              {connectedRoles.has("first_frame") ? <span>首帧</span> : null}
+              {connectedRoles.has("first_frame")
+                ? [
+                    ...new Set(
+                      snapshot.canvasEdges
+                        .filter(
+                          (edge) =>
+                            assetCanvasItemIds.has(edge.sourceItemId) &&
+                            edge.targetSlot === "first_frame",
+                        )
+                        .map((edge) => {
+                          const target = snapshot.canvasItems.find(
+                            (item) => item.id === edge.targetItemId,
+                          );
+                          const shot = snapshot.shots.find((item) => item.id === target?.refId);
+                          const workflow = workflows.find(
+                            (item) => item.path === shot?.workflowPath,
+                          );
+                          return (
+                            workflowInputSlots(workflow ?? null).find(
+                              (slot) => slot.id === "first_frame",
+                            )?.label ?? "输入图"
+                          );
+                        }),
+                    ),
+                  ].map((label) => <span key={label}>{label}</span>)
+                : null}
               {connectedRoles.has("last_frame") ? <span>尾帧</span> : null}
               {connectedRoles.has("reference") ? <span>参考图</span> : null}
               {connectedRoles.size === 0 ? <em>尚未连接到模型输入</em> : null}
@@ -512,16 +544,10 @@ export function Inspector({
   const mediaType = (assetId: string) =>
     assets.find((candidate) => candidate.id === assetId)?.mediaType;
   const selectedMediaUrl = selectedTake ? mediaSource(selectedTake.assetId) : undefined;
-  const resolutionPolicy =
-    workflow?.execution !== "native"
-      ? "exact"
-      : profile.family === "qwen_image"
-        ? "qwen_image_2512"
-        : profile.family === "minimax_h3"
-          ? "minimax_h3"
-          : profile.family === "ltx23"
-            ? "multiple_32"
-            : "exact";
+  const resolutionPolicy = generationResolutionPolicy(
+    workflow?.execution === "native",
+    profile.family,
+  );
   const resolvedResolution = resolveGenerationResolution(
     resolutionPolicy,
     settings.width,
@@ -595,6 +621,18 @@ export function Inspector({
       {readOnly ? (
         <div className="viewer-mode-note">Viewer 模式 · 可以查看素材与候选，但不能修改或生成</div>
       ) : null}
+      <section className="shot-intent" aria-label="镜头信息">
+        <textarea
+          aria-label="镜头备注"
+          value={shotDraft.body}
+          placeholder="这个镜头想表达什么？"
+          rows={2}
+          disabled={readOnly}
+          onChange={(event) =>
+            setShotDraft((current) => ({ ...current, body: event.target.value }))
+          }
+        />
+      </section>
       <div className="inspector-tabs" role="tablist" aria-label="镜头详情视图">
         {(["generate", "results"] as const).map((tab) => (
           <button
@@ -838,6 +876,41 @@ export function Inspector({
                   <section className="advanced-generation-settings" aria-label="生成参数">
                     <h3>生成参数</h3>
                     {workflow?.inputs.includes("resolution") ? (
+                      <label className="generation-aspect">
+                        <span>比例</span>
+                        <select
+                          aria-label="生成比例"
+                          value={closestAspectRatio(settings.width, settings.height)}
+                          onChange={(event) => {
+                            const preset = resolutionPresets(
+                              profile.defaults.width,
+                              profile.defaults.height,
+                              resolutionPolicy,
+                            ).find((item) => item.label === event.target.value);
+                            if (preset)
+                              onSettingsChange({
+                                ...settings,
+                                width: preset.width,
+                                height: preset.height,
+                              });
+                          }}
+                        >
+                          <option value="custom" disabled>
+                            自定义
+                          </option>
+                          {resolutionPresets(
+                            profile.defaults.width,
+                            profile.defaults.height,
+                            resolutionPolicy,
+                          ).map((preset) => (
+                            <option key={preset.label} value={preset.label}>
+                              {preset.label} · {preset.width} × {preset.height}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : null}
+                    {workflow?.inputs.includes("resolution") ? (
                       <div className="parameter-grid">
                         <label htmlFor="generation-width">
                           <span>宽度</span>
@@ -878,6 +951,22 @@ export function Inspector({
                           </label>
                         ) : null}
                       </div>
+                    ) : null}
+                    {profile.outputLabel === "视频" && workflow?.inputs.includes("duration") ? (
+                      <label className="seed-field" htmlFor="generation-duration">
+                        <span>时长（秒）</span>
+                        <NumericInput
+                          id="generation-duration"
+                          aria-label="生成时长"
+                          min={profile.family === "minimax_h3" ? 4 : 1}
+                          max={15}
+                          step={0.5}
+                          value={settings.durationSeconds}
+                          onValueChange={(durationSeconds) =>
+                            onSettingsChange({ ...settings, durationSeconds })
+                          }
+                        />
+                      </label>
                     ) : null}
                     {workflow?.inputs.includes("resolution") && resolvedResolution.changed ? (
                       <div className="effective-resolution" role="status">
@@ -985,55 +1074,6 @@ export function Inspector({
                 </section>
               </section>
             ) : null}
-            <section className="inspector-section shot-information" aria-label="镜头信息">
-              <h3>镜头信息</h3>
-              <div className="shot-quick-edit">
-                <textarea
-                  aria-label="镜头备注"
-                  value={shotDraft.body}
-                  placeholder="添加镜头备注"
-                  onChange={(event) =>
-                    setShotDraft((current) => ({ ...current, body: event.target.value }))
-                  }
-                />
-                <div>
-                  <label>
-                    <span>画幅</span>
-                    <select
-                      aria-label="镜头画幅"
-                      value={shotDraft.aspectRatio}
-                      onChange={(event) =>
-                        setShotDraft((current) => ({
-                          ...current,
-                          aspectRatio: event.target.value as Shot["aspectRatio"],
-                        }))
-                      }
-                    >
-                      {(["16:9", "9:16", "1:1", "4:5", "2.35:1"] as const).map((ratio) => (
-                        <option key={ratio}>{ratio}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label htmlFor="inspector-shot-duration">
-                    <span>时长</span>
-                    <NumericInput
-                      id="inspector-shot-duration"
-                      aria-label="镜头时长"
-                      min={0.5}
-                      max={300}
-                      step={0.5}
-                      value={shotDraft.durationSeconds}
-                      onValueChange={(durationSeconds) =>
-                        setShotDraft((current) => ({
-                          ...current,
-                          durationSeconds,
-                        }))
-                      }
-                    />
-                  </label>
-                </div>
-              </div>
-            </section>
           </fieldset>
         </div>
         <div
@@ -1170,6 +1210,7 @@ export function Inspector({
                   onLocateAsset={onLocateAsset}
                   projectKey={projectKey}
                   outputType={selectedTake ? mediaType(selectedTake.assetId) : undefined}
+                  outputAssetId={selectedTake?.assetId}
                 />
               ) : null}
             </>

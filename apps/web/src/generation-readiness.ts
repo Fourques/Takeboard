@@ -31,7 +31,9 @@ export function generationProblem({
   if (!availability.ready) return `工作流${availability.label}：${availability.reason}`;
   if (!generationSettings.prompt.trim()) return "请先输入镜头提示词";
   if (selectedWorkflow.inputs.includes("first_frame") && !firstFrameAvailable) {
-    return "请从资产库选择一张起始帧";
+    return selectedWorkflow.capability === "image_to_image"
+      ? "请连接一张源图"
+      : "请从资产库选择一张起始帧";
   }
   if (selectedWorkflow.capability === "first_last_video" && !lastFrameAvailable) {
     return "首尾帧模式还需要一张结束帧";
@@ -48,12 +50,15 @@ export function generationProblem({
   const imageWorkflow = ["text_to_image", "image_to_image"].includes(selectedWorkflow.capability);
   const invalidVideoParameters =
     !imageWorkflow &&
-    (!Number.isFinite(generationSettings.durationSeconds) ||
-      generationSettings.durationSeconds < (selectedModelProfile.family === "minimax_h3" ? 4 : 1) ||
-      generationSettings.durationSeconds > 15 ||
-      !Number.isFinite(generationSettings.fps) ||
-      generationSettings.fps < 8 ||
-      generationSettings.fps > 60);
+    ((selectedWorkflow.inputs.includes("duration") &&
+      (!Number.isFinite(generationSettings.durationSeconds) ||
+        generationSettings.durationSeconds <
+          (selectedModelProfile.family === "minimax_h3" ? 4 : 1) ||
+        generationSettings.durationSeconds > 15)) ||
+      (selectedWorkflow.inputs.includes("fps") &&
+        (!Number.isFinite(generationSettings.fps) ||
+          generationSettings.fps < 8 ||
+          generationSettings.fps > 60)));
   const invalidDenoise =
     selectedWorkflow.inputs.includes("denoise") &&
     (!Number.isFinite(generationSettings.denoise) ||

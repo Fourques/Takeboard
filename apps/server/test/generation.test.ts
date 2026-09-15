@@ -68,6 +68,116 @@ async function projectFixture(storage?: { inputRoot: string; outputRoot: string 
 }
 
 describe("real generation routes", () => {
+  it("queues multiple jobs and keeps independent workers running without cross-cancellation", async () => {
+    const queues = new Map<string, string[]>();
+    let sequence = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const url = new URL(String(input));
+        const jobs = queues.get(url.host) ?? [];
+        if (url.pathname === "/system_stats")
+          return Response.json({
+            devices: [{ name: url.host, vram_total: 24 * 1024 ** 3, vram_free: 12 * 1024 ** 3 }],
+          });
+        if (url.pathname === "/queue")
+          return Response.json({
+            queue_running: jobs.slice(0, 1).map((id) => [0, id]),
+            queue_pending: jobs.slice(1).map((id) => [0, id]),
+          });
+        if (url.pathname === "/object_info")
+          return Response.json(
+            objectInfo([
+              "UNETLoader",
+              "CLIPLoader",
+              "VAELoader",
+              "MiniMaxH3ImageToVideo",
+              "RandomNoise",
+              "BasicGuider",
+              "KSamplerSelect",
+              "BasicScheduler",
+              "SamplerCustomAdvanced",
+              "VAEDecode",
+              "CreateVideo",
+              "SaveVideo",
+            ]),
+          );
+        if (url.pathname === "/prompt") {
+          const id = `queued-job-${++sequence}`;
+          queues.set(url.host, [...jobs, id]);
+          return Response.json({ prompt_id: id });
+        }
+        if (/\/api\/jobs\/.*\/cancel$/.test(url.pathname)) {
+          const id = url.pathname.split("/").at(-2);
+          queues.set(
+            url.host,
+            jobs.filter((job) => job !== id),
+          );
+          return Response.json({ cancelled: true });
+        }
+        if (url.pathname.startsWith("/history")) return Response.json({});
+        if (url.pathname === "/free") return Response.json({});
+        throw new Error(`Unexpected ComfyUI test request: ${url}`);
+      }),
+    );
+    const { app, key, shotId } = await projectFixture();
+    const worker = await app.inject({
+      method: "POST",
+      url: "/api/admin/workers",
+      payload: {
+        name: "Independent endpoint",
+        endpoint: "https://second.test",
+        kind: "remote",
+        transport: "https",
+        enabled: true,
+        allowSensitiveInputs: true,
+      },
+    });
+    expect(worker.statusCode, worker.body).toBe(201);
+    const submit = (workerId?: string) =>
+      app.inject({
+        method: "POST",
+        url: `/api/projects/${key}/shots/${shotId}/generate`,
+        payload: {
+          recipePath: "Kino/Kino_MinimaxH3_T2V.json",
+          prompt: "Queue integration test, no GPU",
+          width: 768,
+          height: 1344,
+          durationSeconds: 7,
+          ...(workerId ? { workerId } : {}),
+        },
+      });
+    const fleet = (await app.inject({ method: "GET", url: "/api/workers" })).json();
+    const first = await submit(fleet.defaultWorkerId);
+    const second = await submit(fleet.defaultWorkerId);
+    const remote = await submit(worker.json().worker.id);
+    for (const response of [first, second, remote])
+      expect(response.statusCode, response.body).toBe(202);
+    const inspect = async (response: typeof first) =>
+      (
+        await app.inject({
+          method: "GET",
+          url: `/api/projects/${key}/runs/${response.json().runId}`,
+        })
+      ).json();
+    expect(await inspect(first)).toMatchObject({ status: "running" });
+    expect(await inspect(second)).toMatchObject({
+      status: "queued",
+      progress: { phase: "queued", percent: null },
+    });
+    expect(await inspect(remote)).toMatchObject({ status: "running" });
+    expect(queues.get("comfy.test")).toHaveLength(2);
+    expect(queues.get("second.test")).toHaveLength(1);
+    const cancelled = await app.inject({
+      method: "POST",
+      url: `/api/projects/${key}/runs/${first.json().runId}/cancel`,
+    });
+    expect(cancelled.statusCode, cancelled.body).toBe(200);
+    expect(await inspect(second)).toMatchObject({ status: "running" });
+    expect(await inspect(remote)).toMatchObject({ status: "running" });
+    expect(queues.get("second.test")).toHaveLength(1);
+  });
+
   async function transferFixture(view: () => Response) {
     const fixture = await projectFixture();
     const calls: string[] = [];
@@ -164,7 +274,10 @@ describe("real generation routes", () => {
       status: "completed",
       snapshot: {
         assets: [
-          expect.objectContaining({ originalName: "original.png", byteSize: validPng().length }),
+          expect.objectContaining({
+            originalName: "SH-01 · 图片 01.png",
+            byteSize: validPng().length,
+          }),
         ],
       },
     });
@@ -194,7 +307,7 @@ describe("real generation routes", () => {
     output.close();
     const completed = await waitForRun(app, key, runId);
     expect(completed.snapshot.assets).toEqual([
-      expect.objectContaining({ originalName: "original.png", byteSize: validPng().length }),
+      expect.objectContaining({ originalName: "SH-01 · 图片 01.png", byteSize: validPng().length }),
     ]);
     expect(completed.snapshot.takes).toHaveLength(1);
     expect(calls.filter((url) => url.endsWith("/prompt"))).toHaveLength(1);
@@ -387,7 +500,7 @@ describe("real generation routes", () => {
     expect(retried.statusCode, retried.body).toBe(202);
     expect(retried.json().snapshot.runs).toHaveLength(3);
     expect(retried.json().snapshot.runs[2]).toMatchObject({
-      status: "running",
+      status: "queued",
       parameters: {
         candidateBatchId: "batch_test1234",
         candidateIndex: 2,

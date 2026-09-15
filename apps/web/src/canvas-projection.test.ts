@@ -1,7 +1,36 @@
 import type { ProjectSnapshot } from "@takeboard/contracts";
 import { describe, expect, it } from "vitest";
+import type { WorkflowSummary } from "./api";
 import type { BoardNode } from "./board-nodes";
-import { boardNodes, resolveSnapshotEdge, retainNodeMeasurements } from "./canvas-projection";
+import {
+  boardEdges,
+  boardNodes,
+  resolveSnapshotEdge,
+  retainNodeMeasurements,
+} from "./canvas-projection";
+
+it("labels image editing inputs as source images and avoids duplicating port labels", () => {
+  const workflow = {
+    path: "custom/edit.json",
+    capability: "image_to_image",
+    inputs: ["first_frame"],
+  } as WorkflowSummary;
+  const snapshot = {
+    canvasEdges: [
+      { id: "edge", sourceItemId: "source", targetItemId: "target", targetSlot: "first_frame" },
+    ],
+    canvasItems: [{ id: "target", refId: "shot" }],
+    shots: [{ id: "shot", workflowPath: workflow.path }],
+    runs: [],
+  } as unknown as ProjectSnapshot;
+  expect(boardEdges(snapshot, [workflow], workflow, "shot", null)[0]?.label).toBeUndefined();
+  expect(boardEdges(snapshot, [workflow], workflow, "shot", "edge")[0]).toMatchObject({
+    label: "源图",
+    targetHandle: "first_frame",
+  });
+  const video = { ...workflow, capability: "image_to_video" as const };
+  expect(boardEdges(snapshot, [video], video, "shot", "edge")[0]?.label).toBe("首帧");
+});
 
 describe("canvas measurement reconciliation", () => {
   it("renders legacy resized items at stable widths without mutating stored dimensions", () => {

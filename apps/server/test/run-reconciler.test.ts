@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
+import { completionFor, hasUnfinishedWork } from "../src/background-completion.js";
 import { acquireProjectLock } from "../src/project-request-lock.js";
 import { ProjectStore } from "../src/storage/project-store.js";
 
@@ -133,6 +134,42 @@ async function fixture(background = false) {
 }
 
 describe("server-owned generation recovery", () => {
+  it("keeps collection alive after window exit and closes only after saving the result", async () => {
+    const f = await fixture(true);
+    const close = vi.fn(async () => {});
+    const controller = completionFor(f.app);
+    const completing = controller.drain(
+      () => hasUnfinishedWork(f.root),
+      close,
+      () => new Promise((resolve) => setTimeout(resolve, 15)),
+    );
+    expect(
+      (await f.app.inject({ method: "POST", url: f.generateUrl, payload: f.body })).statusCode,
+    ).toBe(409);
+    expect(close).not.toHaveBeenCalled();
+    f.complete();
+    await completing;
+    expect(f.inspect()?.snapshot.runs[0]?.status).toBe("completed");
+    expect(f.downloads()).toBe(1);
+    expect(close).toHaveBeenCalledOnce();
+  });
+  it("reopening takes back the live workspace without a later background shutdown", async () => {
+    const f = await fixture(true);
+    const close = vi.fn(async () => {});
+    const controller = completionFor(f.app);
+    const completing = controller.drain(
+      () => hasUnfinishedWork(f.root),
+      close,
+      () => new Promise((resolve) => setTimeout(resolve, 15)),
+    );
+    expect((await f.app.inject({ method: "POST", url: "/api/runtime/resume" })).statusCode).toBe(
+      200,
+    );
+    await completing;
+    f.complete();
+    expect(close).not.toHaveBeenCalled();
+    expect(controller.active).toBe(false);
+  });
   it("collects output without a browser request and does not duplicate it on later polls", async () => {
     const f = await fixture(true);
     f.complete();
@@ -173,6 +210,7 @@ describe("server-owned generation recovery", () => {
 
   it("waits through a missing-history grace period, then marks uncertainty instead of fake running", async () => {
     const f = await fixture();
+    expect((await f.poll()).json().status).toBe("running");
     f.disappear();
     expect((await f.poll()).json().status).toBe("running");
     const store = ProjectStore.openExisting(join(f.root, f.key));
@@ -198,6 +236,7 @@ describe("server-owned generation recovery", () => {
 
   it("does not declare a task lost when the worker is unreachable", async () => {
     const f = await fixture();
+    expect((await f.poll()).json().status).toBe("running");
     f.disconnect();
     expect((await f.poll()).statusCode).toBe(500);
     expect(f.inspect()?.snapshot.runs[0]?.status).toBe("running");
