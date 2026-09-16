@@ -46,6 +46,15 @@ describe("optional accounts with device-scoped project authorization", () => {
       headers: local,
     });
     expect(connection.statusCode, connection.body).toBe(200);
+    const gpuPool = await app.inject({
+      method: "GET",
+      url: "/api/workers/gpu-pool",
+      headers: local,
+    });
+    expect(gpuPool.statusCode, gpuPool.body).toBe(200);
+    expect(
+      (await app.inject({ method: "GET", url: "/api/admin/users", headers: local })).statusCode,
+    ).toBe(401);
     const unconfirmedConnection = await app.inject({
       method: "POST",
       url: "/api/generation/connection",

@@ -934,6 +934,7 @@ export const projectApi = {
     const payload = (await response.json().catch(() => ({}))) as Partial<WorkerStatus> & {
       error?: string;
     };
+    if (!response.ok) throw new Error(payload.error ?? payload.startup?.message ?? "服务未能启动");
     if (payload.status === "ready" || payload.status === "offline") {
       const fleet = await jsonRequest<NonNullable<WorkerStatus["fleet"]>>("/api/workers").catch(
         () => undefined,
@@ -956,7 +957,7 @@ export const projectApi = {
 };
 
 export type GenerationConnectionTarget =
-  | { kind: "ssh"; host: string; port: number; name: string }
+  | { kind: "ssh"; host: string; port: number; name: string; service?: string }
   | { kind: "url"; url: string; name: string };
 export type GenerationConnection = {
   workerId: string;
@@ -969,6 +970,11 @@ export type GenerationConnection = {
   profiles: Array<{ workerId: string; target: GenerationConnectionTarget }>;
 };
 export const generationConnectionApi = {
+  start: (target: GenerationConnectionTarget) =>
+    jsonRequest<GenerationConnection>("/api/generation/connection/start", {
+      method: "POST",
+      body: JSON.stringify(target),
+    }),
   edit: (
     workerId: string,
     target: GenerationConnectionTarget & {
@@ -1013,9 +1019,9 @@ export type GpuPoolStatus = {
   instances?: Array<{ index: number; active: number }>;
 };
 export const gpuPoolApi = {
-  status: () => jsonRequest<GpuPoolStatus>("/api/admin/gpu-pool"),
-  start: () => jsonRequest<GpuPoolStatus>("/api/admin/gpu-pool/start", { method: "POST" }),
-  stop: () => jsonRequest<GpuPoolStatus>("/api/admin/gpu-pool/stop", { method: "POST" }),
+  status: () => jsonRequest<GpuPoolStatus>("/api/workers/gpu-pool"),
+  start: () => jsonRequest<GpuPoolStatus>("/api/workers/gpu-pool/start", { method: "POST" }),
+  stop: () => jsonRequest<GpuPoolStatus>("/api/workers/gpu-pool/stop", { method: "POST" }),
 };
 
 export const workerApi = {

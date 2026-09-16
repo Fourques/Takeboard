@@ -1,6 +1,62 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "./fixtures";
 
+test("offline SSH service has a visible explicit start action and never reports a failed start as success", async ({
+  page,
+}) => {
+  const target = {
+    kind: "ssh",
+    name: "Studio",
+    host: "artist@studio",
+    port: 8188,
+    service: "artist-comfy.service",
+  };
+  await page.route("**/api/generation/connection", (route) =>
+    route.fulfill({
+      json: {
+        workerId: "studio",
+        localWorkerId: "base",
+        kind: "ssh",
+        name: "Studio",
+        address: "artist@studio",
+        state: "configured",
+        error: null,
+        profiles: [{ workerId: "studio", target }],
+      },
+    }),
+  );
+  await page.route("**/api/workers/comfy", (route) =>
+    route.fulfill({
+      json: { status: "offline", startup: { canStart: false }, control: { canStop: false } },
+    }),
+  );
+  await page.route("**/api/workers", (route) =>
+    route.fulfill({
+      json: {
+        defaultWorkerId: "studio",
+        workers: [{ worker: { id: "studio", name: "Studio", enabled: true }, status: "offline" }],
+      },
+    }),
+  );
+  let submitted: unknown;
+  await page.route("**/api/generation/connection/start", (route) => {
+    submitted = route.request().postDataJSON();
+    return route.fulfill({ status: 409, json: { error: "远端可用内存不足，未启动服务" } });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "选择生成设备", exact: true }).click();
+  await page.getByRole("button", { name: "管理设备", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "设置", exact: true });
+  const start = settings.getByRole("button", { name: "启动 ComfyUI", exact: true });
+  await expect(start).toBeVisible();
+  await expect(start).toBeEnabled();
+  await expect(settings.getByRole("button", { name: "释放显存" })).toHaveCount(0);
+  await start.click();
+  await expect(settings.getByRole("alert")).toContainText("远端可用内存不足");
+  expect(submitted).toEqual(target);
+  await expect(settings.getByText("服务已启动并连接", { exact: true })).toHaveCount(0);
+});
+
 test("a disabled base device can be re-enabled in settings and media authorization is explicit", async ({
   page,
   request,

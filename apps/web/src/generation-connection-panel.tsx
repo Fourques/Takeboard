@@ -34,6 +34,7 @@ export function GenerationConnectionPanel({ manage = false }: { manage?: boolean
   const [address, setAddress] = useState("");
   const [name, setName] = useState("");
   const [port, setPort] = useState("8188");
+  const [service, setService] = useState("");
   const [busy, setBusy] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [error, setError] = useState("");
@@ -105,6 +106,7 @@ export function GenerationConnectionPanel({ manage = false }: { manage?: boolean
     setKind(target.kind);
     setAddress(target.kind === "ssh" ? target.host : target.url);
     setPort(String(target.kind === "ssh" ? target.port : 8188));
+    setService(target.kind === "ssh" ? (target.service ?? "") : "");
     setName(target.name);
     const definition = fleet?.workers.find((entry) => entry.worker.id === id)?.worker;
     setEnabled(definition?.enabled ?? true);
@@ -134,6 +136,10 @@ export function GenerationConnectionPanel({ manage = false }: { manage?: boolean
       </fieldset>
     ) : null;
   const profiles = connection?.profiles ?? [];
+  const selectedTarget = profiles.find(
+    (profile) => profile.workerId === connection?.workerId,
+  )?.target;
+  const remoteStart = selectedTarget?.kind === "ssh" && Boolean(selectedTarget.service);
   const savedIds = new Set(profiles.map((item) => item.workerId));
   const legacy =
     fleet?.workers.filter(
@@ -252,6 +258,7 @@ export function GenerationConnectionPanel({ manage = false }: { manage?: boolean
                   setAddress("");
                   setName("");
                   setPort("8188");
+                  setService("");
                   setKind("ssh");
                   setError("");
                   setConfirmMedia(false);
@@ -306,7 +313,13 @@ export function GenerationConnectionPanel({ manage = false }: { manage?: boolean
                 }
                 const target: GenerationConnectionTarget =
                   kind === "ssh"
-                    ? { kind, host: address.trim(), port: Number(port), name }
+                    ? {
+                        kind,
+                        host: address.trim(),
+                        port: Number(port),
+                        name,
+                        ...(service.trim() ? { service: service.trim() } : {}),
+                      }
                     : { kind, url: address.trim(), name };
                 const previous = fleet?.workers.find(
                   (entry) => entry.worker.id === editing,
@@ -378,6 +391,45 @@ export function GenerationConnectionPanel({ manage = false }: { manage?: boolean
                     />
                   </label>
                 ) : null}
+                {kind === "ssh" ? (
+                  <details>
+                    <summary>远程启动设置（可选）</summary>
+                    <label>
+                      Linux 用户服务名
+                      <input
+                        value={service}
+                        onChange={(event) => setService(event.target.value)}
+                        placeholder="服务器上已配置的 .service 名称"
+                      />
+                    </label>
+                    <small>
+                      当前支持 Linux systemd 用户服务及单卡 NVIDIA
+                      预检；其他远端可连接和释放显存，但需先在设备上启动。
+                    </small>
+                    {service.trim() ? (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          if (!editor.current?.reportValidity()) return;
+                          void operate(async () => {
+                            await generationConnectionApi.start({
+                              kind: "ssh",
+                              host: address.trim(),
+                              port: Number(port),
+                              name,
+                              service: service.trim(),
+                            });
+                            setAdding(false);
+                            setEditing(null);
+                          }, "远程服务已启动并连接");
+                        }}
+                      >
+                        启动并连接
+                      </button>
+                    ) : null}
+                  </details>
+                ) : null}
                 {editing ? (
                   <>
                     <label className="generation-checkbox">
@@ -421,10 +473,10 @@ export function GenerationConnectionPanel({ manage = false }: { manage?: boolean
               </fieldset>
             </form>
           ) : null}
-          {worker && canManage && connection?.address ? (
-            <details className="generation-service-control">
-              <summary>服务控制</summary>
-              <p>{connection?.address || "尚未配置地址"}</p>
+          {worker && canManage && connection ? (
+            <section className="generation-service-control" aria-label="生成服务">
+              <strong>生成服务</strong>
+              {connection.address ? <p>{connection.address}</p> : null}
               <div className="settings-actions">
                 {worker.status === "ready" ? (
                   <button
@@ -441,13 +493,21 @@ export function GenerationConnectionPanel({ manage = false }: { manage?: boolean
                     释放显存
                   </button>
                 ) : null}
-                {worker.startup?.canStart ? (
+                {worker.status !== "ready" ? (
                   <button
                     type="button"
-                    disabled={busy}
-                    onClick={() => void operate(() => projectApi.startWorker(), "服务已启动")}
+                    disabled={busy || (!remoteStart && !worker.startup?.canStart)}
+                    onClick={() =>
+                      void operate(
+                        () =>
+                          remoteStart && selectedTarget
+                            ? generationConnectionApi.start(selectedTarget)
+                            : projectApi.startWorker(),
+                        "服务已启动并连接",
+                      )
+                    }
                   >
-                    安全启动 ComfyUI
+                    启动 ComfyUI
                   </button>
                 ) : null}
                 {worker.control?.canStop ? (
@@ -456,8 +516,12 @@ export function GenerationConnectionPanel({ manage = false }: { manage?: boolean
                   </button>
                 ) : null}
               </div>
-              {!worker.startup?.canStart && worker.status !== "ready" ? (
-                <p>{worker.startup?.message || "此地址暂无可用服务"}</p>
+              {!remoteStart && !worker.startup?.canStart && worker.status !== "ready" ? (
+                <p>
+                  {selectedTarget?.kind === "ssh"
+                    ? "尚未配置远程启动方式，请编辑设备的远程启动设置。"
+                    : worker.startup?.message || "此地址暂无可用服务"}
+                </p>
               ) : null}
               {stopping ? (
                 <fieldset aria-label="确认停止 ComfyUI">
@@ -479,7 +543,7 @@ export function GenerationConnectionPanel({ manage = false }: { manage?: boolean
                   </button>
                 </fieldset>
               ) : null}
-            </details>
+            </section>
           ) : null}
         </>
       )}

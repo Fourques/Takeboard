@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { type GpuPoolStatus, generationConnectionApi, gpuPoolApi } from "./api";
+import { type GpuPoolStatus, generationConnectionApi, gpuPoolApi, TakeBoardApiError } from "./api";
 import { useAuth } from "./auth-ui";
 
 export default function GpuPoolSettings() {
@@ -12,15 +12,17 @@ export default function GpuPoolSettings() {
   useEffect(() => {
     if (!canManage) return;
     let disposed = false;
+    let denied = false;
     let timer: ReturnType<typeof setTimeout>;
     const refresh = async () => {
       try {
         const next = await gpuPoolApi.status();
         if (!disposed) setStatus(next);
-      } catch {
+      } catch (cause) {
+        if (cause instanceof TakeBoardApiError && [401, 403].includes(cause.status)) denied = true;
         if (!disposed && status?.configured) setError("暂时无法读取执行池状态");
       } finally {
-        if (!disposed) timer = setTimeout(refresh, 3000);
+        if (!disposed && !denied) timer = setTimeout(refresh, 3000);
       }
     };
     void refresh();

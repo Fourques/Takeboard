@@ -36,12 +36,12 @@ export function registerSameGpuPool(
       const status = (await response.json()) as Record<string, unknown>;
       return status.service === "takeboard-gpu-pool" ? { endpoint, status } : null;
     };
-    app.get("/api/admin/gpu-pool", async () => {
+    app.get("/api/workers/gpu-pool", async () => {
       const result = await remote().catch(() => null);
       return result ? { ...result.status, configured: true, remote: true } : { configured: false };
     });
     for (const action of ["start", "stop"] as const)
-      app.post(`/api/admin/gpu-pool/${action}`, async (_request, reply) => {
+      app.post(`/api/workers/gpu-pool/${action}`, async (_request, reply) => {
         try {
           const result = await remote();
           if (!result) return reply.code(409).send({ error: "当前设备不是已配置的单卡执行池" });
@@ -50,6 +50,10 @@ export function registerSameGpuPool(
             signal: AbortSignal.timeout(5 * 60_000),
             redirect: "error",
           });
+          if (response.status === 401 || response.status === 403)
+            return reply
+              .code(502)
+              .send({ error: "远端执行池拒绝访问，请检查设备权限；这不是 TakeBoard 账号登录问题" });
           return reply.code(response.status).send(await response.json());
         } catch {
           return reply
@@ -137,12 +141,12 @@ export function registerSameGpuPool(
     lease = null;
     // Busy processes may finish accepted work while TakeBoard restarts.
   });
-  app.get("/api/admin/gpu-pool", async () => ({
+  app.get("/api/workers/gpu-pool", async () => ({
     configured: true,
     ...pool.status(),
     endpoint: `http://127.0.0.1:${config.gatewayPort}`,
   }));
-  app.post("/api/admin/gpu-pool/start", async (_request, reply) => {
+  app.post("/api/workers/gpu-pool/start", async (_request, reply) => {
     try {
       await pool.start();
       return { started: true, ...pool.status() };
@@ -150,7 +154,7 @@ export function registerSameGpuPool(
       return reply.code(409).send({ error: error instanceof Error ? error.message : "实例未启动" });
     }
   });
-  app.post("/api/admin/gpu-pool/stop", async (_request, reply) => {
+  app.post("/api/workers/gpu-pool/stop", async (_request, reply) => {
     try {
       await pool.stop();
       return { stopped: true, ...pool.status() };

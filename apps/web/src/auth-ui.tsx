@@ -669,6 +669,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
       }
       setStatus("ready");
       setError(null);
+      return result;
     } catch (cause) {
       if (generation !== loadGeneration.current) return;
       setError(cause instanceof Error ? cause.message : "无法连接 TakeBoard 服务");
@@ -683,9 +684,11 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }, [load]);
   useEffect(() => {
     const expired = () => {
-      setLoginOpen(true);
-      setCenter(null);
-      void load();
+      void load().then((result) => {
+        if (!result?.enabled || result.user || result.access === "local") return;
+        setLoginOpen(true);
+        setCenter(null);
+      });
     };
     const offline = () => {
       setError("连接暂时中断，当前页面已保留。恢复后请确认任务状态，不要重复提交生成。");

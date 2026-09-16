@@ -379,7 +379,7 @@ export function launcherConfigFromEnvironment(): ComfyLauncherConfig {
   const pidFile = process.env.COMFY_START_PID_FILE;
   return {
     provider: (process.env.COMFY_LAUNCH_PROVIDER as ComfyLauncherConfig["provider"]) ?? "auto",
-    systemdService: process.env.COMFY_START_SERVICE ?? "takeboard-comfy.service",
+    ...(process.env.COMFY_START_SERVICE ? { systemdService: process.env.COMFY_START_SERVICE } : {}),
     args: parseArgs(process.env.COMFY_START_ARGS_JSON),
     ...(launchdLabel ? { launchdLabel } : {}),
     ...(windowsService ? { windowsService } : {}),

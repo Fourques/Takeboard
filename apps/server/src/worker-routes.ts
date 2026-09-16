@@ -404,6 +404,7 @@ export function registerWorkerRoutes(
           "/api/workers/comfy/stop",
           "/api/workers/comfy/release",
           "/api/generation/connection",
+          "/api/generation/connection/start",
         ].includes(route.url));
     const generation =
       route.method === "POST" && route.url === "/api/projects/:key/shots/:shotId/generate";

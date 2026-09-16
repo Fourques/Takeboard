@@ -8,11 +8,12 @@ import { setTimeout as delay } from "node:timers/promises";
 import type { FastifyInstance } from "fastify";
 import { projectDirectory } from "./project-locations.js";
 import { projectKey } from "./project-routes.js";
+import { remoteServiceName, startRemoteComfy } from "./remote-comfy-service.js";
 import { ProjectStore } from "./storage/project-store.js";
 import type { WorkerPool } from "./worker-pool.js";
 
 export type ConnectionTarget =
-  | { kind: "ssh"; name: string; host: string; port: number }
+  | { kind: "ssh"; name: string; host: string; port: number; service?: string }
   | { kind: "url"; name: string; url: string };
 type Profile = { workerId: string; target: ConnectionTarget };
 type Tunnel = { endpoint: string; close: () => Promise<void>; closed: Promise<void> };
@@ -36,7 +37,13 @@ export function parseConnectionTarget(input: unknown): ConnectionTarget {
     const port = value.port ?? 8188;
     if (typeof port !== "number" || !Number.isInteger(port) || port < 1 || port > 65535)
       throw new Error("ComfyUI 端口需要是 1–65535 的整数");
-    return { kind: "ssh", name: name || host, host, port };
+    return {
+      kind: "ssh",
+      name: name || host,
+      host,
+      port,
+      ...(value.service ? { service: remoteServiceName(value.service) } : {}),
+    };
   }
   if (value.kind !== "url" || typeof value.url !== "string") throw new Error("连接方式无效");
   const url = new URL(value.url);
@@ -265,7 +272,20 @@ export class ComfyConnections {
     );
     if (existing && this.connecting.has(existing.workerId))
       throw new Error("此连接正在恢复，请稍候重试");
-    if (existing && this.tunnels.has(existing.workerId)) {
+    const existingTunnel = existing ? this.tunnels.get(existing.workerId) : undefined;
+    if (existing && existingTunnel) {
+      await this.runtime.verify(
+        existingTunnel.endpoint,
+        AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(5000)]),
+      );
+      const previous = existing.target;
+      existing.target = target;
+      try {
+        await this.persist();
+      } catch (error) {
+        existing.target = previous;
+        throw error;
+      }
       await this.pool.selectDefault(existing.workerId);
       await this.releaseInactive();
       return this.status();
@@ -322,6 +342,15 @@ export class ComfyConnections {
           await this.persist();
         } catch (error) {
           this.profiles = this.profiles.filter((item) => item !== profile);
+          throw error;
+        }
+      } else {
+        const previous = existing.target;
+        existing.target = target;
+        try {
+          await this.persist();
+        } catch (error) {
+          existing.target = previous;
           throw error;
         }
       }
@@ -565,6 +594,23 @@ export function registerComfyConnections(
   pool: WorkerPool,
 ) {
   app.get("/api/generation/connection", async () => connections.status());
+  app.post("/api/generation/connection/start", async (request, reply) => {
+    try {
+      const target = parseConnectionTarget(request.body);
+      if (target.kind !== "ssh" || !target.service)
+        throw new Error("先填写 SSH 设备及其已配置的 Linux 用户服务名");
+      return await connections.mutate(async () => {
+        if (!connections.isCurrentTarget(target)) await connections.assertIdle();
+        return await startRemoteComfy(target.host, target.service, () =>
+          connections.connect(target),
+        );
+      });
+    } catch (error) {
+      return reply
+        .code(409)
+        .send({ error: error instanceof Error ? error.message : "远程启动未完成" });
+    }
+  });
   app.post("/api/generation/connection", async (request, reply) => {
     try {
       const body = request.body as { workerId?: unknown } | null;

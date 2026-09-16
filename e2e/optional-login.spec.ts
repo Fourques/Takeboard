@@ -26,6 +26,12 @@ test("device creation needs no signup; optional login can close, switch identity
     await page.goto(url);
     await expect(page.getByRole("button", { name: "登录", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "创建 TakeBoard 账号" })).toHaveCount(0);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const refreshed = page.waitForResponse("**/api/auth/status");
+      await page.evaluate(() => window.dispatchEvent(new CustomEvent("takeboard:auth-required")));
+      await refreshed;
+      await expect(page.getByRole("dialog", { name: "账号登录" })).toHaveCount(0);
+    }
     await page.getByRole("button", { name: "登录", exact: true }).click();
     await expect(page.getByRole("dialog", { name: "账号登录" })).toBeVisible();
     await expect(page.getByPlaceholder("Your name")).toBeVisible();

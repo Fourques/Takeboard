@@ -122,8 +122,12 @@
   border-top: 1px solid var(--line);
   padding-top: 16px;
 }
-.generation-service-control summary {
+.generation-connection-panel details > summary {
   cursor: pointer;
+  padding-block: 8px;
+}
+.generation-connection-panel details[open] > label {
+  margin-block: 8px;
 }
 .hub-header .worker-pill > div {
   min-width: 0;
