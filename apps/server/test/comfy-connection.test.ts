@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { RemoteDeviceStatus } from "@takeboard/contracts";
 import Fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
@@ -24,6 +25,52 @@ async function fixture() {
 const target = { kind: "ssh" as const, name: "家里的工作站", host: "user@workstation", port: 8188 };
 
 describe("generation connection ownership", () => {
+  it("keeps the selected device connected while its service is unavailable or GPU telemetry fails", async () => {
+    const root = await fixture();
+    const pool = new WorkerPool(join(root, "workers.json"), "http://127.0.0.1:8188");
+    const device: RemoteDeviceStatus = {
+      connection: "connected",
+      checkedAt: new Date(0).toISOString(),
+      system: { name: "studio", platform: "Linux", availableMemoryMiB: 16000 },
+      gpu: { state: "busy", devices: [], processes: [], processesKnown: true },
+      service: "stopped",
+      startup: { allowed: false, reason: "GPU 资源不足，稍后重试" },
+      diagnostics: [],
+    };
+    const manager = new ComfyConnections(root, pool, {
+      verify: vi.fn(),
+      openTunnel: vi.fn(async () => {
+        throw new Error("service offline");
+      }),
+      inspectDevice: vi.fn(async () => structuredClone(device)),
+    });
+    cleanup.push(() => manager.close());
+    const saved = await manager.configure(target);
+    await expect(manager.connect(target)).rejects.toThrow("service offline");
+    expect(manager.status()).toMatchObject({
+      state: "configured",
+      workerId: saved.workerId,
+      profiles: [
+        { device: { connection: "connected", service: "stopped", gpu: { state: "busy" } } },
+      ],
+    });
+    device.gpu.state = "unavailable";
+    await manager.inspectSelectedDevice();
+    expect(manager.status().profiles[0]?.device?.connection).toBe("connected");
+    expect(manager.status().profiles[0]?.device?.gpu.state).toBe("unavailable");
+    device.connection = "unreachable";
+    await manager.inspectSelectedDevice();
+    expect(manager.status().profiles[0]?.device?.connection).toBe("unreachable");
+    device.connection = "connected";
+    await manager.inspectSelectedDevice();
+    expect(manager.status()).toMatchObject({
+      workerId: saved.workerId,
+      profiles: [{ device: { connection: "connected" } }],
+    });
+    expect(manager.status().profiles).toHaveLength(1);
+    await manager.remove(saved.workerId);
+    expect(manager.status()).toMatchObject({ state: "offline", profiles: [] });
+  });
   it("keeps identity through real HTTP service stop/start and controller restart", async () => {
     const root = await fixture();
     const file = join(root, "workers.json");

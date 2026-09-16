@@ -21,7 +21,21 @@ test("offline SSH service has a visible explicit start action and never reports 
         address: "artist@studio",
         state: "configured",
         error: null,
-        profiles: [{ workerId: "studio", target }],
+        profiles: [
+          {
+            workerId: "studio",
+            target,
+            device: {
+              connection: "connected",
+              checkedAt: new Date().toISOString(),
+              system: { name: "studio", platform: "Linux", availableMemoryMiB: 16000 },
+              gpu: { state: "available", devices: [], processes: [], processesKnown: true },
+              service: "stopped",
+              startup: { allowed: true, reason: null },
+              diagnostics: [],
+            },
+          },
+        ],
       },
     }),
   );
@@ -54,7 +68,7 @@ test("offline SSH service has a visible explicit start action and never reports 
   await start.click();
   await expect(settings.getByRole("alert")).toContainText("远端可用内存不足");
   expect(submitted).toEqual(target);
-  await expect(settings.getByText("服务已启动并连接", { exact: true })).toHaveCount(0);
+  await expect(settings.getByText("生成服务已就绪", { exact: true })).toHaveCount(0);
 });
 
 test("a disabled base device can be re-enabled in settings and media authorization is explicit", async ({

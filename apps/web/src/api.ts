@@ -27,6 +27,7 @@ import type {
   RecommendedWorkflowTemplate,
   RecoveryCodeStatus,
   RemoteAccessStatus,
+  RemoteDeviceStatus,
   RunCost,
   WorkerDefinition,
   WorkerHealth,
@@ -970,6 +971,7 @@ export type GenerationConnection = {
   profiles: Array<{
     workerId: string;
     target: GenerationConnectionTarget;
+    device?: RemoteDeviceStatus | null;
     serviceState?:
       | "unverified"
       | "connecting"

@@ -267,18 +267,10 @@ function SettingsCenter({
           {section === "connections" ? (
             <section>
               <h3>生成设备</h3>
-              <p>连接 ComfyUI，生成结果保存在当前项目。</p>
               <Suspense fallback={<p>读取设备…</p>}>
                 <GenerationConnectionPanel manage />
                 <GpuPoolSettings />
               </Suspense>
-              <div className="settings-subsection">
-                <h3>远程项目</h3>
-                <p>打开另一台 TakeBoard 上的项目。项目与素材保存在那台设备。</p>
-                <button type="button" onClick={() => setSection("remote-projects")}>
-                  管理远程项目
-                </button>
-              </div>
             </section>
           ) : null}
           {section === "remote-projects" ? (

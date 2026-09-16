@@ -9,7 +9,12 @@ function runtime(gpu = "16000, 0", active = false) {
       stdout = `LoadState=loaded\nActiveState=${active ? "active" : "inactive"}\nSubState=${active ? "running" : "dead"}`;
     else if (command.includes("InvocationID")) stdout = "a".repeat(32);
     else if (command.includes("meminfo")) stdout = "MemAvailable: 16000000 kB";
-    else if (command.includes("nvidia-smi")) stdout = gpu;
+    else if (command.includes("uname")) stdout = "Linux";
+    else if (command.includes("--query-gpu"))
+      stdout = gpu
+        .split("\n")
+        .map((row, index) => `GPU-${index}, GPU, 24564, 4000, ${row}`)
+        .join("\n");
     return { stdout, stderr: "" };
   });
 }

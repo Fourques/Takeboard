@@ -1124,7 +1124,8 @@ export function ProjectHub({
                   </svg>
                   <div>
                     <strong title={worker?.connection?.address}>
-                      {worker?.status === "ready"
+                      {worker?.status === "ready" ||
+                      (worker?.connection && worker.connection.kind !== "existing")
                         ? worker.connection?.kind !== "existing"
                           ? worker.connection?.name || "ComfyUI"
                           : worker.connection?.address
@@ -1138,7 +1139,7 @@ export function ProjectHub({
                         : worker?.status === "ready"
                           ? "使用中"
                           : worker?.status === "offline"
-                            ? "离线"
+                            ? "服务未就绪"
                             : "连接中"}
                     </span>
                   </div>

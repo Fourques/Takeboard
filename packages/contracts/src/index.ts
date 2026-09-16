@@ -2,6 +2,7 @@ export * from "./auth.js";
 export * from "./canvas.js";
 export * from "./command.js";
 export * from "./common.js";
+export * from "./device-status.js";
 export * from "./execution.js";
 export * from "./extension.js";
 export * from "./generation.js";

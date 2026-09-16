@@ -9,6 +9,7 @@ import type { FastifyInstance } from "fastify";
 import { projectDirectory } from "./project-locations.js";
 import { projectKey } from "./project-routes.js";
 import { remoteServiceName, startRemoteComfy } from "./remote-comfy-service.js";
+import { inspectRemoteDevice, type RemoteDeviceStatus } from "./remote-device-status.js";
 import { ProjectStore } from "./storage/project-store.js";
 import type { WorkerPool } from "./worker-pool.js";
 
@@ -207,6 +208,8 @@ export class ComfyConnections {
   private readonly errors = new Map<string, string>();
   private readonly connecting = new Set<string>();
   private readonly states = new Map<string, ServiceState>();
+  private readonly devices = new Map<string, RemoteDeviceStatus>();
+  private readonly inspections = new Map<string, Promise<void>>();
   private readonly lifetime = new AbortController();
   private restoring: Promise<void> | null = null;
   private restoreAbort: AbortController | undefined;
@@ -217,7 +220,11 @@ export class ComfyConnections {
   constructor(
     private readonly root: string,
     private readonly pool: WorkerPool,
-    private readonly runtime = { openTunnel: openComfyTunnel, verify: verifyComfy },
+    private readonly runtime: {
+      openTunnel: typeof openComfyTunnel;
+      verify: typeof verifyComfy;
+      inspectDevice?: typeof inspectRemoteDevice;
+    } = { openTunnel: openComfyTunnel, verify: verifyComfy, inspectDevice: inspectRemoteDevice },
   ) {
     this.path = join(root, ".system", "generation-connections.json");
     try {
@@ -255,21 +262,51 @@ export class ComfyConnections {
       kind: profile?.target.kind ?? "existing",
       state: !worker
         ? "offline"
-        : this.connecting.has(workerId)
-          ? "connecting"
-          : this.errors.has(workerId)
-            ? "offline"
-            : "configured",
+        : this.devices.get(workerId)?.connection === "connected"
+          ? "configured"
+          : this.connecting.has(workerId)
+            ? "connecting"
+            : this.errors.has(workerId)
+              ? "offline"
+              : "configured",
       error: this.configurationError ?? this.errors.get(workerId) ?? null,
       profiles: this.profiles
         .filter((item) => !this.pool.definition(item.workerId)?.retiredAt)
         .map((item) => ({
           ...item,
           serviceState: this.states.get(item.workerId) ?? "unverified",
+          device: this.devices.get(item.workerId) ?? null,
           error: this.errors.get(item.workerId) ?? null,
         })),
       localWorkerId: this.pool.localWorkerId,
     };
+  }
+  async inspectSelectedDevice() {
+    const profile = this.profiles.find((item) => item.workerId === this.pool.defaultWorkerId);
+    if (profile && !this.pool.definition(profile.workerId)?.retiredAt)
+      await this.inspectDevice(profile);
+  }
+  private async inspectDevice(profile: Profile, force = false) {
+    const target = profile.target;
+    if (target.kind !== "ssh" || !this.runtime.inspectDevice) return;
+    const pending = this.inspections.get(profile.workerId);
+    if (pending) return pending;
+    const prior = this.devices.get(profile.workerId);
+    if (!force && prior && Date.now() - Date.parse(prior.checkedAt) < 10000) return;
+    const inspection = this.runtime
+      .inspectDevice(target.host, target.service)
+      .then((device) => {
+        if (
+          this.lifetime.signal.aborted ||
+          this.pool.definition(profile.workerId)?.retiredAt ||
+          this.profiles.find((item) => item.workerId === profile.workerId)?.target !== target
+        )
+          return;
+        this.devices.set(profile.workerId, device);
+      })
+      .finally(() => this.inspections.delete(profile.workerId));
+    this.inspections.set(profile.workerId, inspection);
+    await inspection;
   }
   private async persist() {
     await mkdir(dirname(this.path), { recursive: true, mode: 0o700 });
@@ -376,6 +413,10 @@ export class ComfyConnections {
     const target = parseConnectionTarget(input);
     if (target.kind !== "ssh" || !target.service) throw new Error("请先配置远程启动服务");
     const profile = await this.configure(target);
+    await this.inspectDevice(profile, true);
+    const device = this.devices.get(profile.workerId);
+    if (device && !device.startup.allowed)
+      throw new Error(device.startup.reason ?? "暂时不能启动服务");
     this.states.set(profile.workerId, "starting");
     try {
       return await startRemoteComfy(target.host, target.service, () => this.connect(target));
@@ -398,6 +439,14 @@ export class ComfyConnections {
         targetKey(item.target) === targetKey(target) &&
         !this.pool.definition(item.workerId)?.retiredAt,
     );
+    if (existing) {
+      await this.inspectDevice(existing);
+      const device = this.devices.get(existing.workerId);
+      if (device && device.connection !== "connected")
+        throw new Error(
+          device.connection === "ssh_unavailable" ? "SSH 连接不可用" : "设备暂时无法连接",
+        );
+    }
     if (existing && this.connecting.has(existing.workerId))
       throw new Error("此连接正在恢复，请稍候重试");
     const existingTunnel = existing ? this.tunnels.get(existing.workerId) : undefined;
@@ -631,6 +680,7 @@ export class ComfyConnections {
           this.errors.delete(workerId);
           this.states.set(workerId, this.tunnels.has(workerId) ? "connected" : "unverified");
         }
+        this.devices.delete(workerId);
         return this.status();
       } catch (error) {
         this.profiles = oldProfiles;
@@ -650,6 +700,7 @@ export class ComfyConnections {
       this.tunnels.delete(workerId);
       await tunnel?.close();
       this.errors.delete(workerId);
+      this.devices.delete(workerId);
       return this.status();
     });
   }
@@ -705,6 +756,9 @@ export class ComfyConnections {
         const attempt = new AbortController();
         this.restoreAbort = attempt;
         try {
+          await this.inspectDevice(profile);
+          const device = this.devices.get(profile.workerId);
+          if (device && device.connection !== "connected") throw new Error("设备暂时无法连接");
           if (installed) {
             await this.runtime.verify(
               installed.endpoint,
@@ -746,6 +800,7 @@ export class ComfyConnections {
     this.lifetime.abort();
     clearTimeout(this.timer);
     await this.restoring;
+    await Promise.allSettled(this.inspections.values());
     await Promise.all([...this.tunnels.values()].map((tunnel) => tunnel.close()));
   }
 }
@@ -755,7 +810,10 @@ export function registerComfyConnections(
   connections: ComfyConnections,
   pool: WorkerPool,
 ) {
-  app.get("/api/generation/connection", async () => connections.status());
+  app.get("/api/generation/connection", async () => {
+    await connections.inspectSelectedDevice();
+    return connections.status();
+  });
   app.post("/api/generation/connection/configure", async (request, reply) => {
     try {
       return await connections.mutate(async () => {

@@ -8,6 +8,7 @@ import {
   workerApi,
 } from "./api";
 import { useAuth } from "./auth-ui";
+import { RemoteDeviceSummary } from "./remote-device-summary";
 import { openSettings } from "./settings-navigation";
 import "./generation-connection-panel.css";
 
@@ -52,7 +53,10 @@ export function GenerationConnectionPanel({ manage = false }: { manage?: boolean
   };
   useEffect(() => {
     let active = true;
+    let reading = false;
     const read = async () => {
+      if (reading) return;
+      reading = true;
       try {
         const [next, pool, status] = await Promise.all([
           generationConnectionApi.status(),
@@ -66,6 +70,8 @@ export function GenerationConnectionPanel({ manage = false }: { manage?: boolean
         }
       } catch (cause) {
         if (active) setError(cause instanceof Error ? cause.message : "无法读取设备");
+      } finally {
+        reading = false;
       }
     };
     void read();
@@ -95,6 +101,7 @@ export function GenerationConnectionPanel({ manage = false }: { manage?: boolean
         window.dispatchEvent(new Event("takeboard:generation-connection-changed"));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "连接失败，原设备未切换");
+      if (changesConnection) await refresh().catch(() => undefined);
     } finally {
       setBusy(false);
     }
@@ -138,10 +145,32 @@ export function GenerationConnectionPanel({ manage = false }: { manage?: boolean
       </fieldset>
     ) : null;
   const profiles = connection?.profiles ?? [];
-  const selectedTarget = profiles.find(
-    (profile) => profile.workerId === connection?.workerId,
-  )?.target;
+  const selectedProfile = profiles.find((profile) => profile.workerId === connection?.workerId);
+  const selectedTarget = selectedProfile?.target;
+  const device = selectedProfile?.device;
   const remoteStart = selectedTarget?.kind === "ssh" && Boolean(selectedTarget.service);
+  const reconnectService = device?.connection === "connected" && device.service === "running";
+  const canStart = remoteStart
+    ? device?.startup.allowed === true
+    : Boolean(worker?.startup?.canStart);
+  const serviceLabel =
+    worker?.status === "ready"
+      ? "已就绪"
+      : selectedProfile?.serviceState === "starting" || device?.service === "starting"
+        ? "启动中"
+        : device?.connection && device.connection !== "connected"
+          ? "等待设备连接"
+          : device?.service === "stopped"
+            ? "未运行"
+            : device?.service === "failed"
+              ? "异常退出"
+              : device?.service === "running"
+                ? "运行中 · 连接待恢复"
+                : device?.connection === "connected"
+                  ? "未就绪"
+                  : "尚未连接";
+  const startupReason = device?.startup.reason;
+  const operationError = error === startupReason ? "" : error;
   const savedIds = new Set(profiles.map((item) => item.workerId));
   const legacy =
     fleet?.workers.filter(
@@ -156,7 +185,9 @@ export function GenerationConnectionPanel({ manage = false }: { manage?: boolean
         {profiles.map((profile) => {
           const status = fleet?.workers.find((entry) => entry.worker.id === profile.workerId);
           const current = connection?.workerId === profile.workerId;
-          const online = status?.status === "ready";
+          const online = profile.device
+            ? profile.device.connection === "connected"
+            : status?.status === "ready";
           const disabled = status?.worker.enabled === false;
           return (
             <div className="generation-device-item" key={profile.workerId}>
@@ -166,10 +197,7 @@ export function GenerationConnectionPanel({ manage = false }: { manage?: boolean
                 aria-pressed={current && online}
                 disabled={busy || !canManage || disabled || (current && online)}
                 onClick={() =>
-                  void operate(
-                    () => generationConnectionApi.configure(profile.target),
-                    "设备已选择",
-                  )
+                  void operate(() => generationConnectionApi.configure(profile.target), "")
                 }
               >
                 <i data-online={online} />
@@ -182,23 +210,29 @@ export function GenerationConnectionPanel({ manage = false }: { manage?: boolean
                 <em>
                   {disabled
                     ? "已停用"
-                    : profile.serviceState === "starting"
-                      ? "启动中"
-                      : profile.serviceState === "recovering"
-                        ? "恢复中"
-                        : profile.serviceState === "connecting"
-                          ? "连接中"
-                          : online
-                            ? current
-                              ? "使用中"
-                              : "可连接"
-                            : profile.serviceState === "service_unavailable"
-                              ? "服务未就绪"
-                              : profile.serviceState === "disconnected"
-                                ? "已断开"
-                                : status?.status === "offline" && current
-                                  ? "离线"
-                                  : "未连接"}
+                    : profile.device
+                      ? profile.device.connection === "connected"
+                        ? "已连接"
+                        : profile.device.connection === "ssh_unavailable"
+                          ? "SSH 不可用"
+                          : "无法连接"
+                      : profile.serviceState === "starting"
+                        ? "启动中"
+                        : profile.serviceState === "recovering"
+                          ? "恢复中"
+                          : profile.serviceState === "connecting"
+                            ? "连接中"
+                            : online
+                              ? current
+                                ? "使用中"
+                                : "可连接"
+                              : profile.serviceState === "service_unavailable"
+                                ? "服务未就绪"
+                                : profile.serviceState === "disconnected"
+                                  ? "已断开"
+                                  : status?.status === "offline" && current
+                                    ? "离线"
+                                    : "未连接"}
                 </em>
               </button>
               {deviceActions(profile.workerId, profile.target)}
@@ -423,28 +457,6 @@ export function GenerationConnectionPanel({ manage = false }: { manage?: boolean
                       当前支持 Linux systemd 用户服务及单卡 NVIDIA
                       预检；其他远端可连接和释放显存，但需先在设备上启动。
                     </small>
-                    {service.trim() ? (
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => {
-                          if (!editor.current?.reportValidity()) return;
-                          void operate(async () => {
-                            await generationConnectionApi.start({
-                              kind: "ssh",
-                              host: address.trim(),
-                              port: Number(port),
-                              name,
-                              service: service.trim(),
-                            });
-                            setAdding(false);
-                            setEditing(null);
-                          }, "远程服务已启动并连接");
-                        }}
-                      >
-                        启动并连接
-                      </button>
-                    ) : null}
                   </details>
                 ) : null}
                 {editing ? (
@@ -492,11 +504,11 @@ export function GenerationConnectionPanel({ manage = false }: { manage?: boolean
           ) : null}
           {worker && canManage && connection ? (
             <section className="generation-service-control" aria-label="生成服务">
-              <strong>生成服务</strong>
-              {connection.address ? <p>{connection.address}</p> : null}
-              {connection.error && worker.status !== "ready" ? (
-                <p role="status">{connection.error}</p>
-              ) : null}
+              {device ? <RemoteDeviceSummary device={device} /> : null}
+              <div className="generation-service-heading">
+                <strong>ComfyUI</strong>
+                <span>{serviceLabel}</span>
+              </div>
               <div className="settings-actions">
                 {worker.status === "ready" ? (
                   <button
@@ -516,18 +528,20 @@ export function GenerationConnectionPanel({ manage = false }: { manage?: boolean
                 {worker.status !== "ready" ? (
                   <button
                     type="button"
-                    disabled={busy || (!remoteStart && !worker.startup?.canStart)}
+                    disabled={busy || (!canStart && !reconnectService)}
                     onClick={() =>
                       void operate(
                         () =>
-                          remoteStart && selectedTarget
-                            ? generationConnectionApi.start(selectedTarget)
-                            : projectApi.startWorker(),
-                        "服务已启动并连接",
+                          reconnectService && selectedTarget
+                            ? generationConnectionApi.connect(selectedTarget)
+                            : remoteStart && selectedTarget
+                              ? generationConnectionApi.start(selectedTarget)
+                              : projectApi.startWorker(),
+                        "生成服务已就绪",
                       )
                     }
                   >
-                    启动 ComfyUI
+                    {reconnectService ? "重新连接服务" : "启动 ComfyUI"}
                   </button>
                 ) : null}
                 {worker.control?.canStop ? (
@@ -536,12 +550,17 @@ export function GenerationConnectionPanel({ manage = false }: { manage?: boolean
                   </button>
                 ) : null}
               </div>
-              {!remoteStart && !worker.startup?.canStart && worker.status !== "ready" ? (
-                <p>
-                  {selectedTarget?.kind === "ssh"
-                    ? "尚未配置远程启动方式，请编辑设备的远程启动设置。"
-                    : worker.startup?.message || "此地址暂无可用服务"}
-                </p>
+              {worker.status !== "ready" &&
+              !canStart &&
+              !operationError &&
+              startupReason &&
+              startupReason !== "GPU 状态读取失败" &&
+              startupReason !== "服务已经运行" &&
+              startupReason !== "服务正在启动" ? (
+                <p className="generation-start-reason">{startupReason}</p>
+              ) : null}
+              {!device && !canStart && worker.status !== "ready" ? (
+                <p>{selectedTarget?.kind === "ssh" ? "正在检查设备" : "尚未配置启动方式"}</p>
               ) : null}
               {stopping ? (
                 <fieldset aria-label="确认停止 ComfyUI">
@@ -567,8 +586,7 @@ export function GenerationConnectionPanel({ manage = false }: { manage?: boolean
           ) : null}
         </>
       )}
-      {connection?.error ? <p role="status">{connection.error}</p> : null}
-      {error ? <p role="alert">{error}</p> : null}
+      {operationError ? <p role="alert">{operationError}</p> : null}
       {notice ? <p role="status">{notice}</p> : null}
     </section>
   );

@@ -21,8 +21,9 @@ test("an unavailable service can be saved, reselected and restored without a dup
       status.profiles.filter((item: { workerId: string }) => item.workerId === id),
     ).toHaveLength(1);
     await expect(settings.getByRole("button", { name: /Offline studio.*已断开/ })).toBeVisible();
+    const selection = page.waitForResponse("**/api/generation/connection/configure");
     await settings.getByRole("button", { name: /Offline studio.*已断开/ }).click();
-    await expect(settings.getByText("设备已选择", { exact: true })).toBeVisible();
+    await selection;
     const retry = await (await request.get("/api/generation/connection")).json();
     expect(retry.workerId).toBe(id);
     expect(retry.profiles).toHaveLength(status.profiles.length);

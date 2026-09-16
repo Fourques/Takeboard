@@ -29,7 +29,7 @@ import { WorkerPool } from "./worker-pool.js";
 import { registerWorkerRoutes, type WorkerRouteOptions } from "./worker-routes.js";
 import { registerWorkflowRoutes } from "./workflow-routes.js";
 
-export const takeBoardVersion = "0.2.0-beta.16";
+export const takeBoardVersion = "0.2.0-beta.17";
 
 export type AppOptions = {
   gpuPool?: { config: GpuPoolConfig; runtime?: GpuRuntime };
