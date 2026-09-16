@@ -13,7 +13,12 @@ import { workerDefinitionSchema } from "@takeboard/contracts";
 import { createTakeBoardId, toIsoTimestamp } from "@takeboard/domain";
 import { ComfyClient } from "@takeboard/executor-comfy";
 
-type WorkerFile = { version: 1; workers: WorkerDefinition[]; selectedWorkerId?: string };
+type WorkerFile = {
+  version: 1;
+  workers: WorkerDefinition[];
+  selectedWorkerId?: string;
+  claimedPrimary?: boolean;
+};
 
 export type WorkerSelectionInput = {
   policy: ExecutionPolicy;
@@ -136,6 +141,7 @@ function policyLabel(policy: ExecutionPolicy) {
 export class WorkerPool {
   readonly localWorkerId: string;
   private selectedWorkerId: string | undefined;
+  private claimedPrimary = false;
   private readonly managedEndpoints = new Map<string, string | null>();
   get defaultWorkerId() {
     return this.selectedWorkerId ?? this.localWorkerId;
@@ -148,6 +154,7 @@ export class WorkerPool {
     private readonly storagePath: string,
     defaultEndpoint: string,
     runtimeFetch: typeof fetch = fetch,
+    private readonly implicitPrimary = false,
   ) {
     this.runtimeFetch = runtimeFetch;
     const primary = defaultWorker(defaultEndpoint);
@@ -176,6 +183,8 @@ export class WorkerPool {
     try {
       const payload = JSON.parse(readFileSync(this.storagePath, "utf8")) as Partial<WorkerFile>;
       if (payload.version !== 1 || !Array.isArray(payload.workers)) return [];
+      this.claimedPrimary =
+        payload.claimedPrimary === true || payload.selectedWorkerId === this.localWorkerId;
       if (payload.workers.some((worker) => worker.id === payload.selectedWorkerId))
         this.selectedWorkerId = payload.selectedWorkerId;
       return payload.workers.flatMap((worker) => {
@@ -192,7 +201,7 @@ export class WorkerPool {
     const temporary = `${this.storagePath}.${process.pid}.${randomUUID()}.tmp`;
     await writeFile(
       temporary,
-      `${JSON.stringify({ version: 1, workers: this.workers, ...(this.selectedWorkerId ? { selectedWorkerId: this.selectedWorkerId } : {}) } satisfies WorkerFile, null, 2)}\n`,
+      `${JSON.stringify({ version: 1, workers: this.workers, claimedPrimary: this.claimedPrimary, ...(this.selectedWorkerId ? { selectedWorkerId: this.selectedWorkerId } : {}) } satisfies WorkerFile, null, 2)}\n`,
       { flag: "w", mode: 0o600 },
     );
     await rename(temporary, this.storagePath);
@@ -200,9 +209,20 @@ export class WorkerPool {
   }
 
   definitions() {
-    return this.workers
-      .filter((worker) => worker.retiredAt === null)
-      .map((worker) => ({ ...worker }));
+    return (
+      this.workers
+        .filter((worker) => worker.retiredAt === null)
+        // The fallback port is a bootstrap candidate, not a discovered computer.
+        // Once a device is explicitly selected it must not enter the execution fleet.
+        .filter(
+          (worker) =>
+            !this.implicitPrimary ||
+            this.claimedPrimary ||
+            this.defaultWorkerId === this.localWorkerId ||
+            worker.id !== this.localWorkerId,
+        )
+        .map((worker) => ({ ...worker }))
+    );
   }
 
   definition(workerId: string) {
@@ -213,11 +233,14 @@ export class WorkerPool {
     const worker = this.definition(workerId);
     if (!worker || worker.retiredAt || !worker.enabled) throw new Error("生成服务不可用");
     const previous = this.selectedWorkerId;
+    const claimedBefore = this.claimedPrimary;
+    if (workerId === this.localWorkerId) this.claimedPrimary = true;
     this.selectedWorkerId = workerId;
     try {
       await this.persist();
     } catch (error) {
       this.selectedWorkerId = previous;
+      this.claimedPrimary = claimedBefore;
       throw error;
     }
   }
@@ -240,7 +263,10 @@ export class WorkerPool {
     });
     if (
       this.workers.some(
-        (candidate) => !candidate.retiredAt && candidate.endpoint === worker.endpoint,
+        (candidate) =>
+          !candidate.retiredAt &&
+          (candidate.endpoint === worker.endpoint ||
+            this.managedEndpoints.get(candidate.id) === worker.endpoint),
       )
     ) {
       throw new Error("这个执行端地址已经存在");
@@ -281,7 +307,8 @@ export class WorkerPool {
         (candidate) =>
           !candidate.retiredAt &&
           candidate.id !== updated.id &&
-          candidate.endpoint === updated.endpoint,
+          (candidate.endpoint === updated.endpoint ||
+            this.managedEndpoints.get(candidate.id) === updated.endpoint),
       )
     ) {
       throw new Error("这个执行端地址已经存在");
@@ -420,17 +447,13 @@ export class WorkerPool {
   }
 
   async fleet() {
-    return await Promise.all(
-      this.workers
-        .filter((worker) => worker.retiredAt === null)
-        .map(async (worker) => await this.probe(worker)),
-    );
+    return await Promise.all(this.definitions().map(async (worker) => await this.probe(worker)));
   }
 
   async select(input: WorkerSelectionInput): Promise<WorkerSelection> {
     if (this.selectedWorkerId && !input.requestedWorkerId && input.policy === "balanced")
       input = { ...input, requestedWorkerId: this.selectedWorkerId };
-    const enabledWorkers = this.workers.filter(
+    const enabledWorkers = this.definitions().filter(
       (worker) => worker.enabled && worker.retiredAt === null,
     );
     const deferredSingleWorker = input.deferSingleWorkerProbe && enabledWorkers.length === 1;

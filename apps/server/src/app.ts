@@ -29,7 +29,7 @@ import { WorkerPool } from "./worker-pool.js";
 import { registerWorkerRoutes, type WorkerRouteOptions } from "./worker-routes.js";
 import { registerWorkflowRoutes } from "./workflow-routes.js";
 
-export const takeBoardVersion = "0.2.0-beta.15";
+export const takeBoardVersion = "0.2.0-beta.16";
 
 export type AppOptions = {
   gpuPool?: { config: GpuPoolConfig; runtime?: GpuRuntime };
@@ -145,6 +145,12 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     resolve(projectsRoot, ".system", "workers.json"),
     comfyUrl,
     options.workerOptions?.runtime?.fetch,
+    !options.comfyUrl &&
+      !process.env.COMFY_URL &&
+      !process.env.COMFY_START_SERVICE &&
+      !process.env.COMFY_START_EXECUTABLE &&
+      !process.env.COMFY_LAUNCHD_LABEL &&
+      !process.env.COMFY_WINDOWS_SERVICE,
   );
   const extensionRegistry = new ExtensionRegistry(
     resolve(projectsRoot, ".system", "extensions.json"),

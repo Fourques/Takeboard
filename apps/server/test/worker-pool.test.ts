@@ -36,6 +36,32 @@ function runtimeFetch(input: string | URL | Request) {
 }
 
 describe("WorkerPool", () => {
+  it("does not promote a guessed local port into a second device, but retains explicitly selected local hardware", async () => {
+    const root = await mkdtemp(join(tmpdir(), "takeboard-candidate-"));
+    cleanup.push(root);
+    const path = join(root, "workers.json");
+    const pool = new WorkerPool(path, "http://127.0.0.1:8188", runtimeFetch as typeof fetch, true);
+    const base = pool.definition(pool.localWorkerId);
+    if (!base) throw new Error("missing bootstrap candidate");
+    const remote = await pool.add({
+      ...base,
+      name: "Remote",
+      endpoint: "https://remote.test",
+      transport: "https",
+      kind: "remote",
+    });
+    await pool.selectDefault(remote.id);
+    expect((await pool.fleet()).map((item) => item.worker.id)).toEqual([remote.id]);
+    expect(
+      new WorkerPool(path, base.endpoint, runtimeFetch as typeof fetch, true).definitions(),
+    ).toHaveLength(1);
+    await pool.selectDefault(pool.localWorkerId);
+    await pool.selectDefault(remote.id);
+    expect(pool.definitions()).toHaveLength(2);
+    expect(
+      new WorkerPool(path, base.endpoint, runtimeFetch as typeof fetch, true).definitions(),
+    ).toHaveLength(2);
+  });
   it("does not claim loopback is physical local hardware, and preserves custom worker names", async () => {
     const root = await mkdtemp(join(tmpdir(), "takeboard-worker-name-"));
     cleanup.push(root);

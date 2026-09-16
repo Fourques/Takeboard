@@ -967,9 +967,26 @@ export type GenerationConnection = {
   kind: "ssh" | "url" | "existing";
   state: "connecting" | "offline" | "configured";
   error: string | null;
-  profiles: Array<{ workerId: string; target: GenerationConnectionTarget }>;
+  profiles: Array<{
+    workerId: string;
+    target: GenerationConnectionTarget;
+    serviceState?:
+      | "unverified"
+      | "connecting"
+      | "starting"
+      | "connected"
+      | "service_unavailable"
+      | "disconnected"
+      | "recovering";
+    error?: string | null;
+  }>;
 };
 export const generationConnectionApi = {
+  configure: (target: GenerationConnectionTarget) =>
+    jsonRequest<GenerationConnection>("/api/generation/connection/configure", {
+      method: "POST",
+      body: JSON.stringify(target),
+    }),
   start: (target: GenerationConnectionTarget) =>
     jsonRequest<GenerationConnection>("/api/generation/connection/start", {
       method: "POST",

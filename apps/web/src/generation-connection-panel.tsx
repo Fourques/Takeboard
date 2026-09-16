@@ -69,10 +69,12 @@ export function GenerationConnectionPanel({ manage = false }: { manage?: boolean
       }
     };
     void read();
+    const timer = window.setInterval(() => void read(), 5000);
     const changed = () => void read();
     window.addEventListener("takeboard:generation-connection-changed", changed);
     return () => {
       active = false;
+      window.clearInterval(timer);
       window.removeEventListener("takeboard:generation-connection-changed", changed);
     };
   }, []);
@@ -163,7 +165,12 @@ export function GenerationConnectionPanel({ manage = false }: { manage?: boolean
                 className="generation-device-row"
                 aria-pressed={current && online}
                 disabled={busy || !canManage || disabled || (current && online)}
-                onClick={() => void connect(profile.target)}
+                onClick={() =>
+                  void operate(
+                    () => generationConnectionApi.configure(profile.target),
+                    "设备已选择",
+                  )
+                }
               >
                 <i data-online={online} />
                 <span>
@@ -175,13 +182,23 @@ export function GenerationConnectionPanel({ manage = false }: { manage?: boolean
                 <em>
                   {disabled
                     ? "已停用"
-                    : online
-                      ? current
-                        ? "使用中"
-                        : "可连接"
-                      : status?.status === "offline" && current
-                        ? "离线"
-                        : "未连接"}
+                    : profile.serviceState === "starting"
+                      ? "启动中"
+                      : profile.serviceState === "recovering"
+                        ? "恢复中"
+                        : profile.serviceState === "connecting"
+                          ? "连接中"
+                          : online
+                            ? current
+                              ? "使用中"
+                              : "可连接"
+                            : profile.serviceState === "service_unavailable"
+                              ? "服务未就绪"
+                              : profile.serviceState === "disconnected"
+                                ? "已断开"
+                                : status?.status === "offline" && current
+                                  ? "离线"
+                                  : "未连接"}
                 </em>
               </button>
               {deviceActions(profile.workerId, profile.target)}
@@ -337,11 +354,11 @@ export function GenerationConnectionPanel({ manage = false }: { manage?: boolean
                         allowSensitiveInputs: allow,
                         confirmMedia,
                       });
-                    else await generationConnectionApi.connect(target);
+                    else await generationConnectionApi.configure(target);
                     setAdding(false);
                     setEditing(null);
                   },
-                  editing ? "设备设置已保存" : "设备已连接并保存",
+                  editing ? "设备设置已保存" : "设备已保存",
                 );
               }}
             >
@@ -468,7 +485,7 @@ export function GenerationConnectionPanel({ manage = false }: { manage?: boolean
                       ? "确认授权并保存"
                       : editing
                         ? "保存设备设置"
-                        : "连接并保存"}
+                        : "保存设备"}
                 </button>
               </fieldset>
             </form>
@@ -477,6 +494,9 @@ export function GenerationConnectionPanel({ manage = false }: { manage?: boolean
             <section className="generation-service-control" aria-label="生成服务">
               <strong>生成服务</strong>
               {connection.address ? <p>{connection.address}</p> : null}
+              {connection.error && worker.status !== "ready" ? (
+                <p role="status">{connection.error}</p>
+              ) : null}
               <div className="settings-actions">
                 {worker.status === "ready" ? (
                   <button

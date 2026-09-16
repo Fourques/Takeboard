@@ -16,6 +16,22 @@ export type ConnectionTarget =
   | { kind: "ssh"; name: string; host: string; port: number; service?: string }
   | { kind: "url"; name: string; url: string };
 type Profile = { workerId: string; target: ConnectionTarget };
+type ServiceState =
+  | "unverified"
+  | "connecting"
+  | "starting"
+  | "connected"
+  | "service_unavailable"
+  | "disconnected"
+  | "recovering";
+class ConnectionFailure extends Error {
+  constructor(
+    message: string,
+    readonly state: ServiceState,
+  ) {
+    super(message);
+  }
+}
 type Tunnel = { endpoint: string; close: () => Promise<void>; closed: Promise<void> };
 const targetKey = (target: ConnectionTarget) =>
   target.kind === "ssh" ? `ssh:${target.host}:${target.port}` : `url:${target.url}`;
@@ -170,6 +186,11 @@ export async function openComfyTunnel(
       );
     if (/ENOENT/i.test(failure))
       throw new Error("未找到系统 SSH 客户端；Windows 请安装 OpenSSH 客户端。");
+    if (listening && /connect failed: Connection refused/i.test(failure))
+      throw new ConnectionFailure(
+        "SSH 设备可达，但 ComfyUI 服务未就绪。可以启动已配置的服务，或检查服务端口。",
+        "service_unavailable",
+      );
     throw new Error(
       `无法连接 ${target.host} 的 ComfyUI（端口 ${target.port}）。请确认 SSH 可用且服务器已启动 ComfyUI；无需启动远程 TakeBoard。`,
     );
@@ -185,6 +206,7 @@ export class ComfyConnections {
   private readonly tunnels = new Map<string, Tunnel>();
   private readonly errors = new Map<string, string>();
   private readonly connecting = new Set<string>();
+  private readonly states = new Map<string, ServiceState>();
   private readonly lifetime = new AbortController();
   private restoring: Promise<void> | null = null;
   private restoreAbort: AbortController | undefined;
@@ -239,7 +261,13 @@ export class ComfyConnections {
             ? "offline"
             : "configured",
       error: this.configurationError ?? this.errors.get(workerId) ?? null,
-      profiles: this.profiles.filter((item) => !this.pool.definition(item.workerId)?.retiredAt),
+      profiles: this.profiles
+        .filter((item) => !this.pool.definition(item.workerId)?.retiredAt)
+        .map((item) => ({
+          ...item,
+          serviceState: this.states.get(item.workerId) ?? "unverified",
+          error: this.errors.get(item.workerId) ?? null,
+        })),
       localWorkerId: this.pool.localWorkerId,
     };
   }
@@ -255,16 +283,116 @@ export class ComfyConnections {
     this.tunnels.set(profile.workerId, tunnel);
     this.pool.setManagedEndpoint(profile.workerId, tunnel.endpoint);
     this.errors.delete(profile.workerId);
+    this.states.set(profile.workerId, "connected");
     void tunnel.closed.then(() => {
       if (this.tunnels.get(profile.workerId) !== tunnel) return;
       this.tunnels.delete(profile.workerId);
       this.pool.setManagedEndpoint(profile.workerId, null);
       this.errors.set(profile.workerId, "SSH 已断开，正在等待恢复；原任务不会改派给其他设备。");
+      this.states.set(profile.workerId, "disconnected");
     });
   }
-  async connect(input: unknown) {
+  /** Save the logical device before any network request. A closed port never deletes it. */
+  private assertDistinctTarget(target: ConnectionTarget) {
+    if (target.kind !== "ssh") return;
+    const conflict = this.profiles.find((item) => {
+      if (this.pool.definition(item.workerId)?.retiredAt || item.target.kind !== "ssh")
+        return false;
+      return (
+        item.target.host === target.host &&
+        item.target.port !== target.port &&
+        !(item.target.service && target.service && item.target.service !== target.service)
+      );
+    });
+    if (conflict)
+      throw new Error(
+        `此 SSH 设备已保存为“${conflict.target.name}”。请编辑原设备的服务端口；同机独立服务需配置不同的服务名。`,
+      );
+  }
+  targetFor(workerId: string) {
+    return this.profiles.find((item) => item.workerId === workerId)?.target;
+  }
+  async configure(input: unknown) {
     if (this.configurationError) throw new Error(this.configurationError);
     const target = parseConnectionTarget(input);
+    this.assertDistinctTarget(target);
+    let profile = this.profiles.find(
+      (item) =>
+        targetKey(item.target) === targetKey(target) &&
+        !this.pool.definition(item.workerId)?.retiredAt,
+    );
+    if (!profile && target.kind === "url") {
+      // An address from one of our own tunnels belongs to its existing device.
+      const owned = [...this.tunnels].find(([, tunnel]) => tunnel.endpoint === target.url);
+      if (owned) profile = this.profiles.find((item) => item.workerId === owned[0]);
+    }
+    if (!profile) {
+      const known =
+        target.kind === "url"
+          ? [...this.pool.definitions(), this.pool.definition(this.pool.localWorkerId)].find(
+              (worker) => worker && !worker.retiredAt && worker.endpoint === target.url,
+            )
+          : undefined;
+      const worker =
+        known ??
+        (await this.pool.add({
+          name: target.name,
+          endpoint: target.kind === "url" ? target.url : `http://127.0.0.1:1/ssh/${randomUUID()}`,
+          kind: target.kind === "url" && target.url.startsWith("http:") ? "local" : "remote",
+          transport:
+            target.kind === "ssh"
+              ? "ssh_tunnel"
+              : target.url.startsWith("https:")
+                ? "https"
+                : "loopback",
+          enabled: true,
+          allowSensitiveInputs: true,
+          qualityTier: "balanced",
+          priority: 70,
+          hourlyRate: null,
+          currency: "CNY",
+          estimatedJobSeconds: 300,
+        }));
+      profile = { workerId: worker.id, target };
+      this.profiles.push(profile);
+      try {
+        await this.persist();
+      } catch (error) {
+        this.profiles = this.profiles.filter((item) => item !== profile);
+        if (!known) await this.pool.remove(worker.id, true);
+        throw error;
+      }
+      if (target.kind === "ssh") this.pool.setManagedEndpoint(worker.id, null);
+    }
+    await this.pool.selectDefault(profile.workerId);
+    await this.releaseInactive();
+    return profile;
+  }
+  recordFailure(workerId: string, error: unknown) {
+    this.errors.set(workerId, error instanceof Error ? error.message : "连接未完成");
+    this.states.set(workerId, error instanceof ConnectionFailure ? error.state : "disconnected");
+  }
+  async startService(input: unknown) {
+    const target = parseConnectionTarget(input);
+    if (target.kind !== "ssh" || !target.service) throw new Error("请先配置远程启动服务");
+    const profile = await this.configure(target);
+    this.states.set(profile.workerId, "starting");
+    try {
+      return await startRemoteComfy(target.host, target.service, () => this.connect(target));
+    } catch (error) {
+      this.recordFailure(profile.workerId, error);
+      throw error;
+    }
+  }
+  async connect(input: unknown): Promise<ReturnType<ComfyConnections["status"]>> {
+    if (this.configurationError) throw new Error(this.configurationError);
+    const target = parseConnectionTarget(input);
+    this.assertDistinctTarget(target);
+    if (target.kind === "url") {
+      const owned = [...this.tunnels].find(([, tunnel]) => tunnel.endpoint === target.url);
+      const profile = owned && this.profiles.find((item) => item.workerId === owned[0]);
+      if (profile) return this.connect(profile.target);
+    }
     const existing = this.profiles.find(
       (item) =>
         targetKey(item.target) === targetKey(target) &&
@@ -274,10 +402,15 @@ export class ComfyConnections {
       throw new Error("此连接正在恢复，请稍候重试");
     const existingTunnel = existing ? this.tunnels.get(existing.workerId) : undefined;
     if (existing && existingTunnel) {
-      await this.runtime.verify(
-        existingTunnel.endpoint,
-        AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(5000)]),
-      );
+      try {
+        await this.runtime.verify(
+          existingTunnel.endpoint,
+          AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(5000)]),
+        );
+      } catch (error) {
+        this.recordFailure(existing.workerId, error);
+        throw error;
+      }
       const previous = existing.target;
       existing.target = target;
       try {
@@ -288,14 +421,18 @@ export class ComfyConnections {
       }
       await this.pool.selectDefault(existing.workerId);
       await this.releaseInactive();
+      this.states.set(existing.workerId, "connected");
+      this.errors.delete(existing.workerId);
       return this.status();
     }
     if (existing) this.connecting.add(existing.workerId);
+    if (existing) this.states.set(existing.workerId, "connecting");
     let connectingWorkerId = existing?.workerId;
     const tunnel =
       target.kind === "ssh"
         ? await this.runtime.openTunnel(target, this.lifetime.signal).catch((error: unknown) => {
             if (existing) this.connecting.delete(existing.workerId);
+            if (existing) this.recordFailure(existing.workerId, error);
             throw error;
           })
         : null;
@@ -317,7 +454,7 @@ export class ComfyConnections {
               // The placeholder is never contacted: managed endpoints are restored before serving requests.
               endpoint:
                 target.kind === "url" ? target.url : `http://127.0.0.1:1/ssh/${randomUUID()}`,
-              kind: "remote",
+              kind: target.kind === "url" && target.url.startsWith("http:") ? "local" : "remote",
               transport:
                 target.kind === "ssh"
                   ? "ssh_tunnel"
@@ -358,9 +495,11 @@ export class ComfyConnections {
       if (tunnel) this.install(profile, tunnel);
       await this.releaseInactive();
       this.errors.delete(profile.workerId);
+      this.states.set(profile.workerId, "connected");
       return this.status();
     } catch (error) {
       await tunnel?.close();
+      if (existing) this.recordFailure(existing.workerId, error);
       throw error;
     } finally {
       if (connectingWorkerId) this.connecting.delete(connectingWorkerId);
@@ -437,7 +576,9 @@ export class ComfyConnections {
       const oldProfiles = this.profiles;
       try {
         if (addressChanged) {
-          if (target.kind === "ssh")
+          if (target.kind === "ssh" && oldTarget.kind === "ssh" && target.host === oldTarget.host) {
+            // Editing a service port on an existing device must also work while offline.
+          } else if (target.kind === "ssh")
             tunnel = await this.runtime.openTunnel(target, this.lifetime.signal);
           else
             await this.runtime.verify(
@@ -459,6 +600,8 @@ export class ComfyConnections {
                 : {}),
               ...(addressChanged
                 ? {
+                    kind:
+                      target.kind === "url" && target.url.startsWith("http:") ? "local" : "remote",
                     endpoint:
                       target.kind === "url" ? target.url : `http://127.0.0.1:1/ssh/${workerId}`,
                     transport:
@@ -486,6 +629,7 @@ export class ComfyConnections {
           } else if (target.kind === "ssh") this.pool.setManagedEndpoint(workerId, null);
           await oldTunnel?.close();
           this.errors.delete(workerId);
+          this.states.set(workerId, this.tunnels.has(workerId) ? "connected" : "unverified");
         }
         return this.status();
       } catch (error) {
@@ -516,7 +660,13 @@ export class ComfyConnections {
     }
   }
   async assertIdle() {
-    for (const entry of await readdir(this.root, { withFileTypes: true })) {
+    const entries = await readdir(this.root, { withFileTypes: true }).catch(
+      (error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return [];
+        throw error;
+      },
+    );
+    for (const entry of entries) {
       if (!entry.isDirectory() || !projectKey(entry.name)) continue;
       const store = ProjectStore.openExisting(projectDirectory(this.root, entry.name));
       if (!store) throw new Error("项目状态无法检查，暂时不能切换生成服务");
@@ -545,16 +695,26 @@ export class ComfyConnections {
         if (
           profile.workerId !== this.pool.defaultWorkerId ||
           profile.target.kind !== "ssh" ||
-          this.tunnels.has(profile.workerId) ||
           this.connecting.has(profile.workerId) ||
           !this.pool.definition(profile.workerId)?.enabled ||
           this.pool.definition(profile.workerId)?.retiredAt !== null
         )
           continue;
         this.connecting.add(profile.workerId);
+        const installed = this.tunnels.get(profile.workerId);
         const attempt = new AbortController();
         this.restoreAbort = attempt;
         try {
+          if (installed) {
+            await this.runtime.verify(
+              installed.endpoint,
+              AbortSignal.any([this.lifetime.signal, attempt.signal, AbortSignal.timeout(5000)]),
+            );
+            this.errors.delete(profile.workerId);
+            this.states.set(profile.workerId, "connected");
+            continue;
+          }
+          this.states.set(profile.workerId, "recovering");
           const tunnel = await this.runtime.openTunnel(
             profile.target,
             AbortSignal.any([this.lifetime.signal, attempt.signal]),
@@ -562,8 +722,10 @@ export class ComfyConnections {
           if (profile.workerId === this.pool.defaultWorkerId) this.install(profile, tunnel);
           else await tunnel.close();
         } catch (error) {
-          if (!attempt.signal.aborted)
-            this.errors.set(profile.workerId, error instanceof Error ? error.message : "连接失败");
+          if (!attempt.signal.aborted) {
+            if (installed) await installed.close();
+            this.recordFailure(profile.workerId, error);
+          }
         } finally {
           if (this.restoreAbort === attempt) this.restoreAbort = undefined;
           this.connecting.delete(profile.workerId);
@@ -594,6 +756,24 @@ export function registerComfyConnections(
   pool: WorkerPool,
 ) {
   app.get("/api/generation/connection", async () => connections.status());
+  app.post("/api/generation/connection/configure", async (request, reply) => {
+    try {
+      return await connections.mutate(async () => {
+        if (!connections.isCurrentTarget(request.body)) await connections.assertIdle();
+        const profile = await connections.configure(request.body);
+        try {
+          await connections.connect(profile.target);
+        } catch (error) {
+          connections.recordFailure(profile.workerId, error);
+        }
+        return connections.status();
+      });
+    } catch (error) {
+      return reply
+        .code(409)
+        .send({ error: error instanceof Error ? error.message : "设备保存失败" });
+    }
+  });
   app.post("/api/generation/connection/start", async (request, reply) => {
     try {
       const target = parseConnectionTarget(request.body);
@@ -601,9 +781,7 @@ export function registerComfyConnections(
         throw new Error("先填写 SSH 设备及其已配置的 Linux 用户服务名");
       return await connections.mutate(async () => {
         if (!connections.isCurrentTarget(target)) await connections.assertIdle();
-        return await startRemoteComfy(target.host, target.service, () =>
-          connections.connect(target),
-        );
+        return await connections.startService(target);
       });
     } catch (error) {
       return reply
@@ -619,6 +797,11 @@ export function registerComfyConnections(
         if (!target?.enabled || target.retiredAt) throw new Error("此设备未配置或已停用");
         await connections.mutate(async () => {
           if (pool.defaultWorkerId !== target.id) await connections.assertIdle();
+          const saved = connections.targetFor(target.id);
+          if (saved) {
+            await connections.connect(saved);
+            return;
+          }
           await verifyComfy(target.endpoint, AbortSignal.timeout(5000));
           await pool.selectDefault(target.id);
           await connections.releaseInactive();

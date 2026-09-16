@@ -30,6 +30,21 @@ function session(response: { headers: Record<string, unknown>; json(): { csrfTok
 }
 
 describe("optional accounts with device-scoped project authorization", () => {
+  it("saves an unavailable generation service without demanding an account or creating duplicates", async () => {
+    const app = await setup();
+    const headers = session(await app.inject({ method: "GET", url: "/api/auth/status" }));
+    const payload = { kind: "url", name: "Offline device", url: "http://127.0.0.1:1" };
+    const save = () =>
+      app.inject({ method: "POST", url: "/api/generation/connection/configure", headers, payload });
+    const first = await save();
+    expect(first.statusCode, first.body).toBe(200);
+    expect(first.json().profiles).toHaveLength(1);
+    expect(first.json().profiles[0].serviceState).toBe("disconnected");
+    const second = await save();
+    expect(second.statusCode, second.body).toBe(200);
+    expect(second.json().workerId).toBe(first.json().workerId);
+    expect(second.json().profiles).toHaveLength(1);
+  });
   it("creates device projects without signup, enforces CSRF, and keeps account projects private", async () => {
     const app = await setup();
     const status = await app.inject({ method: "GET", url: "/api/auth/status" });

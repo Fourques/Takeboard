@@ -24,6 +24,148 @@ async function fixture() {
 const target = { kind: "ssh" as const, name: "家里的工作站", host: "user@workstation", port: 8188 };
 
 describe("generation connection ownership", () => {
+  it("keeps identity through real HTTP service stop/start and controller restart", async () => {
+    const root = await fixture();
+    const file = join(root, "workers.json");
+    const service = () => {
+      const app = Fastify();
+      app.get("/system_stats", async () => ({ system: { comfyui_version: "test" }, devices: [] }));
+      cleanup.push(() => app.close());
+      return app;
+    };
+    const first = service();
+    const url = await first.listen({ host: "127.0.0.1", port: 0 });
+    const port = Number(new URL(url).port);
+    await first.close();
+    const pool = new WorkerPool(file, "http://127.0.0.1:8188", fetch, true);
+    const manager = new ComfyConnections(root, pool);
+    cleanup.push(() => manager.close());
+    const input = { kind: "url", name: "Test device", url };
+    const saved = await manager.configure(input);
+    await expect(manager.connect(input)).rejects.toThrow();
+    expect(manager.status().profiles).toHaveLength(1);
+    const second = service();
+    await second.listen({ host: "127.0.0.1", port });
+    expect((await manager.connect(input)).workerId).toBe(saved.workerId);
+    await second.close();
+    const third = service();
+    await third.listen({ host: "127.0.0.1", port });
+    expect((await manager.connect(input)).workerId).toBe(saved.workerId);
+    await manager.close();
+    const restored = new ComfyConnections(
+      root,
+      new WorkerPool(file, "http://127.0.0.1:8188", fetch, true),
+    );
+    cleanup.push(() => restored.close());
+    expect((await restored.connect(input)).workerId).toBe(saved.workerId);
+    expect(restored.status().profiles).toHaveLength(1);
+  });
+  it("saves an offline device, recovers on the same identity, and maps owned port discovery back to it", async () => {
+    const root = await fixture();
+    const file = join(root, "workers.json");
+    const pool = new WorkerPool(file, "http://127.0.0.1:8188", fetch, true);
+    let online = false;
+    let port = 52000;
+    const openTunnel = vi.fn(async () => {
+      if (!online) throw new Error("offline");
+      let end = () => {};
+      const closed = new Promise<void>((resolve) => {
+        end = resolve;
+      });
+      return { endpoint: `http://127.0.0.1:${port++}`, closed, close: async () => end() };
+    });
+    const manager = new ComfyConnections(root, pool, { verify: vi.fn(), openTunnel });
+    cleanup.push(() => manager.close());
+    const saved = await manager.configure(target);
+    await expect(manager.connect(target)).rejects.toThrow("offline");
+    expect(manager.status().profiles).toHaveLength(1);
+    expect(pool.definitions().map((item) => item.id)).toEqual([saved.workerId]);
+    expect((await pool.fleet()).map((item) => item.worker.id)).toEqual([saved.workerId]);
+    expect(manager.status().profiles[0]?.serviceState).toBe("disconnected");
+    online = true;
+    const connected = await manager.connect(target);
+    expect(connected.workerId).toBe(saved.workerId);
+    expect(connected.profiles[0]?.serviceState).toBe("connected");
+    const endpoint = pool.endpoint(saved.workerId);
+    const definition = pool.definition(saved.workerId);
+    if (!definition || !endpoint) throw new Error("missing connected device");
+    await expect(pool.add({ ...definition, endpoint })).rejects.toThrow("已经存在");
+    const discovered = await manager.configure({
+      kind: "url",
+      url: endpoint,
+      name: "Discovered port",
+    });
+    expect(discovered.workerId).toBe(saved.workerId);
+    expect((await manager.connect({ kind: "url", url: endpoint })).workerId).toBe(saved.workerId);
+    expect(manager.status().profiles).toHaveLength(1);
+    await expect(manager.configure({ ...target, port: 8290 })).rejects.toThrow("编辑原设备");
+    await manager.edit(saved.workerId, { ...target, port: 8288 });
+    expect(manager.status().workerId).toBe(saved.workerId);
+    expect(manager.status().profiles[0]?.target).toMatchObject({ port: 8288 });
+    await manager.close();
+    const restoredPool = new WorkerPool(file, "http://127.0.0.1:8188", fetch, true);
+    const restored = new ComfyConnections(root, restoredPool, { verify: vi.fn(), openTunnel });
+    cleanup.push(() => restored.close());
+    expect(restored.status().profiles).toHaveLength(1);
+    expect(restored.status().workerId).toBe(saved.workerId);
+    await restored.connect({ ...target, port: 8288 });
+    expect(restoredPool.endpoint(saved.workerId)).not.toBe(endpoint);
+    expect(restoredPool.definitions()).toHaveLength(1);
+    await restored.remove(saved.workerId);
+    expect(restoredPool.definition(saved.workerId)?.retiredAt).toBeTruthy();
+    const readded = await restored.configure({ ...target, port: 8288 });
+    expect(readded.workerId).not.toBe(saved.workerId);
+    expect(restored.status().profiles).toHaveLength(1);
+  });
+
+  it("allows service port edits while offline, without inventing another worker", async () => {
+    const root = await fixture();
+    const pool = new WorkerPool(join(root, "workers.json"), "http://127.0.0.1:8188");
+    const openTunnel = vi.fn(async () => {
+      throw new Error("closed port");
+    });
+    const manager = new ComfyConnections(root, pool, { verify: vi.fn(), openTunnel });
+    cleanup.push(() => manager.close());
+    const profile = await manager.configure(target);
+    await manager.edit(profile.workerId, { ...target, port: 8289 });
+    expect(openTunnel).not.toHaveBeenCalled();
+    expect(manager.status().profiles).toMatchObject([
+      { workerId: profile.workerId, target: { port: 8289 } },
+    ]);
+  });
+  it("recovers an interrupted SSH transport without changing the logical worker or creating another profile", async () => {
+    const root = await fixture();
+    const pool = new WorkerPool(join(root, "workers.json"), "http://127.0.0.1:8188");
+    const transports: Array<{
+      endpoint: string;
+      closed: Promise<void>;
+      close: () => Promise<void>;
+    }> = [];
+    const openTunnel = vi.fn(async () => {
+      let end = () => {};
+      const closed = new Promise<void>((resolve) => {
+        end = resolve;
+      });
+      const tunnel = {
+        endpoint: `http://127.0.0.1:${53000 + transports.length}`,
+        closed,
+        close: async () => end(),
+      };
+      transports.push(tunnel);
+      return tunnel;
+    });
+    const manager = new ComfyConnections(root, pool, { verify: vi.fn(), openTunnel });
+    cleanup.push(() => manager.close());
+    const original = await manager.connect(target);
+    await transports[0]?.close();
+    expect(manager.status().profiles[0]?.serviceState).toBe("disconnected");
+    manager.start();
+    await vi.waitFor(() => expect(manager.status().profiles[0]?.serviceState).toBe("connected"));
+    expect(manager.status().workerId).toBe(original.workerId);
+    expect(manager.status().profiles).toHaveLength(1);
+    expect(openTunnel).toHaveBeenCalledTimes(2);
+    expect(pool.endpoint(original.workerId)).toBe("http://127.0.0.1:53001");
+  });
   it("renames offline devices without reconnecting, keeps identity and rejects a failed address edit", async () => {
     const root = await fixture();
     const file = join(root, "workers.json");
