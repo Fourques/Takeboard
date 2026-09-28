@@ -44,6 +44,9 @@ export function collectSnapshot() {
   const views = readApi(`repos/${repository}/traffic/views`).data;
   const clones = readApi(`repos/${repository}/traffic/clones`).data;
   const weekly = readApi("repos/ruanyf/weekly/issues/11963").data;
+  const directory = readApi(
+    "repos/light-and-ray/awesome-alternative-uis-for-comfyui/issues/107",
+  ).data;
   const discussion = readApi("graphql", [
     "-f",
     'query={repository(owner:"Fourques",name:"Takeboard"){discussion(number:10){comments{totalCount}}}}',
@@ -59,6 +62,9 @@ export function collectSnapshot() {
     feedbackComments: discussion?.comments?.totalCount ?? null,
     weeklySubmission: weekly
       ? { state: weekly.state, comments: weekly.comments, url: weekly.html_url }
+      : null,
+    comfyDirectorySubmission: directory
+      ? { state: directory.state, comments: directory.comments, url: directory.html_url }
       : null,
     limitations: [
       "null means unavailable, not zero.",
