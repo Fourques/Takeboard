@@ -94,8 +94,10 @@ export async function verifyNativeSettings({
       record.instanceId,
       "Closing remote workspace must not stop its server",
     );
-    await command("", undefined, "DELETE");
-    session = null;
+    // Exercise the window manager's actual close path, not WebDriver session
+    // disposal (which is allowed to leave the application process running).
+    execFileSync("xdotool", ["windowactivate", "--sync", main]);
+    execFileSync("xdotool", ["key", "--clearmodifiers", "alt+F4"]);
     await until(
       "automated app releases owned server",
       async () =>
