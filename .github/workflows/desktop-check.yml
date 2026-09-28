@@ -18,6 +18,8 @@ on:
       - "scripts/prepare-desktop-runtime.mjs"
       - "scripts/desktop-release-config*"
       - "scripts/verify-linux-desktop.mjs"
+      - "scripts/verify-linux-settings.mjs"
+      - "patches/**"
       - "scripts/verify-desktop-runtime.mjs"
       - "package.json"
       - "pnpm-lock.yaml"
@@ -38,6 +40,8 @@ on:
       - "scripts/prepare-desktop-runtime.mjs"
       - "scripts/desktop-release-config*"
       - "scripts/verify-linux-desktop.mjs"
+      - "scripts/verify-linux-settings.mjs"
+      - "patches/**"
       - "scripts/verify-desktop-runtime.mjs"
       - "package.json"
       - "pnpm-lock.yaml"
@@ -134,7 +138,9 @@ jobs:
       - name: Install Linux desktop dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev xvfb xauth dbus-x11 openbox xdotool x11-utils imagemagick fonts-noto-cjk
+          sudo apt-get install -y libwebkit2gtk-4.1-dev webkit2gtk-driver libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev xvfb xauth dbus-x11 openbox xdotool x11-utils imagemagick fonts-noto-cjk
+      - name: Install native WebDriver
+        run: cargo install tauri-driver --version 2.1.0 --locked
       - run: pnpm install --frozen-lockfile
       - name: Build and verify embedded runtime
         run: pnpm desktop:prepare

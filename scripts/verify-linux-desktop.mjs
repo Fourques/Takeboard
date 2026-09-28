@@ -8,6 +8,7 @@ import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { verifyNativeSettings } from "./verify-linux-settings.mjs";
 
 assert.equal(process.platform, "linux");
 assert.notEqual(process.getuid(), 0, "Desktop smoke must run as an ordinary user");
@@ -163,67 +164,6 @@ try {
   // Rendering gets its own artifact; this is not a claim of automatic visual approval.
   await delay(5_000);
   capture(id, "first-launch");
-  execFileSync("xdotool", ["windowactivate", "--sync", id]);
-  execFileSync("xdotool", ["key", "--clearmodifiers", "ctrl+shift+k"]);
-  const connectionId = await until(
-    "native connection window",
-    () =>
-      execFileSync(
-        "xdotool",
-        [
-          "search",
-          "--all",
-          "--onlyvisible",
-          "--pid",
-          String(desktop.child.pid),
-          "--name",
-          "TakeBoard · 远程项目",
-        ],
-        { encoding: "utf8" },
-      )
-        .trim()
-        .split("\n")[0],
-  );
-  await delay(1000);
-  capture(connectionId, "connection-manager");
-  // The bundled connection form focuses its transport selector on open.
-  execFileSync("xdotool", ["windowactivate", "--sync", connectionId]);
-  execFileSync("xdotool", ["key", "--clearmodifiers", "Down", "Tab"]);
-  execFileSync("xdotool", ["type", "--clearmodifiers", `http://127.0.0.1:${record.port}`]);
-  // Submit from the address field; Tab would now focus the optional settings disclosure.
-  execFileSync("xdotool", ["key", "--clearmodifiers", "Return"]);
-  const remoteId = await until(
-    "verified remote workspace window",
-    () =>
-      execFileSync(
-        "xdotool",
-        [
-          "search",
-          "--all",
-          "--onlyvisible",
-          "--pid",
-          String(desktop.child.pid),
-          "--name",
-          "^TakeBoard",
-        ],
-        { encoding: "utf8" },
-      )
-        .trim()
-        .split("\n")
-        .find((window) => window !== id && window !== connectionId),
-    20000,
-  );
-  await delay(5000);
-  capture(remoteId, "remote-workspace");
-  execFileSync("xdotool", ["windowactivate", "--sync", remoteId]);
-  execFileSync("xdotool", ["key", "--clearmodifiers", "alt+F4"]);
-  assert.equal(
-    (await health(record.port))?.instanceId,
-    record.instanceId,
-    "Closing a remote window must not stop the connected server",
-  );
-  execFileSync("xdotool", ["windowactivate", "--sync", connectionId]);
-  execFileSync("xdotool", ["key", "--clearmodifiers", "alt+F4"]);
   await closeWindow(desktop, id);
   await until(
     "owned server stopped and lease released",
@@ -231,9 +171,7 @@ try {
       !(await health(record.port)) && !existsSync(join(dataRoot, ".system/instance.json")),
     15_000,
   );
-  console.log(
-    "PASS: installed native host, optional login, native connection form, verified remote window and owned service cleanup",
-  );
+  console.log("PASS: installed native host, optional login and owned service cleanup");
 
   const external = start(
     join(dirname(executable), "takeboard-node"),
@@ -302,6 +240,7 @@ try {
     30_000,
   );
   console.log("PASS: abrupt launcher exit triggers server shutdown through IPC disconnect");
+  await verifyNativeSettings({ start, until, capture, health, dataRoot, executable, vacantPort });
 } catch (error) {
   for (const entry of children) if (entry.log) console.error(entry.log);
   throw error;

@@ -2,13 +2,18 @@ packages:
   - apps/*
   - packages/*
 
-sharedWorkspaceLockfile: true
-strictPeerDependencies: true
 injectWorkspacePackages: true
-
-syncInjectedDepsAfterScripts:
-  - build
 
 onlyBuiltDependencies:
   - better-sqlite3
   - esbuild
+
+patchedDependencies:
+  better-sqlite3@13.0.3: patches/better-sqlite3@13.0.3.patch
+
+sharedWorkspaceLockfile: true
+
+strictPeerDependencies: true
+
+syncInjectedDepsAfterScripts:
+  - build

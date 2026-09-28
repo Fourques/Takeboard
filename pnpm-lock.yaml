@@ -5,6 +5,11 @@ settings:
   excludeLinksFromLockfile: false
   injectWorkspacePackages: true
 
+patchedDependencies:
+  better-sqlite3@13.0.3:
+    hash: cc29baa7503ef3ffc68f636318e56dd370153e84eea3c10476bbfc238609189d
+    path: patches/better-sqlite3@13.0.3.patch
+
 importers:
 
   .:
@@ -50,7 +55,7 @@ importers:
         version: link:../../packages/portal-protocol
       better-sqlite3:
         specifier: 13.0.3
-        version: 13.0.3
+        version: 13.0.3(patch_hash=cc29baa7503ef3ffc68f636318e56dd370153e84eea3c10476bbfc238609189d)
       fastify:
         specifier: 5.12.1
         version: 5.12.1
@@ -90,10 +95,10 @@ importers:
         version: link:../../packages/portal-protocol
       better-sqlite3:
         specifier: 13.0.3
-        version: 13.0.3
+        version: 13.0.3(patch_hash=cc29baa7503ef3ffc68f636318e56dd370153e84eea3c10476bbfc238609189d)
       drizzle-orm:
         specifier: 0.45.2
-        version: 0.45.2(@types/better-sqlite3@9.6.0)(better-sqlite3@13.0.3)
+        version: 0.45.2(@types/better-sqlite3@9.6.0)(better-sqlite3@13.0.3(patch_hash=cc29baa7503ef3ffc68f636318e56dd370153e84eea3c10476bbfc238609189d))
       fastify:
         specifier: 5.12.1
         version: 5.12.1
@@ -2545,7 +2550,7 @@ snapshots:
 
   base64-js@1.5.1: {}
 
-  better-sqlite3@13.0.3:
+  better-sqlite3@13.0.3(patch_hash=cc29baa7503ef3ffc68f636318e56dd370153e84eea3c10476bbfc238609189d):
     dependencies:
       node-addon-api: 8.9.2
 
@@ -2612,10 +2617,10 @@ snapshots:
 
   detect-libc@2.1.2: {}
 
-  drizzle-orm@0.45.2(@types/better-sqlite3@9.6.0)(better-sqlite3@13.0.3):
+  drizzle-orm@0.45.2(@types/better-sqlite3@9.6.0)(better-sqlite3@13.0.3(patch_hash=cc29baa7503ef3ffc68f636318e56dd370153e84eea3c10476bbfc238609189d)):
     optionalDependencies:
       '@types/better-sqlite3': 9.6.0
-      better-sqlite3: 13.0.3
+      better-sqlite3: 13.0.3(patch_hash=cc29baa7503ef3ffc68f636318e56dd370153e84eea3c10476bbfc238609189d)
 
   es-module-lexer@2.3.1: {}
 
