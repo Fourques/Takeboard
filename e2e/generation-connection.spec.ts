@@ -6,6 +6,7 @@ test("generation service choice preserves local storage and fits short/narrow wi
   page,
 }) => {
   let calls = 0;
+  let serviceConnects = 0;
   let catalogReads = 0;
   let trashReads = 0;
   let workflowReads = 0;
@@ -27,6 +28,10 @@ test("generation service choice preserves local storage and fits short/narrow wi
     profiles: [] as unknown[],
   };
   await page.route("**/api/generation/connection", async (route) => {
+    if (route.request().method() === "POST") serviceConnects++;
+    await route.fulfill({ json: state });
+  });
+  await page.route("**/api/generation/connection/configure", async (route) => {
     if (route.request().method() === "POST") {
       calls++;
       const target = route.request().postDataJSON();
@@ -59,7 +64,7 @@ test("generation service choice preserves local storage and fits short/narrow wi
   const port = settings.getByLabel("ComfyUI 端口", { exact: true });
   await port.fill("");
   await expect(port).toHaveValue("");
-  await settings.getByRole("button", { name: "连接并保存" }).click();
+  await settings.getByRole("button", { name: "保存设备", exact: true }).click();
   await expect(settings.getByRole("alert")).toContainText("1–65535");
   expect(calls).toBe(0);
   const catalogBefore = catalogReads;
@@ -67,8 +72,10 @@ test("generation service choice preserves local storage and fits short/narrow wi
   const workflowsBefore = workflowReads;
   expect(catalogBefore).toBeGreaterThan(0);
   await port.fill("8188");
-  await settings.getByRole("button", { name: "连接并保存" }).click();
-  await expect(settings.getByRole("status")).toContainText("设备已连接并保存");
+  await settings.getByRole("button", { name: "保存设备", exact: true }).click();
+  await expect(settings.getByRole("status")).toContainText("设备已保存");
+  expect(calls).toBe(1);
+  expect(serviceConnects).toBe(0);
   await expect(settings.getByRole("button", { name: /创作工作站 user@studio/ })).toBeVisible();
   await expect.poll(() => workflowReads).toBeGreaterThan(workflowsBefore);
   expect(catalogReads).toBe(catalogBefore);
@@ -78,7 +85,7 @@ test("generation service choice preserves local storage and fits short/narrow wi
   expect(bounds.x).toBeGreaterThanOrEqual(0);
   expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
   expect(bounds.y + bounds.height).toBeLessThanOrEqual(620);
-  await settings.getByRole("heading", { name: "远程项目", exact: true }).scrollIntoViewIfNeeded();
+  await settings.getByRole("button", { name: "远程项目", exact: true }).click();
   await expect(settings.getByRole("heading", { name: "远程项目", exact: true })).toBeInViewport();
   await page.screenshot({ path: "test-results/generation-connection-narrow.png" });
 });
