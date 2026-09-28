@@ -1,6 +1,6 @@
 # 桌面正式签名与发行
 
-更新时间：2026-09-09
+更新时间：2026-09-28
 
 TakeBoard 将预览与正式签名产物明确区分：
 
@@ -11,6 +11,10 @@ TakeBoard 将预览与正式签名产物明确区分：
   验证打包运行时的启动、免登录创建项目、重启后会话与数据保留、退出清理。Windows 从实际 NSIS 安装后的
   目录运行；Mac 挂载最终 DMG 后从其中的 `.app` 运行。预览产物保存 14 天，不自动发布 Release，也不代表
   Mac/Windows 原生 UI、Gatekeeper 或 SmartScreen 已验收；
+- Linux 原生验收使用实际安装的 Debian 包、WebKitGTK 与 `tauri-driver`，通过原生菜单打开设置，
+  在设置页填写地址并建立真实 HTTP 回环连接，验证远程工作区内容已加载后再关闭窗口。
+  保留正常退出、强制退出、外部服务复用和孤儿进程清理检查；保存设置页和工作区截图，拒绝纯色空白帧。
+  回环连接不等于真实 SSH 网络或 GPU 生成验收。
 - `Signed production release` 只接受仓库中已经存在的版本 Tag，使用受保护的
   `production-release` Environment，并且只会发布通过系统签名验证的安装器。
 

@@ -23,7 +23,8 @@ export default defineConfig({
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
   expect: { timeout: 10_000 },
-  reporter: process.env.CI ? "github" : "list",
+  // Keep GitHub annotations, but also show progress during long serial journeys.
+  reporter: process.env.CI ? [["list"], ["github"]] : "list",
   globalSetup: "./e2e/global-setup.ts",
   use: {
     baseURL: process.env.TAKEBOARD_E2E_BASE_URL ?? e2eServerUrl,
