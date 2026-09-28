@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 export async function verifyNativeSettings({
@@ -71,7 +71,8 @@ export async function verifyNativeSettings({
     assert.equal(windows(pid).length, 1, "Fresh native app has one workspace window");
     execFileSync("xdotool", ["windowactivate", "--sync", main]);
     execFileSync("xdotool", ["key", "--clearmodifiers", "ctrl+shift+k"]);
-    await find('[role="dialog"] .remote-project-settings');
+    // This is a native <dialog>; its implicit ARIA role is not a role attribute.
+    await find("dialog[open] .remote-project-settings");
     assert.equal(
       windows(pid).length,
       1,
@@ -108,6 +109,16 @@ export async function verifyNativeSettings({
     );
   } catch (error) {
     console.error(driver.log);
+    if (session) {
+      const source = await command("/source").catch(() => null);
+      if (source) await writeFile("test-results/linux-desktop/settings-failure.html", source);
+      const screenshot = await command("/screenshot").catch(() => null);
+      if (screenshot)
+        await writeFile(
+          "test-results/linux-desktop/settings-failure.png",
+          Buffer.from(screenshot, "base64"),
+        );
+    }
     throw error;
   } finally {
     if (session) await command("", undefined, "DELETE").catch(() => {});
