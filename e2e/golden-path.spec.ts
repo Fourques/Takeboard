@@ -307,6 +307,8 @@ test("fake generation and approval survive reload", async ({ page }) => {
   await page.getByRole("button", { name: "开始生成" }).click();
   await expect(page.getByRole("button", { name: "选择候选 1" })).toBeVisible();
   await expect(page.getByRole("button", { name: /选择候选/ })).toHaveCount(4);
+  await expect(page.getByRole("img", { name: /模拟结果.*非模型生成/ })).toHaveCount(4);
+  await expect(page.locator(".candidate-grid .candidate-play")).toHaveCount(0);
 
   await page.getByRole("button", { name: "选择候选 1" }).click();
   await expect(page.getByLabel("不采用的备注")).toHaveCount(0);

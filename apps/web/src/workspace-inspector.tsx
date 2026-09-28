@@ -27,20 +27,47 @@ const rejectionReasons = ["角色漂移", "运动方向错误", "构图不稳定
 function CandidateArt({
   source,
   mediaType,
+  demoIndex,
 }: {
   source: string | undefined;
   mediaType: Asset["mediaType"] | undefined;
+  demoIndex?: number | undefined;
 }) {
   return (
     <div className="candidate-art">
-      {source && mediaType === "image" ? (
+      {demoIndex !== undefined ? (
+        <svg
+          viewBox="0 0 320 180"
+          width="100%"
+          height="100%"
+          role="img"
+          aria-label={`模拟结果 ${demoIndex + 1}，非模型生成`}
+        >
+          <title>交互演示占位，不是生成画面</title>
+          <rect
+            width="320"
+            height="180"
+            fill={["#e4e8e5", "#e9e3dc", "#e0e5ec", "#ebe2e7"][demoIndex % 4]}
+          />
+          <path d="M0 130L90 70L160 115L245 48L320 102V180H0Z" fill="#52646b" opacity="0.22" />
+          <circle cx={220 - (demoIndex % 4) * 36} cy="53" r="23" fill="#ffffff" opacity="0.8" />
+          <text x="22" y="35" fill="#344550" fontSize="15" fontFamily="system-ui">
+            DEMO {String(demoIndex + 1).padStart(2, "0")}
+          </text>
+          <text x="22" y="159" fill="#344550" fontSize="12" fontFamily="system-ui">
+            SIMULATED · NO MODEL OUTPUT
+          </text>
+        </svg>
+      ) : source && mediaType === "image" ? (
         <img src={source} alt="生成候选" />
       ) : source ? (
         <VideoThumbnail src={source} />
       ) : (
         <span className="candidate-unavailable">暂无预览</span>
       )}
-      {mediaType === "video" ? <span className="candidate-play">▶</span> : null}
+      {demoIndex === undefined && source && mediaType === "video" ? (
+        <span className="candidate-play">▶</span>
+      ) : null}
     </div>
   );
 }
@@ -1110,6 +1137,7 @@ export function Inspector({
                     aria-label={`选择候选 ${index + 1}`}
                   >
                     <CandidateArt
+                      demoIndex={isDemo ? index : undefined}
                       source={
                         take.status === "media_missing" ? undefined : mediaSource(take.assetId)
                       }

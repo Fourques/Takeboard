@@ -1,59 +1,35 @@
-# TakeBoard 产品演示
+# 看看 TakeBoard 如何组织一次创作
 
-更新时间：2026-08-30
+[画布截图](assets/takeboard-demo-cover.png) · [结果查看](assets/takeboard-demo-results.png) · [交互视频（WebM）](assets/takeboard-product-walkthrough.webm)
 
-## 一键录制
+这段演示来自 2026-09-28 的开发分支，展示参考节点、镜头、模拟候选和采用结果。画面始终标注 **SIMULATED OUTPUTS · NO GPU**。候选是代码绘制的演示卡片，不是模型生成的视频；不能据此判断生成速度或画质。
+
+beta.17 安装包仍保留发布时的代码，本轮开发分支修复了示例候选显示，不代表已重发安装包。
+
+## 视频展示与没有展示什么
+
+- 展示：打开示例项目、检查来源、触发模拟候选、比较与采用、回到画布。
+- 不展示：真实模型加载与生成、任意自定义工作流兼容、真实素材导入或完整资产库、跨设备生成性能。
+- 没有 ComfyUI 也能体验项目组织；要测试真实生成，请带一份能在自己的 ComfyUI 中运行的工作流。
+
+进入[首次试用清单](first-session.md)，或直接提交[第一次使用反馈](https://github.com/Fourques/Takeboard/issues/new?template=first_try.yml)。
+
+## 可复现录制
 
 ```bash
-pnpm exec playwright install --with-deps chromium
 pnpm demo:capture
 ```
 
-命令会先建立生产构建，再启动一个使用临时数据目录和独立回环端口的实例，初始化临时管理员，并用 1440×900 Chromium 完成以下路径：
+需要匹配当前 Node ABI 的原生依赖和已安装的 Playwright Chromium。切换 Node 主版本后，如 SQLite 提示 ABI 不匹配，请按本地开发环境重新安装或重建依赖，不是修改项目数据。
 
-1. 打开“雾港来信”示例项目并重置到确定状态；
-2. 检查一个来源素材节点，再回到镜头；
-3. 生成四个 Demo 候选并选择其中一个；
-4. 批准候选，确认镜头完成度和来源状态变化；
-5. 在录制实例显式启用粗剪扩展，再打开分镜墙和只读粗剪；
-6. 关闭浏览器、服务并删除临时项目数据。
+脚本使用独立临时数据目录、临时演示账号和回环端口，明确禁用真实 ComfyUI 连接。完成或失败后都关闭所属浏览器与服务并清理临时数据，不触碰用户项目。
 
-产物位于被 Git 忽略的 `test-results/demo/`：
+产物位于 `test-results/demo/`：视频、画布截图、结果截图与来源清单。来源清单记录版本、完整提交、工作树状态、文件 SHA-256 和 `realGpu: false`。CI 模式拒绝脏工作树；发布公开素材前仍需人工检查画面、名称与完整视频。
 
-- `takeboard-product-walkthrough.webm`：可直接发布的无声产品路径；
-- `takeboard-demo-cover.png`：采用候选后的画布封面；
-- `takeboard-demo-manifest.json`：源码 commit、工作树状态、画面尺寸、动作序列、文件 SHA-256 与生成性质声明。
+这次没有修改全平台安装包，也没有把本地录制冒充 GitHub 构建来源证明。真实性清单见 [manifest](assets/takeboard-demo-manifest.json)。
 
-发布 Workflow 会在 Linux 的干净 Commit 上重新录制，为三个文件生成 GitHub 构建来源证明，并在版本 Tag 发布时作为 Release Asset 上传。CI 会拒绝来源不明确或工作树有修改的录制；录制失败不会留下后台服务或临时数据目录。
+## English
 
-## 诚实边界
+This is a recorded interaction demo from development main on 2026-09-28, not a GPU benchmark. It shows source inspection, four simulated candidates, adoption and a return to the canvas. The visible simulation label stays on-screen. The beta.17 installers have not been rebuilt for this documentation update.
 
-Demo Worker 不调用 GPU 或付费 API。候选卡是稳定的产品交互样片，用来展示项目、画布、生成状态、选片，以及显式启用后的粗剪闭环；界面与清单均将其标记为 `deterministic_demo` / `realGpu: false`。它不证明 MiniMax H3、其他模型或某个自定义 Workflow 的画质，也不代表新实例默认开启粗剪。
-
-真实生成证据必须通过：
-
-```bash
-pnpm gate:gpu
-```
-
-并进入[真实生成兼容性矩阵](./compatibility-matrix.md)。自动技术完整性也不能冒充人工审片；只有完整观看对应输出后，证据才可标记为视觉通过。
-
-## 手工演示建议
-
-自动视频只有约 15 秒，适合 README、Issue 或 Release 预览。对外讲解建议录制 60–90 秒真人旁白版本：
-
-- 先说清 TakeBoard 是 ComfyUI 之上的项目与选片层，不替代节点编辑器；
-- 展示原始素材、镜头输入、真实/不确定进度和批准结果；
-- 展示 Workflow Binding 与内容哈希的信任边界；
-- 明确无 ComfyUI 时仍可管理项目，但不能提交真实生成；
-- 结尾邀请用户携带自己的 Workflow 报告兼容性，而不是声称任意 JSON 都能运行。
-
-## 验证
-
-```bash
-pnpm verify
-pnpm test:e2e
-pnpm demo:capture
-```
-
-浏览器测试会独立覆盖 Demo 的重置、候选生成、淘汰、批准、刷新恢复，以及管理员外部备份卡片的操作状态。
+ComfyUI, models and nodes are not bundled. Workflow compatibility varies. Start with the [first-session checklist](first-session.md#english), then report the first step that blocked you. The recording does not demonstrate real generation, real media import or the full asset library.

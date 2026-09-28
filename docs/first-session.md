@@ -35,6 +35,8 @@
 
 [使用交流](https://github.com/Fourques/Takeboard/discussions) · [问题反馈](https://github.com/Fourques/Takeboard/issues/new/choose)
 
+不确定是不是 Bug？使用[第一次使用反馈](https://github.com/Fourques/Takeboard/issues/new?template=first_try.yml)，无需写技术诊断。
+
 不要公开密钥、密码、未检查的日志或私人工作流；安全问题使用仓库的私密报告入口。
 
 ## English

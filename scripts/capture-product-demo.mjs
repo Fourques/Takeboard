@@ -125,15 +125,18 @@ async function main() {
         TAKEBOARD_BACKUP_DESTINATION: "",
         TAKEBOARD_DEMO_DIRECTORY: join(dataRoot, "demo.takeboard"),
         TAKEBOARD_HOST: "127.0.0.1",
+        TAKEBOARD_INSTANCE_NAME: "Demo workstation",
         TAKEBOARD_PORT: String(port),
         TAKEBOARD_WEB_ROOT: join(repositoryRoot, "apps", "web", "dist"),
         COMFY_START_SERVICE: "takeboard-demo-disabled.service",
+        COMFY_URL: "http://127.0.0.1:1",
       },
-      stdio: "ignore",
+      stdio: ["ignore", "ignore", "inherit"],
     },
   );
   let browser = null;
   let api = null;
+  let page = null;
   try {
     await waitForHealth(baseUrl, server);
     api = await request.newContext({ baseURL: baseUrl });
@@ -153,15 +156,6 @@ async function main() {
     if (typeof csrfToken !== "string" || !csrfToken) {
       throw new Error("演示账号初始化没有返回安全令牌");
     }
-    const roughCutEnabled = await api.patch("/api/admin/extensions/studio.takeboard.rough-cut", {
-      data: { enabled: true },
-      headers: { "x-takeboard-csrf": csrfToken },
-    });
-    if (!roughCutEnabled.ok()) {
-      throw new Error(
-        `演示粗剪扩展启用失败：${roughCutEnabled.status()} ${await roughCutEnabled.text()}`,
-      );
-    }
     const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
     browser = await chromium.launch(executablePath ? { executablePath } : undefined);
     const context = await browser.newContext({
@@ -171,11 +165,18 @@ async function main() {
       recordVideo: { dir: videoScratch, size: { width: 1440, height: 900 } },
       reducedMotion: "reduce",
     });
-    const page = await context.newPage();
+    page = await context.newPage();
     page.setDefaultTimeout(10_000);
     const video = page.video();
     await page.addInitScript(() => window.sessionStorage.setItem("takeboard.resumeDemo", "1"));
     await page.goto(baseUrl, { waitUntil: "networkidle" });
+    await page.evaluate(() => {
+      const label = document.createElement("div");
+      label.textContent = "INTERACTION DEMO · SIMULATED OUTPUTS · NO GPU";
+      label.style.cssText =
+        "position:fixed;bottom:12px;left:50%;transform:translateX(-50%);z-index:2147483647;padding:8px 14px;background:#17202a;color:#fff;font:12px system-ui;border-radius:8px;pointer-events:none";
+      document.body.append(label);
+    });
     const closeCreate = page.getByRole("button", { name: "关闭新建项目" });
     if (await closeCreate.isVisible()) await closeCreate.click();
     await page.getByText("雾港来信", { exact: true }).first().waitFor();
@@ -184,37 +185,35 @@ async function main() {
     const reset = page.getByRole("button", { name: "重置 Demo" });
     await reset.click();
     await page.getByRole("button", { name: "确认重置" }).click();
-    await page.getByText("这个镜头还没有 Take").waitFor();
+    await page.getByRole("button", { name: "显示检查器", exact: true }).click();
+    await page.getByRole("tab", { name: "结果", exact: true }).click();
+    await page.getByText("还没有生成结果", { exact: true }).waitFor();
     await pause(page);
 
-    await page.locator(".react-flow__node-asset").first().click();
+    await page.locator(".react-flow__node-asset").first().dblclick();
     await page.getByLabel("素材节点检查器").waitFor();
     await pause(page, 1_100);
     await page.locator(".react-flow__pane").click({ position: { x: 44, y: 700 } });
     await pause(page, 500);
 
-    await page.locator(".react-flow__node-shot").first().click();
+    await page.locator(".react-flow__node-shot").first().dblclick();
     await page.getByRole("button", { name: "开始生成" }).click();
+    await page.getByRole("tab", { name: "结果", exact: true }).click();
     await page.getByRole("button", { name: "选择候选 2" }).waitFor();
     await pause(page, 1_200);
     await page.getByRole("button", { name: "选择候选 2" }).click();
-    await page.locator(".react-flow__node-shot").first().click();
-    await page.locator(".shot-inline-console").waitFor();
     await pause(page, 900);
-    await page.getByRole("button", { name: "批准此 Take" }).click();
-    await page.getByText("APPROVED").first().waitFor();
+    await page.getByRole("button", { name: "采用此结果" }).click();
+    await page.locator(".take-state").getByText("已采用", { exact: true }).waitFor();
     await pause(page, 1_300);
 
+    const resultsPath = join(outputRoot, "takeboard-demo-results.png");
+    await page.screenshot({ path: resultsPath, animations: "disabled" });
+    await page.getByRole("button", { name: "收起检查器" }).click();
+    await page.locator(".react-flow__controls-fitview").click();
+    await pause(page);
     const coverPath = join(outputRoot, "takeboard-demo-cover.png");
     await page.screenshot({ path: coverPath, animations: "disabled" });
-    await page.getByRole("button", { name: "打开分镜墙" }).click();
-    const storyboard = page.getByRole("dialog", { name: "项目分镜墙" });
-    await storyboard.waitFor();
-    await pause(page, 1_200);
-    await storyboard.getByRole("tab", { name: "粗剪预览" }).click();
-    await storyboard.getByLabel("只读粗剪预览").waitFor();
-    await pause(page, 1_600);
-    await page.keyboard.press("Escape");
     await pause(page, 700);
 
     await context.close();
@@ -244,7 +243,7 @@ async function main() {
         "inspect_source_asset",
         "generate_four_simulated_candidates",
         "approve_candidate",
-        "inspect_storyboard_and_rough_cut",
+        "return_to_canvas",
       ],
       generation: {
         mode: "deterministic_demo",
@@ -258,6 +257,7 @@ async function main() {
           sha256: videoSha256,
         },
         cover: { name: "takeboard-demo-cover.png", sha256: coverSha256 },
+        results: { name: "takeboard-demo-results.png", sha256: await sha256File(resultsPath) },
       },
     };
     await writeFile(
@@ -267,6 +267,17 @@ async function main() {
     );
     console.log(`Product demo: ${videoPath}`);
     console.log(`Cover: ${coverPath}`);
+  } catch (error) {
+    if (page && !page.isClosed()) {
+      await page
+        .screenshot({ path: join(outputRoot, "capture-failure.png") })
+        .catch(() => undefined);
+      await writeFile(
+        join(outputRoot, "capture-failure.txt"),
+        await page.locator("body").innerText(),
+      ).catch(() => undefined);
+    }
+    throw error;
   } finally {
     await api?.dispose().catch(() => undefined);
     await browser?.close().catch(() => undefined);

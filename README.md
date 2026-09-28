@@ -9,6 +9,7 @@
 
 <p align="center">
   <a href="docs/downloads.md"><strong>下载使用</strong></a> ·
+  <a href="docs/demo-guide.md">看交互演示</a> ·
   <a href="docs/creator-workstation.md">创作指南</a> ·
   <a href="docs/remote-access.md">连接远程设备</a> ·
   <a href="CONTRIBUTING.md">参与开发</a>
@@ -20,10 +21,14 @@
   <a href="https://github.com/Fourques/Takeboard/releases"><img alt="Public preview release" src="https://img.shields.io/github/v/release/Fourques/Takeboard?include_prereleases&label=public%20preview&color=D99A46" /></a>
 </p>
 
-![TakeBoard 项目主页](docs/assets/takeboard-home.webp)
+![TakeBoard 项目画布：来源、镜头与连线；模拟交互示例，非模型输出](docs/assets/takeboard-demo-cover.png)
+
+画面来自开发分支的[交互演示](docs/demo-guide.md)，不是生成画质样片；已发布安装包仍为 beta.17。
 
 把参考素材、生成镜头与工作流放在同一张画布上，连接输入，调整参数，比较结果，留下满意的版本。
 TakeBoard 不替代 ComfyUI 的节点编辑器，而是让创作过程更连贯，让每个结果都有来源可查。
+
+**适合**：已经使用 ComfyUI，希望整理多个镜头与生成版本的创作者。**不适合**：期待安装后无需模型与配置、直接获得托管生成服务的用户。
 
 ## 下载与开始
 

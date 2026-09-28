@@ -1,0 +1,48 @@
+name: First try feedback / 第一次使用反馈
+description: Tell us the first confusing or blocked step; no technical diagnosis required.
+title: "[First try]: "
+body:
+  - type: markdown
+    attributes:
+      value: "不用先判断是不是 Bug。只需说明想做什么、卡在哪里。Please do not attach private media, credentials, addresses or unreviewed logs."
+  - type: input
+    id: environment
+    attributes:
+      label: App version and system / 应用版本与系统
+      placeholder: beta.17, macOS M-series; unknown is OK / 不清楚也可以
+    validations:
+      required: true
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Where did you get to? / 做到哪一步？
+      options:
+        - Choosing a download / 选择下载
+        - Installing or opening / 安装与打开
+        - Creating a project / 创建项目
+        - Adding media / 导入素材
+        - Connecting ComfyUI / 连接生成服务
+        - Choosing a workflow / 选择工作流
+        - Generating or finding output / 生成与找回结果
+        - Completed a first result / 已完成首次结果
+    validations:
+      required: true
+  - type: textarea
+    id: experience
+    attributes:
+      label: What did you try, and what happened? / 想做什么，实际发生了什么？
+      description: A few sentences are enough. Technical details are optional.
+    validations:
+      required: true
+  - type: input
+    id: source
+    attributes:
+      label: Where did you hear about TakeBoard? / 从哪里了解到（选填）
+      description: Community name only; no personal identifiers needed.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy / 隐私
+      options:
+        - label: This feedback contains no private media, credentials or unreviewed logs. / 不含私人素材、凭据或未检查日志。
+          required: true

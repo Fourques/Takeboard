@@ -9,6 +9,7 @@
 
 <p align="center">
   <a href="docs/downloads.en.md"><strong>Download</strong></a> ·
+  <a href="docs/demo-guide.md#english">Watch the interaction demo</a> ·
   <a href="docs/README.md">Documentation</a> ·
   <a href="CONTRIBUTING.md">Contribute</a>
 </p>
@@ -19,11 +20,15 @@
   <a href="https://github.com/Fourques/Takeboard/releases"><img alt="Public preview release" src="https://img.shields.io/github/v/release/Fourques/Takeboard?include_prereleases&label=public%20preview&color=D99A46" /></a>
 </p>
 
-![TakeBoard project hub](docs/assets/takeboard-home.webp)
+![TakeBoard project canvas: sources, shots and connections; simulated interaction, not model output](docs/assets/takeboard-demo-cover.png)
+
+Recorded from development main. [Demo scope and provenance](docs/demo-guide.md#english); published installers remain beta.17.
 
 Keep reference media, generated shots and workflows on one canvas. Connect inputs, adjust parameters,
 compare results and keep the takes you want. TakeBoard complements ComfyUI's node editor with a
 project workspace and traceable generation history.
+
+**For:** creators who already use ComfyUI and need to organize multiple shots and attempts. **Not:** a hosted generation service or an installer that includes models and configures every workflow.
 
 ## Download and start
 

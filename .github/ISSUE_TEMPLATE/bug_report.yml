@@ -7,12 +7,12 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for helping improve TakeBoard. Open **任务中心 → 运行诊断** and download the redacted report when possible. Never paste cookies, tokens, environment values, private prompts or private media.
+        Thanks for helping improve TakeBoard. Open **设置 → 运行诊断 / Settings → Diagnostics** when possible. A report is optional; describing what you clicked is enough to start. Never paste cookies, tokens, environment values, private prompts or private media.
   - type: input
     id: version
     attributes:
       label: TakeBoard version / 版本
-      placeholder: v0.1.0 or commit SHA
+      placeholder: v0.2.0-beta.17 or commit SHA
     validations:
       required: true
   - type: dropdown
