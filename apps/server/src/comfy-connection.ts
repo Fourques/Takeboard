@@ -76,8 +76,19 @@ export function parseConnectionTarget(input: unknown): ConnectionTarget {
   return { kind: "url", name: name || url.host, url: url.href.replace(/\/+$/, "") };
 }
 
-async function verifyComfy(endpoint: string, signal: AbortSignal) {
-  const response = await fetch(`${endpoint}/system_stats`, { signal, redirect: "error" });
+export async function verifyComfy(endpoint: string, signal: AbortSignal) {
+  const probe = () => fetch(`${endpoint}/system_stats`, { signal, redirect: "error" });
+  let response: Response;
+  try {
+    response = await probe();
+  } catch (error) {
+    // A restarted service may close a pooled socket before fetch observes it.
+    // Retry this read-only probe once, within the original cancellation deadline.
+    const cause = error instanceof Error ? error.cause : undefined;
+    const code = cause && typeof cause === "object" && "code" in cause ? cause.code : null;
+    if (signal.aborted || (code !== "ECONNRESET" && code !== "UND_ERR_SOCKET")) throw error;
+    response = await probe();
+  }
   if (!response.ok) throw new Error(`ComfyUI 未响应（HTTP ${response.status}）`);
   const payload = (await response.json()) as { system?: unknown; devices?: unknown };
   if (!payload.system || !Array.isArray(payload.devices))

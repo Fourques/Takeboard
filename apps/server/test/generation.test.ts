@@ -1,6 +1,7 @@
 import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { ComfyClient } from "@takeboard/executor-comfy";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
 import { ProjectStore } from "../src/storage/project-store.js";
@@ -69,6 +70,7 @@ async function projectFixture(storage?: { inputRoot: string; outputRoot: string 
 
 describe("real generation routes", () => {
   it("queues multiple jobs and keeps independent workers running without cross-cancellation", async () => {
+    const release = vi.spyOn(ComfyClient.prototype, "freeResourcesIfIdle");
     const queues = new Map<string, string[]>();
     let sequence = 0;
     vi.stubGlobal(
@@ -173,6 +175,8 @@ describe("real generation routes", () => {
       url: `/api/projects/${key}/runs/${first.json().runId}/cancel`,
     });
     expect(cancelled.statusCode, cancelled.body).toBe(200);
+    expect(cancelled.json()).toMatchObject({ cancelled: true, resourcesReleased: false });
+    expect(release).toHaveBeenCalledTimes(1);
     expect(await inspect(second)).toMatchObject({ status: "running" });
     expect(await inspect(remote)).toMatchObject({ status: "running" });
     expect(queues.get("second.test")).toHaveLength(1);

@@ -51,6 +51,19 @@ export function collectSnapshot() {
     "-f",
     'query={repository(owner:"Fourques",name:"Takeboard"){discussion(number:10){comments{totalCount}}}}',
   ]).data?.data?.repository?.discussion;
+  const directoryPullRequests = [
+    "repos/thoxakihiko/awesome-ai-video/pulls/14",
+    "repos/lucianosb/awesome-comfyui/pulls/26",
+  ].map((endpoint) => {
+    const pull = readApi(endpoint).data;
+    return {
+      endpoint,
+      state: pull?.state ?? null,
+      merged: pull?.merged ?? null,
+      comments: pull?.comments ?? null,
+      url: pull?.html_url ?? null,
+    };
+  });
   return {
     observedAt: new Date().toISOString(),
     campaignRelease: "v0.2.0-beta.17",
@@ -60,6 +73,7 @@ export function collectSnapshot() {
     traffic14Days: views ? { views: views.count, uniqueVisitors: views.uniques } : null,
     clones14Days: clones ? { clones: clones.count, uniqueCloners: clones.uniques } : null,
     feedbackComments: discussion?.comments?.totalCount ?? null,
+    directoryPullRequests,
     weeklySubmission: weekly
       ? { state: weekly.state, comments: weekly.comments, url: weekly.html_url }
       : null,

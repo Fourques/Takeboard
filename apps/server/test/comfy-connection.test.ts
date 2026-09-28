@@ -9,6 +9,7 @@ import {
   ComfyConnections,
   parseConnectionTarget,
   registerComfyConnections,
+  verifyComfy,
 } from "../src/comfy-connection.js";
 import { WorkerPool } from "../src/worker-pool.js";
 
@@ -25,6 +26,41 @@ async function fixture() {
 const target = { kind: "ssh" as const, name: "家里的工作站", host: "user@workstation", port: 8188 };
 
 describe("generation connection ownership", () => {
+  it.each(["ECONNRESET", "UND_ERR_SOCKET"])(
+    "retries one stale read-only probe (%s)",
+    async (code) => {
+      const fetcher = vi
+        .fn()
+        .mockRejectedValueOnce(new TypeError("fetch failed", { cause: { code } }))
+        .mockResolvedValueOnce(Response.json({ system: {}, devices: [] }));
+      vi.stubGlobal("fetch", fetcher);
+      const signal = AbortSignal.timeout(1000);
+      await verifyComfy("http://127.0.0.1:8188", signal);
+      expect(fetcher).toHaveBeenCalledTimes(2);
+      expect(fetcher).toHaveBeenLastCalledWith("http://127.0.0.1:8188/system_stats", {
+        signal,
+        redirect: "error",
+      });
+    },
+  );
+  it("does not retry repeated socket failure, HTTP errors, invalid services or cancellation", async () => {
+    const fetcher = vi
+      .fn()
+      .mockRejectedValue(new TypeError("fetch failed", { cause: { code: "ECONNRESET" } }));
+    vi.stubGlobal("fetch", fetcher);
+    await expect(verifyComfy("http://localhost", AbortSignal.timeout(1000))).rejects.toThrow();
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    for (const response of [new Response("", { status: 503 }), Response.json({})]) {
+      fetcher.mockReset().mockResolvedValue(response);
+      await expect(verifyComfy("http://localhost", AbortSignal.timeout(1000))).rejects.toThrow();
+      expect(fetcher).toHaveBeenCalledTimes(1);
+    }
+    fetcher
+      .mockReset()
+      .mockRejectedValue(new TypeError("fetch failed", { cause: { code: "ECONNRESET" } }));
+    await expect(verifyComfy("http://localhost", AbortSignal.abort())).rejects.toThrow();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
   it("keeps the selected device connected while its service is unavailable or GPU telemetry fails", async () => {
     const root = await fixture();
     const pool = new WorkerPool(join(root, "workers.json"), "http://127.0.0.1:8188");

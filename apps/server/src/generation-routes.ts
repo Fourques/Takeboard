@@ -698,11 +698,10 @@ export function registerGenerationRoutes(
         ]);
         if (run.promptId) comfy.forgetProgress(run.promptId);
         idleResources.track(comfy);
-        let resourcesReleased = false;
-        for (let attempt = 0; attempt < 8 && !resourcesReleased; attempt += 1) {
-          resourcesReleased = await comfy.freeResourcesIfIdle().catch(() => false);
-          if (!resourcesReleased) await new Promise((resolve) => setTimeout(resolve, 500));
-        }
+        // Cancellation is already confirmed. A different job may still be running;
+        // never hold this response open waiting for its resources. The idle cleaner
+        // above will retry safely after the endpoint becomes idle.
+        const resourcesReleased = await comfy.freeResourcesIfIdle().catch(() => false);
         return {
           key,
           runId: run.id,
