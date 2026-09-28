@@ -91,7 +91,7 @@ export async function verifyNativeSettings({
       "Connection settings must not open the removed standalone window",
     );
     await painted();
-    capture(main, "connection-settings");
+    await capture(main, "connection-settings");
     await click('.remote-project-settings select option[value="https"]');
     const address = await find(".remote-project-settings input[required]");
     await command(`/element/${address}/value`, { text: `http://127.0.0.1:${record.port}` });
@@ -105,7 +105,7 @@ export async function verifyNativeSettings({
     await command("/window", { handle: remoteHandle });
     await find('[aria-label="打开工作区选项"]');
     await painted();
-    capture(remote, "remote-workspace");
+    await capture(remote, "remote-workspace");
     execFileSync("xdotool", ["windowactivate", "--sync", remote]);
     execFileSync("xdotool", ["key", "--clearmodifiers", "alt+F4"]);
     await until("remote window closed", () => windows(pid).length === 1);

@@ -111,7 +111,7 @@ async function closeWindow(entry, id) {
   await until("graceful native window exit", () => !running(entry), 15_000);
   assert.equal(entry.child.exitCode, 0, entry.log);
 }
-function capture(id, name) {
+function captureFrame(id, name) {
   const windowImage = join(artifacts, `${name}.png`);
   execFileSync("import", ["-window", id, windowImage]);
   execFileSync("import", ["-window", "root", join(artifacts, `${name}-desktop.png`)]);
@@ -151,6 +151,14 @@ function capture(id, name) {
     `${name}: content is an unpainted flat surface (${variation})`,
   );
 }
+async function capture(id, name) {
+  // Server health/window creation does not imply a painted WebKit surface.
+  // Keep the last failed frame as evidence if rendering never completes.
+  await until(`${name} painted content`, () => {
+    captureFrame(id, name);
+    return true;
+  });
+}
 async function vacantPort() {
   const server = createServer();
   await new Promise((resolve, reject) => {
@@ -185,7 +193,7 @@ try {
   const id = await windowId(desktop);
   // Rendering gets its own artifact; this is not a claim of automatic visual approval.
   await delay(5_000);
-  capture(id, "first-launch");
+  await capture(id, "first-launch");
   await closeWindow(desktop, id);
   await until(
     "owned server stopped and lease released",
@@ -210,7 +218,7 @@ try {
   const reused = await ready(second);
   assert.equal(reused.pid, borrowed.pid, "Desktop must reuse the existing server process");
   assert.equal(reused.port, borrowed.port);
-  capture(secondId, "reused-service");
+  await capture(secondId, "reused-service");
   await closeWindow(second, secondId);
   assert.ok(running(external));
   assert.equal(
