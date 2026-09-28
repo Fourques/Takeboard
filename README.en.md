@@ -55,6 +55,7 @@ automatically. Upgrade from `0.2.0-beta.2` manually once to get the new update m
 
 **First visit?** Follow the [first-session checklist](docs/first-session.md#english): create a project, add an image and connect your existing ComfyUI environment.
 You can explore projects and media without a generation service or cloud subscription.
+Share your first blocker in the [beta feedback discussion](https://github.com/Fourques/Takeboard/discussions/10).
 
 - **Media and shots:** preserve original images and videos; connect first frames, last frames and references.
 - **Workflows and generation:** built-in Recipes and explicit bindings for trusted custom workflows,

@@ -11,7 +11,15 @@
 
 ## 状态
 
-待执行动作完成后在此写入公开链接；不能把草稿记作已发布。
+| 动作 | 实际结果 | 证据 |
+| --- | --- | --- |
+| 更新中英文 README 与下载指南 | 已推送；两个下载表的 12 个链接逐一与六个真实 Release 资产匹配 | commit b830f09 |
+| 首次试用教程、技术文章、中英文社区素材 | 已公开到仓库；社区草稿未冒充站外发布 | [执行包](outreach-2026-09.md)、[技术文章](device-state-design.md) |
+| 仓库简介、下载主页与相关 Topics | 已更新 | [仓库](https://github.com/Fourques/Takeboard) |
+| 双语 beta.17 试用公告 | 已发布并回读确认 | [Discussion #10](https://github.com/Fourques/Takeboard/discussions/10) |
+| 科技爱好者周刊软件投稿 | 已提交，状态 open，等待编辑判断；不是已收录 | [Issue #11963](https://github.com/ruanyf/weekly/issues/11963) |
+
+尚无证据说明此次推广带来新增独立用户、曝光、留存或转化。后续记录必须使用真实数据；不因完成这些动作就宣称增长成功。
 
 ## 账号与规则限制
 
