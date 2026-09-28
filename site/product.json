@@ -1,0 +1,23 @@
+{
+  "name": "TakeBoard",
+  "repository": "https://github.com/Fourques/Takeboard",
+  "website": "https://fourques.github.io/Takeboard/",
+  "publicVersion": "0.2.0-beta.17",
+  "reviewedAt": "2026-09-28",
+  "license": "Apache-2.0",
+  "platforms": ["macOS", "Windows", "Debian/Ubuntu"],
+  "architectures": ["x64", "ARM64"],
+  "bundlesComfyUI": false,
+  "bundlesModels": false,
+  "localAccountRequired": false,
+  "hostedComputeIncluded": false,
+  "appleNotarized": false,
+  "commercialWindowsSigning": false,
+  "arbitraryWorkflowCompatibilityGuaranteed": false,
+  "demo": { "realGpu": false, "sourceCommit": "b58fd273aa84fce409d581abc140f80948b0872d" },
+  "evidence": {
+    "release": "https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.17",
+    "compatibility": "https://github.com/Fourques/Takeboard/blob/main/docs/compatibility-matrix.md",
+    "demo": "https://github.com/Fourques/Takeboard/blob/main/docs/demo-guide.md"
+  }
+}
