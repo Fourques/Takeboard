@@ -4,21 +4,21 @@
 
 ## Download TakeBoard
 
-**v0.2.0-beta.13** is an Apple Silicon Mac testing build improving asset navigation, result input links and detail layouts. Other platforms remain on **beta.4**. Choose your computer and download
+**v0.2.0-beta.17** is the current preview for all six platform/architecture combinations. Choose your computer and download
 one file. No portable folder to manage and no separate Node.js, pnpm or Rust installation.
 
 | Your computer | Download |
 | --- | --- |
-| Mac · Apple 芯片 / Apple silicon | [DMG · beta.13](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.13/TakeBoard-v0.2.0-beta.13-macos-arm64.dmg) |
-| Mac · Intel | [DMG](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.4/TakeBoard-v0.2.0-beta.4-macos-x64.dmg) |
-| Windows · Intel / AMD | [EXE](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.4/TakeBoard-v0.2.0-beta.4-windows-x64.exe) |
-| Windows · ARM64 | [EXE](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.4/TakeBoard-v0.2.0-beta.4-windows-arm64.exe) |
-| Debian / Ubuntu · Intel / AMD | [DEB](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.4/TakeBoard-v0.2.0-beta.4-linux-x64.deb) |
-| Debian / Ubuntu · ARM64 | [DEB](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.4/TakeBoard-v0.2.0-beta.4-linux-arm64.deb) |
+| Mac · Apple 芯片 / Apple silicon | [DMG](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.17/TakeBoard_0.2.0-beta.17_aarch64.dmg) |
+| Mac · Intel | [DMG](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.17/TakeBoard_0.2.0-beta.17_x64.dmg) |
+| Windows · Intel / AMD | [EXE](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.17/TakeBoard_0.2.0-beta.17_x64-setup.exe) |
+| Windows · ARM64 | [EXE](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.17/TakeBoard_0.2.0-beta.17_arm64-setup.exe) |
+| Debian / Ubuntu · Intel / AMD | [DEB](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.17/TakeBoard_0.2.0-beta.17_amd64.deb) |
+| Debian / Ubuntu · ARM64 | [DEB](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.17/TakeBoard_0.2.0-beta.17_arm64.deb) |
 
 Check **About This Mac** or Windows **Settings → System → About** for your processor.
 DEB packages target Debian/Ubuntu, not every Linux distribution. Other environments can use
-[source setup](../CONTRIBUTING.md). See [Apple Silicon beta.13](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.13) or [other platforms on beta.4](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.4) for release details.
+[source setup](../CONTRIBUTING.md). See the [release page](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.17) for details.
 **Source code** at the bottom is for developers, not an installer.
 
 ## Install and open
@@ -26,7 +26,7 @@ DEB packages target Debian/Ubuntu, not every Linux distribution. Other environme
 - **Mac:** open the DMG, drag TakeBoard into Applications, then launch it from Applications.
 - **Windows:** run the EXE setup wizard, then launch TakeBoard from Start.
 - **Debian / Ubuntu:** open the DEB with your software installer and launch from the applications menu.
-  Without a graphical installer, run `sudo apt install ./TakeBoard-v0.2.0-beta.4-linux-x64.deb`
+  Without a graphical installer, run `sudo apt install ./TakeBoard_0.2.0-beta.17_amd64.deb`
   in the download directory; use the ARM64 filename on ARM devices.
 
 The app starts its local service automatically. Local use needs no registration; login is optional,

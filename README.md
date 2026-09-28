@@ -34,7 +34,7 @@ TakeBoard 不替代 ComfyUI 的节点编辑器，而是让创作过程更连贯�
 未连接 ComfyUI 时，可以先整理项目、素材和画布，生成则需要可用的本机或远程 ComfyUI。
 
 > [!IMPORTANT]
-> Mac M 系列调试版为 `v0.2.0-beta.13`（DMG）；Intel Mac、Windows 和 Linux 暂保留 `beta.4`。
+> 当前全平台预览版为 [`v0.2.0-beta.17`](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.17)：Mac、Windows、Debian/Ubuntu 均提供 x64 和 ARM64 安装包。
 > 不再分发便携包。本页面向当前 `main`，后续开发变化以版本记录为准。
 > 预览包尚无 Apple 公证 / Windows 商业代码签名，下载指南列出具体边界。
 
@@ -48,6 +48,9 @@ TakeBoard 不替代 ComfyUI 的节点编辑器，而是让创作过程更连贯�
 提供[统一设置与更新提醒](docs/settings-and-updates.md)：保存设备默认项目位置、调整外观，以及检查适合当前电脑的新版安装包；不自动安装或重启。旧 `0.2.0-beta.2` 需要先手动升级一次。
 
 ## 在一张画布里完成创作
+
+**第一次尝试？** 按[十分钟试用清单](docs/first-session.md)创建项目、导入一张图并连接已有 ComfyUI。
+没有生成环境也可以体验项目与素材管理；不必为试用购买 GPU 或云服务。
 
 - **素材与镜头**：完整显示原始图片和视频，用首帧、尾帧与参考输入连接镜头。
 - **工作流与生成**：使用内置 Recipe，或为可信自定义工作流配置显式参数绑定；查看实际节点进度、停止任务与回收结果。

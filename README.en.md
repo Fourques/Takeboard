@@ -35,7 +35,7 @@ include Node.js; no separate Node.js, pnpm or Rust installation is needed.
 ComfyUI; generation requires a working local or remote ComfyUI environment.
 
 > [!IMPORTANT]
-> The Apple Silicon Mac testing build is `v0.2.0-beta.13` (DMG). Intel Mac, Windows and Linux remain on `beta.4`.
+> Current cross-platform preview: [`v0.2.0-beta.17`](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.17), with x64 and ARM64 installers for macOS, Windows and Debian/Ubuntu.
 > Portable downloads are retired. This README describes current `main`; see the changelog for later changes.
 > Previews are not Apple-notarized or commercially Windows-code-signed.
 
@@ -52,6 +52,9 @@ Desktop update reminders match installers to your computer; they do not install 
 automatically. Upgrade from `0.2.0-beta.2` manually once to get the new update menu.
 
 ## One canvas, from inputs to results
+
+**First visit?** Follow the [first-session checklist](docs/first-session.md#english): create a project, add an image and connect your existing ComfyUI environment.
+You can explore projects and media without a generation service or cloud subscription.
 
 - **Media and shots:** preserve original images and videos; connect first frames, last frames and references.
 - **Workflows and generation:** built-in Recipes and explicit bindings for trusted custom workflows,
@@ -87,7 +90,7 @@ official cloud. Data stays on infrastructure you choose; remote generation trans
 [Documentation index](docs/README.md) · [Changelog](CHANGELOG.md) ·
 [Roadmap](docs/roadmap.md) · [Security](SECURITY.md)
 
-For problems, check the task center's runtime diagnostics and use the
+For problems, run diagnostics from Settings and use the
 [issue chooser](https://github.com/Fourques/Takeboard/issues/new/choose).
 Do not upload private media, credentials or API keys. Report vulnerabilities privately.
 
