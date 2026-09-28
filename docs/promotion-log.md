@@ -68,3 +68,7 @@
   - [Awesome AI Video #14](https://github.com/thoxakihiko/awesome-ai-video/pull/14)：Tools & platforms 分类。
   - [Awesome ComfyUI #26](https://github.com/lucianosb/awesome-comfyui/pull/26)：Projects using ComfyUI 分类。
 - 原目录投稿 #107 和周刊投稿 #11963 回读仍为 open、0 评论；未重复投稿或催促。没有新增用户或转化的证据。
+
+后续验证：SQLite 12.11.1 在当前 Node 24.21.0 下的归档测试连续崩溃；服务端与 Portal 统一升级至官方 N-API 版本 13.0.3 后，完整 `pnpm verify` 通过，包括服务端 48 文件 / 285 项测试及 56 项脚本测试。没有修改项目数据库格式或跳过归档测试。连接/取消修复提交 `849b580` 的 Linux、macOS Verify 已通过，Windows 当时仍运行中；新版依赖仍需云端各平台重新验证。
+
+另查出 Desktop check 的 Linux 原生脚本仍在寻找已移除的独立“远程项目”窗口，而产品已把入口迁入设置。该脚本与当前交互脱节，尚未更新验收；不能把服务端 Verify 通过当作原生安装包验收通过。本轮不发布新安装包。
