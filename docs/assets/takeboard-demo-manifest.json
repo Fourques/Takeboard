@@ -1,0 +1,40 @@
+{
+  "format": "takeboard.product-demo",
+  "version": 1,
+  "applicationVersion": "0.2.0-beta.17",
+  "sourceCommit": "b58fd273aa84fce409d581abc140f80948b0872d",
+  "sourceDirty": false,
+  "recordedAt": "2026-09-28T05:31:17.223Z",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "sequence": [
+    "open_demo_project",
+    "reset_deterministic_state",
+    "inspect_source_asset",
+    "generate_four_simulated_candidates",
+    "approve_candidate",
+    "return_to_canvas"
+  ],
+  "generation": {
+    "mode": "deterministic_demo",
+    "realGpu": false,
+    "disclosure": "候选内容是明确标记的产品演示占位，不是模型质量样片。"
+  },
+  "files": {
+    "video": {
+      "name": "takeboard-product-walkthrough.webm",
+      "size": 883792,
+      "sha256": "b55d35241fe5540a64a14d74a71c01c5da963c21120d994d99b44670c77b6800"
+    },
+    "cover": {
+      "name": "takeboard-demo-cover.png",
+      "sha256": "87f0e4600a9c0b28fab7cc52b8d8bcd0e6cdc069747d4a3036cf8d0606387ee6"
+    },
+    "results": {
+      "name": "takeboard-demo-results.png",
+      "sha256": "b2f2c377e8f2e86e32574442631f1f0ba80afddc08009893d97561ac64196a69"
+    }
+  }
+}
