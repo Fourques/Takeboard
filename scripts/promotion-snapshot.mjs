@@ -64,6 +64,20 @@ export function collectSnapshot() {
       url: pull?.html_url ?? null,
     };
   });
+  const editorialSubmissions = [
+    "repos/521xueweihan/HelloGitHub/issues/3804",
+    "repos/GitHubDaily/GitHubDaily/issues/1125",
+  ].map((endpoint) => {
+    const issue = readApi(endpoint).data;
+    return {
+      endpoint,
+      state: issue?.state ?? null,
+      comments: issue?.comments ?? null,
+      url: issue?.html_url ?? null,
+      // Neither open nor closed proves that an editor featured the project.
+      acceptance: "not_verified",
+    };
+  });
   return {
     observedAt: new Date().toISOString(),
     campaignRelease: "v0.2.0-beta.17",
@@ -74,6 +88,7 @@ export function collectSnapshot() {
     clones14Days: clones ? { clones: clones.count, uniqueCloners: clones.uniques } : null,
     feedbackComments: discussion?.comments?.totalCount ?? null,
     directoryPullRequests,
+    editorialSubmissions,
     weeklySubmission: weekly
       ? { state: weekly.state, comments: weekly.comments, url: weekly.html_url }
       : null,

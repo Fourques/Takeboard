@@ -80,7 +80,48 @@ English:
 
 65–75 秒：说明模型需自备、处于测试版，给一个仓库链接。标题不写“免费无限生成”“所有模型通用”或未经测量的提速倍数。
 
-已有 docs/assets/takeboard-home.webp 是历史首页截图，不是 beta.17 完整流程证明。旧 Demo 只演示交互，不能冒充真实画质、速度或新版 UI。新视频未录制，不记作交付。
+已有 docs/assets/takeboard-home.webp 是历史首页截图，不是 beta.17 完整流程证明。9 月 28 日已录制[开发版交互视频](demo-guide.md)，持续标注模拟输出；真实 GPU 案例尚未录制，不能用交互视频代替画质或速度证据。
+
+## 给教程作者和编辑的素材包
+
+### 项目介绍（可引用，不要求照搬）
+
+TakeBoard 是给 ComfyUI 创作者使用的开源项目画布，把参考素材、镜头输入和生成结果放在同一工作区。它补充项目组织能力，不替代 ComfyUI 节点编辑器，也不提供模型或托管算力。本机项目管理无需账号；生成需要用户自己的 ComfyUI。当前为测试版。
+
+English: TakeBoard is an open-source project canvas for ComfyUI creators. It keeps reference media, shot inputs and generated takes in one workspace. It complements the node editor rather than replacing it. Bring your own ComfyUI, models and nodes; this is a beta, not a hosted generation service.
+
+### 可直接使用的链接
+
+- [项目与源码](https://github.com/Fourques/Takeboard)，Apache-2.0。
+- [中文安装指南](https://github.com/Fourques/Takeboard/blob/main/docs/downloads.md) / [English downloads](https://github.com/Fourques/Takeboard/blob/main/docs/downloads.en.md)。
+- [首次试用](https://github.com/Fourques/Takeboard/blob/main/docs/first-session.md)：没有 GPU 也能试项目组织；生成是另一条需要环境的路径。
+- [画布截图](https://raw.githubusercontent.com/Fourques/Takeboard/8a2f03543497731b2d141ef233609ef25f6d6a5f/docs/assets/takeboard-demo-cover.png)、[结果截图](https://raw.githubusercontent.com/Fourques/Takeboard/8a2f03543497731b2d141ef233609ef25f6d6a5f/docs/assets/takeboard-demo-results.png)。两张均为模拟示例，引用时保留这一说明。
+- [视频与来源说明](https://github.com/Fourques/Takeboard/blob/main/docs/demo-guide.md)。开发版截图不代表当前安装包完全相同，不裁掉模拟标识。
+- [首次反馈表](https://github.com/Fourques/Takeboard/issues/new?template=first_try.yml)：只需说明第一处阻碍，不要求观众先排查底层节点。
+
+### 合作邀请草稿（未发送）
+
+你好，我在维护开源项目 TakeBoard，想向制作 ComfyUI 教程的创作者介绍一个“生成之外的项目组织”工具：把素材、镜头与每次结果放在同一张画布中。
+
+如果这个方向适合你的内容，欢迎用自己的公开测试工作流试用，重点看能否更容易找到输入、比较结果和重新打开项目。可以如实展示失败和不适合的地方，不要求正面评价或点赞。安装包、试用步骤和模拟演示都在仓库里；目前没有可作为画质证明的宣传样片，也不承诺任意工作流即导即用。
+
+项目：https://github.com/Fourques/Takeboard
+
+仅在对方公开接受项目推荐或表达相关需求的渠道使用；按对方内容定制开头，不批量私信，不未经许可转用其作品。不代表已经建立合作。
+
+### 下一条内容如何区别于已有公告
+
+不再重复“发布一个新工具”。采用题目：**ComfyUI 生成了很多版本，怎样找回每个结果的参考素材和参数？**
+
+结构：一个真实项目问题 → 输入与结果在画布中的对应关系 → 重新打开项目找回记录 → 当前限制 → 一个试用入口。若尚无授权真实案例，先做项目组织教程，不伪装成模型生成教程。
+
+真实生成演示的发布门槛：素材授权清楚；记录应用版本、工作流来源、模型、硬件、宽高/时长与耗时；确认输入实际生效、结果可播放、项目重开后仍可找到；遮住个人路径和地址。完成前只称“待录制”，不拼接无关结果。
+
+### 参考与取舍
+
+- [Product Hunt 官方准备指南](https://www.producthunt.com/launch/preparing-for-launch)：用可理解的产品故事和演示帮助用户判断；本项目先把试用链路做好，不急于集中首发。
+- [ComfyUI 官方项目页](https://github.com/Comfy-Org/ComfyUI)：明确产品定位、安装入口与社区入口；TakeBoard 应说明自己补充的是项目层，而不是暗示能取代整个生态。
+- [HelloGitHub 自荐模板](https://github.com/521xueweihan/HelloGitHub/blob/master/.github/ISSUE_TEMPLATE/submit-cn.yaml)与[GitHubDaily 投稿入口](https://github.com/GitHubDaily/GitHubDaily#readme)：按编辑需要提供原创简介、适用对象与截图，不把投稿等同推荐。
 
 ## 技术文章切入点
 
