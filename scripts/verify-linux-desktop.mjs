@@ -128,6 +128,28 @@ function capture(id, name) {
     Number.isFinite(visibleContent) && visibleContent > 0.001,
     `${name}: login content did not paint (${visibleContent})`,
   );
+  const variation = Number(
+    execFileSync(
+      "convert",
+      [
+        windowImage,
+        "-gravity",
+        "North",
+        "-chop",
+        "0x80",
+        "-colorspace",
+        "Gray",
+        "-format",
+        "%[fx:standard_deviation]",
+        "info:",
+      ],
+      { encoding: "utf8" },
+    ),
+  );
+  assert.ok(
+    Number.isFinite(variation) && variation > 0.01,
+    `${name}: content is an unpainted flat surface (${variation})`,
+  );
 }
 async function vacantPort() {
   const server = createServer();

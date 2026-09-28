@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
 export async function verifyNativeSettings({
   start,
@@ -39,9 +40,19 @@ export async function verifyNativeSettings({
   const find = async (selector) =>
     until(`native element ${selector}`, async () => {
       const element = await command("/element", { using: "css selector", value: selector });
-      return element["element-6066-11e4-a52e-4f735466cecf"];
+      const id = element["element-6066-11e4-a52e-4f735466cecf"];
+      return (await command(`/element/${id}/displayed`)) && id;
     });
   const click = async (selector) => command(`/element/${await find(selector)}/click`, {});
+  const painted = async () => {
+    await command("/execute/async", {
+      script:
+        "const done = arguments[arguments.length - 1]; document.fonts.ready.then(() => requestAnimationFrame(() => requestAnimationFrame(() => done(true))));",
+      args: [],
+    });
+    // WebKit's composited surface reaches X11 asynchronously after its DOM frame.
+    await delay(500);
+  };
   const windows = (pid) =>
     execFileSync(
       "xdotool",
@@ -62,6 +73,7 @@ export async function verifyNativeSettings({
       return (await health(value.port))?.instanceId === value.instanceId && value;
     });
     await find('[aria-label="打开工作区选项"]');
+    const mainHandle = await command("/window");
     const main = execFileSync("xdotool", ["search", "--onlyvisible", "--name", "^TakeBoard"], {
       encoding: "utf8",
     })
@@ -78,6 +90,7 @@ export async function verifyNativeSettings({
       1,
       "Connection settings must not open the removed standalone window",
     );
+    await painted();
     capture(main, "connection-settings");
     await click('.remote-project-settings select option[value="https"]');
     const address = await find(".remote-project-settings input[required]");
@@ -86,10 +99,17 @@ export async function verifyNativeSettings({
     const remote = await until("verified native remote workspace", () =>
       windows(pid).find((id) => id !== main),
     );
+    const remoteHandle = await until("remote WebKit page", async () =>
+      (await command("/window/handles")).find((handle) => handle !== mainHandle),
+    );
+    await command("/window", { handle: remoteHandle });
+    await find('[aria-label="打开工作区选项"]');
+    await painted();
     capture(remote, "remote-workspace");
     execFileSync("xdotool", ["windowactivate", "--sync", remote]);
     execFileSync("xdotool", ["key", "--clearmodifiers", "alt+F4"]);
     await until("remote window closed", () => windows(pid).length === 1);
+    await command("/window", { handle: mainHandle });
     assert.equal(
       (await health(record.port))?.instanceId,
       record.instanceId,
