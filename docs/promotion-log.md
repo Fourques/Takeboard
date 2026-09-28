@@ -2,6 +2,18 @@
 
 本文件区分真实发布与准备工作，不把下载当用户，不把投稿当收录。
 
+## 2026-09-29 AI 搜索入口与素材包落地
+
+- [AI 搜索策略](ai-discovery-strategy.md)基于 OpenAI、Google、Anthropic、Perplexity 官方文档和 GEO 研究，区分抓取、索引、引用、推荐和试用；不采用隐藏指令、虚构背书、批量近似网页或排名承诺。
+- 已发布[英文官网](https://fourques.github.io/Takeboard/)与[中文官网](https://fourques.github.io/Takeboard/zh/)。免费 GitHub Pages，纯静态 HTML，无追踪脚本，不暴露应用服务或用户项目。包含事实 FAQ、canonical、语言链接、站点地图与 SoftwareApplication 数据，不伪造评分。
+- [完整素材包](media-kit.md)包含双语介绍、事实来源、受众选题、图注、短帖、教程脚本和合作入口。[ZIP](https://fourques.github.io/Takeboard/takeboard-media-kit.zip)包含公开截图、11 秒模拟交互视频、品牌图标、来源清单、许可和产品事实；没有制作新的真实生成样片。
+- [官网部署 36448233041](https://github.com/Fourques/Takeboard/actions/runs/36448233041)通过，源提交 `87c293b`。已从公网确认两个语言页面、站点地图和产品事实返回 200，并重新下载 ZIP 检查全部 8 个条目通过；初始包 1,435,720 bytes，SHA-256 `88325d5373cb779567ee2aa33c33e3099d1938b743958bf4655bd1049e2caf27`。后续文案更新会改变包内容，不将此哈希当永久版本。
+- 浏览器英文正文及导航已核对；截图验收最初遇到超时/绘制帧异常，后以明确 1280×900、390×844 尺寸复查中文首屏截图正常。手机布局宽度/滚动宽度均为 375 CSS px（含浏览器滚动条差异），无横向溢出；最后恢复默认尺寸。不把这记成应用或全平台验收。
+- 2026-09-28 16:05:53 UTC（北京时间 9 月 29 日 00:05）向 IndexNow 提交本项目中英文两页，返回 **202：已收到，等待所有权校验**。提交前实际读取并核对项目路径的 keyLocation；不是已索引、已被 AI 引用或推荐。
+- GitHub About 已指向官网；中英文 README 增加对应官网入口；既有 [Discussion #10](https://github.com/Fourques/Takeboard/discussions/10)原文保留，补充官网与素材包链接，没有再发重复公告。首次反馈来源继续选填，可填社区或 AI 产品名，不采集私人对话。
+- `pnpm lint`、站点/推广脚本共 4 项测试与 `git diff --check` 通过；本轮不修改应用运行逻辑、不发布安装包。
+- Google Search Console / Bing Webmaster 账号验证与后台引用数据尚未完成，需用户授权对应账号。各 AI 产品的自然推荐尚未实测；目前只有站点部署与通知接收证据，没有新增用户或转化证明。
+
 ## 2026-09-28 最新推广轮：编辑投稿与可复用素材
 
 - 参考 Product Hunt 官方发布指南、ComfyUI 官方项目展示，以及两家渠道的自荐要求；不照搬其他产品的增长数字或宣传词。

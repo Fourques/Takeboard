@@ -38,7 +38,7 @@ body:
     id: source
     attributes:
       label: Where did you hear about TakeBoard? / 从哪里了解到（选填）
-      description: Community name only; no personal identifiers needed.
+      description: Optional community or AI search product name; no account identifiers or private conversation needed. / 可选填社区或 AI 搜索产品名，不需账号或私人对话。
   - type: checkboxes
     id: privacy
     attributes:
