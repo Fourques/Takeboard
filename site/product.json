@@ -3,7 +3,7 @@
   "repository": "https://github.com/Fourques/Takeboard",
   "website": "https://fourques.github.io/Takeboard/",
   "publicVersion": "0.2.0-beta.17",
-  "reviewedAt": "2026-09-28",
+  "reviewedAt": "2026-09-30",
   "license": "Apache-2.0",
   "platforms": ["macOS", "Windows", "Debian/Ubuntu"],
   "architectures": ["x64", "ARM64"],
@@ -13,6 +13,44 @@
   "hostedComputeIncluded": false,
   "appleNotarized": false,
   "commercialWindowsSigning": false,
+  "installers": [
+    {
+      "platform": "macOS",
+      "architecture": "ARM64",
+      "label": "Mac · Apple silicon",
+      "file": "TakeBoard_0.2.0-beta.17_aarch64.dmg"
+    },
+    {
+      "platform": "macOS",
+      "architecture": "x64",
+      "label": "Mac · Intel",
+      "file": "TakeBoard_0.2.0-beta.17_x64.dmg"
+    },
+    {
+      "platform": "Windows",
+      "architecture": "x64",
+      "label": "Windows · Intel / AMD",
+      "file": "TakeBoard_0.2.0-beta.17_x64-setup.exe"
+    },
+    {
+      "platform": "Windows",
+      "architecture": "ARM64",
+      "label": "Windows · ARM64",
+      "file": "TakeBoard_0.2.0-beta.17_arm64-setup.exe"
+    },
+    {
+      "platform": "Debian/Ubuntu",
+      "architecture": "x64",
+      "label": "Debian / Ubuntu · x64",
+      "file": "TakeBoard_0.2.0-beta.17_amd64.deb"
+    },
+    {
+      "platform": "Debian/Ubuntu",
+      "architecture": "ARM64",
+      "label": "Debian / Ubuntu · ARM64",
+      "file": "TakeBoard_0.2.0-beta.17_arm64.deb"
+    }
+  ],
   "arbitraryWorkflowCompatibilityGuaranteed": false,
   "demo": { "realGpu": false, "sourceCommit": "b58fd273aa84fce409d581abc140f80948b0872d" },
   "evidence": {

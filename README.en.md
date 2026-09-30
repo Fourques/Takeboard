@@ -11,6 +11,7 @@
   <a href="https://fourques.github.io/Takeboard/">Website</a> ·
   <a href="docs/downloads.en.md"><strong>Download</strong></a> ·
   <a href="docs/demo-guide.md#english">Watch the interaction demo</a> ·
+  <a href="https://fourques.github.io/Takeboard/guides/organize-comfyui-results/">First-session guide</a> ·
   <a href="docs/README.md">Documentation</a> ·
   <a href="CONTRIBUTING.md">Contribute</a>
 </p>

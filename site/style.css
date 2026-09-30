@@ -224,6 +224,66 @@ details p {
 .feedback {
   padding: 12px 0 48px;
 }
+.downloads {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 24px 0;
+}
+.download-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  min-height: 64px;
+  padding: 16px 20px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  text-decoration: none;
+  font-weight: 600;
+}
+.download-card:hover {
+  background: #eaf0e5;
+  border-color: var(--accent);
+}
+.download-format {
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.guide {
+  max-width: 900px;
+}
+.guide h1 {
+  font-size: clamp(36px, 5.5vw, 64px);
+}
+.guide section {
+  padding-block: 32px;
+}
+.guide-step h2 {
+  margin-top: 8px;
+  font-size: clamp(25px, 3vw, 32px);
+}
+.guide-step p:not(.eyebrow),
+.guide-issue p {
+  max-width: 760px;
+  color: var(--muted);
+}
+.guide-figure {
+  margin-top: 40px;
+}
+.checklist {
+  padding-left: 24px;
+}
+.checklist li {
+  padding: 6px 0 6px 8px;
+}
+.guide-issue {
+  margin-block: 28px;
+}
+.guide-issue h3 {
+  margin-bottom: 8px;
+}
 footer {
   padding-block: 28px;
   display: flex;
@@ -257,6 +317,9 @@ footer {
   .demo {
     grid-template-columns: 1fr;
     gap: 22px;
+  }
+  .downloads {
+    grid-template-columns: 1fr;
   }
   .kit {
     padding: 24px;

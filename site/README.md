@@ -15,6 +15,10 @@ The workflow creates `takeboard-media-kit.zip` from an explicit file list. Do no
 
 On a public release, update the product version and release evidence, review both languages and the media kit, and check installer links. Do not automatically equate main's version with a published installer. On a new demo, review provenance, visual disclosures and the manifest before updating product facts. Never remove simulated-output warnings without genuine generation evidence.
 
+`product.json` lists the six actual installer filenames for the public release; the homepage links directly to them, with installation guidance alongside. The builder rejects a filename from a different version. Validate each filename against GitHub Release assets before changing it.
+
+The English and Chinese practical guide under `guides/organize-comfyui-results/` is authored in `content.mjs`, linked from each homepage and included in the sitemap. Keep it a useful first-session tutorial rather than keyword-only duplicate pages. Its development screenshots remain explicitly labeled as simulated.
+
 The IndexNow key is a publicly served ownership-validation file, not an app credential. Its location limits submissions to `/Takeboard/`. A notification is not indexing or endorsement. Do not submit on every test or automate repetitive notifications. Domain-root robots rules cannot be configured from a project subdirectory.
 
 No analytics scripts, hidden AI instructions, claimed ratings, invented testimonials, or crawler-only alternate content. The builder includes the owner's public Google Search Console verification tag in both language pages. Keep this tag across deployments: Google periodically rechecks ownership. Publishing the tag does not complete account verification or prove indexing; the owner must finish verification in Search Console. Bing account verification is not configured.

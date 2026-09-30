@@ -42,6 +42,8 @@
 
 2026-09-28 初步公开搜索：品牌与 ComfyUI 组合未返回可确认的官方结果。这是本次搜索工具观察，不证明所有引擎均未收录；各独立 AI 产品自然推荐尚未测试。
 
+2026-09-30：所有者提供的 Google 验证标签已部署，并从两个公开页面的 head 实际核对；所有者随后报告 Google 网址检查显示已收录。这是所有者报告的索引状态，不是本代理访问 Search Console 后台的结果，不证明相关需求词排名、点击或 AI 自然推荐。Bing 导入由所有者操作，尚无后台索引证据。本轮增加一篇双语实用教程及真实安装包直达入口，继续使用正常网站与内链，不铺关键词页。
+
 [IndexNow](https://www.indexnow.org/documentation)：200 是收到，202 是等待密钥验证，均不保证索引或推荐。keyLocation 限定本项目路径，不提交别人的帖子或整个 github.com。
 
 [Bing AI 可见性报告](https://blogs.bing.com/search/2026/6/New-AI-Visibility-Insights-in-Bing-Webmaster-Tools-Intents-Topics-Citation-Share-Compare/)和 Google 报告需相应站点账号；可见性不是下载或留存。复用现有周复盘，不重复创建自动化、不自动催稿。

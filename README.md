@@ -11,6 +11,7 @@
   <a href="https://fourques.github.io/Takeboard/zh/">项目官网</a> ·
   <a href="docs/downloads.md"><strong>下载使用</strong></a> ·
   <a href="docs/demo-guide.md">看交互演示</a> ·
+  <a href="https://fourques.github.io/Takeboard/zh/guides/organize-comfyui-results/">首次使用指南</a> ·
   <a href="docs/creator-workstation.md">创作指南</a> ·
   <a href="docs/remote-access.md">连接远程设备</a> ·
   <a href="CONTRIBUTING.md">参与开发</a>

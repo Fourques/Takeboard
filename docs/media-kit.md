@@ -1,6 +1,6 @@
 # TakeBoard · 媒体与创作者素材包
 
-更新：2026-09-28。维护者提供的第一方介绍，不是独立测评。
+更新：2026-09-30。维护者提供的第一方介绍，不是独立测评。
 
 [项目源码](https://github.com/Fourques/Takeboard) · [中文下载](downloads.md) · [English downloads](downloads.en.md) · [首次试用](first-session.md)
 
@@ -83,6 +83,8 @@ English: Disclosure: I maintain TakeBoard, an open-source project canvas for Com
 发布前记录：应用版本、工作流来源/哈希、模型、节点版本、GPU、宽高/时长、步数、实际耗时、素材授权、完整观看结果的结论。输入未生效或画质不合格时如实说明，不用其他工具样片替换。当前真实案例待录制。
 
 ## 合作与反馈
+
+可引用的实用教程：[中文：整理参考素材与生成记录](https://fourques.github.io/Takeboard/zh/guides/organize-comfyui-results/) / [English: organize references and generation records](https://fourques.github.io/Takeboard/guides/organize-comfyui-results/)。包含无 GPU 的首次整理测试、输入能力核对、结果记录和重开项目检查；不是新的真实 GPU 案例。
 
 [合作讨论](https://github.com/Fourques/Takeboard/discussions/10) · [首次反馈](https://github.com/Fourques/Takeboard/issues/new?template=first_try.yml)
 
