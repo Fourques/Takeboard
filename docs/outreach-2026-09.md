@@ -152,3 +152,45 @@ English: TakeBoard is an open-source project canvas for ComfyUI creators. It kee
 后续人工检查：发布后第 2、7、14 天分别查看回复与阻断；有结果再发修复故事。同一渠道不重复顶帖。这里是执行建议，不代表已经创建自动跟进或排期。
 
 实际发布、待审核、未发布和账号阻塞分别记录在 [执行记录](promotion-log.md)。
+
+## 2026-09-30：ComfyUI Show and tell 定向介绍
+
+渠道：[ComfyUI 官方仓库的 Show and tell 分类](https://github.com/Comfy-Org/ComfyUI/discussions/categories/show-and-tell)，说明为“Show off something you've made”，已有第三方前端工具展示。已读取 CONTRIBUTING，并检索 TakeBoard 未找到重复 Discussion。只发布一篇，不向故障 Issue、Q&A 或他人求助帖插入宣传。发布不构成 Comfy Org 背书；实际链接与回读结果见执行记录。
+
+标题：TakeBoard: a project canvas for ComfyUI references, shots and generation records (open-source beta)
+
+<!-- show-tell-post:start -->
+Disclosure: I maintain **TakeBoard**, an independent Apache-2.0 desktop project. It is not an official Comfy Org product.
+
+The problem I am working on is what happens around generation: references in one folder, multiple takes in another, and uncertainty about which inputs and settings produced a result.
+
+TakeBoard adds a project canvas around your own ComfyUI:
+
+- Keep reference images, videos and shots in one project.
+- Connect assets to supported workflow inputs and review attempts with their saved generation records.
+- Use a local or trusted remote generation service while keeping the project in your chosen storage location.
+
+![TakeBoard development canvas; simulated interaction, not model output](https://raw.githubusercontent.com/Fourques/Takeboard/8a2f03543497731b2d141ef233609ef25f6d6a5f/docs/assets/takeboard-demo-cover.png)
+
+**Demo boundary:** this screenshot and the short video on the website are development-build UI demonstrations with simulated outputs, not a GPU benchmark or model-quality sample. Published installers remain **v0.2.0-beta.17** and can differ from newer main UI.
+
+The beta has macOS, Windows and Debian/Ubuntu installers. It does **not** bundle ComfyUI, models or Custom Nodes. Local project organization needs no account. Imported workflows may need dependencies, explicit input bindings and trust approval; arbitrary JSON is not guaranteed to execute. Apple notarization and commercial Windows signing are pending—do not disable system protections globally.
+
+If you want to try it, the [website has platform downloads](https://fourques.github.io/Takeboard/#download). Start with a disposable project and one non-private image; you can test organization and reopening without a GPU. For actual generation, bring a workflow that already runs in your ComfyUI and start small.
+
+[Practical first-session guide](https://fourques.github.io/Takeboard/guides/organize-comfyui-results/) · [Source](https://github.com/Fourques/Takeboard)
+
+I would appreciate feedback on **the first blocked step**, or whether the project makes it easier to find a take's reference and settings. [Optional first-try feedback](https://github.com/Fourques/Takeboard/issues/new?template=first_try.yml); public workflow links help, but please omit private media and credentials. No positive review or star is expected.
+<!-- show-tell-post:end -->
+
+### 下一份社交内容：用问题带动讨论（尚未发布）
+
+英文标题：How do you find the reference and settings behind an older ComfyUI take?
+
+英文正文：When you return to a project with several generated takes, what do you keep beyond the output file—input assets, prompts, seeds, workflow versions? I'm maintaining TakeBoard, an open-source project canvas for that context, and wrote a short first-session guide: https://fourques.github.io/Takeboard/guides/organize-comfyui-results/ . It includes a no-GPU organization trial; actual generation needs your own ComfyUI and compatible workflows. I'd like to learn which part of finding an old take is still awkward. Current beta downloads and simulation-labeled UI demo: https://fourques.github.io/Takeboard/ . Maintainer disclosure; not an independent review or a universal-workflow claim.
+
+中文标题：ComfyUI 生成很多版以后，你怎么找回当时的参考素材和参数？
+
+中文正文：我在维护开源项目 TakeBoard，想解决的不只是“再生成一次”，而是回到一个旧结果时，还能找到用了哪份素材、哪组参数。我整理了一份可以直接试的教程：https://fourques.github.io/Takeboard/zh/guides/organize-comfyui-results/ 。没有 GPU 也可以先测试项目整理与保存；真实生成仍需要自己的 ComfyUI 和可用工作流。想听听大家现在最难找回的是素材、提示词还是工作流版本。下载与标注模拟性质的交互 Demo：https://fourques.github.io/Takeboard/zh/ 。这是维护者自荐，项目仍为 Beta，不承诺任意工作流即导即用。
+
+只在确认允许自荐的相关社区使用，按社区规则选择分类，不复制到不相关讨论。Reddit、Bilibili 等发布账号仍未确认；这些文字不代表已发布，也不用于禁止 AI 撰写内容的 HN。

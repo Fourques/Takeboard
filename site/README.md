@@ -9,9 +9,12 @@ Run:
 ```sh
 node --test scripts/build-public-site.test.mjs
 node scripts/build-public-site.mjs
+node scripts/check-public-site-browser.mjs
 ```
 
 The workflow creates `takeboard-media-kit.zip` from an explicit file list. Do not zip the repository or a user's workspace. No application dependency installation is required for publishing.
+
+The optional browser check needs the project's Playwright dependency and Chromium. It checks the deployed public site in an isolated session, waits for styles and fonts before measuring mobile layout, verifies download/guide/language navigation, and writes screenshots to a temporary directory. It does not download installers, touch app data or run generation. It is not part of the lightweight Pages build.
 
 On a public release, update the product version and release evidence, review both languages and the media kit, and check installer links. Do not automatically equate main's version with a published installer. On a new demo, review provenance, visual disclosures and the manifest before updating product facts. Never remove simulated-output warnings without genuine generation evidence.
 

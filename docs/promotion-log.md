@@ -2,6 +2,23 @@
 
 本文件区分真实发布与准备工作，不把下载当用户，不把投稿当收录。
 
+## 2026-09-30：收录后的定向传播与试用入口优化
+
+- 所有者提供 Google HTML 验证标签，提交 `34b461b` 部署后实际读取中英文主页，确认标签各出现一次且位于 head；所有者随后报告 Google 网址检查显示已收录。此项记为**所有者报告**，不是本代理读取 Search Console 的后台结果，不推导需求词排名、自然搜索流量或 AI 推荐。所有者已操作 Bing 导入，尚无后台索引或点击证据。
+- 02:28:30 UTC 只读快照：5 Stars、0 Forks，beta.17 安装包下载事件共 2；滚动 14 天仓库浏览 44、独立访客 29，Discussion #10 无评论。Clone 不当用户数，滚动窗口不当渠道增量。
+- 替代界面目录 #107 收到 `iwr-redmond` 的正面回复：“TakeBoard seems like a worthy addition to the todo list.” 已检查 README 尚无 TakeBoard，记为积极考虑，不记正式收录。其余五处仍待审核，没有重复提交或催促。
+- 官网新增六个平台/架构的直接下载入口，逐一与 GitHub beta.17 Release 的真实 asset 名称和 URL 核对。不是重新发布安装包；保留公证/签名与 ComfyUI 自备说明。
+- 发布一篇[中文实用教程](https://fourques.github.io/Takeboard/zh/guides/organize-comfyui-results/)与[英文版](https://fourques.github.io/Takeboard/guides/organize-comfyui-results/)，内容围绕无 GPU 整理测试、输入能力核对、结果溯源与项目重开。引用现有模拟截图，未制作或宣称新的 GPU 样片。两页均有 canonical、对应语言链接、维护者署名和反馈入口；地图从两页扩为四页，没有批量关键词页。
+- 网站提交 `cf220d5`，[部署 36660703389](https://github.com/Fourques/Takeboard/actions/runs/36660703389)成功；四个 HTML 页面与地图公网返回 200，HTML 页面保留 Google 标签。中英文 README 和素材包说明加入教程入口。
+- 浏览器技能的内置浏览器导航连续超时，恢复后仍未成功；因此没有冒称该浏览器验收通过。使用独立 Chromium 检查已部署官网：桌面下载区和教程导航正常。首次手机测量在 CSS 未加载时看到 1488px，等待 CSS 与字体后为 390px / 390px、无越界元素；没有用 CSS 隐藏真实问题。新增可重复执行的 `check-public-site-browser.mjs`，显式等待样式与绘制，隔离用户会话，不下载安装包或运行模型。
+- 最终独立浏览器验收通过：1280×900 桌面下载与教程导航、390×844 手机教程和下载区、对应语言切换及反馈链接。三张截图已人工检查，无空白加载帧或横向溢出。全仓库 lint、六项站点/推广测试、`git diff --check` 通过；不将此记为应用安装包或模型验收。
+- 02:50:21 UTC 向 IndexNow 通知两个新教程 URL，提交前实际核对公开 keyLocation，返回 **200：已收到通知**。不是 Google 新教程已收录、Bing 排名提升或 AI 已引用。
+- 新渠道：[ComfyUI Show and tell #16666](https://github.com/Comfy-Org/ComfyUI/discussions/16666)。已读取分类说明、CONTRIBUTING，并搜索确认没有重复 TakeBoard Discussion；只在允许项目展示的分类发布。发布后经 API 回读，标题、正文与分类完全匹配，初始 0 评论。明确维护者关联、独立项目、公开 beta.17、模拟演示、自备 ComfyUI/模型以及工作流执行限制；**社区发布不是官方背书**。
+- 只读快照新增上述展示帖，供既有每周复盘观察回复；未建立重复自动化或自动发帖。现有六处投稿继续等待真实反馈。Reddit、Bilibili 等账号未确认，追加的问题型内容仍为可发布草稿，不记为已发布。
+- 发布后 02:49:19 UTC 快照确认新增展示帖已进入观察，0 评论；Stars 仍为 5、下载事件仍为 2，没有因此宣称新增用户或转化。
+
+下一轮判断顺序：展示帖是否有实质回复 → 是否有人完成或卡在首次试用 → 先修最早阻碍 → 再发布真实案例或修复故事。公开安装包仍是 beta.17；main 的后续改动、真实 GPU 案例和社交账号发布仍是独立事项，未将它们记成完成。
+
 ## 2026-09-29 AI 搜索入口与素材包落地
 
 - [AI 搜索策略](ai-discovery-strategy.md)基于 OpenAI、Google、Anthropic、Perplexity 官方文档和 GEO 研究，区分抓取、索引、引用、推荐和试用；不采用隐藏指令、虚构背书、批量近似网页或排名承诺。

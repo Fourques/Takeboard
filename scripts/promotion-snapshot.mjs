@@ -51,6 +51,10 @@ export function collectSnapshot() {
     "-f",
     'query={repository(owner:"Fourques",name:"Takeboard"){discussion(number:10){comments{totalCount}}}}',
   ]).data?.data?.repository?.discussion;
+  const showcase = readApi("graphql", [
+    "-f",
+    'query={repository(owner:"Comfy-Org",name:"ComfyUI"){discussion(number:16666){title url category{name} comments{totalCount}}}}',
+  ]).data?.data?.repository?.discussion;
   const directoryPullRequests = [
     "repos/thoxakihiko/awesome-ai-video/pulls/14",
     "repos/lucianosb/awesome-comfyui/pulls/26",
@@ -94,6 +98,16 @@ export function collectSnapshot() {
       : null,
     comfyDirectorySubmission: directory
       ? { state: directory.state, comments: directory.comments, url: directory.html_url }
+      : null,
+    comfyShowcaseDiscussion: showcase
+      ? {
+          title: showcase.title,
+          url: showcase.url,
+          category: showcase.category?.name ?? null,
+          comments: showcase.comments?.totalCount ?? null,
+          meaning:
+            "Maintainer-authored community post, not Comfy Org endorsement or verified user growth.",
+        }
       : null,
     limitations: [
       "null means unavailable, not zero.",
