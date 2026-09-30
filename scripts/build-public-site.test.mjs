@@ -10,6 +10,10 @@ test("public site is static, bilingual, evidence-linked and limited to public as
   t.after(() => rm(output, { recursive: true, force: true }));
   const { product, urls } = await buildSite(output);
   assert.equal(urls.length, 4);
+  const socialCard = await readFile(join(output, "media/takeboard-social.png"));
+  assert.equal(socialCard.subarray(1, 4).toString(), "PNG");
+  assert.equal(socialCard.readUInt32BE(16), 1200);
+  assert.equal(socialCard.readUInt32BE(20), 630);
   const allowed = [
     ".nojekyll",
     "490fbc8f5dd846d3b1e7c9a067c0efae.txt",
@@ -36,7 +40,7 @@ test("public site is static, bilingual, evidence-linked and limited to public as
         '<meta name="google-site-verification" content="p9K6gs2ufn_xckxL_UKIuCShYn1gYmtibd3vjU6xJNM">',
       ),
     );
-    assert.equal((html.match(/<h1>/g) ?? []).length, 1);
+    assert.equal((html.match(/<h1(?:\s[^>]*)?>/g) ?? []).length, 1);
     assert.equal((html.match(/<details>/g) ?? []).length, 6);
     assert.equal((html.match(/<script/g) ?? []).length, 1);
     assert.ok(!html.includes("noindex"));
@@ -45,8 +49,18 @@ test("public site is static, bilingual, evidence-linked and limited to public as
       html.match(/<script type="application\/ld\+json">(.*?)<\/script>/s)[1],
     );
     assert.equal(schema.name, "TakeBoard");
+    assert.equal(schema.url, url);
+    assert.equal(schema.inLanguage, lang);
+    assert.ok(!html.includes("undefined"));
+    for (const section of ["canvas", "workflows", "demo", "download", "media-kit"]) {
+      assert.equal((html.match(new RegExp(`id="${section}"`, "g")) ?? []).length, 1);
+    }
+    assert.ok(html.includes('class="site-header"'));
+    assert.ok(html.includes('class="site-footer"'));
     assert.equal(schema.softwareVersion, product.publicVersion);
     assert.equal(schema.aggregateRating, undefined);
+    assert.ok(head.includes('property="og:image:width" content="1200"'));
+    assert.ok(head.includes(`${product.website}media/takeboard-social.png`));
     assert.ok(html.includes(product.evidence.compatibility));
     assert.ok(html.includes("takeboard-media-kit.zip"));
     assert.ok(html.includes('href="#download"'));

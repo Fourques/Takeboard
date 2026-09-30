@@ -3,6 +3,7 @@ import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { content, guideContent } from "../site/content.mjs";
+import { footer, header, homeBody } from "../site/presentation.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const read = (path) => readFile(resolve(root, path), "utf8");
@@ -31,7 +32,7 @@ function head(c, product, url, alternatives, schema) {
 <meta name="google-site-verification" content="${h(googleSiteVerification)}">
 <title>${h(c.title)}</title><meta name="description" content="${h(c.description)}">
 <link rel="canonical" href="${url}"><link rel="alternate" hreflang="en" href="${alternatives.en}"><link rel="alternate" hreflang="zh-CN" href="${alternatives.zh}"><link rel="alternate" hreflang="x-default" href="${alternatives.en}">
-<meta property="og:type" content="${schema["@type"] === "TechArticle" ? "article" : "website"}"><meta property="og:title" content="${h(c.title)}"><meta property="og:description" content="${h(c.description)}"><meta property="og:url" content="${url}"><meta property="og:image" content="${product.website}media/takeboard-demo-cover.png"><meta property="og:image:alt" content="${h(c.caption ?? c.resultCaption)}"><meta name="twitter:card" content="summary_large_image">
+<meta property="og:site_name" content="TakeBoard"><meta property="og:locale" content="${c.lang === "zh-CN" ? "zh_CN" : "en_US"}"><meta property="og:type" content="${schema["@type"] === "TechArticle" ? "article" : "website"}"><meta property="og:title" content="${h(c.title)}"><meta property="og:description" content="${h(c.description)}"><meta property="og:url" content="${url}"><meta property="og:image" content="${product.website}media/takeboard-social.png"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="${c.lang === "zh-CN" ? "TakeBoard：基于 ComfyUI 的开源 AI 创作画布，原创品牌插画" : "TakeBoard: open-source AI creation canvas on ComfyUI, original brand illustration"}"><meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="${product.website}media/takeboard-icon.svg"><link rel="stylesheet" href="${product.website}style.css">
 <script type="application/ld+json">${JSON.stringify(schema).replace(/</g, "\\u003c")}</script>`;
 }
@@ -79,6 +80,14 @@ export async function buildSite(output = resolve(root, "dist/site")) {
     resolve(root, "apps/web/public/takeboard-icon.svg"),
     join(output, "media/takeboard-icon.svg"),
   );
+  await copyFile(
+    resolve(root, "site/assets/canvas-study.svg"),
+    join(output, "media/canvas-study.svg"),
+  );
+  await copyFile(
+    resolve(root, "site/assets/takeboard-social.png"),
+    join(output, "media/takeboard-social.png"),
+  );
   await copyFile(resolve(root, "site/style.css"), join(output, "style.css"));
   await copyFile(resolve(root, "site/product.json"), join(output, "product.json"));
   // Turn repository-relative links into absolute links so downloaded Markdown remains usable.
@@ -97,7 +106,8 @@ export async function buildSite(output = resolve(root, "dist/site")) {
       "@context": "https://schema.org",
       "@type": "SoftwareApplication",
       name: product.name,
-      url: base,
+      url,
+      inLanguage: c.lang,
       applicationCategory: "MultimediaApplication",
       operatingSystem: product.platforms.join(", "),
       softwareVersion: product.publicVersion,
@@ -110,16 +120,7 @@ export async function buildSite(output = resolve(root, "dist/site")) {
     const h = escapeHtml;
     const html = `<!doctype html>
 <html lang="${c.lang}"><head>${head(c, product, url, { en: base, zh: `${base}zh/` }, schema)}</head>
-<body><a class="skip" href="#main">${h(c.skip)}</a><header><a class="brand" href="${base}"><img src="${base}media/takeboard-icon.svg" alt="" width="34" height="34">TakeBoard</a><nav aria-label="${locale === "zh" ? "主导航" : "Main navigation"}"><a href="${product.repository}">GitHub</a><a href="${base}${c.switchPath}" lang="${locale === "zh" ? "en" : "zh-CN"}">${h(c.switchLabel)}</a></nav></header>
-<main id="main"><div class="hero"><p class="eyebrow">${h(c.eyebrow)}</p><h1>${h(c.heading).replace("，", "，<br>")}</h1><p class="lead">${h(c.intro)}</p><div class="actions"><a class="button primary" href="#download">${h(c.download)}</a><a class="button" href="#demo">${h(c.preview)}</a></div><p class="fine">${h(c.note)}</p><p class="fine">${h(c.releaseLabel)} · <a href="${product.evidence.release}">v${product.publicVersion}</a></p></div>
-<figure><img class="canvas" src="${base}media/takeboard-demo-cover.png" width="1440" height="900" alt="${h(c.caption)}"><figcaption>${h(c.previewNote)}</figcaption></figure>
-<section><h2>${h(c.featuresTitle)}</h2><div class="grid">${c.features.map(([label, title, text]) => `<article><p class="eyebrow">${h(label)}</p><h3>${h(title)}</h3><p>${h(text)}</p></article>`).join("")}</div></section>
-<section id="demo" class="demo"><div><h2>${h(c.preview)}</h2><p>${h(c.previewNote)}</p><a href="${product.evidence.demo}">${locale === "zh" ? "演示范围与来源" : "Demo scope and provenance"}</a></div><video controls playsinline preload="none" poster="${base}media/takeboard-demo-results.png" aria-label="${h(c.previewNote)}"><source src="${base}media/takeboard-product-walkthrough.webm" type="video/webm"><a href="${base}media/takeboard-product-walkthrough.webm">WebM</a></video></section>
-<section id="download"><h2>${h(c.downloadTitle)}</h2><p class="fine">v${h(product.publicVersion)} · ${h(c.downloadNote)}</p><div class="downloads">${product.installers.map((i) => `<a class="download-card" href="${installerUrl(product, i.file)}"><span>${h(locale === "zh" ? i.label.replace("Apple silicon", "Apple 芯片") : i.label)}</span><span class="download-format">${h(i.file.split(".").at(-1).toUpperCase())} <span aria-hidden="true">↓</span></span></a>`).join("")}</div><a href="${docs}${c.downloadDoc}">${h(c.installGuide)} →</a></section>
-<section><h2>${h(c.startTitle)}</h2><div class="paths">${c.starts.map(([title, text]) => `<article><h3>${h(title)}</h3><p>${h(text)}</p></article>`).join("")}</div><a href="${guideUrls[locale]}">${h(c.guideLink)} →</a></section>
-<section class="questions"><h2>${h(c.faqTitle)}</h2>${c.faq.map(([q, a]) => `<details><summary>${h(q)}</summary><p>${h(a)}</p></details>`).join("")}<a href="${product.evidence.compatibility}">${h(c.evidence)} →</a></section>
-<section id="media-kit" class="kit"><h2>${h(c.kitTitle)}</h2><p>${h(c.kitIntro)}</p><div class="actions"><a class="button primary" href="${base}takeboard-media-kit.zip" download>${h(c.kitDownload)}</a><a href="${docs}media-kit.md">${h(c.kitRead)}</a><a href="${base}product.json">${h(c.facts)}</a></div></section>
-<div class="feedback"><h2>${h(c.feedbackTitle)}</h2><a href="${product.repository}/issues/new?template=first_try.yml">${h(c.feedback)} →</a></div></main><footer><span>TakeBoard · Apache-2.0 · ${product.reviewedAt}</span><span>${h(c.footer)}</span></footer></body></html>`;
+${homeBody(c, product, guideUrls[locale], h, installerUrl)}</html>`;
     await writeFile(join(output, locale === "zh" ? "zh/index.html" : "index.html"), html);
   }
   for (const [locale, c] of Object.entries(guideContent)) {
@@ -141,14 +142,14 @@ export async function buildSite(output = resolve(root, "dist/site")) {
     };
     const html = `<!doctype html>
 <html lang="${c.lang}"><head>${head(c, product, url, guideUrls, schema)}</head><body>
-<a class="skip" href="#main">${h(c.skip)}</a><header><a class="brand" href="${home}"><img src="${base}media/takeboard-icon.svg" alt="" width="34" height="34">${h(c.back)}</a><nav aria-label="${locale === "zh" ? "主导航" : "Main navigation"}"><a href="${product.repository}">GitHub</a><a href="${guideUrls[locale === "en" ? "zh" : "en"]}" lang="${locale === "en" ? "zh-CN" : "en"}">${h(c.switchLabel)}</a></nav></header>
+<a class="skip" href="#main">${h(c.skip)}</a>${header(c, product, home, guideUrls[locale === "en" ? "zh" : "en"], h)}
 <main id="main" class="guide"><article><div class="hero"><p class="eyebrow">TAKEBOARD / ${locale === "zh" ? "使用指南" : "PRACTICAL GUIDE"}</p><h1>${h(c.heading)}</h1><p class="lead">${h(c.intro)}</p><p class="fine">${h(c.scope)}</p><div class="actions"><a class="button primary" href="${home}#download">${h(c.download)}</a><a href="${docs}${content[locale].downloadDoc}">${h(c.install)}</a></div></div>
 ${c.sections.map(([number, title, text]) => `<section class="guide-step"><p class="eyebrow">${number}</p><h2>${h(title)}</h2><p>${h(text)}</p></section>`).join("")}
 <figure class="guide-figure"><img class="canvas" src="${base}media/takeboard-demo-results.png" width="1440" height="900" alt="${h(c.resultCaption)}"><figcaption>${h(c.resultCaption)}</figcaption></figure>
 <section><h2>${h(c.checklistTitle)}</h2><ul class="checklist">${c.checklist.map((item) => `<li>${h(item)}</li>`).join("")}</ul><a href="${docs}first-session.md${locale === "en" ? "#english" : ""}">${h(c.sources)} →</a></section>
 <section><h2>${h(c.troubleshootingTitle)}</h2>${c.troubleshooting.map(([title, text]) => `<div class="guide-issue"><h3>${h(title)}</h3><p>${h(text)}</p></div>`).join("")}</section>
 <section class="feedback"><h2>${h(c.feedbackTitle)}</h2><p>${h(c.feedbackText)}</p><a class="button primary" href="${product.repository}/issues/new?template=first_try.yml">${h(c.feedback)}</a></section></article></main>
-<footer><span>TakeBoard · ${h(product.reviewedAt)}</span><span>${h(c.footer)}</span></footer></body></html>`;
+${footer(c, product, home, url, h)}</body></html>`;
     await writeFile(join(directory, "index.html"), html);
   }
   const urls = [base, `${base}zh/`, guideUrls.en, guideUrls.zh];

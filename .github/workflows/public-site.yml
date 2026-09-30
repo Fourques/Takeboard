@@ -42,7 +42,7 @@ jobs:
       - run: node scripts/build-public-site.mjs
       - name: Package public media only
         working-directory: dist/site/media
-        run: zip -X ../takeboard-media-kit.zip README.md LICENSE product.json takeboard-icon.svg takeboard-demo-cover.png takeboard-demo-results.png takeboard-product-walkthrough.webm takeboard-demo-manifest.json
+        run: zip -X ../takeboard-media-kit.zip README.md LICENSE product.json takeboard-icon.svg canvas-study.svg takeboard-social.png takeboard-demo-cover.png takeboard-demo-results.png takeboard-product-walkthrough.webm takeboard-demo-manifest.json
       - run: unzip -t dist/site/takeboard-media-kit.zip
       - uses: actions/upload-pages-artifact@v5
         with:
