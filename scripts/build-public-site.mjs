@@ -6,6 +6,8 @@ import { content } from "../site/content.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const read = (path) => readFile(resolve(root, path), "utf8");
+// Public ownership tag supplied by the site owner; keep it across deployments.
+const googleSiteVerification = "p9K6gs2ufn_xckxL_UKIuCShYn1gYmtibd3vjU6xJNM";
 export const escapeHtml = (value) =>
   String(value).replace(
     /[&<>"']/g,
@@ -82,6 +84,7 @@ export async function buildSite(output = resolve(root, "dist/site")) {
     const h = escapeHtml;
     const html = `<!doctype html>
 <html lang="${c.lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="google-site-verification" content="${h(googleSiteVerification)}">
 <title>${h(c.title)}</title><meta name="description" content="${h(c.description)}">
 <link rel="canonical" href="${url}"><link rel="alternate" hreflang="en" href="${base}"><link rel="alternate" hreflang="zh-CN" href="${base}zh/"><link rel="alternate" hreflang="x-default" href="${base}">
 <meta property="og:type" content="website"><meta property="og:title" content="${h(c.title)}"><meta property="og:description" content="${h(c.description)}"><meta property="og:url" content="${url}"><meta property="og:image" content="${base}media/takeboard-demo-cover.png"><meta property="og:image:alt" content="${h(c.caption)}"><meta name="twitter:card" content="summary_large_image">

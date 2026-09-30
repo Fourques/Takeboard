@@ -17,4 +17,4 @@ On a public release, update the product version and release evidence, review bot
 
 The IndexNow key is a publicly served ownership-validation file, not an app credential. Its location limits submissions to `/Takeboard/`. A notification is not indexing or endorsement. Do not submit on every test or automate repetitive notifications. Domain-root robots rules cannot be configured from a project subdirectory.
 
-No analytics scripts, hidden AI instructions, claimed ratings, invented testimonials, or crawler-only alternate content. Search Console / Bing account verification requires the owner's account; it is not configured by this build.
+No analytics scripts, hidden AI instructions, claimed ratings, invented testimonials, or crawler-only alternate content. The builder includes the owner's public Google Search Console verification tag in both language pages. Keep this tag across deployments: Google periodically rechecks ownership. Publishing the tag does not complete account verification or prove indexing; the owner must finish verification in Search Console. Bing account verification is not configured.

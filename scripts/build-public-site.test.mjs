@@ -28,6 +28,9 @@ test("public site is static, bilingual, evidence-linked and limited to public as
     const html = await readFile(join(output, file), "utf8");
     assert.ok(html.includes(`<html lang="${lang}">`));
     assert.ok(html.includes(`<link rel="canonical" href="${url}">`));
+    const head = html.match(/<head>(.*?)<\/head>/s)[1];
+    assert.equal((html.match(/name="google-site-verification"/g) ?? []).length, 1);
+    assert.ok(head.includes('<meta name="google-site-verification" content="p9K6gs2ufn_xckxL_UKIuCShYn1gYmtibd3vjU6xJNM">'));
     assert.equal((html.match(/<h1>/g) ?? []).length, 1);
     assert.equal((html.match(/<details>/g) ?? []).length, 6);
     assert.equal((html.match(/<script/g) ?? []).length, 1);
