@@ -6,10 +6,14 @@ before moving production work to a newer minor version.
 
 ## Unreleased
 
+## 0.2.0-beta.18 — 2026-09-30
+
+- Fix known production dependency vulnerabilities in brace-expansion (5.0.12) and both fast-uri dependency branches (3.1.8 and 4.1.5), without changing their major versions.
+- Add dependency security regression tests and run the security audit on dependency-related pull requests and workspace configuration changes.
 - Retry a stale ComfyUI TCP connection once for read-only health checks; do not replay generation submissions.
 - Return promptly after cancellation is confirmed; defer GPU cleanup when another task still uses the service.
 - Fix simulated-result rendering in the example-project inspector.
-- Update SQLite runtime packaging and Linux native acceptance checks. These changes are not in the beta.17 installers.
+- Update SQLite runtime packaging and Linux native acceptance checks.
 - Publish the bilingual website, direct installer links, interaction demo and first-session guides. Clarify generation capabilities, workflow requirements and the difference between release and development evidence.
 
 ## 0.2.0-beta.17 — 2026-09-16

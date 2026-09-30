@@ -15,5 +15,14 @@ sharedWorkspaceLockfile: true
 
 strictPeerDependencies: true
 
+# Security floors for Portal's transitive dependencies. Keep fast-uri's major
+# versions separate: Ajv uses 3.x; Fastify's compilers also use 4.x.
+# GHSA-q2hr-2g5m-vwhr, GHSA-qhr7-859c-m2p7, GHSA-6j4f-fj2g-mc7p
+# GHSA-hrr3-gc8f-f4qj, GHSA-jvvf-x445-j334
+overrides:
+  "brace-expansion@>=4.0.0 <5.0.12": "5.0.12"
+  "fast-uri@>=3.0.0 <3.1.8": "3.1.8"
+  "fast-uri@>=4.0.0 <4.1.5": "4.1.5"
+
 syncInjectedDepsAfterScripts:
   - build

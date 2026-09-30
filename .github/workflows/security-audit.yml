@@ -4,13 +4,29 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "17 3 * * *"
+  pull_request:
+    paths:
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".npmrc"
+      - "apps/*/package.json"
+      - "packages/*/package.json"
+      - "patches/**"
+      - "apps/desktop/src-tauri/Cargo.lock"
+      - "security/rust-advisory-exceptions.json"
+      - "scripts/check-linux-desktop-advisory.mjs"
+      - ".github/workflows/security-audit.yml"
   push:
     branches: [main]
     paths:
       - "package.json"
       - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".npmrc"
       - "apps/*/package.json"
       - "packages/*/package.json"
+      - "patches/**"
       - "apps/desktop/src-tauri/Cargo.lock"
       - "security/rust-advisory-exceptions.json"
       - "scripts/check-linux-desktop-advisory.mjs"
