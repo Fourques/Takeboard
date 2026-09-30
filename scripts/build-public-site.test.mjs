@@ -5,6 +5,23 @@ import { join } from "node:path";
 import test from "node:test";
 import { buildSite, escapeHtml, installerUrl } from "./build-public-site.mjs";
 
+test("website palette stays aligned with the app's default Chroma theme", async () => {
+  const app = await readFile(new URL("../apps/web/src/styles.css", import.meta.url), "utf8");
+  const site = await readFile(new URL("../site/style.css", import.meta.url), "utf8");
+  const chroma = app.match(/html\[data-theme="chroma"\]\s*\{([^}]+)\}/)[1];
+  const root = site.match(/:root\s*\{([^}]+)\}/)[1];
+  const token = (css, name) => css.match(new RegExp(`${name}:\\s*([^;]+);`))[1].trim();
+  for (const [web, desktop] of [
+    ["--paper", "--surface-1"],
+    ["--surface", "--surface-2"],
+    ["--ink", "--text-1"],
+    ["--muted", "--text-2"],
+    ["--line", "--line"],
+    ["--accent-ink", "--accent-strong"],
+  ])
+    assert.equal(token(root, web), token(chroma, desktop), web);
+});
+
 test("public site is static, bilingual, evidence-linked and limited to public assets", async (t) => {
   const output = await mkdtemp(join(tmpdir(), "takeboard-public-site-"));
   t.after(() => rm(output, { recursive: true, force: true }));
@@ -23,6 +40,7 @@ test("public site is static, bilingual, evidence-linked and limited to public as
     "product.json",
     "sitemap.xml",
     "style.css",
+    "director-view.mjs",
     "zh",
   ];
   assert.deepEqual((await readdir(output)).sort(), allowed.sort());
@@ -42,7 +60,11 @@ test("public site is static, bilingual, evidence-linked and limited to public as
     );
     assert.equal((html.match(/<h1(?:\s[^>]*)?>/g) ?? []).length, 1);
     assert.equal((html.match(/<details>/g) ?? []).length, 6);
-    assert.equal((html.match(/<script/g) ?? []).length, 1);
+    assert.equal((html.match(/<script/g) ?? []).length, 2);
+    assert.ok(html.includes(`type="module" src="${product.website}director-view.mjs"`));
+    assert.ok(html.includes("data-director-view"));
+    assert.ok(!html.includes("CANVAS STUDY"));
+    assert.ok(!html.includes("canvas-study.svg"));
     assert.ok(!html.includes("noindex"));
     assert.ok(!html.includes("autoplay"));
     const schema = JSON.parse(

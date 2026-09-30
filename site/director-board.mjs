@@ -1,0 +1,7 @@
+// A shared, progressively enhanced product object for the homepage and social card.
+// Images are existing disclosed demo captures, not fabricated generation output.
+export function directorBoard(media, labels, h) {
+  const face = (side, src, alt) =>
+    `<div class="slate-face slate-${side}" aria-hidden="${side === "back"}"><div class="slate-clapper" aria-hidden="true"><i></i></div><div class="slate-body"><div class="slate-brand"><img src="${h(media.logo)}" width="24" height="24" alt="" draggable="false"><span>TakeBoard</span></div><img class="slate-capture" src="${h(src)}" width="1440" height="900" alt="${h(alt)}" draggable="false" ${side === "front" ? 'fetchpriority="high"' : 'loading="lazy"'}></div></div>`;
+  return `<div class="director-view" data-director-view><div class="director-stage" role="group" aria-label="${h(labels.label)}"><div class="director-board">${face("front", media.front, labels.front)}${face("back", media.back, labels.back)}<div class="slate-edge" aria-hidden="true"></div></div></div><span class="sr-only" id="director-help">${h(labels.help)}</span><button class="director-flip" type="button" aria-label="${h(labels.flip)}" title="${h(labels.flip)}" hidden><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 8a9 9 0 1 0 1 7M20 3v5h-5"/><path d="m10 8 5 4-5 4"/></svg></button></div>`;
+}

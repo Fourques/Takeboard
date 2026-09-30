@@ -40,10 +40,11 @@ async function ready(page) {
   assert.ok(size.content <= size.viewport, `Horizontal overflow: ${JSON.stringify(size)}`);
 }
 
-async function newPage(width, height) {
+async function newPage(width, height, options = {}) {
   const context = await browser.newContext({
     viewport: { width, height },
     reducedMotion: "reduce",
+    ...options,
   });
   const page = await context.newPage();
   page.setDefaultTimeout(15_000);
@@ -61,6 +62,7 @@ async function newPage(width, height) {
         ".png": "image/png",
         ".svg": "image/svg+xml",
         ".webm": "video/webm",
+        ".mjs": "text/javascript",
       };
       await route.fulfill({
         body: await readFile(file),
@@ -69,6 +71,49 @@ async function newPage(width, height) {
     });
   }
   return page;
+}
+
+async function checkDirector(page, label) {
+  const stage = page.locator(".director-stage");
+  const board = page.locator(".director-board");
+  const front = page.locator(".slate-front");
+  const back = page.locator(".slate-back");
+  await page.locator(".director-flip").waitFor({ state: "visible" });
+  const angle = () =>
+    board.evaluate((el) => Number.parseFloat(el.style.getPropertyValue("--turn")));
+  await stage.focus();
+  await stage.press("Home");
+  assert.equal(await angle(), 0);
+  await stage.press("Enter");
+  assert.equal(await back.getAttribute("aria-hidden"), "false");
+  assert.equal(await front.getAttribute("aria-hidden"), "true");
+  await page.screenshot({ path: join(output, `${label}-back.png`) });
+  await page.locator(".director-flip").click();
+  assert.equal(await front.getAttribute("aria-hidden"), "false");
+  await stage.press("Home");
+  const box = await stage.boundingBox();
+  for (let i = 0; i < 2; i++) {
+    await page.mouse.move(box.x + box.width * 0.15, box.y + box.height * 0.45);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.75, box.y + box.height * 0.45, { steps: 14 });
+    await page.mouse.up();
+  }
+  assert.ok((await angle()) > 360, "Dragging should rotate through a full turn, not just tilt");
+  assert.equal(await page.locator(".is-dragging").count(), 0);
+  await stage.press("Escape");
+  assert.equal(await angle(), 0);
+  await stage.press("ArrowRight");
+  assert.equal(await angle(), 30);
+  // Keyboard modifiers must not steal browser shortcuts.
+  await stage.press("Alt+ArrowRight");
+  assert.equal(await angle(), 30);
+  await stage.press("Escape");
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  const before = await page.evaluate(() => scrollY);
+  await page.mouse.wheel(0, 400);
+  await page.waitForFunction((y) => scrollY > y, before);
+  assert.equal(await angle(), 0, "Wheel scroll must never rotate the board");
+  await ready(page);
 }
 
 try {
@@ -95,6 +140,7 @@ try {
       if (width === 1440 || width === 390) {
         await page.screenshot({ path: join(output, `${label}-hero.png`) });
         await page.screenshot({ path: join(output, `${label}-full.png`), fullPage: true });
+        await checkDirector(page, label);
       }
       await page.locator('.hero a[href="#download"]').click();
       assert.equal(new URL(page.url()).hash, "#download");
@@ -149,6 +195,47 @@ try {
       await page.context().close();
     }
   }
+  const touch = await newPage(390, 844, { hasTouch: true, isMobile: true });
+  await touch.goto(`${base}zh/`, { waitUntil: "load" });
+  await touch.locator(".director-stage").scrollIntoViewIfNeeded();
+  const area = await touch.locator(".director-stage").boundingBox();
+  const cdp = await touch.context().newCDPSession(touch);
+  const swipe = async (dx, dy) => {
+    const x = area.x + area.width * 0.25;
+    const y = area.y + area.height * 0.65;
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
+    for (let step = 1; step <= 12; step++) {
+      await cdp.send("Input.dispatchTouchEvent", {
+        type: "touchMove",
+        touchPoints: [{ x: x + (dx * step) / 12, y: y + (dy * step) / 12 }],
+      });
+    }
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  };
+  const touchAngle = () =>
+    touch
+      .locator(".director-board")
+      .evaluate((el) => Number.parseFloat(el.style.getPropertyValue("--turn")));
+  await swipe(150, 0);
+  assert.ok((await touchAngle()) > 100, `Touch rotation: ${await touchAngle()}`);
+  const heldAngle = await touchAngle();
+  const startScroll = await touch.evaluate(() => scrollY);
+  await swipe(0, -150);
+  await touch.waitForFunction((y) => scrollY > y, startScroll);
+  assert.equal(await touchAngle(), heldAngle);
+  assert.equal(await touch.locator(".is-dragging").count(), 0);
+  await touch.context().close();
+  console.log("Touch: horizontal rotation and native vertical scrolling passed");
+
+  const staticPage = await newPage(390, 844, { javaScriptEnabled: false });
+  await staticPage.goto(base, { waitUntil: "load" });
+  assert.equal(await staticPage.locator(".director-flip").isVisible(), false);
+  assert.equal(await staticPage.locator(".slate-front .slate-capture").isVisible(), true);
+  await staticPage.locator('.hero a[href="#download"]').click();
+  assert.equal(new URL(staticPage.url()).hash, "#download");
+  assert.equal(await staticPage.locator(".download-card").count(), 6);
+  await staticPage.context().close();
+  console.log("No JavaScript: product image, navigation and downloads remain usable");
   assert.deepEqual(errors, []);
   console.log(`Screenshots: ${output}`);
 } finally {

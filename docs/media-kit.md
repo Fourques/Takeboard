@@ -38,7 +38,7 @@ Desktop beta for macOS, Windows and Debian/Ubuntu. Local use needs no account. C
 
 品牌主张可使用「让想法，有新的画面。」；英文「Give your ideas room to unfold.」。标题旁保留产品类别「基于 ComfyUI 的开源 AI 创作画布」，不要只留下抽象口号。功能介绍继续围绕模型、素材、提示词与图片 / 视频生成的完整创作过程。
 
-官网新增[品牌分享图](https://fourques.github.io/Takeboard/media/takeboard-social.png)（1200×630）与[原创画布插画](https://fourques.github.io/Takeboard/media/canvas-study.svg)，已收进[素材包](https://fourques.github.io/Takeboard/takeboard-media-kit.zip)。这两项是品牌设计，不是应用截图或生成样片；不要将其作为模型画质证据。图标、插画使用仓库的 Apache-2.0 许可，保留随包许可说明；使用不表示项目背书。
+官网的[分享图](https://fourques.github.io/Takeboard/media/takeboard-social.png)（1200×630）已收进[素材包](https://fourques.github.io/Takeboard/takeboard-media-kit.zip)。它沿用应用“柔彩”配色和导演板形象，嵌入下方列出的开发版截图，保留模拟输出标记，不作为模型画质证据。原环形插画已撤下。图标及分享图使用仓库的 Apache-2.0 许可，保留随包许可说明；使用不表示项目背书。
 
 | 素材 | 内容 |
 | --- | --- |

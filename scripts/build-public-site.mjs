@@ -32,7 +32,7 @@ function head(c, product, url, alternatives, schema) {
 <meta name="google-site-verification" content="${h(googleSiteVerification)}">
 <title>${h(c.title)}</title><meta name="description" content="${h(c.description)}">
 <link rel="canonical" href="${url}"><link rel="alternate" hreflang="en" href="${alternatives.en}"><link rel="alternate" hreflang="zh-CN" href="${alternatives.zh}"><link rel="alternate" hreflang="x-default" href="${alternatives.en}">
-<meta property="og:site_name" content="TakeBoard"><meta property="og:locale" content="${c.lang === "zh-CN" ? "zh_CN" : "en_US"}"><meta property="og:type" content="${schema["@type"] === "TechArticle" ? "article" : "website"}"><meta property="og:title" content="${h(c.title)}"><meta property="og:description" content="${h(c.description)}"><meta property="og:url" content="${url}"><meta property="og:image" content="${product.website}media/takeboard-social.png"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="${c.lang === "zh-CN" ? "TakeBoard：基于 ComfyUI 的开源 AI 创作画布，原创品牌插画" : "TakeBoard: open-source AI creation canvas on ComfyUI, original brand illustration"}"><meta name="twitter:card" content="summary_large_image">
+<meta property="og:site_name" content="TakeBoard"><meta property="og:locale" content="${c.lang === "zh-CN" ? "zh_CN" : "en_US"}"><meta property="og:type" content="${schema["@type"] === "TechArticle" ? "article" : "website"}"><meta property="og:title" content="${h(c.title)}"><meta property="og:description" content="${h(c.description)}"><meta property="og:url" content="${url}"><meta property="og:image" content="${product.website}media/takeboard-social.png"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="${c.lang === "zh-CN" ? "TakeBoard：基于 ComfyUI 的开源 AI 创作画布，开发版模拟交互预览" : "TakeBoard: open-source AI creation canvas on ComfyUI, simulated development preview"}"><meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="${product.website}media/takeboard-icon.svg"><link rel="stylesheet" href="${product.website}style.css">
 <script type="application/ld+json">${JSON.stringify(schema).replace(/</g, "\\u003c")}</script>`;
 }
@@ -80,10 +80,7 @@ export async function buildSite(output = resolve(root, "dist/site")) {
     resolve(root, "apps/web/public/takeboard-icon.svg"),
     join(output, "media/takeboard-icon.svg"),
   );
-  await copyFile(
-    resolve(root, "site/assets/canvas-study.svg"),
-    join(output, "media/canvas-study.svg"),
-  );
+  await copyFile(resolve(root, "site/director-view.mjs"), join(output, "director-view.mjs"));
   await copyFile(
     resolve(root, "site/assets/takeboard-social.png"),
     join(output, "media/takeboard-social.png"),
@@ -120,7 +117,7 @@ export async function buildSite(output = resolve(root, "dist/site")) {
     const h = escapeHtml;
     const html = `<!doctype html>
 <html lang="${c.lang}"><head>${head(c, product, url, { en: base, zh: `${base}zh/` }, schema)}</head>
-${homeBody(c, product, guideUrls[locale], h, installerUrl)}</html>`;
+${homeBody(c, product, guideUrls[locale], h, installerUrl).replace("</body>", `<script type="module" src="${base}director-view.mjs"></script></body>`)}</html>`;
     await writeFile(join(output, locale === "zh" ? "zh/index.html" : "index.html"), html);
   }
   for (const [locale, c] of Object.entries(guideContent)) {
