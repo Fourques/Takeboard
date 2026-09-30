@@ -8,7 +8,8 @@ RUN apt-get update \
   && corepack enable \
   && corepack prepare pnpm@10.15.1 --activate
 RUN mkdir -p apps/portal packages/identity packages/portal-protocol
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+COPY patches/ patches/
 COPY apps/portal/package.json apps/portal/package.json
 COPY packages/identity/package.json packages/identity/package.json
 COPY packages/portal-protocol/package.json packages/portal-protocol/package.json
