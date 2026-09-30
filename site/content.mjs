@@ -16,7 +16,7 @@ export const content = {
     eyebrow: "OPEN SOURCE · LOCAL-FIRST · COMFYUI",
     heading: "One canvas for AI image and video creation.",
     intro:
-      "Choose models, connect media, write prompts and generate. Explore ideas side by side, then use a result in your next creation. TakeBoard brings your ComfyUI workflows into one visual workspace.",
+      "Choose models, connect media and generate through your own ComfyUI. Use the results in your next step, or explore several ideas side by side.",
     note: "Open-source desktop app. Local use needs no account. Generation requires your own ComfyUI, models and nodes.",
     preview: "Explore the canvas",
     previewNote:
@@ -111,7 +111,7 @@ export const content = {
     eyebrow: "开源 · 本地优先 · COMFYUI",
     heading: "把 AI 图片与视频创作，放进同一张画布。",
     intro:
-      "选择模型、连接素材、编写提示词，然后生成。并排探索不同想法，用结果继续下一步创作。TakeBoard 将你的 ComfyUI 工作流带入统一的可视化工作区。",
+      "选择模型、连接素材、编写提示词，生成图片与视频。用结果继续创作，在同一张画布中探索不同方向。",
     note: "开源桌面应用，本机使用无需注册。生成需要自备 ComfyUI、模型与节点。",
     preview: "看看画布如何工作",
     previewNote: "开发版交互演示 · 模拟输出 · 未使用 GPU。公开安装包界面可能不同。",

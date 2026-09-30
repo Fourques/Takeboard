@@ -10,7 +10,9 @@
 - 核对 beta.17 标签与 main 差异，补齐版本记录，删除旧费用/调度表单、终端隧道等失效指引。英文下载前说明应用界面目前主要为中文。
 - 原位编辑并回读核对：[ComfyUI 展示帖](https://github.com/Comfy-Org/ComfyUI/discussions/16666)、[项目公告](https://github.com/Fourques/Takeboard/discussions/10)、[周刊投稿](https://github.com/ruanyf/weekly/issues/11963)、[HelloGitHub](https://github.com/521xueweihan/HelloGitHub/issues/3804)、[GitHubDaily](https://github.com/GitHubDaily/GitHubDaily/issues/1125)、[UI 目录建议](https://github.com/light-and-ray/awesome-alternative-uis-for-comfyui/issues/107)。没有新帖、顶帖或修改第三方回复。
 - 同步仓库 About、主题与 beta.17 Release 的双语介绍和下载入口；原发布验证记录保留在折叠区，未替换任何安装包。两个已有目录 PR 的条目无需改动。
-- 本地检查：lint 通过；既有官网/统计测试 6 项通过；静态站构建通过；162 个修改文档中的相对链接有效。公网部署与响应式验收结果在完成后补记。
+- 本地检查：lint 通过；既有官网/统计测试 6 项通过；静态站构建通过；首轮 162 个修改文档中的相对链接有效。
+- 主改动已提交 `37aa9b1`，对应[官网部署](https://github.com/Fourques/Takeboard/actions/runs/36677589047)成功。六个 Release 安装附件均为 uploaded，文件名与官网链接一致。
+- 隔离浏览器验证 1440、1280、390、320 像素页面：中英首屏、六个下载入口、入门导航与四步内容通过，无横向溢出。人工查看截图后修正中文标题断词和 320px 语言切换换行；未将模拟演示改成真实生成证明。
 
 详细问题、实现依据与修改理由见[Review 报告](product-expression-review-2026-09-30.md)。真实生成 Demo 仍待制作，本轮没有把模拟素材改称真实样片，也没有声称修改文案已经提高转化率。
 

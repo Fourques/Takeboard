@@ -80,6 +80,7 @@ nav {
 }
 nav a {
   text-decoration: none;
+  white-space: nowrap;
 }
 .hero {
   padding: 88px 0 46px;
@@ -337,5 +338,11 @@ footer {
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
+  }
+}
+@media (max-width: 380px) {
+  .brand {
+    font-size: 18px;
+    gap: 8px;
   }
 }
