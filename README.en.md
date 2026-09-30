@@ -2,110 +2,59 @@
 
 <p align="right">English · <a href="README.md">简体中文</a></p>
 
-<p align="center">
-  <strong>From a reference image to a sequence of shots.</strong><br />
-  An open-source, local-first AI filmmaking workspace for ComfyUI creators.
-</p>
+**One canvas for AI image and video creation.**
 
-<p align="center">
-  <a href="https://fourques.github.io/Takeboard/">Website</a> ·
-  <a href="docs/downloads.en.md"><strong>Download</strong></a> ·
-  <a href="docs/demo-guide.md#english">Watch the interaction demo</a> ·
-  <a href="https://fourques.github.io/Takeboard/guides/organize-comfyui-results/">First-session guide</a> ·
-  <a href="docs/README.md">Documentation</a> ·
-  <a href="CONTRIBUTING.md">Contribute</a>
-</p>
+TakeBoard is an open-source AI creation canvas built on ComfyUI. Choose models, connect media, write prompts and generate images or videos in one workspace. Use a result in your next generation, or explore several directions side by side. The desktop app connects to your own local or remote ComfyUI.
 
-<p align="center">
-  <a href="https://github.com/Fourques/Takeboard/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Fourques/Takeboard/actions/workflows/ci.yml/badge.svg" /></a>
-  <a href="LICENSE"><img alt="Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-315EFB.svg" /></a>
-  <a href="https://github.com/Fourques/Takeboard/releases"><img alt="Public preview release" src="https://img.shields.io/github/v/release/Fourques/Takeboard?include_prereleases&label=public%20preview&color=D99A46" /></a>
-</p>
+[**Download beta**](docs/downloads.en.md) · [Interaction demo](docs/demo-guide.md#english) · [Get started](docs/first-session.md#english) · [Website](https://fourques.github.io/Takeboard/)
 
-![TakeBoard project canvas: sources, shots and connections; simulated interaction, not model output](docs/assets/takeboard-demo-cover.png)
+[![CI](https://github.com/Fourques/Takeboard/actions/workflows/ci.yml/badge.svg)](https://github.com/Fourques/Takeboard/actions/workflows/ci.yml) [![Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-315EFB.svg)](LICENSE)
 
-Recorded from development main. [Demo scope and provenance](docs/demo-guide.md#english); published installers remain beta.17.
+![TakeBoard references, shots and input connections; simulated interaction example](docs/assets/takeboard-demo-cover.png)
 
-Keep reference media, generated shots and workflows on one canvas. Connect inputs, adjust parameters,
-compare results and keep the takes you want. TakeBoard complements ComfyUI's node editor with a
-project workspace and traceable generation history.
+*Development-build UI with simulated results, not a model-output sample. [Demo scope and source](docs/demo-guide.md#english).*
 
-**For:** creators who already use ComfyUI and need to organize multiple shots and attempts. **Not:** a hosted generation service or an installer that includes models and configures every workflow.
+## Why use TakeBoard?
 
-## Download and start
+Turn configured ComfyUI workflows into tools you can use on a creative canvas. Work on a single image or multiple video shots without returning to the underlying node graph for every attempt.
 
-**You do not need to read the source or install developer tools to use a packaged build.**
+- **Create across connected steps.** Add reference images or videos, create generation nodes, connect inputs, adjust prompts and parameters, and view results. Keep multiple attempts or connect a result to another node to continue creating.
+- **Choose models by task.** Text-to-image, image editing, text-to-video, image-to-video and reference generation expose the inputs and controls supported by the available workflow. Add recommended templates or import your own; open ComfyUI when you need to edit the graph.
+- **Open source. Your own setup.** Run ComfyUI locally or on a remote GPU, and choose where projects live. A local project can collect outputs from remote generation. The source is open and no official cloud subscription is required.
 
-Follow the [download guide](docs/downloads.en.md) for your platform. Native desktop installers
-include Node.js; no separate Node.js, pnpm or Rust installation is needed.
-**ComfyUI, models and Custom Nodes are not bundled.** You can organize projects and media without
-ComfyUI; generation requires a working local or remote ComfyUI environment.
+For creators who want a visual image and video workspace while keeping control over their ComfyUI workflows. An existing ComfyUI setup is the quickest way to start generating; you can explore the canvas and media tools before connecting one.
 
-> [!IMPORTANT]
-> Current cross-platform preview: [`v0.2.0-beta.17`](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.17), with x64 and ARM64 installers for macOS, Windows and Debian/Ubuntu.
-> Portable downloads are retired. This README describes current `main`; see the changelog for later changes.
-> Previews are not Apple-notarized or commercially Windows-code-signed.
+## Get started
 
-1. **Open the workspace:** install TakeBoard and launch it from Applications or Start.
-2. **Create a project:** name it and add your images, videos and reference media.
-3. **Connect ComfyUI:** check its status, choose an available workflow, connect inputs and generate.
+The current public release is [**v0.2.0-beta.17**](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.17). Installers are available for macOS, Windows and Debian/Ubuntu on x64 and ARM64. They include the app runtime; no development tools are needed.
 
-Local use needs no registration. Login is optional, with separate
-authorization for device projects and account projects. Older releases may require login.
-Projects default to `~/TakeBoardData`; back them up before upgrading.
+The app interface is currently primarily Chinese. This overview, the website and getting-started materials are available in English.
 
-Use settings to choose the connected device's default project folder and adjust appearance.
-Desktop update reminders match installers to your computer; they do not install or restart anything
-automatically. Upgrade from `0.2.0-beta.2` manually once to get the new update menu.
+1. [Install TakeBoard](docs/downloads.en.md), create a project and choose its save location.
+2. Connect your existing ComfyUI in Settings and add a workflow suited to that device.
+3. Create a shot, choose its generation type and an available workflow, connect the required media, write a prompt and generate.
+4. Review the result and its record. Keep the version you want or use it as the input for another attempt.
 
-## One canvas, from inputs to results
+Local use needs no account. **ComfyUI, models and custom nodes are not bundled.** Without a generation setup, you can still try media import, the canvas and project saving. Mac packages are not Apple-notarized and Windows packages are not commercially code-signed; see [first-launch help](docs/downloads.en.md#install-and-open).
 
-**First visit?** Follow the [first-session checklist](docs/first-session.md#english): create a project, add an image and connect your existing ComfyUI environment.
-You can explore projects and media without a generation service or cloud subscription.
-Share your first blocker in the [beta feedback discussion](https://github.com/Fourques/Takeboard/discussions/10).
+## Workflows and requirements
 
-- **Media and shots:** preserve original images and videos; connect first frames, last frames and references.
-- **Workflows and generation:** built-in Recipes and explicit bindings for trusted custom workflows,
-  actual node progress when available, cancellation and output recovery.
-- **Review and provenance:** candidate takes, approval, storyboard ordering and saved generation parameters.
-- **Project ownership:** self-contained data, recoverable deletion, project import/export and optional backups.
-- **Remote access:** standard SSH, HTTPS and an optional self-hosted Portal; Tailscale is not required.
-- **Optional extensions:** rough-cut preview, cost insights, batch review and delivery QC stay disabled until enabled.
+- **Add recommended templates when you need them.** Adaptations include Qwen Image, MiniMax H3, Wan 2.2 and LTX 2.3. Availability depends on the models and nodes installed on the generation device.
+- **Import your own workflows.** TakeBoard accepts Workflow JSON, API Prompt JSON and PNGs containing workflow metadata. It checks dependencies and inputs; custom workflows may need confirmed parameter bindings and execution trust. For graphs it cannot convert, export API format from ComfyUI and import that instead.
+- **Currently in beta.** Input capabilities and hardware requirements vary by workflow. Start with one compatible workflow. [Workflow guide](docs/creator-workstation.md) · [Compatibility record](docs/compatibility-matrix.md) (Chinese).
 
-Importing a workflow does not automatically make it executable. Dependency checks, parameter bindings
-and explicit trust are required. Generation depends on your ComfyUI installation, models, nodes and
-hardware. See the [creator guide](docs/creator-workstation.md) and
-[compatibility evidence](docs/compatibility-matrix.md) (Chinese).
+These core flows are available in beta.17. `main` also contains connection-retry, cancellation-recovery and demo-display fixes not yet in that installer; see the [changelog](CHANGELOG.md).
 
-## Choose your path
+## Go further
 
-| What you need | Start here |
+| What you want to do | Start here |
 | --- | --- |
-| Use a packaged application | [Download and installation](docs/downloads.en.md) |
-| Connect to a GPU server | [Remote access](docs/remote-access.md) (Chinese) |
-| Manage login and project roles | [Accounts and access](docs/access-control.md) (Chinese) |
-| Run a persistent server | [Self-hosting](docs/self-hosting.md) (Chinese) |
-| Access paired devices through a portal | [Portal self-hosting](docs/portal-self-hosting.md) (Chinese) |
-| Configure workflows or extensions | [Creator guide](docs/creator-workstation.md) · [Extension protocol](docs/extensions.md) (Chinese) |
-| Build from source or contribute | [Contributing](CONTRIBUTING.md) · [Source configuration](docs/source-guide.md) (Chinese) |
+| Complete a first generation | [First session](docs/first-session.md#english) · [Practical guide](https://fourques.github.io/Takeboard/guides/organize-comfyui-results/) |
+| Connect a laptop to a GPU server | [Generation devices and project storage](docs/generation-and-storage.md) (Chinese) |
+| Change storage, back up or update | [Settings](docs/settings-and-updates.md) · [Data layout](docs/data-layout.md) (Chinese) |
+| Share or self-host projects | [Access control](docs/access-control.md) · [Self-hosting](docs/self-hosting.md) (Chinese) |
+| Use optional tools or contribute | [Extensions](docs/extensions.md) (Chinese) · [Contributing](CONTRIBUTING.md) · [Documentation](docs/README.md) |
 
-The server defaults to loopback. Public deployments require mandatory authentication, HTTPS and access
-restrictions. Never expose ComfyUI's port directly. Portal is self-hosted software, not an operated
-official cloud. Data stays on infrastructure you choose; remote generation transfers authorized inputs.
+If something fails, run diagnostics from Settings or [tell us which step blocked you](https://github.com/Fourques/Takeboard/issues/new?template=first_try.yml). You do not need to diagnose it first. Remove private media and credentials from public reports.
 
-## Documentation and feedback
-
-[Documentation index](docs/README.md) · [Changelog](CHANGELOG.md) ·
-[Roadmap](docs/roadmap.md) · [Security](SECURITY.md)
-
-For problems, run diagnostics from Settings and use the
-[issue chooser](https://github.com/Fourques/Takeboard/issues/new/choose).
-Do not upload private media, credentials or API keys. Report vulnerabilities privately.
-
-## Open source and license
-
-TakeBoard keeps its source public while making packaged downloads a separate entry for everyday users.
-Core local creation does not require an official cloud account or a hosted-service subscription.
-
-Code is licensed under [Apache License 2.0](LICENSE). Models, Custom Nodes and dependencies retain
-their own licenses; TakeBoard's license does not grant additional rights to them.
+Code is licensed under [Apache-2.0](LICENSE). Models and custom nodes have their own licenses. TakeBoard is an independent project, not affiliated with Comfy Org. [Security reports](SECURITY.md) · [Roadmap](docs/roadmap.md)

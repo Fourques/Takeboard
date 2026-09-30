@@ -1,5 +1,7 @@
 {
   "name": "TakeBoard",
+  "category": "Open-source AI creation canvas built on ComfyUI",
+  "primaryInterfaceLanguage": "zh-CN",
   "repository": "https://github.com/Fourques/Takeboard",
   "website": "https://fourques.github.io/Takeboard/",
   "publicVersion": "0.2.0-beta.17",

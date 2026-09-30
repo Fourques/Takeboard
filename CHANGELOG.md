@@ -6,6 +6,21 @@ before moving production work to a newer minor version.
 
 ## Unreleased
 
+- Retry a stale ComfyUI TCP connection once for read-only health checks; do not replay generation submissions.
+- Return promptly after cancellation is confirmed; defer GPU cleanup when another task still uses the service.
+- Fix simulated-result rendering in the example-project inspector.
+- Update SQLite runtime packaging and Linux native acceptance checks. These changes are not in the beta.17 installers.
+- Publish the bilingual website, direct installer links, interaction demo and first-session guides. Clarify generation capabilities, workflow requirements and the difference between release and development evidence.
+
+## 0.2.0-beta.17 — 2026-09-16
+
+- Separate SSH device connectivity, GPU observations and ComfyUI service readiness. A stopped ComfyUI service does not mark a reachable SSH device offline.
+- Read remote device and GPU information over SSH without requiring ComfyUI to run.
+- Consolidate service actions and resource messages, and prevent stale asynchronous checks from restoring deleted device state.
+- Publish macOS, Windows and Debian/Ubuntu installers for x64 and ARM64. Packages include the application runtime, not ComfyUI, models or custom nodes.
+
+See the [published release](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.17) for installer validation and known limitations. Intermediate beta release notes remain in [GitHub Releases](https://github.com/Fourques/Takeboard/releases); older entries below are historical, not the current download guide.
+
 ## 0.2.0-beta.4 — 2026-09-10
 
 - Separate project storage from the selected local/remote ComfyUI generation service; clarify native folder actions and retain explicit remote TakeBoard access for server-hosted projects.

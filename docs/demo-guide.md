@@ -1,8 +1,10 @@
-# 看看 TakeBoard 如何组织一次创作
+# TakeBoard 交互演示
 
 [画布截图](assets/takeboard-demo-cover.png) · [结果查看](assets/takeboard-demo-results.png) · [交互视频（WebM）](assets/takeboard-product-walkthrough.webm)
 
-这段演示来自 2026-09-28 的开发分支，展示参考节点、镜头、模拟候选和采用结果。画面始终标注 **SIMULATED OUTPUTS · NO GPU**。候选是代码绘制的演示卡片，不是模型生成的视频；不能据此判断生成速度或画质。
+这段 11.44 秒录屏来自 2026-09-28 的开发分支，展示输入查看、一次模拟批次的结果比较，以及采用结果后返回画布。画面始终标注 **SIMULATED OUTPUTS · NO GPU**；结果是代码绘制的演示卡片，不是模型输出。
+
+它演示的是一次多结果操作，不是每个镜头必须经过的审批流程。日常生成也可以只提交一个结果；画布不会自动增加一组候选节点。
 
 beta.17 安装包仍保留发布时的代码，本轮开发分支修复了示例候选显示，不代表已重发安装包。
 
@@ -26,10 +28,10 @@ pnpm demo:capture
 
 产物位于 `test-results/demo/`：视频、画布截图、结果截图与来源清单。来源清单记录版本、完整提交、工作树状态、文件 SHA-256 和 `realGpu: false`。CI 模式拒绝脏工作树；发布公开素材前仍需人工检查画面、名称与完整视频。
 
-这次没有修改全平台安装包，也没有把本地录制冒充 GitHub 构建来源证明。真实性清单见 [manifest](assets/takeboard-demo-manifest.json)。
+录制来源与文件校验值见 [manifest](assets/takeboard-demo-manifest.json)。
 
 ## English
 
-This is a recorded interaction demo from development main on 2026-09-28, not a GPU benchmark. It shows source inspection, four simulated candidates, adoption and a return to the canvas. The visible simulation label stays on-screen. The beta.17 installers have not been rebuilt for this documentation update.
+This 11.44-second recording from development main on 2026-09-28 shows source inspection, four simulated results, selecting a result and returning to the canvas. It is not real model output. The simulation label stays visible. This is an example batch, not a mandatory approval process: you can generate a single result, and results are not automatically added as new canvas nodes. The beta.17 installers predate the demo-display fix.
 
 ComfyUI, models and nodes are not bundled. Workflow compatibility varies. Start with the [first-session checklist](first-session.md#english), then report the first step that blocked you. The recording does not demonstrate real generation, real media import or the full asset library.

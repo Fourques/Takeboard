@@ -2,6 +2,18 @@
 
 本文件区分真实发布与准备工作，不把下载当用户，不把投稿当收录。
 
+## 2026-09-30：产品定位与整套表达复核
+
+本轮不增加渠道。将定位收束为“基于 ComfyUI 的开源 AI 创作画布”，主张“把 AI 图片与视频创作，放进同一张画布”。素材管理与参数记录降为辅助能力；首屏突出完整画布创作、模型/工作流和自有生成环境。公开介绍不借竞品名称定义价值。
+
+- 重写中英 README、官网主介绍与入门页、媒体包和渠道稿；更新首次使用、安装、创作指南、START-HERE、产品策略与路线图。
+- 核对 beta.17 标签与 main 差异，补齐版本记录，删除旧费用/调度表单、终端隧道等失效指引。英文下载前说明应用界面目前主要为中文。
+- 原位编辑并回读核对：[ComfyUI 展示帖](https://github.com/Comfy-Org/ComfyUI/discussions/16666)、[项目公告](https://github.com/Fourques/Takeboard/discussions/10)、[周刊投稿](https://github.com/ruanyf/weekly/issues/11963)、[HelloGitHub](https://github.com/521xueweihan/HelloGitHub/issues/3804)、[GitHubDaily](https://github.com/GitHubDaily/GitHubDaily/issues/1125)、[UI 目录建议](https://github.com/light-and-ray/awesome-alternative-uis-for-comfyui/issues/107)。没有新帖、顶帖或修改第三方回复。
+- 同步仓库 About、主题与 beta.17 Release 的双语介绍和下载入口；原发布验证记录保留在折叠区，未替换任何安装包。两个已有目录 PR 的条目无需改动。
+- 本地检查：lint 通过；既有官网/统计测试 6 项通过；静态站构建通过；162 个修改文档中的相对链接有效。公网部署与响应式验收结果在完成后补记。
+
+详细问题、实现依据与修改理由见[Review 报告](product-expression-review-2026-09-30.md)。真实生成 Demo 仍待制作，本轮没有把模拟素材改称真实样片，也没有声称修改文案已经提高转化率。
+
 ## 2026-09-30：收录后的定向传播与试用入口优化
 
 - 所有者提供 Google HTML 验证标签，提交 `34b461b` 部署后实际读取中英文主页，确认标签各出现一次且位于 head；所有者随后报告 Google 网址检查显示已收录。此项记为**所有者报告**，不是本代理读取 Search Console 的后台结果，不推导需求词排名、自然搜索流量或 AI 推荐。所有者已操作 Bing 导入，尚无后台索引或点击证据。

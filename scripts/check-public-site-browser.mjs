@@ -43,7 +43,7 @@ try {
   await desktop.getByRole("link", { name: "下载测试版", exact: true }).click();
   assert.equal(await desktop.locator(".download-card").count(), 6);
   await desktop.screenshot({ path: join(output, "desktop-downloads.png") });
-  await desktop.getByRole("link", { name: "如何整理参考素材与生成记录 →", exact: true }).click();
+  await desktop.locator(`a[href="${base}zh/${guide}"]`).click();
   await ready(desktop);
   assert.equal(desktop.url(), `${base}zh/${guide}`);
   assert.equal(await desktop.locator(".guide-step").count(), 4);

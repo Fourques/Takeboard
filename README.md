@@ -1,104 +1,58 @@
 # TakeBoard
 
-<p align="right"><a href="README.en.md">English</a> · 简体中文</p>
+<p align="right">简体中文 · <a href="README.en.md">English</a></p>
 
-<p align="center">
-  <strong>从一张参考图，到一组镜头。</strong><br />
-  面向 ComfyUI 创作者的开源、本地优先 AI 影像工作台。
-</p>
+**把 AI 图片与视频创作，放进同一张画布。**
 
-<p align="center">
-  <a href="https://fourques.github.io/Takeboard/zh/">项目官网</a> ·
-  <a href="docs/downloads.md"><strong>下载使用</strong></a> ·
-  <a href="docs/demo-guide.md">看交互演示</a> ·
-  <a href="https://fourques.github.io/Takeboard/zh/guides/organize-comfyui-results/">首次使用指南</a> ·
-  <a href="docs/creator-workstation.md">创作指南</a> ·
-  <a href="docs/remote-access.md">连接远程设备</a> ·
-  <a href="CONTRIBUTING.md">参与开发</a>
-</p>
+TakeBoard 是基于 ComfyUI 的开源 AI 创作画布。在同一工作区选择模型、连接素材、编写提示词，生成图片与视频，再用结果继续创作。桌面应用连接你自己的本机或远程 ComfyUI，让日常创作围绕画面展开。
 
-<p align="center">
-  <a href="https://github.com/Fourques/Takeboard/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Fourques/Takeboard/actions/workflows/ci.yml/badge.svg" /></a>
-  <a href="LICENSE"><img alt="Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-315EFB.svg" /></a>
-  <a href="https://github.com/Fourques/Takeboard/releases"><img alt="Public preview release" src="https://img.shields.io/github/v/release/Fourques/Takeboard?include_prereleases&label=public%20preview&color=D99A46" /></a>
-</p>
+[**下载测试版**](docs/downloads.md) · [交互演示](docs/demo-guide.md) · [开始使用](docs/first-session.md) · [官网](https://fourques.github.io/Takeboard/zh/)
 
-![TakeBoard 项目画布：来源、镜头与连线；模拟交互示例，非模型输出](docs/assets/takeboard-demo-cover.png)
+[![CI](https://github.com/Fourques/Takeboard/actions/workflows/ci.yml/badge.svg)](https://github.com/Fourques/Takeboard/actions/workflows/ci.yml) [![Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-315EFB.svg)](LICENSE)
 
-画面来自开发分支的[交互演示](docs/demo-guide.md)，不是生成画质样片；已发布安装包仍为 beta.17。
+![TakeBoard：参考素材、镜头与输入连线；模拟交互示例](docs/assets/takeboard-demo-cover.png)
 
-把参考素材、生成镜头与工作流放在同一张画布上，连接输入，调整参数，比较结果，留下满意的版本。
-TakeBoard 不替代 ComfyUI 的节点编辑器，而是让创作过程更连贯，让每个结果都有来源可查。
+*开发版界面，使用模拟结果。不是模型生成样片；[演示范围与来源](docs/demo-guide.md)。*
 
-**适合**：已经使用 ComfyUI，希望整理多个镜头与生成版本的创作者。**不适合**：期待安装后无需模型与配置、直接获得托管生成服务的用户。
+## 为什么使用 TakeBoard
 
-## 下载与开始
+把已经配置好的 ComfyUI 工作流，变成可以在画布中使用的创作工具。从单张图片到多个视频镜头，不必为每次尝试重新进入底层节点图。
 
-**使用 TakeBoard 不需要阅读源码，也不需要先学习开发工具。**
+- **一张画布，完成多步创作。** 放入参考图片或视频，创建生成节点，连接输入、调整提示词与参数、查看结果。保留不同尝试，也可以将生成结果连接到下一个节点继续创作。
+- **按创作任务选择模型。** 文生图、图生图、文生视频、图生视频和参考生成，按可用工作流展示相应输入与参数。推荐模板按需添加，也能导入自己的工作流；需要深入调整时再进入 ComfyUI。
+- **开源，使用自己的生成环境。** 在当前电脑或远程 GPU 上运行 ComfyUI，项目保存位置由你选择。本机项目可以连接远程生成服务，输出自动取回项目。源码开放，不依赖官方云端订阅。
 
-从[下载指南](docs/downloads.md)选择系统对应的原生安装包。桌面版内置 Node.js，
-无需另外安装 Node.js、pnpm 或 Rust；**ComfyUI、模型和自定义节点不包含在安装包内**。
-未连接 ComfyUI 时，可以先整理项目、素材和画布，生成则需要可用的本机或远程 ComfyUI。
+适合希望用可视化画布完成图片与视频创作、同时保留 ComfyUI 工作流选择与控制能力的用户。已有 ComfyUI 环境可以直接开始配置；还没有环境，也可以先体验画布与素材操作。
 
-> [!IMPORTANT]
-> 当前全平台预览版为 [`v0.2.0-beta.17`](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.17)：Mac、Windows、Debian/Ubuntu 均提供 x64 和 ARM64 安装包。
-> 不再分发便携包。本页面向当前 `main`，后续开发变化以版本记录为准。
-> 预览包尚无 Apple 公证 / Windows 商业代码签名，下载指南列出具体边界。
+## 开始使用
 
-1. **打开工作台**：安装 TakeBoard，从应用程序或开始菜单打开。
-2. **创建项目**：命名后进入空白画布，导入自己的图片、视频或其他素材。
-3. **连接生成环境**：检查 ComfyUI 状态，选择可用工作流，连接素材并生成。
+当前公开版本：[**v0.2.0-beta.17**](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.17)。提供 macOS、Windows、Debian/Ubuntu 的 x64 / ARM64 安装包，包含应用运行时，不需要安装开发工具。
 
-本机默认无需注册，登录是附加功能；设备项目和账号项目有独立权限边界。
-旧版本的登录要求以其发布说明为准。项目默认保存在 `~/TakeBoardData`；也可在[所选设备的其他文件夹](docs/device-workflow.md)创建项目。升级前请先备份。
+1. [下载并安装](docs/downloads.md)，新建项目，选择保存位置。
+2. 在设置中连接已有的 ComfyUI，添加一个适合当前设备的工作流。
+3. 新建镜头，选择生成类型和可用工作流，连接需要的素材，填写提示词并生成。
+4. 查看结果与生成记录，保留满意的版本，或继续用它生成下一个结果。
 
-提供[统一设置与更新提醒](docs/settings-and-updates.md)：保存设备默认项目位置、调整外观，以及检查适合当前电脑的新版安装包；不自动安装或重启。旧 `0.2.0-beta.2` 需要先手动升级一次。
+本机使用无需注册。**安装包不包含 ComfyUI、模型或第三方节点**；没有生成环境时，也可以先试素材导入、画布和项目保存。当前 Mac 包未完成 Apple 公证，Windows 包未进行商业代码签名，首次打开方法见[安装说明](docs/downloads.md#安装与首次打开)。
 
-## 在一张画布里完成创作
+## 工作流与使用条件
 
-**第一次尝试？** 按[十分钟试用清单](docs/first-session.md)创建项目、导入一张图并连接已有 ComfyUI。
-没有生成环境也可以体验项目与素材管理；不必为试用购买 GPU 或云服务。
-欢迎在[本轮试用交流](https://github.com/Fourques/Takeboard/discussions/10)告诉我们第一处卡住的地方。
+- **推荐模板按需添加。** 提供 Qwen Image、MiniMax H3、Wan 2.2、LTX 2.3 等适配配置，具体可用性取决于生成设备上的模型与节点。
+- **可以导入自己的工作流。** 支持 Workflow JSON、API Prompt JSON，以及包含工作流元数据的 PNG。TakeBoard 会检查依赖与输入；自定义工作流可能需要确认参数映射和执行信任。不能转换的工作流可在 ComfyUI 中导出 API 格式后再导入。
+- **当前为 Beta。** 不同工作流的输入能力与硬件要求不同；首次使用建议从一个兼容工作流开始。[工作流指南](docs/creator-workstation.md) · [兼容记录](docs/compatibility-matrix.md)。
 
-- **素材与镜头**：完整显示原始图片和视频，用首帧、尾帧与参考输入连接镜头。
-- **工作流与生成**：使用内置 Recipe，或为可信自定义工作流配置显式参数绑定；查看实际节点进度、停止任务与回收结果。
-- **比较与保留**：管理候选版本、选片和分镜顺序，保存生成参数与来源。
-- **项目与数据**：独立项目目录、可恢复删除、完整项目包导入导出，以及可选备份。
-- **远程使用**：支持标准 SSH、HTTPS 与可选自托管 Portal；不要求使用 Tailscale。
-- **按需扩展**：粗剪预览、成本洞察、批量审片和成片质检默认关闭，按需要启用。
+上述核心流程已在 beta.17 中提供。`main` 另有连接重试、取消恢复和演示显示等修复，尚未包含在该安装包中；细节见[版本记录](CHANGELOG.md)。
 
-自定义工作流不是“导入即运行”：需要检查依赖、绑定输入参数并明确信任。
-实际生成能力取决于连接的 ComfyUI、模型、节点和硬件，详见[创作指南](docs/creator-workstation.md)与[兼容记录](docs/compatibility-matrix.md)。
+## 按需了解
 
-## 选择你的使用方式
-
-| 你想做什么 | 从这里开始 |
+| 想做什么 | 入口 |
 | --- | --- |
-| 在自己的电脑使用 | [下载与安装](docs/downloads.md) |
-| 在 Mac / Windows 上连接 GPU 服务器 | [远程访问](docs/remote-access.md) |
-| 本机保存项目、远程 ComfyUI 生成（开发版） | [生成设备与项目位置](docs/generation-and-storage.md) |
-| 管理登录、共享与项目权限 | [账号与权限](docs/access-control.md) |
-| 部署长期运行的服务 | [自托管部署](docs/self-hosting.md) |
-| 通过账号门户访问已配对设备 | [Portal 自托管](docs/portal-self-hosting.md) |
-| 配置工作流或开发扩展 | [创作工作站](docs/creator-workstation.md) · [扩展协议](docs/extensions.md) |
-| 从源码运行或参与开发 | [源码运行与配置](docs/source-guide.md) · [贡献指南](CONTRIBUTING.md) |
+| 完成第一次生成 | [首次使用](docs/first-session.md) · [工作流与创作指南](docs/creator-workstation.md) |
+| 用笔记本连接 GPU 服务器 | [生成设备与项目位置](docs/generation-and-storage.md) |
+| 调整项目目录、备份或更新 | [设置与更新](docs/settings-and-updates.md) · [数据目录](docs/data-layout.md) |
+| 共享或自托管项目 | [账号与权限](docs/access-control.md) · [自托管部署](docs/self-hosting.md) |
+| 使用可选工具或参与开发 | [扩展](docs/extensions.md) · [贡献指南](CONTRIBUTING.md) · [文档索引](docs/README.md) |
 
-默认服务只监听本机回环地址。公网入口必须配置强制登录、HTTPS 与访问限制，
-不要直接公开 ComfyUI 端口。Portal 是可自托管的服务，不是已经运营的官方云；
-项目与素材保存在你选择的本机或远程基础设施上，远程生成会按授权传输输入。
+遇到问题可以从设置运行诊断，或直接[描述卡在哪一步](https://github.com/Fourques/Takeboard/issues/new?template=first_try.yml)。无需先判断是哪一层出了问题；公开反馈请去除私人素材与凭据。
 
-## 文档与反馈
-
-[全部文档](docs/README.md) · [版本记录](CHANGELOG.md) · [路线图](docs/roadmap.md) · [安全策略](SECURITY.md)
-
-遇到问题，先在“设置 → 运行诊断”点击“开始检测”，再通过
-[问题反馈](https://github.com/Fourques/Takeboard/issues/new/choose)提交复现步骤。
-不要上传私人素材、密码或 API Key；安全漏洞请按安全策略私下报告。
-
-## 开源与许可
-
-TakeBoard 保留公开源码，下载使用与源码开发是两个独立入口。
-核心创作功能不以注册官方云账号为前提；当前没有必须订阅的官方托管服务。
-
-代码采用 [Apache License 2.0](LICENSE)。模型、自定义节点和第三方依赖遵循各自许可，
-不因 TakeBoard 开源而自动获得额外授权。
+代码使用 [Apache-2.0](LICENSE) 许可。模型与第三方节点遵循各自许可。TakeBoard 是独立项目，与 Comfy Org 无隶属关系。[安全报告](SECURITY.md) · [路线图](docs/roadmap.md)

@@ -1,55 +1,55 @@
 export const content = {
   en: {
     lang: "en",
-    title: "TakeBoard — an open-source project canvas for ComfyUI",
+    title: "TakeBoard — open-source AI creation canvas, built on ComfyUI",
     description:
-      "Organize ComfyUI references, shots and generated takes in one desktop project canvas. Bring your own ComfyUI. Open source, local-first, currently in beta.",
+      "Choose models, connect media and generate images or videos in one visual workspace. An open-source desktop creation canvas built on your own local or remote ComfyUI.",
     switchLabel: "简体中文",
     switchPath: "zh/",
     download: "Download beta",
     downloadDoc: "downloads.en.md",
     downloadTitle: "Choose your computer.",
     downloadNote:
-      "Beta installers include the app runtime, not ComfyUI or models. Apple notarization and commercial Windows signing are still pending.",
+      "App interface currently primarily Chinese. Includes the app runtime, not ComfyUI or models. Apple notarization and commercial Windows signing are pending.",
     installGuide: "Installation and opening help",
-    guideLink: "A practical guide to references and generation records",
+    guideLink: "Make your first project",
     eyebrow: "OPEN SOURCE · LOCAL-FIRST · COMFYUI",
-    heading: "Your references. Your takes. One project.",
+    heading: "One canvas for AI image and video creation.",
     intro:
-      "A project canvas for ComfyUI creators. Keep reference media, shot inputs and generated takes together, so you can return to the choices behind a result.",
-    note: "Bring your own ComfyUI, models and nodes. Not a hosted generation service.",
+      "Choose models, connect media, write prompts and generate. Explore ideas side by side, then use a result in your next creation. TakeBoard brings your ComfyUI workflows into one visual workspace.",
+    note: "Open-source desktop app. Local use needs no account. Generation requires your own ComfyUI, models and nodes.",
     preview: "Explore the canvas",
     previewNote:
       "Development-build interaction demo · simulated outputs · no GPU. Published installers may differ.",
     caption:
       "Reference media and shot connections in TakeBoard. Simulated interaction, not model-generated output.",
-    featuresTitle: "Keep the creative context.",
+    featuresTitle: "Your creative process, connected.",
     features: [
       [
-        "01 / Organize",
-        "References belong with the project.",
-        "Keep images, videos and shots on a canvas instead of treating each generation as an isolated form.",
+        "01 / Canvas",
+        "Create across connected steps.",
+        "Bring references, prompts and generation nodes together. Make an image, use it in a video, or explore several versions on the same canvas.",
       ],
       [
-        "02 / Connect",
-        "Make the inputs visible.",
-        "Connect media to supported workflow inputs. ComfyUI still runs the graph; TakeBoard provides the project workspace.",
+        "02 / Workflows",
+        "Pick the tool for what you want to make.",
+        "Choose image or video generation and a compatible workflow. Its inputs and controls appear where you create. Add recommended templates or bring your own ComfyUI workflows.",
       ],
       [
-        "03 / Revisit",
-        "Find the take—and its parameters.",
-        "Review attempts alongside generation records and keep the results you want to build on.",
+        "03 / Open source",
+        "Your models. Your machines.",
+        "Connect to local or remote ComfyUI and choose where projects live. Work from a laptop with a GPU server, or keep the setup on one machine. No official cloud subscription required.",
       ],
     ],
     startTitle: "Start with what you already have.",
     starts: [
       [
-        "No ComfyUI yet?",
-        "Install the app, create a disposable project, import your own image and reopen it to check that it was saved. No account or GPU is needed for this organization-only trial.",
+        "Already using ComfyUI?",
+        "Connect it in Settings, add a compatible workflow and create a shot. Start with one generation, then inspect the result and its saved prompt and parameters.",
       ],
       [
-        "Already generating with ComfyUI?",
-        "Connect your trusted local or remote service. Start with a compatible workflow and a small test. Inspect the actual output and where it was saved.",
+        "Want to explore first?",
+        "Create a project and import an image. Try the canvas and asset library, then reopen the project. These features work without ComfyUI; generation needs a separate setup.",
       ],
     ],
     checklist: "First-session checklist",
@@ -57,11 +57,11 @@ export const content = {
     faq: [
       [
         "Is this a replacement for ComfyUI?",
-        "No. TakeBoard adds a project layer around generation. Use ComfyUI itself to edit node graphs. TakeBoard is an independent project, not an official Comfy Org product.",
+        "TakeBoard lets you run generation and organize media, shots and results in a project. Use ComfyUI itself to edit the underlying node graph. TakeBoard is an independent project, not affiliated with Comfy Org.",
       ],
       [
         "Does every imported workflow work?",
-        "No. A workflow may need dependencies, explicit input bindings and trust approval. Importing a JSON file is not proof that it can execute. Use the compatibility evidence and test your own setup.",
+        "Start with a recommended template or import your own Workflow JSON, API Prompt JSON or PNG with workflow metadata. TakeBoard checks dependencies and inputs. Custom workflows may need parameter mapping and trust confirmation; unsupported graphs can be exported as API format from ComfyUI and imported again.",
       ],
       [
         "Do I need a cloud account or subscription?",
@@ -69,11 +69,11 @@ export const content = {
       ],
       [
         "Where does my media go?",
-        "Projects use your selected storage location. Remote generation transfers required inputs to the service you choose. Only connect trusted devices; do not expose ComfyUI directly to the internet.",
+        "A local project saves to your chosen folder. Remote ComfyUI receives the required inputs, and TakeBoard collects outputs into that project. Opening a remote TakeBoard project is a separate option: its files stay on the remote host.",
       ],
       [
-        "What has actually been verified?",
-        "The public compatibility matrix records one Linux / RTX 4090 / H3 text-to-video run with automated integrity checks. It is not proof of every workflow, hardware combination or visual quality. The video on this page is a simulated UI demonstration.",
+        "Which models can I use?",
+        "Recommended adaptations include Qwen Image, MiniMax H3, Wan 2.2 and LTX 2.3. You can also import custom workflows. Available inputs and generation options depend on the workflow and the models and nodes installed on your device. TakeBoard is currently in beta.",
       ],
       [
         "Is the desktop preview signed?",
@@ -84,7 +84,7 @@ export const content = {
     releaseLabel: "Public preview",
     kitTitle: "For creators, writers and curious people.",
     kitIntro:
-      "Descriptions, screenshots, a short interaction video, source manifest and honest boundaries. Ready to reference, not a collection of endorsements.",
+      "Bilingual descriptions, screenshots, an interaction video and source information for articles, tutorials and reviews.",
     kitDownload: "Download media kit",
     kitRead: "Read the media kit",
     facts: "Product facts (JSON)",
@@ -96,9 +96,9 @@ export const content = {
   },
   zh: {
     lang: "zh-CN",
-    title: "TakeBoard — 面向 ComfyUI 创作者的开源项目画布",
+    title: "TakeBoard — 基于 ComfyUI 的开源 AI 创作画布",
     description:
-      "把 ComfyUI 的参考素材、镜头输入与生成结果放进同一张项目画布。开源、本地优先；使用自己的 ComfyUI 和模型，当前为 Beta。",
+      "在同一张画布中选择模型、连接素材、编写提示词，生成图片与视频。基于自己的本机或远程 ComfyUI，开源桌面创作工作台。",
     switchLabel: "English",
     switchPath: "",
     download: "下载测试版",
@@ -107,38 +107,42 @@ export const content = {
     downloadNote:
       "测试版包含应用运行时，不包含 ComfyUI 或模型。Apple 公证与 Windows 商业签名尚未完成。",
     installGuide: "安装与首次打开说明",
-    guideLink: "如何整理参考素材与生成记录",
+    guideLink: "开始第一个创作项目",
     eyebrow: "开源 · 本地优先 · COMFYUI",
-    heading: "参考素材与每次尝试，都在同一个项目。",
+    heading: "把 AI 图片与视频创作，放进同一张画布。",
     intro:
-      "给 ComfyUI 创作者的一张项目画布。把素材、镜头输入和生成结果放在一起，回到一个结果时，也能找回它背后的选择。",
-    note: "需要自备 ComfyUI、模型与节点。不提供托管生成服务。",
+      "选择模型、连接素材、编写提示词，然后生成。并排探索不同想法，用结果继续下一步创作。TakeBoard 将你的 ComfyUI 工作流带入统一的可视化工作区。",
+    note: "开源桌面应用，本机使用无需注册。生成需要自备 ComfyUI、模型与节点。",
     preview: "看看画布如何工作",
     previewNote: "开发版交互演示 · 模拟输出 · 未使用 GPU。公开安装包界面可能不同。",
     caption: "TakeBoard 的参考素材与镜头连线。模拟交互示例，非模型生成效果。",
-    featuresTitle: "创作的来龙去脉，留在画布里。",
+    featuresTitle: "把创作的每一步，连接起来。",
     features: [
       [
-        "01 / 整理",
-        "素材属于项目，不再散落。",
-        "把图片、视频与镜头放进画布，不把每次生成当成互不相关的一张表单。",
+        "01 / 创作画布",
+        "从一张图，继续创作下一个镜头。",
+        "参考素材、提示词与生成节点放在一起。生成图片后继续制作视频，或在同一张画布上探索多个版本。",
       ],
       [
-        "02 / 连接",
-        "看得见每个镜头的输入。",
-        "将素材连接到工作流支持的输入。ComfyUI 负责执行节点图，TakeBoard 补上项目工作区。",
+        "02 / 模型与工作流",
+        "想做什么，就选择相应的创作工具。",
+        "选择图片或视频生成，再选择兼容的工作流，画布上即可操作对应输入与参数。推荐模板按需添加，也能导入自己的 ComfyUI 工作流。",
       ],
-      ["03 / 回看", "找回结果，也找回参数。", "结合生成记录查看不同尝试，保留想继续创作的结果。"],
+      [
+        "03 / 开源",
+        "自己的模型，自己的设备。",
+        "连接本机或远程 ComfyUI，自选项目保存位置。用笔记本连接 GPU 服务器，或在同一台电脑完成创作，无需官方云端订阅。",
+      ],
     ],
     startTitle: "从你已有的环境开始。",
     starts: [
       [
-        "还没有 ComfyUI？",
-        "安装后新建测试项目，导入自己的图片，再重新打开确认保存。只试项目组织，不需要账号或 GPU。",
+        "已经在用 ComfyUI？",
+        "在设置中连接服务，添加一个兼容工作流并新建镜头。从一次生成开始，查看结果及保存的提示词与参数。",
       ],
       [
-        "已经在用 ComfyUI？",
-        "连接可信的本机或远程服务，从兼容工作流和一次小测试开始。检查真实输出，以及结果保存的位置。",
+        "想先看看是否顺手？",
+        "新建项目，导入图片，试用画布与资产库，再重新打开项目。这些操作不需要 ComfyUI；生成时再配置环境。",
       ],
     ],
     checklist: "首次试用清单",
@@ -146,11 +150,11 @@ export const content = {
     faq: [
       [
         "它会替代 ComfyUI 吗？",
-        "不会。TakeBoard 补充生成前后的项目组织；编辑节点图仍使用 ComfyUI。TakeBoard 是独立项目，不是 Comfy Org 官方产品。",
+        "TakeBoard 提供生成操作，以及素材、镜头和结果的项目管理。修改底层节点图仍使用 ComfyUI。TakeBoard 是独立项目，与 Comfy Org 无隶属关系。",
       ],
       [
         "导入工作流就能运行吗？",
-        "不一定。工作流可能需要补齐依赖、显式输入绑定和信任确认。导入成功不等于可执行，请查看兼容证据并验证自己的环境。",
+        "可以按需添加推荐模板，或导入自己的 Workflow JSON、API Prompt JSON、含工作流元数据的 PNG。TakeBoard 会检查依赖与输入；自定义工作流可能需要确认参数映射和执行信任。无法转换的节点图可在 ComfyUI 中导出 API 格式后重新导入。",
       ],
       [
         "需要注册或购买云端订阅吗？",
@@ -158,11 +162,11 @@ export const content = {
       ],
       [
         "素材会保存和传输到哪里？",
-        "项目使用你选择的存储位置。远程生成会将所需输入传给所选服务；只连接可信设备，不要把 ComfyUI 直接暴露到公网。",
+        "本机项目保存在你选择的文件夹。远程 ComfyUI 接收所需输入，TakeBoard 将输出取回该项目。另一个可选功能是打开远程 TakeBoard 项目，此时项目文件保存在远程主机上。",
       ],
       [
-        "目前哪些内容经过了验证？",
-        "公开兼容矩阵有一条 Linux / RTX 4090 / H3 文生视频的自动完整性记录，不代表所有工作流、硬件或视觉质量已验证。本页视频只演示模拟交互。",
+        "可以使用哪些模型？",
+        "推荐适配包括 Qwen Image、MiniMax H3、Wan 2.2、LTX 2.3，也可以导入自定义工作流。具体输入与生成选项由工作流，以及设备上已安装的模型和节点决定。TakeBoard 当前为 Beta。",
       ],
       [
         "安装包有系统签名吗？",
@@ -172,8 +176,7 @@ export const content = {
     evidence: "查看兼容证据",
     releaseLabel: "公开预览版",
     kitTitle: "给想介绍它的人，一份完整素材。",
-    kitIntro:
-      "中英文介绍、截图、交互视频、来源清单与使用边界。便于引用，不伪装成独立测评或第三方背书。",
+    kitIntro: "中英文介绍、截图、交互视频与来源说明，可用于撰写文章、教程和评测。",
     kitDownload: "下载宣传素材包",
     kitRead: "阅读素材说明",
     facts: "产品事实（JSON）",
@@ -188,12 +191,12 @@ export const content = {
 export const guideContent = {
   en: {
     lang: "en",
-    title: "Organize ComfyUI references and generation records — TakeBoard guide",
+    title: "Create with ComfyUI on a canvas — TakeBoard getting-started guide",
     description:
-      "A practical first-session guide to keeping ComfyUI inputs, prompts and generated takes in a project. Includes a no-GPU trial and workflow compatibility checks.",
-    heading: "Find the inputs behind a result.",
+      "Create a project, connect ComfyUI, choose a workflow and generate an image or video on the canvas. Use the result in your next creative step.",
+    heading: "Start creating on the canvas.",
     intro:
-      "A preview tells you what you made. A useful project also tells you which reference, prompt and settings led to it. This guide walks through that distinction in TakeBoard.",
+      "Create a project, connect a compatible workflow, generate an image or video, and use the result in your next step. Start with a ComfyUI setup that already works for you.",
     scope:
       "Maintainer-written guide · public beta.17 · development screenshots show simulated results, not model output. Newer main UI may differ from the installer.",
     switchLabel: "简体中文",
@@ -201,8 +204,8 @@ export const guideContent = {
     sections: [
       [
         "01",
-        "Try organization before connecting a GPU.",
-        "Create a disposable project and check its save location. Import a non-private image, move its node and find it in the asset library. Close and reopen the project: the image and its placement should still be there. This tests project organization, not generation; no ComfyUI or account is needed.",
+        "Create a project and connect ComfyUI.",
+        "Create a project and choose its save folder. Add reference media if your task needs it. In Settings, connect your local or remote ComfyUI. Without one, you can still explore the canvas and asset library; generation needs a configured service.",
       ],
       [
         "02",
@@ -211,13 +214,13 @@ export const guideContent = {
       ],
       [
         "03",
-        "Keep the attempt, not just the filename.",
-        "After the task completes, open its result and generation record. Check the prompt, final seed, workflow, parameters and input assets saved with that attempt. A reused filename is not a reliable identity; use the saved result and its source references. Missing records or inputs should be reported, not reconstructed by guessing.",
+        "Generate and choose a result.",
+        "Create a shot, choose the generation type and an available workflow, connect its required media and write a prompt. Adjust dimensions and, for video, duration, then submit. Review the result on the canvas or in shot details. Try another version if you want to explore a different direction.",
       ],
       [
         "04",
-        "Test the return trip.",
-        "Reopen the project, locate the result and check that you can still inspect its inputs and settings. Export the media you want to use elsewhere, while keeping the project and a backup for its context. Saved parameters aid reproduction; changing model files, nodes or software can still change a rerun.",
+        "Use the result in your next step.",
+        "Keep the version you want or add several results to the canvas. Connect an image to a compatible image-to-video workflow, or use a result as a reference for another task. Each generation is submitted separately. You can return to earlier attempts and their settings, or download original media for other tools.",
       ],
     ],
     checklistTitle: "Before your first real generation",
@@ -257,12 +260,12 @@ export const guideContent = {
   },
   zh: {
     lang: "zh-CN",
-    title: "如何整理 ComfyUI 参考素材与生成记录 — TakeBoard 使用指南",
+    title: "在画布中使用 ComfyUI 创作 — TakeBoard 入门指南",
     description:
-      "从无 GPU 的项目整理测试，到检查输入绑定、查看提示词和种子、重新打开项目找回结果。TakeBoard 首次使用指南与工作流排查。",
-    heading: "找到结果，也找到它的来路。",
+      "新建项目、连接 ComfyUI、选择工作流，在画布中生成图片或视频，再用结果继续创作。TakeBoard 入门指南与常见问题。",
+    heading: "从第一个画布项目开始创作。",
     intro:
-      "预览能告诉你生成了什么。一个可继续创作的项目，还需要保留用了哪份素材、什么提示词和哪些参数。这份指南带你在 TakeBoard 中检查这条链路。",
+      "创建项目，连接可用工作流，生成图片或视频，再用结果继续下一步创作。已有 ComfyUI 环境的用户，可以从自己熟悉的工作流开始。",
     scope:
       "维护者编写 · 公开版本 beta.17 · 开发版截图为模拟结果，非模型输出。main 的新界面可能与安装包不同。",
     switchLabel: "English",
@@ -270,8 +273,8 @@ export const guideContent = {
     sections: [
       [
         "01",
-        "先验证项目整理，不急着连接显卡。",
-        "新建一个临时测试项目，确认保存位置。导入不含隐私的图片，移动节点，在资产库中找回它。关闭再打开项目，检查图片与位置是否保留。这一步只验证整理和保存，不进行生成，无需 ComfyUI 或账号。",
+        "创建项目，连接生成设备。",
+        "新建项目，选择保存文件夹，根据创作需要导入参考素材。在设置中连接本机或远程 ComfyUI；还没有生成环境时，可以先探索画布和资产库，生成时再配置服务。",
       ],
       [
         "02",
@@ -280,13 +283,13 @@ export const guideContent = {
       ],
       [
         "03",
-        "保留这次尝试，不只记文件名。",
-        "任务完成后，打开结果与生成记录，核对这次保存的提示词、最终种子、工作流、参数和输入素材。同名文件不能可靠区分来源，应以保存的结果和素材引用为准。如果记录或输入缺失，请反馈，不要靠猜测还原。",
+        "提交生成，选择满意的结果。",
+        "新建镜头，选择生成类型与可用工作流，连接所需素材，填写提示词。调整宽高，视频再设置时长，然后提交。完成后在画布或镜头详情中查看结果，也可以继续尝试不同版本。",
       ],
       [
         "04",
-        "检查下次回来能否继续。",
-        "重新打开项目，定位结果，确认仍能查看输入和参数。把需要的媒体导出到其他工具，同时保留项目及备份，以免丢失创作上下文。保存参数有助于复现，但更换模型文件、节点或软件版本后，重新生成仍可能得到不同结果。",
+        "用结果继续下一步创作。",
+        "保留满意的版本，或将多个结果加入画布。把图片连接到兼容的图生视频工作流，也可以将结果作为下一次任务的参考素材。每次生成分别提交；需要时可回看旧结果及参数，或下载原文件交给其他工具。",
       ],
     ],
     checklistTitle: "第一次真实生成前，核对这几项",

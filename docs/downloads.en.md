@@ -5,11 +5,14 @@
 ## Download TakeBoard
 
 **v0.2.0-beta.17** is the current preview for all six platform/architecture combinations. Choose your computer and download
-one file. No portable folder to manage and no separate Node.js, pnpm or Rust installation.
+one file. The app runtime is included; no separate Node.js, pnpm or Rust installation is needed.
+ComfyUI, models and custom nodes must be installed separately.
+
+The app interface is currently primarily Chinese; the website and getting-started materials have English versions.
 
 | Your computer | Download |
 | --- | --- |
-| Mac · Apple 芯片 / Apple silicon | [DMG](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.17/TakeBoard_0.2.0-beta.17_aarch64.dmg) |
+| Mac · Apple silicon | [DMG](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.17/TakeBoard_0.2.0-beta.17_aarch64.dmg) |
 | Mac · Intel | [DMG](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.17/TakeBoard_0.2.0-beta.17_x64.dmg) |
 | Windows · Intel / AMD | [EXE](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.17/TakeBoard_0.2.0-beta.17_x64-setup.exe) |
 | Windows · ARM64 | [EXE](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.17/TakeBoard_0.2.0-beta.17_arm64-setup.exe) |
@@ -33,15 +36,17 @@ The app starts its local service automatically. Local use needs no registration;
 and account projects retain authorization. Generation requires separately configured **ComfyUI,
 models and Custom Nodes**. Projects, media and the canvas can be used without ComfyUI.
 
-> [!IMPORTANT]
-> This preview is not Apple-notarized or commercially Windows-code-signed. Your OS may warn or block it.
-> Do not globally disable Gatekeeper, antivirus or other protections. Stop if you cannot verify the source.
-> Installer format is not OS trust certification; runtime checks are not exhaustive GPU/workflow validation.
+Mac packages are not Apple-notarized and Windows packages are not commercially code-signed, so the OS may show a first-launch warning. On Mac, after verifying that the download came from this repository's Release, follow [Apple's per-app instructions](https://support.apple.com/102445): look for the app under **System Settings → Privacy & Security → Open Anyway**. A damaged-file or malware warning is different: report the exact message rather than treating it as a routine signature warning. Do not disable system protections globally.
+
+**Running the app does not mean your computer can run every model.** GPU and memory requirements depend on the workflow. You can also connect to a remote GPU.
+
+## Your first project
+
+Already using ComfyUI? [Follow the first-session guide](first-session.md#english) to complete a generation. Otherwise, create a project and import an image to explore the canvas and asset library first.
 
 ## Connect a server
 
-For remote generation with projects stored on this computer, connect to remote ComfyUI through the
-generation-service control in the workspace. Results are collected into the current project.
+For remote generation with projects stored on this computer, add remote ComfyUI in **Settings → Device connections**. TakeBoard manages the connection and collects outputs into the current project. See [generation devices and storage](generation-and-storage.md) (Chinese).
 
 To open and manage projects stored on another TakeBoard device, use **Settings → Remote projects**
 for SSH, HTTPS or a self-hosted Portal. The desktop Connection menu opens the same settings. SSH needs a reachable
@@ -51,16 +56,12 @@ official cloud. See [remote access](remote-access.md) (Chinese).
 
 ## Upgrades and support
 
-- Upgrade from `0.2.0-beta.2` manually once. Then use **Updates → Check for updates** for later releases.
-  Updates are not installed automatically; remote devices must be upgraded separately.
+- Use **Updates → Check for updates** for later releases. If your older version has no update menu,
+  download manually. Updates are not installed automatically; remote devices need a separate upgrade.
 - Projects default to `~/TakeBoardData` (the user-profile `TakeBoardData` folder on Windows), outside the app.
 - Export important projects, stop the old service and back up the full data directory before upgrading.
   Never run two writers against the same data directory.
-- Portable packages are retired. An old extracted app folder is not the project data directory;
-  check your configured data location before removing old files.
 - Roll back using a separate pre-upgrade backup, not by opening migrated data in an older app.
-- No separate checksum downloads are needed. Build verification and provenance remain in the
-  [release process](desktop-production-signing.md) (Chinese).
 
 For [support](https://github.com/Fourques/Takeboard/issues/new/choose), include OS, processor, app
 version, connection method and the error. Omit private media and credentials.
