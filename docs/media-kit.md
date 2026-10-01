@@ -1,6 +1,6 @@
 # TakeBoard · 媒体素材包
 
-更新：2026-09-30。由项目维护者提供。
+更新：2026-10-02。由项目维护者提供。
 
 [项目源码](https://github.com/Fourques/Takeboard) · [中文下载](downloads.md) · [English downloads](downloads.en.md) · [开始创作](first-session.md)
 
@@ -70,14 +70,14 @@ English:
 | 项目 | 当前状态 |
 | --- | --- |
 | 许可与关系 | Apache-2.0；独立项目，与 Comfy Org 无隶属关系 |
-| 公开版本 | [v0.2.0-beta.17](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.17)，六个系统 / 架构安装包 |
+| 公开版本 | [v0.2.0-beta.18](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.18)，六个系统 / 架构安装包 |
 | 运行前提 | 安装包含应用运行时，不含 ComfyUI、模型或节点 |
 | 工作流 | 内置适配按需添加，自定义工作流需检查依赖、输入映射和执行信任；不保证任意图通用 |
 | 语言 | 应用界面目前主要为中文，官网与入门材料有中英两版 |
 | 系统签名 | 未完成 Apple 公证 / Windows 商业代码签名；[首次打开说明](downloads.md) |
 | 生成证据 | [兼容矩阵](compatibility-matrix.md)记录特定环境的真实运行；现有宣传视频仅为模拟交互 |
 | 数据位置 | 项目保存到所选位置；远程生成上传必要输入并取回输出，[详见](generation-and-storage.md) |
-| 后续代码 | main 有尚未进入安装包的修复，[版本记录](../CHANGELOG.md)单独列出 |
+| 版本更新 | beta.18 已包含连接恢复、取消与依赖安全修复；后续更新见[版本记录](../CHANGELOG.md) |
 
 “镜头”是一个可生成图片或视频的单元；画布连接输入，但不是一键执行全图的流水线。“采用结果”是创作者的选择，不是强制审批。模型与自定义节点有各自许可，Apache-2.0 不授予它们额外权利。
 

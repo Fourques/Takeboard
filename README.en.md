@@ -26,7 +26,7 @@ For creators who want a visual image and video workspace while keeping control o
 
 ## Get started
 
-The current public release is [**v0.2.0-beta.17**](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.17). Installers are available for macOS, Windows and Debian/Ubuntu on x64 and ARM64. They include the app runtime; no development tools are needed.
+The current public release is [**v0.2.0-beta.18**](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.18). Installers are available for macOS, Windows and Debian/Ubuntu on x64 and ARM64. They include the app runtime; no development tools are needed.
 
 The app interface is currently primarily Chinese. This overview, the website and getting-started materials are available in English.
 
@@ -43,7 +43,7 @@ Local use needs no account. **ComfyUI, models and custom nodes are not bundled.*
 - **Import your own workflows.** TakeBoard accepts Workflow JSON, API Prompt JSON and PNGs containing workflow metadata. It checks dependencies and inputs; custom workflows may need confirmed parameter bindings and execution trust. For graphs it cannot convert, export API format from ComfyUI and import that instead.
 - **Currently in beta.** Input capabilities and hardware requirements vary by workflow. Start with one compatible workflow. [Workflow guide](docs/creator-workstation.md) · [Compatibility record](docs/compatibility-matrix.md) (Chinese).
 
-These core flows are available in beta.17. `main` also contains connection-retry, cancellation-recovery and demo-display fixes not yet in that installer; see the [changelog](CHANGELOG.md).
+beta.18 includes connection-retry, cancellation-recovery and dependency security fixes. See the [changelog](CHANGELOG.md) for release details.
 
 ## Go further
 

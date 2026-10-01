@@ -41,6 +41,10 @@ The browser acceptance script also checks a complete drag rotation, front/back s
 
 On a public release, update the product version and release evidence, review both languages and the media kit, and check installer links. Do not automatically equate main's version with a published installer. On a new demo, review provenance, visual disclosures and the manifest before updating product facts. Never remove simulated-output warnings without genuine generation evidence.
 
+The site test also checks that both READMEs, the media kit and both download guides advertise this same release. Confirm the release is published and all six installer assets are uploaded before editing `product.json`; the test checks consistency, not GitHub availability. Keep historical release notes, promotion baselines and the recorded demo's application version unchanged.
+
+`node scripts/promotion-snapshot.mjs` reads the advertised release from `product.json`, reports downloads per published installer release (up to the 100 most recent GitHub releases), and flags a newer installer release missing from the public entrypoint. Traffic includes the returned date range and referrers. Directory inclusion is checked against the actual README; a closed issue is not enough. Unavailable data stays null. This is a read-only snapshot, not a user-tracking service or proof that downloads came from a particular channel.
+
 `product.json` lists the six actual installer filenames for the public release; the homepage links directly to them, with installation guidance alongside. The builder rejects a filename from a different version. Validate each filename against GitHub Release assets before changing it.
 
 The English and Chinese practical guide under `guides/organize-comfyui-results/` is authored in `content.mjs`, linked from each homepage and included in the sitemap. Keep it a useful first-session tutorial rather than keyword-only duplicate pages. Its development screenshots remain explicitly labeled as simulated.

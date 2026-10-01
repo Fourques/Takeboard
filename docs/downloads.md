@@ -4,21 +4,21 @@
 
 ## 下载 TakeBoard
 
-当前全平台版本为 **v0.2.0-beta.17 预览版**。选择自己的电脑，只需下载一个安装包。
+当前全平台版本为 **v0.2.0-beta.18 预览版**。选择自己的电脑，只需下载一个安装包。
 安装包包含应用运行时，不需要安装 Node.js、pnpm 或 Rust。ComfyUI、模型和第三方节点需另行准备。
 
 | 你的电脑 | 下载 |
 | --- | --- |
-| Mac · Apple 芯片 / Apple silicon | [DMG](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.17/TakeBoard_0.2.0-beta.17_aarch64.dmg) |
-| Mac · Intel | [DMG](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.17/TakeBoard_0.2.0-beta.17_x64.dmg) |
-| Windows · Intel / AMD | [EXE](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.17/TakeBoard_0.2.0-beta.17_x64-setup.exe) |
-| Windows · ARM64 | [EXE](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.17/TakeBoard_0.2.0-beta.17_arm64-setup.exe) |
-| Debian / Ubuntu · Intel / AMD | [DEB](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.17/TakeBoard_0.2.0-beta.17_amd64.deb) |
-| Debian / Ubuntu · ARM64 | [DEB](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.17/TakeBoard_0.2.0-beta.17_arm64.deb) |
+| Mac · Apple 芯片 / Apple silicon | [DMG](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.18/TakeBoard_0.2.0-beta.18_aarch64.dmg) |
+| Mac · Intel | [DMG](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.18/TakeBoard_0.2.0-beta.18_x64.dmg) |
+| Windows · Intel / AMD | [EXE](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.18/TakeBoard_0.2.0-beta.18_x64-setup.exe) |
+| Windows · ARM64 | [EXE](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.18/TakeBoard_0.2.0-beta.18_arm64-setup.exe) |
+| Debian / Ubuntu · Intel / AMD | [DEB](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.18/TakeBoard_0.2.0-beta.18_amd64.deb) |
+| Debian / Ubuntu · ARM64 | [DEB](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.18/TakeBoard_0.2.0-beta.18_arm64.deb) |
 
 Mac 在“关于本机”查看芯片；Windows 在“设置 → 系统 → 系统信息”查看系统类型。
 DEB 面向 Debian/Ubuntu，并非所有 Linux 发行版通用；其他环境可参考[源码运行](source-guide.md)。
-也可查看[完整发布页](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.17)。
+也可查看[完整发布页](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.18)。
 底部 **Source code** 是开发者源码，不是安装包。
 
 ## 安装与首次打开
@@ -26,7 +26,7 @@ DEB 面向 Debian/Ubuntu，并非所有 Linux 发行版通用；其他环境可�
 - **Mac**：打开 DMG，将 TakeBoard 拖到“应用程序”，再从应用程序打开。
 - **Windows**：双击安装 EXE，按向导完成安装，再从开始菜单打开。
 - **Debian / Ubuntu**：用系统软件安装器打开 DEB，安装后从应用菜单启动。
-  若系统没有图形安装器，可在下载目录运行 `sudo apt install ./TakeBoard_0.2.0-beta.17_amd64.deb`；
+  若系统没有图形安装器，可在下载目录运行 `sudo apt install ./TakeBoard_0.2.0-beta.18_amd64.deb`；
   ARM64 设备使用对应文件名。
 
 应用会自动启动本机服务。本机默认无需注册，账号登录是附加功能；账号项目仍受权限保护。

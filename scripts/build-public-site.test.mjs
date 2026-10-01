@@ -5,6 +5,24 @@ import { join } from "node:path";
 import test from "node:test";
 import { buildSite, escapeHtml, installerUrl } from "./build-public-site.mjs";
 
+test("public download documents and media kit point to the release advertised by the website", async () => {
+  const product = JSON.parse(
+    await readFile(new URL("../site/product.json", import.meta.url), "utf8"),
+  );
+  for (const path of ["README.md", "README.en.md", "docs/media-kit.md"]) {
+    const text = await readFile(new URL(`../${path}`, import.meta.url), "utf8");
+    assert.ok(
+      text.includes(product.evidence.release),
+      `${path}: public release link differs from site`,
+    );
+  }
+  for (const path of ["docs/downloads.md", "docs/downloads.en.md"]) {
+    const text = await readFile(new URL(`../${path}`, import.meta.url), "utf8");
+    for (const installer of product.installers)
+      assert.ok(text.includes(installerUrl(product, installer.file)), `${path}: ${installer.file}`);
+  }
+});
+
 test("website palette stays aligned with the app's default Chroma theme", async () => {
   const app = await readFile(new URL("../apps/web/src/styles.css", import.meta.url), "utf8");
   const site = await readFile(new URL("../site/style.css", import.meta.url), "utf8");
@@ -137,7 +155,7 @@ test("practical guides are bilingual, linked, indexed and preserve their evidenc
     assert.equal((html.match(/class="guide-step"/g) ?? []).length, 4);
     assert.ok(html.includes(`href="${home}#download"`));
     assert.ok(html.includes("template=first_try.yml"));
-    assert.ok(html.includes("beta.17"));
+    assert.ok(html.includes(`href="${product.evidence.release}"`));
     assert.ok(html.includes(lang === "en" ? "simulated" : "模拟"));
     assert.ok(html.includes(lang === "en" ? "not execution support" : "不等于执行支持"));
     assert.ok(!html.includes("noindex"));

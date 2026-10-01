@@ -9,7 +9,7 @@ body:
     id: environment
     attributes:
       label: App version and system / 应用版本与系统
-      placeholder: beta.17, macOS M-series; unknown is OK / 不清楚也可以
+      placeholder: App version from Settings and your OS; unknown is OK / 设置中的版本与系统，不清楚也可以
     validations:
       required: true
   - type: dropdown
@@ -23,7 +23,8 @@ body:
         - Adding media / 导入素材
         - Connecting ComfyUI / 连接生成服务
         - Choosing a workflow / 选择工作流
-        - Generating or finding output / 生成与找回结果
+        - Generating or viewing a result / 生成与查看结果
+        - Using a result in another shot / 用结果继续创作
         - Completed a first result / 已完成首次结果
     validations:
       required: true

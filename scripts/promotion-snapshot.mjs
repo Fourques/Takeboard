@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 const repository = "Fourques/Takeboard";
@@ -7,6 +8,7 @@ const repository = "Fourques/Takeboard";
 export function summarizeDownloads(assets) {
   if (!Array.isArray(assets)) return null;
   const installers = assets.filter((asset) => /\.(dmg|exe|deb)$/.test(asset.name ?? ""));
+  if (installers.length === 0) return null;
   if (
     installers.some(
       (asset) => !Number.isSafeInteger(asset.download_count) || asset.download_count < 0,
@@ -18,6 +20,24 @@ export function summarizeDownloads(assets) {
     installers: installers.map((asset) => ({ name: asset.name, downloads: asset.download_count })),
     meaning: "Download events, including maintainer/CI downloads; not unique users or activations.",
   };
+}
+
+export function summarizeReleases(releases) {
+  if (!Array.isArray(releases)) return null;
+  const published = releases
+    .filter(
+      (release) =>
+        !release.draft &&
+        release.published_at &&
+        release.assets?.some((asset) => /\.(dmg|exe|deb)$/.test(asset.name ?? "")),
+    )
+    .sort((a, b) => Date.parse(b.published_at) - Date.parse(a.published_at));
+  return published.map((release) => ({
+    tag: release.tag_name,
+    publishedAt: release.published_at,
+    url: release.html_url,
+    downloads: summarizeDownloads(release.assets),
+  }));
 }
 
 function readApi(endpoint, args = []) {
@@ -39,14 +59,27 @@ function readApi(endpoint, args = []) {
 }
 
 export function collectSnapshot() {
+  const product = JSON.parse(
+    readFileSync(new URL("../site/product.json", import.meta.url), "utf8"),
+  );
+  const publicTag = `v${product.publicVersion}`;
   const repo = readApi(`repos/${repository}`).data;
-  const release = readApi(`repos/${repository}/releases/tags/v0.2.0-beta.17`).data;
+  const release = readApi(`repos/${repository}/releases/tags/${publicTag}`).data;
+  const releases = summarizeReleases(readApi(`repos/${repository}/releases?per_page=100`).data);
   const views = readApi(`repos/${repository}/traffic/views`).data;
   const clones = readApi(`repos/${repository}/traffic/clones`).data;
+  const referrers = readApi(`repos/${repository}/traffic/popular/referrers`).data;
   const weekly = readApi("repos/ruanyf/weekly/issues/11963").data;
   const directory = readApi(
     "repos/light-and-ray/awesome-alternative-uis-for-comfyui/issues/107",
   ).data;
+  const directoryReadme = readApi(
+    "repos/light-and-ray/awesome-alternative-uis-for-comfyui/readme",
+  ).data;
+  const directoryText =
+    directoryReadme?.encoding === "base64" && typeof directoryReadme.content === "string"
+      ? Buffer.from(directoryReadme.content, "base64").toString("utf8")
+      : null;
   const discussion = readApi("graphql", [
     "-f",
     'query={repository(owner:"Fourques",name:"Takeboard"){discussion(number:10){comments{totalCount}}}}',
@@ -58,6 +91,7 @@ export function collectSnapshot() {
   const directoryPullRequests = [
     "repos/thoxakihiko/awesome-ai-video/pulls/14",
     "repos/lucianosb/awesome-comfyui/pulls/26",
+    "repos/light-and-ray/awesome-alternative-uis-for-comfyui/pulls/113",
   ].map((endpoint) => {
     const pull = readApi(endpoint).data;
     return {
@@ -84,12 +118,24 @@ export function collectSnapshot() {
   });
   return {
     observedAt: new Date().toISOString(),
-    campaignRelease: "v0.2.0-beta.17",
+    campaignRelease: publicTag,
+    latestInstallerRelease: releases?.[0] ?? null,
+    publicEntrypointUpToDate: releases?.length ? releases[0].tag === publicTag : null,
+    releaseDownloads: releases,
+    releaseSampleLimit: 100,
     stars: repo?.stargazers_count ?? null,
     forks: repo?.forks_count ?? null,
     downloads: summarizeDownloads(release?.assets),
-    traffic14Days: views ? { views: views.count, uniqueVisitors: views.uniques } : null,
+    traffic14Days: views
+      ? {
+          views: views.count,
+          uniqueVisitors: views.uniques,
+          firstDay: views.views?.[0]?.timestamp ?? null,
+          lastDay: views.views?.at(-1)?.timestamp ?? null,
+        }
+      : null,
     clones14Days: clones ? { clones: clones.count, uniqueCloners: clones.uniques } : null,
+    referrers14Days: referrers,
     feedbackComments: discussion?.comments?.totalCount ?? null,
     directoryPullRequests,
     editorialSubmissions,
@@ -99,6 +145,13 @@ export function collectSnapshot() {
     comfyDirectorySubmission: directory
       ? { state: directory.state, comments: directory.comments, url: directory.html_url }
       : null,
+    comfyDirectoryInclusion: {
+      verified:
+        directoryText === null ? null : directoryText.includes(`https://github.com/${repository}`),
+      url: "https://github.com/light-and-ray/awesome-alternative-uis-for-comfyui#-takeboard",
+      meaning:
+        "Actual README link checked; a listing is not a quality certification or endorsement.",
+    },
     comfyShowcaseDiscussion: showcase
       ? {
           title: showcase.title,

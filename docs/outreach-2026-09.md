@@ -1,6 +1,6 @@
 # TakeBoard 宣传内容与渠道稿
 
-更新：2026-09-30。本文维护当前可用文案；历史投稿和回复保留在[推广记录](promotion-log.md)，草稿不等于已发布。
+更新：2026-10-02。本文维护当前可用文案；历史投稿和回复保留在[推广记录](promotion-log.md)，草稿不等于已发布。
 
 ## 统一定位
 
@@ -71,13 +71,15 @@ English:
 仅编辑原帖，不新增渠道、不顶帖、不重复投稿。
 
 - [ComfyUI Show and tell](https://github.com/Comfy-Org/ComfyUI/discussions/16666)：向已有 ComfyUI 的用户解释创作画布如何使用工作流。
-- [项目公告](https://github.com/Fourques/Takeboard/discussions/10)：双语试用入口、主要创作路径和 beta.17 更新。
+- [项目公告](https://github.com/Fourques/Takeboard/discussions/10)：双语试用入口、主要创作路径和 beta.18 更新。
 - [科技爱好者周刊](https://github.com/ruanyf/weekly/issues/11963)：简短介绍核心用途与试用条件。
 - [HelloGitHub](https://github.com/521xueweihan/HelloGitHub/issues/3804)：按投稿字段提供定位、能力与截图。
 - [GitHubDaily](https://github.com/GitHubDaily/GitHubDaily/issues/1125)：用图片接视频的创作例子解释用途。
 - [ComfyUI UI 目录](https://github.com/light-and-ray/awesome-alternative-uis-for-comfyui/issues/107)：说明集成类别、工作流执行边界与依赖。
 
-两个已有目录 PR 的条目保持准确，不为改写而追加提交。投稿状态不等于收录。
+[ComfyUI UI 目录](https://github.com/light-and-ray/awesome-alternative-uis-for-comfyui#-takeboard)已于 9 月 30 日正式收录；其余投稿与两个目录 PR 继续等待审核。详情见[推广记录](promotion-log.md)。
+
+10 月 2 日原位更新项目公告、周刊和 HelloGitHub 中的版本说明；目录中偏重生成历史的旧介绍已提交[单段修订 PR #113](https://github.com/light-and-ray/awesome-alternative-uis-for-comfyui/pull/113)，尚待合并。没有重新投稿或要求维护者提前审核。
 
 ### ComfyUI Show and tell 正文
 

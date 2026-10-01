@@ -55,7 +55,7 @@ export const content = {
     faq: [
       [
         "Is this a replacement for ComfyUI?",
-        "TakeBoard lets you run generation and organize media, shots and results in a project. Use ComfyUI itself to edit the underlying node graph. TakeBoard is an independent project, not affiliated with Comfy Org.",
+        "TakeBoard brings image and video creation onto a connected canvas, using your own ComfyUI to run the workflows. Use ComfyUI's editor when you need to change the underlying node graph. TakeBoard is an independent project, not affiliated with Comfy Org.",
       ],
       [
         "Does every imported workflow work?",
@@ -164,7 +164,7 @@ export const content = {
     faq: [
       [
         "它会替代 ComfyUI 吗？",
-        "TakeBoard 提供生成操作，以及素材、镜头和结果的项目管理。修改底层节点图仍使用 ComfyUI。TakeBoard 是独立项目，与 Comfy Org 无隶属关系。",
+        "TakeBoard 将图片与视频创作放进相连的画布，使用自己的 ComfyUI 执行工作流。需要修改底层节点图时，进入 ComfyUI 编辑器。TakeBoard 是独立项目，与 Comfy Org 无隶属关系。",
       ],
       [
         "导入工作流就能运行吗？",
@@ -235,7 +235,7 @@ export const guideContent = {
     intro:
       "Create a project, connect a compatible workflow, generate an image or video, and use the result in your next step. Start with a ComfyUI setup that already works for you.",
     scope:
-      "Maintainer-written guide · public beta.17 · development screenshots show simulated results, not model output. Newer main UI may differ from the installer.",
+      "Development screenshots use simulated results, not model output. Choose an installer below to get the current beta.",
     switchLabel: "简体中文",
     back: "TakeBoard",
     sections: [
@@ -246,8 +246,8 @@ export const guideContent = {
       ],
       [
         "02",
-        "Check what a workflow actually accepts.",
-        "For a first generation, use a workflow that already runs in your own ComfyUI. In TakeBoard, check that its dependencies and input bindings are ready. Connect the supported inputs, then inspect the names of the connected assets before submitting. A visible line or an @ mention is not proof that a model supports that reference.",
+        "Choose a task and workflow.",
+        "Choose whether to make an image or a video. Add a recommended template that matches your installed models, or import a workflow you already use in ComfyUI. Once TakeBoard reports it usable, choose it for your shot and connect the reference media it accepts. Text-only generation needs no image input.",
       ],
       [
         "03",
@@ -289,7 +289,7 @@ export const guideContent = {
     feedback: "Send first-session feedback",
     download: "Choose an installer",
     install: "Installation help",
-    sources: "Detailed first-session checklist",
+    sources: "Full getting-started guide",
     resultCaption:
       "Generation-record UI in a development build. The illustrated take is simulated, not model-generated.",
     footer: "Independent project · Apache-2.0 · no tracking scripts",
@@ -303,8 +303,7 @@ export const guideContent = {
     heading: "从第一个画布项目开始创作。",
     intro:
       "创建项目，连接可用工作流，生成图片或视频，再用结果继续下一步创作。已有 ComfyUI 环境的用户，可以从自己熟悉的工作流开始。",
-    scope:
-      "维护者编写 · 公开版本 beta.17 · 开发版截图为模拟结果，非模型输出。main 的新界面可能与安装包不同。",
+    scope: "开发版截图使用模拟结果，非模型输出。下方下载入口提供当前测试版。",
     switchLabel: "English",
     back: "TakeBoard",
     sections: [
@@ -315,8 +314,8 @@ export const guideContent = {
       ],
       [
         "02",
-        "确认工作流真正接受什么输入。",
-        "第一次生成，先使用一份在自己的 ComfyUI 中已经跑通的工作流。在 TakeBoard 中检查依赖与输入绑定，连接它支持的素材，提交前核对已连接的素材名称。有一根线，或提示词里有一个 @ 引用，不代表模型就支持这类参考输入。",
+        "选择创作任务与工作流。",
+        "先决定生成图片还是视频。从“可添加”中选择与已安装模型匹配的模板，或导入自己在 ComfyUI 中使用的工作流。检查显示可用后，将它用于镜头，再连接支持的参考素材。文生图与文生视频可以直接从提示词开始。",
       ],
       [
         "03",
