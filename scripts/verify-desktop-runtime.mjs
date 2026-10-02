@@ -107,6 +107,23 @@ async function stop() {
   await until("owned lease released", () => !existsSync(lease));
 }
 try {
+  const serverManifest = JSON.parse(
+    await readFile(new URL("../apps/server/package.json", import.meta.url), "utf8"),
+  );
+  const { stdout: packagedFastifyVersion } = await promisify(execFile)(
+    binary,
+    [
+      "-e",
+      'console.log(require("node:module").createRequire(process.argv[1])("fastify/package.json").version)',
+      join(resources, "app", "package.json"),
+    ],
+    { timeout: 6000, maxBuffer: 65536, windowsHide: true },
+  );
+  assert.equal(
+    packagedFastifyVersion.trim(),
+    serverManifest.dependencies.fastify,
+    "The installed runtime must contain the reviewed Fastify version, not a stale dependency",
+  );
   const build = JSON.parse(await readFile(join(resources, "BUILD.json"), "utf8"));
   const preferencesFile = join(root, "client", "update-preferences.json");
   const updates = async (operation, input = {}) => {
@@ -205,7 +222,7 @@ try {
   assert.equal(list.projects[0].title, "Packaged runtime verification");
   await stop();
   console.log(
-    "PASS: packaged update preferences persist offline; runtime starts, remote helper reuses its actual port, project defaults and login survive restart, and the owned lease is released",
+    `PASS: packaged Fastify ${packagedFastifyVersion.trim()} matches the reviewed dependency; update preferences persist offline; runtime starts, remote helper reuses its actual port, project defaults and login survive restart, and the owned lease is released`,
   );
 } finally {
   await stop().catch(() => {

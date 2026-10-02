@@ -32,6 +32,29 @@ async function fixture() {
 }
 
 describe("portal HTTP boundary", () => {
+  it("rejects malformed URLs before rendering or relaying and keeps device authentication enforced", async () => {
+    const app = await fixture();
+    for (const host of ["portal.example.test", "device01.portal.example.test"]) {
+      for (const method of ["GET", "POST", "DELETE"] as const) {
+        for (const url of ["/%", "/__portal/api/%ZZ", "/projects/%E0%A4%A"]) {
+          const response = await app.inject({ method, url, headers: { host } });
+          expect(response.statusCode, `${method} ${host}${url}: ${response.body}`).toBe(400);
+          expect(response.body).not.toContain("TakeBoard Portal");
+        }
+      }
+    }
+    const device = await app.inject({
+      url: "/api/projects",
+      headers: { host: "device01.portal.example.test" },
+    });
+    expect(device.statusCode, device.body).toBe(401);
+    const health = await app.inject({
+      url: "/__portal/api/health",
+      headers: { host: "portal.example.test" },
+    });
+    expect(health.statusCode, health.body).toBe(200);
+  });
+
   it("serves the account UI and assets with browser security headers", async () => {
     const app = await fixture();
     const page = await app.inject({

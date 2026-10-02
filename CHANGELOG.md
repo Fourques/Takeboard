@@ -6,6 +6,9 @@ before moving production work to a newer minor version.
 
 ## Unreleased
 
+- Upgrade server and Portal from Fastify 5.12.1 to 5.12.5, fixing four high-severity validation/authentication advisories and the HTTP/2 trailer denial-of-service advisory.
+- Add behavioral regressions for all five Fastify advisories against each application's actual dependency, plus real API/SPA/Portal boundary tests. Run dependency security regressions in the scheduled and dependency-change audit.
+
 ## 0.2.0-beta.18 — 2026-09-30
 
 - Fix known production dependency vulnerabilities in brace-expansion (5.0.12) and both fast-uri dependency branches (3.1.8 and 4.1.5), without changing their major versions.

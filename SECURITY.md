@@ -1,7 +1,8 @@
 # Security policy
 
-TakeBoard 0.x is a self-hosted Public Preview and listens on `127.0.0.1` by default. Authentication
-is required by default. The server refuses a non-loopback bind unless authentication is required and
+TakeBoard 0.x is a self-hosted Public Preview and listens on `127.0.0.1` by default. Local use defaults
+to optional account login; device access uses its own local identity and session, while account-owned
+projects remain protected. The server refuses a non-loopback bind unless authentication is required and
 the operator explicitly sets `TAKEBOARD_ALLOW_NON_LOOPBACK=1`; it also rejects unapproved `Host` and
 browser `Origin` values to reduce DNS-rebinding and cross-site request risks.
 
@@ -40,13 +41,52 @@ staging directory, rejects links and path traversal, verifies every declared siz
 and opens the database before publishing the project. Imported ComfyUI workflows are not executable
 until their bindings and dependencies have been explicitly inspected and trusted.
 
+## Fastify dependency review — 2026-10-02
+
+Server (including the same-GPU gateway) and Portal now pin Fastify **5.12.5**. The shared lockfile
+contains that version. The upgrade covers the following upstream advisories:
+
+| Advisory | Affected behavior | Current source review |
+| --- | --- | --- |
+| [GHSA-9q9j-q6p8-xq58](https://github.com/fastify/fastify/security/advisories/GHSA-9q9j-q6p8-xq58) | Mixed-case header-schema dependencies can bypass validation | Security headers are checked explicitly; no affected Fastify header Schema was found |
+| [GHSA-hwr6-493r-vm6h](https://github.com/fastify/fastify/security/advisories/GHSA-hwr6-493r-vm6h) | Boolean `false` request schemas are skipped | No deny-all boolean request Schema was found |
+| [GHSA-p68q-wchp-6fh7](https://github.com/fastify/fastify/security/advisories/GHSA-p68q-wchp-6fh7) | Malformed URLs can reach a sibling's protected not-found handler | Server has a public SPA fallback, but no sibling private fallback; Portal authenticates device requests in its explicit route |
+| [GHSA-667r-xxjv-c9mm](https://github.com/fastify/fastify/security/advisories/GHSA-667r-xxjv-c9mm) | Async validation can replace the body with attacker-controlled `value` or interpret its `error` | No `$async` Fastify request Schema or custom validation compiler was found; route data uses explicit parsing and checks |
+| [GHSA-4mh8-r7rc-xpvc](https://github.com/fastify/fastify/security/advisories/GHSA-4mh8-r7rc-xpvc) | HTTP/2 responses with trailers can terminate Node.js | No HTTP/2 Fastify configuration or `reply.trailer()` usage was found |
+
+These observations narrow the known exposure; they do not justify retaining an affected dependency.
+Behavioral tests in `scripts/fastify-security.test.mjs` exercise all five cases against each
+application's resolved Fastify, including a real isolated HTTP/2 connection and a follow-up health
+request. App tests also verify malformed URL rejection, server API authentication and SPA fallback,
+and Portal device authentication. The scheduled audit runs these regressions alongside the package
+audit, without suppressing the five advisories.
+
+Validation on 2026-10-02:
+
+- Production and full dependency audits both reported zero known Node.js vulnerabilities after
+  the upgrade (before: four high and one moderate Fastify advisory).
+- Lint, type checks, builds, all application/package tests and script tests passed. Browser regression
+  tests passed 70 cases; one real-GPU case was skipped. No live ComfyUI service was changed.
+- Temporary production deployments made with the desktop server and Portal deployment commands
+  both resolved Fastify 5.12.5 and passed the ten advisory regressions. This verifies dependency
+  packaging, not a newly built native installer or a running container.
+- An isolated 5.12.1 baseline failed all five regression cases. Its malformed-URL request timed out;
+  this fixture did not reproduce a private-data leak. Its HTTP/2 trailer subprocess terminated,
+  and its async-validation fixture replaced the validated body. Fixed-version cases passed.
+
+**Previously published beta.18 installers still contain Fastify 5.12.1.** This source fix does not
+patch an already installed app or an existing Portal container. Deployments must update their source
+and dependencies (or rebuild their container) and restart through their normal service management;
+desktop users need a newly built installer containing this fix. Do not describe beta.18 as having
+these fixes before a subsequent installer release.
+
 ## Known upstream advisory
 
 As of 2026-09-04, the **Linux desktop preview only** inherits
 [RUSTSEC-2024-0429 / GHSA-wrw7-89jp-8q8g](https://rustsec.org/advisories/RUSTSEC-2024-0429.html)
 through Tauri's `wry -> webkit2gtk/gtk -> glib 0.18.5` stack. The affected API is
 `glib::VariantStrIter`; TakeBoard does not call it, and a source-tree reachability search found no
-reference to that API in TakeBoard code. The Web app, server, Portal, portable distributions,
+reference to that API in TakeBoard code. The Web app, server, Portal,
 macOS desktop and Windows desktop do not use this Linux GTK dependency.
 
 The advisory is fixed in `glib >= 0.20`, but the current stable Wry Linux backend still depends on

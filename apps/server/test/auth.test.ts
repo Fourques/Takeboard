@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -38,6 +38,46 @@ function sessionHeaders(response: {
 }
 
 describe("TakeBoard authentication and authorization", () => {
+  it("rejects malformed URLs before the SPA fallback and preserves normal API authentication", async () => {
+    const root = await mkdtemp(join(tmpdir(), "takeboard-auth-fallback-"));
+    const webRoot = join(root, "web");
+    await mkdir(webRoot);
+    await writeFile(join(webRoot, "index.html"), "<html>public-app-shell</html>");
+    const app = buildApp({
+      projectsRoot: join(root, "projects"),
+      webRoot,
+      auth: { mode: "required", databasePath: join(root, "system", "auth.db") },
+    });
+    cleanup.push(async () => {
+      await app.close();
+      await rm(root, { recursive: true, force: true });
+    });
+    const bootstrap = await app.inject({
+      method: "POST",
+      url: "/api/auth/bootstrap",
+      payload: {
+        name: "Owner",
+        email: "owner@example.test",
+        password: "correct horse battery staple",
+      },
+    });
+    expect(bootstrap.statusCode, bootstrap.body).toBe(201);
+    for (const method of ["GET", "POST", "DELETE"] as const) {
+      for (const url of ["/api/projects/%", "/api/%ZZ", "/app/%E0%A4%A"]) {
+        const response = await app.inject({ method, url });
+        expect(response.statusCode, `${method} ${url}: ${response.body}`).toBe(400);
+        expect(response.body).not.toContain("public-app-shell");
+      }
+    }
+    const protectedApi = await app.inject({ url: "/api/projects" });
+    expect(protectedApi.statusCode, protectedApi.body).toBe(401);
+    const page = await app.inject({ url: "/app/missing" });
+    expect(page.statusCode, page.body).toBe(200);
+    expect(page.body).toContain("public-app-shell");
+    const health = await app.inject({ url: "/api/health" });
+    expect(health.statusCode, health.body).toBe(200);
+  });
+
   it("bootstraps one administrator and protects state-changing requests with CSRF", async () => {
     const app = await authApp();
     const status = await app.inject({ method: "GET", url: "/api/auth/status" });

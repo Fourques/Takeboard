@@ -18,7 +18,7 @@
     "@takeboard/identity": "workspace:*",
     "@takeboard/portal-protocol": "workspace:*",
     "better-sqlite3": "13.0.3",
-    "fastify": "5.12.1",
+    "fastify": "5.12.5",
     "ws": "8.21.0"
   },
   "devDependencies": {
