@@ -4,7 +4,7 @@
   "primaryInterfaceLanguage": "zh-CN",
   "repository": "https://github.com/Fourques/Takeboard",
   "website": "https://fourques.github.io/Takeboard/",
-  "publicVersion": "0.2.0-beta.18",
+  "publicVersion": "0.2.0-beta.19",
   "reviewedAt": "2026-10-02",
   "license": "Apache-2.0",
   "platforms": ["macOS", "Windows", "Debian/Ubuntu"],
@@ -20,43 +20,43 @@
       "platform": "macOS",
       "architecture": "ARM64",
       "label": "Mac · Apple silicon",
-      "file": "TakeBoard_0.2.0-beta.18_aarch64.dmg"
+      "file": "TakeBoard_0.2.0-beta.19_aarch64.dmg"
     },
     {
       "platform": "macOS",
       "architecture": "x64",
       "label": "Mac · Intel",
-      "file": "TakeBoard_0.2.0-beta.18_x64.dmg"
+      "file": "TakeBoard_0.2.0-beta.19_x64.dmg"
     },
     {
       "platform": "Windows",
       "architecture": "x64",
       "label": "Windows · Intel / AMD",
-      "file": "TakeBoard_0.2.0-beta.18_x64-setup.exe"
+      "file": "TakeBoard_0.2.0-beta.19_x64-setup.exe"
     },
     {
       "platform": "Windows",
       "architecture": "ARM64",
       "label": "Windows · ARM64",
-      "file": "TakeBoard_0.2.0-beta.18_arm64-setup.exe"
+      "file": "TakeBoard_0.2.0-beta.19_arm64-setup.exe"
     },
     {
       "platform": "Debian/Ubuntu",
       "architecture": "x64",
       "label": "Debian / Ubuntu · x64",
-      "file": "TakeBoard_0.2.0-beta.18_amd64.deb"
+      "file": "TakeBoard_0.2.0-beta.19_amd64.deb"
     },
     {
       "platform": "Debian/Ubuntu",
       "architecture": "ARM64",
       "label": "Debian / Ubuntu · ARM64",
-      "file": "TakeBoard_0.2.0-beta.18_arm64.deb"
+      "file": "TakeBoard_0.2.0-beta.19_arm64.deb"
     }
   ],
   "arbitraryWorkflowCompatibilityGuaranteed": false,
   "demo": { "realGpu": false, "sourceCommit": "b58fd273aa84fce409d581abc140f80948b0872d" },
   "evidence": {
-    "release": "https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.18",
+    "release": "https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.19",
     "compatibility": "https://github.com/Fourques/Takeboard/blob/main/docs/compatibility-matrix.md",
     "demo": "https://github.com/Fourques/Takeboard/blob/main/docs/demo-guide.md"
   }

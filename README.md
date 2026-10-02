@@ -26,7 +26,7 @@ TakeBoard 是基于 ComfyUI 的开源 AI 创作画布。在同一工作区选择
 
 ## 开始使用
 
-当前公开版本：[**v0.2.0-beta.18**](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.18)。提供 macOS、Windows、Debian/Ubuntu 的 x64 / ARM64 安装包，包含应用运行时，不需要安装开发工具。
+当前公开版本：[**v0.2.0-beta.19**](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.19)。提供 macOS、Windows、Debian/Ubuntu 的 x64 / ARM64 安装包，包含应用运行时，不需要安装开发工具。
 
 1. [下载并安装](docs/downloads.md)，新建项目，选择保存位置。
 2. 在设置中连接已有的 ComfyUI，添加一个适合当前设备的工作流。
@@ -41,7 +41,7 @@ TakeBoard 是基于 ComfyUI 的开源 AI 创作画布。在同一工作区选择
 - **可以导入自己的工作流。** 支持 Workflow JSON、API Prompt JSON，以及包含工作流元数据的 PNG。TakeBoard 会检查依赖与输入；自定义工作流可能需要确认参数映射和执行信任。不能转换的工作流可在 ComfyUI 中导出 API 格式后再导入。
 - **当前为 Beta。** 不同工作流的输入能力与硬件要求不同；首次使用建议从一个兼容工作流开始。[工作流指南](docs/creator-workstation.md) · [兼容记录](docs/compatibility-matrix.md)。
 
-beta.18 包含连接重试、取消恢复及依赖安全修复。更新内容见[版本记录](CHANGELOG.md)。
+beta.19 包含最新 Fastify 安全修复，建议旧版用户升级。更新内容见[版本记录](CHANGELOG.md)。
 
 ## 按需了解
 

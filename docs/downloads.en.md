@@ -4,7 +4,7 @@
 
 ## Download TakeBoard
 
-**v0.2.0-beta.18** is the current preview for all six platform/architecture combinations. Choose your computer and download
+**v0.2.0-beta.19** is the current preview for all six platform/architecture combinations. Choose your computer and download
 one file. The app runtime is included; no separate Node.js, pnpm or Rust installation is needed.
 ComfyUI, models and custom nodes must be installed separately.
 
@@ -12,16 +12,16 @@ The app interface is currently primarily Chinese; the website and getting-starte
 
 | Your computer | Download |
 | --- | --- |
-| Mac · Apple silicon | [DMG](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.18/TakeBoard_0.2.0-beta.18_aarch64.dmg) |
-| Mac · Intel | [DMG](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.18/TakeBoard_0.2.0-beta.18_x64.dmg) |
-| Windows · Intel / AMD | [EXE](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.18/TakeBoard_0.2.0-beta.18_x64-setup.exe) |
-| Windows · ARM64 | [EXE](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.18/TakeBoard_0.2.0-beta.18_arm64-setup.exe) |
-| Debian / Ubuntu · Intel / AMD | [DEB](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.18/TakeBoard_0.2.0-beta.18_amd64.deb) |
-| Debian / Ubuntu · ARM64 | [DEB](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.18/TakeBoard_0.2.0-beta.18_arm64.deb) |
+| Mac · Apple silicon | [DMG](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.19/TakeBoard_0.2.0-beta.19_aarch64.dmg) |
+| Mac · Intel | [DMG](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.19/TakeBoard_0.2.0-beta.19_x64.dmg) |
+| Windows · Intel / AMD | [EXE](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.19/TakeBoard_0.2.0-beta.19_x64-setup.exe) |
+| Windows · ARM64 | [EXE](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.19/TakeBoard_0.2.0-beta.19_arm64-setup.exe) |
+| Debian / Ubuntu · Intel / AMD | [DEB](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.19/TakeBoard_0.2.0-beta.19_amd64.deb) |
+| Debian / Ubuntu · ARM64 | [DEB](https://github.com/Fourques/Takeboard/releases/download/v0.2.0-beta.19/TakeBoard_0.2.0-beta.19_arm64.deb) |
 
 Check **About This Mac** or Windows **Settings → System → About** for your processor.
 DEB packages target Debian/Ubuntu, not every Linux distribution. Other environments can use
-[source setup](../CONTRIBUTING.md). See the [release page](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.18) for details.
+[source setup](../CONTRIBUTING.md). See the [release page](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.19) for details.
 **Source code** at the bottom is for developers, not an installer.
 
 ## Install and open
@@ -29,7 +29,7 @@ DEB packages target Debian/Ubuntu, not every Linux distribution. Other environme
 - **Mac:** open the DMG, drag TakeBoard into Applications, then launch it from Applications.
 - **Windows:** run the EXE setup wizard, then launch TakeBoard from Start.
 - **Debian / Ubuntu:** open the DEB with your software installer and launch from the applications menu.
-  Without a graphical installer, run `sudo apt install ./TakeBoard_0.2.0-beta.18_amd64.deb`
+  Without a graphical installer, run `sudo apt install ./TakeBoard_0.2.0-beta.19_amd64.deb`
   in the download directory; use the ARM64 filename on ARM devices.
 
 The app starts its local service automatically. Local use needs no registration; login is optional,

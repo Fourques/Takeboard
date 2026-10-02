@@ -74,11 +74,16 @@ Validation on 2026-10-02:
   this fixture did not reproduce a private-data leak. Its HTTP/2 trailer subprocess terminated,
   and its async-validation fixture replaced the validated body. Fixed-version cases passed.
 
-**Previously published beta.18 installers still contain Fastify 5.12.1.** This source fix does not
-patch an already installed app or an existing Portal container. Deployments must update their source
-and dependencies (or rebuild their container) and restart through their normal service management;
-desktop users need a newly built installer containing this fix. Do not describe beta.18 as having
-these fixes before a subsequent installer release.
+**Published beta.19 installers contain Fastify 5.12.5.** All six platform/architecture builds passed
+their final installed or mounted runtime checks in
+[release run 36962531345](https://github.com/Fourques/Takeboard/actions/runs/36962531345), including
+execution of the packaged Node to verify its Fastify version. The
+[main security audit](https://github.com/Fourques/Takeboard/actions/runs/36962510886) also passed.
+
+Previously published beta.18 installers still contain Fastify 5.12.1. A source update does not patch
+an already installed app or an existing Portal container. Desktop users must install beta.19 or later;
+remote deployments must update their source and dependencies (or rebuild their container) and restart
+through their normal service management. Updating a desktop app does not upgrade a remote deployment.
 
 ## Known upstream advisory
 
