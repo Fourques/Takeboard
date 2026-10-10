@@ -77,11 +77,16 @@ Validation on 2026-10-10:
   A zero vulnerability count must not be presented as a warning-free Rust dependency tree.
 - The upgraded desktop passed Linux `cargo check` using isolated development libraries, with
   deprecated URL-opening calls removed; all six native Rust unit tests passed, including URL and
-  native-action origin restrictions. Cross-platform native installer verification remains
-  part of the next installer build, not this source review.
+  native-action origin restrictions.
+- [beta.20 installer publication](https://github.com/Fourques/Takeboard/actions/runs/38028293338)
+  subsequently passed for all six OS/CPU targets. macOS disk images were mounted read-only;
+  Windows and Debian packages were installed in CI. Each final package passed the bundled-runtime
+  version and lifecycle checks, and its SHA-256 was checked before publication. This verifies the
+  packaged runtime, not native UI behavior or real-GPU generation on all six targets.
 
-**Published beta.19 installers predate these media fixes and are not patched by a source push.**
-Desktop users need a newly built installer containing this change; source deployments must reinstall
+**[Published beta.20 installers](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.20)
+contain these fixes; beta.19 and older installers do not.** Desktop users should install beta.20;
+source deployments must reinstall
 from the updated lockfile and restart, and container deployments must rebuild. Hosts using a system
 libvips/librsvg instead of sharp's bundled libraries must independently install librsvg 2.63.2 or later.
 The installed-runtime gate now checks the actual native SVG library and multipart parser so that

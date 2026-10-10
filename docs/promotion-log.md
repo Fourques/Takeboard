@@ -2,6 +2,13 @@
 
 本文件区分真实发布与准备工作，不把下载当用户，不把投稿当收录。
 
+## 2026-10-10：beta.20 安全安装包发布
+
+- [beta.20](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.20)于 05:49 UTC 发布，六个平台附件均为 uploaded、非空并有 SHA-256 摘要。[发布构建](https://github.com/Fourques/Takeboard/actions/runs/38028293338)的六个原生构建及最终包内运行时检查全部通过。本版包含媒体处理与依赖安全修复，以及 Windows/Linux ARM64 后续更新包匹配修复。
+- 官网产品信息、中英文 README、下载指南与媒体包链接同步到已发布 beta.20。旧日期的版本、投稿和下载统计保留为历史，不改写为新版成绩。本轮不新增社区帖子或回复；新版构建及维护者下载不作为推广转化。
+- Node.js 完整依赖审计无已知漏洞，GitHub Dependabot 开放告警为 0；Linux GTK 链仍有两项已记录、未解决的 RustSec 警告，不能宣传为所有依赖风险清零。源码、容器与安装包分别说明更新方式。
+- 发布源码的[跨平台 CI](https://github.com/Fourques/Takeboard/actions/runs/38028142686)、[原生桌面检查](https://github.com/Fourques/Takeboard/actions/runs/38028142696)、[安全审计](https://github.com/Fourques/Takeboard/actions/runs/38028142711)与[Portal 容器检查](https://github.com/Fourques/Takeboard/actions/runs/38028142728)均通过。官网及推广脚本 11 项检查、本地静态构建和 lint 通过。
+
 ## 2026-10-10：推广只读复盘（05:30 UTC）
 
 - 运行现有 `promotion-snapshot.mjs`，并回读社区回复与目录 README。仓库为 **8 Stars、0 Forks**；beta.19 累计 **19 次安装包下载事件**：Mac ARM64 2、Mac Intel 1、Windows x64 12、Windows ARM64 1、Linux x64 2、Linux ARM64 1。下载可能包含维护者或验证活动，不等于 19 名用户。
