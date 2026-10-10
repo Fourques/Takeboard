@@ -23,7 +23,7 @@
     "better-sqlite3": "13.0.3",
     "drizzle-orm": "0.45.2",
     "fastify": "5.12.5",
-    "sharp": "0.35.4",
+    "sharp": "0.35.5",
     "tar-stream": "3.2.1",
     "ws": "8.21.0"
   },
