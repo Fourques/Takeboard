@@ -1,6 +1,6 @@
 # TakeBoard 宣传内容与渠道稿
 
-更新：2026-10-02。本文维护当前可用文案；历史投稿和回复保留在[推广记录](promotion-log.md)，草稿不等于已发布。
+更新：2026-10-10。本文维护当前可用文案；历史投稿和回复保留在[推广记录](promotion-log.md)，草稿不等于已发布。
 
 ## 统一定位
 
@@ -36,7 +36,7 @@ English: **An open-source AI creation canvas built on ComfyUI. One canvas for AI
 
 下载与介绍：https://fourques.github.io/Takeboard/zh/
 
-公开演示目前是带有标记的模拟交互，不是生成样片。按目标社区规则选择分类，不重复投稿。
+现在有一支 42 秒真实项目短片，展示参考连接、生成、选择结果与继续创作：https://fourques.github.io/Takeboard/zh/#demo 。生成等待已剪去。按目标社区规则选择分类，不重复投稿。
 
 ## 短帖草稿（未发布）
 
@@ -48,17 +48,11 @@ English:
 
 > I'm building TakeBoard, an open-source AI creation canvas on ComfyUI. Choose models, connect media, generate images or videos, and use a result in your next step. Desktop beta; bring your own ComfyUI. https://fourques.github.io/Takeboard/
 
-## 真实 Demo 脚本（待制作）
+## 当前产品短片
 
-标题：从图片到视频，在一张画布里创作
+[中文](https://fourques.github.io/Takeboard/zh/#demo) · [English](https://fourques.github.io/Takeboard/#demo) · [媒体素材](media-kit.md)
 
-- 开头直接展示最终视频与对应画布。
-- 回到一个干净项目，导入有授权的参考素材或从文生图开始。
-- 选择一个真实可用的工作流，连接输入，填写提示词，提交生成。
-- 展示真实结果，再将它接入下一步创作。只有实际跑通后才展示两步生成；否则清楚展示已完成的一步。
-- 结尾留一个下载入口。录屏可剪去等待，但标注实际耗时。
-
-画面主角是创作和结果，不是下载模型、解释参数映射或展示运行日志。版本、模型、工作流、硬件与参数放在配套说明；素材授权和输入是否生效需先核对。现有模拟视频可以说明交互，不能替代真实生成案例。
+42 秒，真实创作画布中的参考、生成、采用与结果复用。展示一个完成结果及未生成的备选分支，不宣称整部故事已生成；生成等待已剪去。对外围绕创作过程，不把制作参数、执行日志或内部审片记录当作宣传内容。
 
 ## 编辑与教程作者
 
@@ -96,9 +90,9 @@ The canvas is for creative work with media and generation nodes. Your ComfyUI st
 - Add recommended templates or import your own workflows; custom graphs may need input mapping and dependency fixes.
 - Connect local or remote ComfyUI. A project can stay on your laptop while outputs are collected from your GPU server.
 
-![TakeBoard creation canvas; development-build UI with simulated results](https://raw.githubusercontent.com/Fourques/Takeboard/8a2f03543497731b2d141ef233609ef25f6d6a5f/docs/assets/takeboard-demo-cover.png)
+[![A real TakeBoard project: references, generated media and creative branches](https://fourques.github.io/Takeboard/media/takeboard-film-poster.en.jpg)](https://fourques.github.io/Takeboard/#demo)
 
-*The screenshot and [short interaction demo](https://github.com/Fourques/Takeboard/blob/main/docs/demo-guide.md#english) use simulated results, not real model output.*
+**[Watch the 42-second film](https://fourques.github.io/Takeboard/#demo)**—a real project, from a reference to a generated result and the next creative step. Generation wait is omitted; both editions show the actual Chinese app interface.
 
 **[Try the desktop beta](https://fourques.github.io/Takeboard/#download)** · [Getting started](https://fourques.github.io/Takeboard/guides/organize-comfyui-results/) · [Source](https://github.com/Fourques/Takeboard)
 

@@ -62,6 +62,9 @@ async function newPage(width, height, options = {}) {
         ".png": "image/png",
         ".svg": "image/svg+xml",
         ".webm": "video/webm",
+        ".mp4": "video/mp4",
+        ".jpg": "image/jpeg",
+        ".vtt": "text/vtt",
         ".mjs": "text/javascript",
       };
       await route.fulfill({

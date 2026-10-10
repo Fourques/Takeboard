@@ -11,8 +11,8 @@ const asset = (path) => fileURLToPath(new URL(path, import.meta.url));
 const data = async (path, mime) =>
   `data:${mime};base64,${(await readFile(asset(path))).toString("base64")}`;
 const media = {
-  front: await data("../docs/assets/takeboard-demo-cover.png", "image/png"),
-  back: await data("../docs/assets/takeboard-demo-results.png", "image/png"),
+  front: await data("../docs/assets/takeboard-film-canvas.png", "image/png"),
+  back: await data("../docs/assets/takeboard-film-result.png", "image/png"),
   logo: await data("../apps/web/public/takeboard-icon.svg", "image/svg+xml"),
 };
 const css = await readFile(asset("../site/style.css"), "utf8");
@@ -29,7 +29,7 @@ try {
     .social-copy .lead{margin-top:24px;font-size:20px;max-width:430px;line-height:1.6}
     .social-card .director-view{position:absolute;right:18px;top:85px;width:550px}
     .social-card footer{position:absolute;bottom:30px;left:60px;right:60px;border-top:1px solid var(--line);padding-top:18px;display:flex;justify-content:space-between;font-size:12px;color:var(--muted)}
-  </style></head><body><main class="social-card"><div class="brand"><img src="${media.logo}" alt="">TakeBoard</div><div class="social-copy"><p class="eyebrow">OPEN SOURCE · BUILT ON COMFYUI</p><h1>Give your ideas<br>room to unfold.</h1><p class="lead">One canvas for AI images and video.<br>Your models. Your workflows.</p></div>${directorBoard(media, content.en.director, escapeHtml)}<footer><span>Development preview · simulated outputs</span><span>fourques.github.io/Takeboard</span></footer></main></body></html>`);
+  </style></head><body><main class="social-card"><div class="brand"><img src="${media.logo}" alt="">TakeBoard</div><div class="social-copy"><p class="eyebrow">OPEN SOURCE · BUILT ON COMFYUI</p><h1>Give your ideas<br>room to unfold.</h1><p class="lead">One canvas for AI images and video.<br>Your models. Your workflows.</p></div>${directorBoard(media, content.en.director, escapeHtml)}<footer><span>A real project on the canvas · 42-second film</span><span>fourques.github.io/Takeboard</span></footer></main></body></html>`);
   await page.evaluate(async () => {
     await document.fonts.ready;
     await Promise.all(Array.from(document.images, (image) => image.decode()));

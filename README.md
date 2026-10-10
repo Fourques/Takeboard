@@ -6,13 +6,13 @@
 
 TakeBoard 是基于 ComfyUI 的开源 AI 创作画布。在同一工作区选择模型、连接素材、编写提示词，生成图片与视频，再用结果继续创作。桌面应用连接你自己的本机或远程 ComfyUI，让日常创作围绕画面展开。
 
-[**下载测试版**](docs/downloads.md) · [交互演示](docs/demo-guide.md) · [开始使用](docs/first-session.md) · [官网](https://fourques.github.io/Takeboard/zh/)
+[**下载测试版**](docs/downloads.md) · [观看短片 · 42 秒](https://fourques.github.io/Takeboard/zh/#demo) · [开始使用](docs/first-session.md) · [官网](https://fourques.github.io/Takeboard/zh/)
 
 [![CI](https://github.com/Fourques/Takeboard/actions/workflows/ci.yml/badge.svg)](https://github.com/Fourques/Takeboard/actions/workflows/ci.yml) [![Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-315EFB.svg)](LICENSE)
 
-![TakeBoard：参考素材、镜头与输入连线；模拟交互示例](docs/assets/takeboard-demo-cover.png)
+[![TakeBoard：真实项目中的参考素材、生成结果与创作分支](docs/assets/takeboard-film-poster.zh.jpg)](https://fourques.github.io/Takeboard/zh/#demo)
 
-*开发版界面，使用模拟结果。不是模型生成样片；[演示范围与来源](docs/demo-guide.md)。*
+*从喜欢的一帧，到下一幕的开始。[观看真实项目短片](https://fourques.github.io/Takeboard/zh/#demo)。*
 
 ## 为什么使用 TakeBoard
 

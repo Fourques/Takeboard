@@ -20,7 +20,9 @@
 | 部署后 | 验证公网并通过 IndexNow 通知新页面 | 记录接收状态，不把提交当索引 |
 | 7 天后 | 检查发现、回复和首次试用阻碍 | 时间、问题、引用 URL 与限制 |
 | 真实案例后 | 可复现教程，联系接受合作的作者 | 标明关联和硬件参数，允许负面反馈 |
-| 需用户账号 | Google Search Console / Bing Webmaster 验证和查看报告 | 获授权后操作，不伪造验证状态 |
+| 账号验证已完成 | Google Search Console / Bing Webmaster 查看报告 | 查看报告仍需相应账号授权；验证不等于索引、排名、点击或 AI 推荐 |
+
+当前验证状态（2026-10-03 核对）：Google Search Console 和 Bing Webmaster Tools 的官方通知邮件均确认 `https://fourques.github.io/Takeboard/` 已完成站点账号验证。通知只证明验证完成，不证明索引、排名、点击或 AI 推荐；尤其不将 Bing verified 记为已被 Bing 索引。
 
 使用免费 GitHub Pages，只部署明确挑选的公开文件，不部署 API、项目目录或用户素材。项目站点在 `/Takeboard/`；此路径下的 robots.txt 不控制域名根，本轮不放假有效配置。上线前根 `/robots.txt` 为 404；迁移域名后重查 robots 与防火墙，不把伪装 User-Agent 请求当真实爬虫证据。
 

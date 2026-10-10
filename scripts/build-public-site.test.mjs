@@ -3,7 +3,37 @@ import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { buildSite, escapeHtml, installerUrl } from "./build-public-site.mjs";
+import {
+  buildSite,
+  escapeHtml,
+  installerUrl,
+  publicFilmFiles,
+  validatePublicFilm,
+} from "./build-public-site.mjs";
+
+test("public film manifest rejects production records, unknown media and traversal paths", async () => {
+  const film = JSON.parse(
+    await readFile(new URL("../docs/assets/takeboard-film-manifest.json", import.meta.url), "utf8"),
+  );
+  validatePublicFilm(film);
+  assert.throws(() => validatePublicFilm({ ...film, prompt: "private production data" }));
+  assert.throws(() =>
+    validatePublicFilm({ ...film, files: [...film.files, { name: "project.takeboard.tgz" }] }),
+  );
+  for (const name of ["../../private.json", "active-generation.json", "takeboard-film.zh.mp4"])
+    assert.throws(() =>
+      validatePublicFilm({
+        ...film,
+        files: film.files.map((f, i) => (i === 1 ? { ...f, name } : f)),
+      }),
+    );
+  assert.throws(() =>
+    validatePublicFilm({
+      ...film,
+      files: film.files.map((f, i) => (i ? f : { ...f, sourcePath: "/private" })),
+    }),
+  );
+});
 
 test("public download documents and media kit point to the release advertised by the website", async () => {
   const product = JSON.parse(
@@ -123,7 +153,36 @@ test("public site is static, bilingual, evidence-linked and limited to public as
   assert.ok(kit.includes("https://github.com/Fourques/Takeboard/blob/main/docs/downloads.md"));
   assert.ok(kit.includes("https://github.com/Fourques/Takeboard/blob/main/LICENSE"));
   assert.ok(kit.includes("SIMULATED OUTPUTS"));
-  assert.equal(product.demo.realGpu, false);
+  assert.equal(product.demo.realGpu, true);
+  assert.equal(product.legacyDemo.realGpu, false);
+  const media = await readdir(join(output, "media"));
+  assert.deepEqual(
+    media.sort(),
+    [
+      ...publicFilmFiles,
+      "takeboard-film-manifest.json",
+      "takeboard-film-credits.md",
+      "README.md",
+      "LICENSE",
+      "product.json",
+      "takeboard-icon.svg",
+      "takeboard-social.png",
+      "takeboard-demo-cover.png",
+      "takeboard-demo-results.png",
+      "takeboard-product-walkthrough.webm",
+      "takeboard-demo-manifest.json",
+    ].sort(),
+  );
+  for (const locale of ["en", "zh"]) {
+    const html = await readFile(
+      join(output, locale === "zh" ? "zh/index.html" : "index.html"),
+      "utf8",
+    );
+    assert.ok(html.includes(`takeboard-film.${locale}.mp4`));
+    assert.ok(html.includes(`takeboard-film-poster.${locale}.jpg`));
+    assert.ok(html.includes(`takeboard-film.${locale}.vtt`));
+    assert.ok(!html.includes("takeboard-product-walkthrough.webm"));
+  }
   assert.equal(product.arbitraryWorkflowCompatibilityGuaranteed, false);
   assert.ok((await readFile(join(output, "sitemap.xml"), "utf8")).includes(urls[1]));
 });

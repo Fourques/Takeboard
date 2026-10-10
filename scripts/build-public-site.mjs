@@ -15,6 +15,51 @@ export const escapeHtml = (value) =>
     (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c],
   );
 
+export const publicFilmFiles = [
+  "takeboard-film.zh.mp4",
+  "takeboard-film.en.mp4",
+  "takeboard-film-poster.zh.jpg",
+  "takeboard-film-poster.en.jpg",
+  "takeboard-film.zh.vtt",
+  "takeboard-film.en.vtt",
+  "takeboard-film-canvas.png",
+  "takeboard-film-result.png",
+];
+
+export function validatePublicFilm(manifest) {
+  const keys = [
+    "format",
+    "edition",
+    "durationSeconds",
+    "width",
+    "height",
+    "capturedInterfaceLanguage",
+    "files",
+  ];
+  if (
+    Object.keys(manifest).sort().join() !== keys.sort().join() ||
+    manifest.format !== "takeboard.public-film" ||
+    manifest.edition !== 7 ||
+    manifest.durationSeconds !== 42 ||
+    manifest.width !== 1920 ||
+    manifest.height !== 1080 ||
+    manifest.capturedInterfaceLanguage !== "zh-CN" ||
+    !Array.isArray(manifest.files) ||
+    manifest.files
+      .map((f) => f.name)
+      .sort()
+      .join() !== [...publicFilmFiles].sort().join() ||
+    manifest.files.some(
+      (f) =>
+        Object.keys(f).sort().join() !== "bytes,name,sha256" ||
+        !/^[a-f0-9]{64}$/.test(f.sha256) ||
+        !Number.isSafeInteger(f.bytes) ||
+        f.bytes <= 0,
+    )
+  )
+    throw new Error("Invalid public film manifest: only approved media metadata may be published");
+}
+
 export function installerUrl(product, file) {
   if (
     !/^TakeBoard_[0-9A-Za-z.-]+_(?:aarch64|x64|arm64|amd64)(?:-setup)?\.(?:dmg|exe|deb)$/.test(
@@ -32,7 +77,7 @@ function head(c, product, url, alternatives, schema) {
 <meta name="google-site-verification" content="${h(googleSiteVerification)}">
 <title>${h(c.title)}</title><meta name="description" content="${h(c.description)}">
 <link rel="canonical" href="${url}"><link rel="alternate" hreflang="en" href="${alternatives.en}"><link rel="alternate" hreflang="zh-CN" href="${alternatives.zh}"><link rel="alternate" hreflang="x-default" href="${alternatives.en}">
-<meta property="og:site_name" content="TakeBoard"><meta property="og:locale" content="${c.lang === "zh-CN" ? "zh_CN" : "en_US"}"><meta property="og:type" content="${schema["@type"] === "TechArticle" ? "article" : "website"}"><meta property="og:title" content="${h(c.title)}"><meta property="og:description" content="${h(c.description)}"><meta property="og:url" content="${url}"><meta property="og:image" content="${product.website}media/takeboard-social.png"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="${c.lang === "zh-CN" ? "TakeBoard：基于 ComfyUI 的开源 AI 创作画布，开发版模拟交互预览" : "TakeBoard: open-source AI creation canvas on ComfyUI, simulated development preview"}"><meta name="twitter:card" content="summary_large_image">
+<meta property="og:site_name" content="TakeBoard"><meta property="og:locale" content="${c.lang === "zh-CN" ? "zh_CN" : "en_US"}"><meta property="og:type" content="${schema["@type"] === "TechArticle" ? "article" : "website"}"><meta property="og:title" content="${h(c.title)}"><meta property="og:description" content="${h(c.description)}"><meta property="og:url" content="${url}"><meta property="og:image" content="${product.website}media/takeboard-social.png"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="${c.lang === "zh-CN" ? "TakeBoard：基于 ComfyUI 的开源 AI 创作画布，真实创作项目" : "TakeBoard: open-source AI creation canvas on ComfyUI, a real creative project"}"><meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="${product.website}media/takeboard-icon.svg"><link rel="stylesheet" href="${product.website}style.css">
 <script type="application/ld+json">${JSON.stringify(schema).replace(/</g, "\\u003c")}</script>`;
 }
@@ -40,8 +85,19 @@ function head(c, product, url, alternatives, schema) {
 export async function buildSite(output = resolve(root, "dist/site")) {
   const product = JSON.parse(await read("site/product.json"));
   const manifest = JSON.parse(await read("docs/assets/takeboard-demo-manifest.json"));
-  if (manifest.generation.realGpu !== false || product.demo.sourceCommit !== manifest.sourceCommit)
+  if (
+    manifest.generation.realGpu !== false ||
+    product.legacyDemo.sourceCommit !== manifest.sourceCommit
+  )
     throw new Error("Review public demo provenance before publishing");
+  const film = JSON.parse(await read("docs/assets/takeboard-film-manifest.json"));
+  validatePublicFilm(film);
+  if (
+    product.demo.edition !== film.edition ||
+    product.demo.durationSeconds !== film.durationSeconds ||
+    product.demo.realGpu !== true
+  )
+    throw new Error("Public film facts differ from the approved edition");
   const key = (await read("site/indexnow-key.txt")).trim();
   if (!/^[a-f0-9]{32}$/.test(key)) throw new Error("Invalid IndexNow ownership key");
   const base = product.website;
@@ -76,6 +132,17 @@ export async function buildSite(output = resolve(root, "dist/site")) {
       throw new Error(`Media hash mismatch: ${name}`);
     await copyFile(source, join(output, "media", name));
   }
+  for (const entry of film.files) {
+    const bytes = await readFile(resolve(root, "docs/assets", entry.name));
+    if (
+      bytes.length !== entry.bytes ||
+      createHash("sha256").update(bytes).digest("hex") !== entry.sha256
+    )
+      throw new Error(`Media hash mismatch: ${entry.name}`);
+    await writeFile(join(output, "media", entry.name), bytes);
+  }
+  for (const name of ["takeboard-film-manifest.json", "takeboard-film-credits.md"])
+    await copyFile(resolve(root, "docs/assets", name), join(output, "media", name));
   await copyFile(
     resolve(root, "apps/web/public/takeboard-icon.svg"),
     join(output, "media/takeboard-icon.svg"),

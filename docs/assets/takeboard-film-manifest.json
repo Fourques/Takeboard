@@ -1,0 +1,50 @@
+{
+  "format": "takeboard.public-film",
+  "edition": 7,
+  "durationSeconds": 42,
+  "width": 1920,
+  "height": 1080,
+  "capturedInterfaceLanguage": "zh-CN",
+  "files": [
+    {
+      "name": "takeboard-film.zh.mp4",
+      "bytes": 9269778,
+      "sha256": "2e1f7fcd33d8c10fe7184305d419f2eaa856f0cdf81fc41cc12040422086bade"
+    },
+    {
+      "name": "takeboard-film-poster.zh.jpg",
+      "bytes": 108898,
+      "sha256": "3b98ccf624c6ce28015ed18f1ee85edc94bc1eee8ccf75515dfc7ca4ee0c08aa"
+    },
+    {
+      "name": "takeboard-film.zh.vtt",
+      "bytes": 608,
+      "sha256": "d800039aa8263f1c40e64adbcd0af8d85a2d0084f23208b9c5b3d832e2064890"
+    },
+    {
+      "name": "takeboard-film.en.mp4",
+      "bytes": 9269427,
+      "sha256": "5a0997d8b709ffe022d3bec2fb9a83dad09fa55e1db3fdc069e72d07428f0c0e"
+    },
+    {
+      "name": "takeboard-film-poster.en.jpg",
+      "bytes": 110344,
+      "sha256": "f9c374de2e62dca1d0927f80162f4e59ad3104b2ae50fcc5aba6f68827c324d8"
+    },
+    {
+      "name": "takeboard-film.en.vtt",
+      "bytes": 584,
+      "sha256": "97f49556ef0c82092bdd6c6224ed079520254ce7f9c2b82ce1ce7b5d48dffd46"
+    },
+    {
+      "name": "takeboard-film-canvas.png",
+      "bytes": 1026929,
+      "sha256": "d2d9b3947fcf8bfca66e1199cbbcdb9cf71ef4088c6d79800eb1af85e7ccb044"
+    },
+    {
+      "name": "takeboard-film-result.png",
+      "bytes": 1048632,
+      "sha256": "c28d0bc4f031df0fc416db29ab2bc648bf0c5ed84b6cc4da3f9f9b59ab9261ea"
+    }
+  ]
+}

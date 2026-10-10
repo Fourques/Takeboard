@@ -9,6 +9,7 @@ on:
       - docs/media-kit.md
       - docs/assets/takeboard-demo-*
       - docs/assets/takeboard-product-walkthrough.webm
+      - docs/assets/takeboard-film*
       - apps/web/public/takeboard-icon.svg
       - LICENSE
       - .github/workflows/public-site.yml
@@ -19,6 +20,7 @@ on:
       - docs/media-kit.md
       - docs/assets/takeboard-demo-*
       - docs/assets/takeboard-product-walkthrough.webm
+      - docs/assets/takeboard-film*
       - .github/workflows/public-site.yml
   workflow_dispatch:
 
@@ -42,7 +44,7 @@ jobs:
       - run: node scripts/build-public-site.mjs
       - name: Package public media only
         working-directory: dist/site/media
-        run: zip -X ../takeboard-media-kit.zip README.md LICENSE product.json takeboard-icon.svg takeboard-social.png takeboard-demo-cover.png takeboard-demo-results.png takeboard-product-walkthrough.webm takeboard-demo-manifest.json
+        run: zip -X ../takeboard-media-kit.zip README.md LICENSE product.json takeboard-icon.svg takeboard-social.png takeboard-film.zh.mp4 takeboard-film.en.mp4 takeboard-film-poster.zh.jpg takeboard-film-poster.en.jpg takeboard-film-canvas.png takeboard-film-result.png takeboard-film.zh.vtt takeboard-film.en.vtt takeboard-film-manifest.json takeboard-film-credits.md
       - run: unzip -t dist/site/takeboard-media-kit.zip
       - uses: actions/upload-pages-artifact@v5
         with:

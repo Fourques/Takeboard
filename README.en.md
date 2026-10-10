@@ -6,13 +6,13 @@
 
 TakeBoard is an open-source AI creation canvas built on ComfyUI. Choose models, connect media, write prompts and generate images or videos in one workspace. Use a result in your next generation, or explore several directions side by side. The desktop app connects to your own local or remote ComfyUI.
 
-[**Download beta**](docs/downloads.en.md) · [Interaction demo](docs/demo-guide.md#english) · [Get started](docs/first-session.md#english) · [Website](https://fourques.github.io/Takeboard/)
+[**Download beta**](docs/downloads.en.md) · [Watch the film · 42 sec](https://fourques.github.io/Takeboard/#demo) · [Get started](docs/first-session.md#english) · [Website](https://fourques.github.io/Takeboard/)
 
 [![CI](https://github.com/Fourques/Takeboard/actions/workflows/ci.yml/badge.svg)](https://github.com/Fourques/Takeboard/actions/workflows/ci.yml) [![Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-315EFB.svg)](LICENSE)
 
-![TakeBoard references, shots and input connections; simulated interaction example](docs/assets/takeboard-demo-cover.png)
+[![A real TakeBoard project: references, generated media and creative branches](docs/assets/takeboard-film-poster.en.jpg)](https://fourques.github.io/Takeboard/#demo)
 
-*Development-build UI with simulated results, not a model-output sample. [Demo scope and source](docs/demo-guide.md#english).*
+*From a starting frame to a result—and the next scene. [Watch the real-project film](https://fourques.github.io/Takeboard/#demo).*
 
 ## Why use TakeBoard?
 

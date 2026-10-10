@@ -19,9 +19,9 @@ export const content = {
       "An open-source canvas for AI images and video. Bring models, media and prompts together. Create with ComfyUI, then take the result somewhere new.",
     note: "Open-source desktop app. Local use needs no account. Generation requires your own ComfyUI, models and nodes.",
     preview: "See it in motion",
-    previewNote: "Development preview · simulated outputs",
+    previewNote: "Actual product capture · Generation wait omitted",
     caption:
-      "Reference media and shot connections in TakeBoard. Simulated interaction, not model-generated output.",
+      "A real TakeBoard project with reference media, creative branches and connected generation nodes.",
     featuresTitle: "More ways to make it yours.",
     features: [
       [
@@ -106,12 +106,12 @@ export const content = {
     modelsNote:
       "Models and nodes are installed separately. Available inputs depend on the workflow.",
     demoTitle: "See the canvas at work.",
-    demoIntro: "A short look at connecting references and reviewing results.",
+    demoIntro: "42 seconds. From a starting frame to a result—and the next scene.",
     downloadIntro: "The desktop app, for your computer.",
     director: {
       label: "TakeBoard director board",
-      front: "TakeBoard creation canvas. Development preview with simulated outputs.",
-      back: "TakeBoard results view. Development preview with simulated outputs.",
+      front: "A real project on the TakeBoard canvas, with references and connected shots.",
+      back: "A generated result on the canvas, ready to connect to the next shot.",
       flip: "Turn the board over",
       help: "Drag horizontally to rotate. Use left and right arrows, Enter to turn over, or Escape to return to the front.",
     },
@@ -134,9 +134,9 @@ export const content = {
     intro:
       "把模型、素材与提示词放进同一张画布。通过 ComfyUI 生成图片与视频，让每一次创作成为下一步的起点。",
     note: "开源桌面应用，本机使用无需注册。生成需要自备 ComfyUI、模型与节点。",
-    preview: "观看演示",
-    previewNote: "开发版交互演示 · 模拟输出",
-    caption: "TakeBoard 的参考素材与镜头连线。模拟交互示例，非模型生成效果。",
+    preview: "观看短片",
+    previewNote: "真实项目实录 · 生成等待已剪去",
+    caption: "TakeBoard 真实项目：参考素材、创作分支与相互连接的生成节点。",
     featuresTitle: "创作方式，由你选择。",
     features: [
       [
@@ -212,12 +212,12 @@ export const content = {
     modelListLabel: "推荐工作流系列示例",
     modelsNote: "模型与节点需另行安装；可用输入取决于工作流。",
     demoTitle: "看看创作如何展开。",
-    demoIntro: "连接参考素材，在画布中查看生成结果。",
+    demoIntro: "42 秒，从喜欢的一帧，到下一幕的开始。",
     downloadIntro: "选择适合你电脑的桌面版本。",
     director: {
       label: "TakeBoard 导演板",
-      front: "TakeBoard 创作画布，开发版模拟输出预览。",
-      back: "TakeBoard 生成结果，开发版模拟输出预览。",
+      front: "TakeBoard 真实创作画布，包含参考素材和镜头连线。",
+      back: "生成结果回到画布，继续连接下一镜头。",
       flip: "翻转导演板",
       help: "横向拖动可旋转；左右方向键调整角度，回车翻面，Esc 返回正面。",
     },

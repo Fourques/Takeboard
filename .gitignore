@@ -22,3 +22,17 @@ apps/desktop/src-tauri/gen/
 renders/
 deploy/portal/data/
 deploy/portal/takeboard-portal-backup-*.tar.gz
+
+# Local film production workspace, not part of the app or public media kit.
+# Approved exports are explicitly published under docs/assets/takeboard-film-*.
+/docs/product-film.md
+/scripts/product-film/
+/scripts/product-film.test.mjs
+/scripts/capture-creation-canvas.mjs
+/scripts/capture-creation-film.mjs
+/scripts/capture-project-film.mjs
+/scripts/capture-project-film-v4.mjs
+/scripts/render-product-film.mjs
+/scripts/verify-creation-film.mjs
+/scripts/verify-product-film.mjs
+/scripts/prepare-public-film.mjs
