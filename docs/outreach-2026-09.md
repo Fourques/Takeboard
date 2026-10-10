@@ -103,6 +103,38 @@ I'd welcome feedback on the creation flow: can you go from a reference to a gene
 Apache-2.0. Independent project, not affiliated with Comfy Org.
 <!-- show-tell-post:end -->
 
+## 项目公告正文
+
+<!-- project-announcement:start -->
+## 把 AI 图片与视频创作，放进同一张画布
+
+TakeBoard 是基于 ComfyUI 的开源 AI 创作画布。把参考素材、模型与提示词放在一起，生成图片和视频，再用结果继续下一步。保留几个方向，让想法逐渐成为画面。
+
+[![TakeBoard 真实项目短片](https://fourques.github.io/Takeboard/media/takeboard-film-poster.zh.jpg)](https://fourques.github.io/Takeboard/zh/#demo)
+
+**[观看短片 · 42 秒](https://fourques.github.io/Takeboard/zh/#demo)** · **[下载 beta.19](https://fourques.github.io/Takeboard/zh/#download)** · [开始第一个项目](https://github.com/Fourques/Takeboard/blob/main/docs/first-session.md)
+
+短片展示真实项目的参考连接、生成、采用与继续创作，生成等待已剪去。
+
+支持自己的本机或远程 ComfyUI，本机使用无需注册。Mac、Windows、Debian/Ubuntu 均有 x64 / ARM64 安装包。ComfyUI、模型与节点需另行准备；工作流兼容性和首次打开方法见[安装说明](https://github.com/Fourques/Takeboard/blob/main/docs/downloads.md)。
+
+想做什么？哪一步不顺手？欢迎[告诉我们](https://github.com/Fourques/Takeboard/issues/new?template=first_try.yml)，不需要先做技术诊断。
+
+## One canvas for AI image and video creation
+
+TakeBoard is an open-source creative workspace built on ComfyUI. Connect reference media, choose models and write prompts on one canvas. Generate a result, keep different directions in view, then build the next scene from what you've made.
+
+**[Watch the film · 42 sec](https://fourques.github.io/Takeboard/#demo)** · **[Download beta.19](https://fourques.github.io/Takeboard/#download)** · [Get started](https://github.com/Fourques/Takeboard/blob/main/docs/first-session.md#english)
+
+The film follows a real project through generation, choosing a result and connecting it to the next step. Generation wait is omitted. English titles accompany actual Chinese app capture.
+
+Connect your own local or remote ComfyUI. Local use needs no account. Installers cover macOS, Windows and Debian/Ubuntu on x64 and ARM64. Bring your own ComfyUI, models and nodes; workflow compatibility varies. See [installation notes](https://github.com/Fourques/Takeboard/blob/main/docs/downloads.en.md) for first-launch guidance.
+
+What would you like to create, and where does the flow get in your way? [Share your experience](https://github.com/Fourques/Takeboard/issues/new?template=first_try.yml).
+
+维护者发布 / Posted by the maintainer. [媒体素材 / Media kit](https://github.com/Fourques/Takeboard/blob/main/docs/media-kit.md)
+<!-- project-announcement:end -->
+
 ## 渠道规则与衡量
 
 发布前检查社区当前规则与账号权限。HN 禁止 AI 生成或润色文字，不将这些草稿用于 HN。Reddit、短视频等未发布渠道仍记为待执行；本轮不扩展。
