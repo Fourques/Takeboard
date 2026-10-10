@@ -1,9 +1,10 @@
 # TakeBoard 推广入口
 
-更新时间：2026-10-10。当前公开安装版为全平台 `v0.2.0-beta.19`。
+更新时间：2026-10-10。当前公开安装版为全平台 [v0.2.0-beta.20](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.20)。
 
 - [产品短片](https://fourques.github.io/Takeboard/zh/#demo) · [English film](https://fourques.github.io/Takeboard/#demo)：42 秒真实项目中的创作流程。
 - [渠道文案](outreach-2026-09.md)：定位、中英文社区帖、短帖与渠道规则。
+- [发布案例与执行顺序](outreach-2026-09.md#发布案例与取舍2026-10-10)：本轮研究依据、各渠道稿与试用反馈闭环。
 - [媒体素材包](media-kit.md)：成片、精选截图、品牌资源与简短来源说明。
 - [AI 搜索策略](ai-discovery-strategy.md)：官方依据、实施顺序、验证方法与边界。
 - [首次试用清单 / First session](first-session.md)：从安装到一次小测试。

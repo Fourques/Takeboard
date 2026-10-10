@@ -39,7 +39,7 @@ test("public download documents and media kit point to the release advertised by
   const product = JSON.parse(
     await readFile(new URL("../site/product.json", import.meta.url), "utf8"),
   );
-  for (const path of ["README.md", "README.en.md", "docs/media-kit.md"]) {
+  for (const path of ["README.md", "README.en.md", "docs/media-kit.md", "docs/launch-kit.md"]) {
     const text = await readFile(new URL(`../${path}`, import.meta.url), "utf8");
     assert.ok(
       text.includes(product.evidence.release),
@@ -51,6 +51,32 @@ test("public download documents and media kit point to the release advertised by
     for (const installer of product.installers)
       assert.ok(text.includes(installerUrl(product, installer.file)), `${path}: ${installer.file}`);
   }
+});
+
+test("channel drafts use current evergreen entry points and fit submission fields", async () => {
+  const text = await readFile(new URL("../docs/outreach-2026-09.md", import.meta.url), "utf8");
+  const announcement = text
+    .split("<!-- project-announcement:start -->")[1]
+    .split("<!-- project-announcement:end -->")[0];
+  assert.ok(announcement.includes("下载桌面 Beta"));
+  assert.ok(announcement.includes("Download desktop beta"));
+  assert.ok(
+    !/beta\.\d+/.test(announcement),
+    "Evergreen posts should link to the current download page",
+  );
+  const x = text.match(/### X 短帖[^\n]*\n[\s\S]*?\n> ([^\n]+)/)?.[1];
+  assert.ok(x);
+  // t.co counts URLs as 23 characters; the current draft uses only Latin-script text.
+  assert.ok([...x.replace(/https:\/\/\S+/g, "x".repeat(23))].length <= 280);
+  for (const [field, maximum] of [
+    ["Tagline", 60],
+    ["Description", 260],
+  ]) {
+    const value = text.match(new RegExp(`^- ${field}: (.+)$`, "m"))?.[1];
+    assert.ok(value, `${field} missing`);
+    assert.ok([...value].length <= maximum, `${field} exceeds the platform limit`);
+  }
+  assert.ok(text.includes("已于同日合并"));
 });
 
 test("website palette stays aligned with the app's default Chroma theme", async () => {

@@ -2,6 +2,18 @@
 
 本文件区分真实发布与准备工作，不把下载当用户，不把投稿当收录。
 
+## 2026-10-10：基于发布案例改进分发（09:00 UTC）
+
+- 研究 Penpot 正式发布、Krita AI Diffusion 和 Excalidraw 的公开入口、Zed 社区实践，以及 Product Hunt 当前官方发布指南。采用「完整项目演示 → 一次小创作试用 → 首次阻碍反馈」的路径，而非继续增加功能清单、泛化渠道数或索赞任务。[一手来源、具体取舍与各渠道稿](outreach-2026-09.md#发布案例与取舍2026-10-10)已整理，案例做法不作为增长因果证明。
+- [项目公告 #10](https://github.com/Fourques/Takeboard/discussions/10)原位更新并回读：移除过时 beta.19 下载标签，改为对应语言的当前桌面 Beta 下载入口。[推广入口](launch-kit.md)同步到已发布 beta.20。
+- 检查发现三份编辑投稿仍指向旧模拟演示。已原位更新 [HelloGitHub #3804](https://github.com/521xueweihan/HelloGitHub/issues/3804)、[GitHubDaily #1125](https://github.com/GitHubDaily/GitHubDaily/issues/1125)、[周刊 #11963](https://github.com/ruanyf/weekly/issues/11963)：换为确认的 42 秒真实项目短片；前两份截图换为真实画布全景。保留必要使用条件与维护者身份，全部回读一致，没有新增评论、催审或重复投稿。
+- 两个待审目录 PR 的正文与实际单行条目均从偏重整理素材调整为图片／视频创作画布，并链接当前产品片。[awesome-ai-video #14](https://github.com/thoxakihiko/awesome-ai-video/pull/14)仅更新自有 fork 的 `add-takeboard` 分支，提交 `3ebb15f`；[awesome-comfyui #26](https://github.com/lucianosb/awesome-comfyui/pull/26)对应提交 `228a168`。已核对内容回读及两份 PR 仍只有 README 的一行新增；尚未合并，不计为收录。
+- 准备了 B站投稿、X 短帖、Reddit 创作流程帖、Product Hunt 提交字段与维护者首评，以及需针对实际作品定制的教程作者邀请。分别匹配渠道，而非照搬同一套长文。X 和 Product Hunt 字段长度已加入检查；这些稿件尚未在对应平台发布。
+- B站投稿页在内置浏览器访问超时，无法确认登录状态，不将其记为「未登录」或「投稿成功」。已发现并建议可选 Metricool 发布能力，但尚未安装或连接；不能据此代发到社交账号。Reddit 当前社区规则未成功读取，仍须核验。Product Hunt 尚未提交或排期，合作邀请未发送。
+- 08:59 UTC 只读快照：8 Stars、0 Forks；beta.20 有 1 次 Windows x64 下载事件，beta.19 仍为 19 次。流量窗口仍为 9 月 26 日—10 月 9 日的 73 浏览／41 独立访客，项目反馈帖和 ComfyUI 展示帖仍无评论，投稿与目录审核无新增结果。不能将版本下载归因于本轮宣传，也没有新增真实用户证据。
+- 下一阶段目标是获得 5 位完成小创作的有效试用者，这是目标而非已有数量。沿用既有首次试用表单与公告回复，按最早可复现阻碍修产品和文档，不增加遥测、用户隐私收集或重复提醒。
+- 本地相关 12 项测试、站点静态构建、全仓库 lint 和 diff 检查通过。没有修改应用、重发安装包或更改已确认成片；原有无关未提交修改保留。
+
 ## 2026-10-10：beta.20 安全安装包发布
 
 - [beta.20](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.20)于 05:49 UTC 发布，六个平台附件均为 uploaded、非空并有 SHA-256 摘要。[发布构建](https://github.com/Fourques/Takeboard/actions/runs/38028293338)的六个原生构建及最终包内运行时检查全部通过。本版包含媒体处理与依赖安全修复，以及 Windows/Linux ARM64 后续更新包匹配修复。
