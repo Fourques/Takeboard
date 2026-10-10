@@ -2,6 +2,15 @@
 
 本文件区分真实发布与准备工作，不把下载当用户，不把投稿当收录。
 
+## 2026-10-10：推广只读复盘（05:30 UTC）
+
+- 运行现有 `promotion-snapshot.mjs`，并回读社区回复与目录 README。仓库为 **8 Stars、0 Forks**；beta.19 累计 **19 次安装包下载事件**：Mac ARM64 2、Mac Intel 1、Windows x64 12、Windows ARM64 1、Linux x64 2、Linux ARM64 1。下载可能包含维护者或验证活动，不等于 19 名用户。
+- GitHub 流量 API 返回的 **9 月 26 日—10 月 9 日**窗口为 **73 次浏览、41 名独立访客**；克隆 1223 次、独立克隆来源 162，可能包含 CI、自动化与重复获取，不作为用户量。来源记录包含 GitHub 16 次、官网 5 次、Bing 1 次、iohub.inshub.cn 1 次；来源记录不是完整归因，不能据此推断投放效果或 AI 推荐。
+- [目录介绍修订 PR #113](https://github.com/light-and-ray/awesome-alternative-uis-for-comfyui/pull/113)已于 10 月 2 日合并；实际 README 已采用“基于本机/远程 ComfyUI 的开源 AI 创作画布”定位，并说明 ComfyUI 与模型另行安装。维护者的致谢是投稿反馈，不是试用评价。9 月 30 日的首次收录与本次介绍更新是两件事，不能重复计算为两个新渠道。
+- [项目反馈帖](https://github.com/Fourques/Takeboard/discussions/10)和 [ComfyUI 展示帖](https://github.com/Comfy-Org/ComfyUI/discussions/16666)仍无评论，仓库无开放 Issue。周刊 #11963、HelloGitHub #3804、GitHubDaily #1125 仍开放且无回复；awesome-ai-video #14、awesome-comfyui #26 仍开放、未合并、无评论，不能计为收录。
+- Search Console 与 Bing Webmaster 的账号验证已完成；本轮没有读取两者后台，不新增索引、排名、搜索点击或 AI 推荐结论。Bing 来源记录也不等于 Bing Webmaster 的索引报告。
+- 本轮不发新帖、不回复或催审、不添加遥测。下一步应优先获得真实首次使用反馈，观察连接 ComfyUI、添加工作流与首次生成的阻碍，再决定内容与产品修改。社交平台账号及其发布权限尚未核验；本轮不代为登录或发布。
+
 ## 2026-10-10：双语产品短片与公开素材更新
 
 - 经维护者审片确认，公开素材改为 42 秒真实项目短片，提供独立编写的中文与英文版本；重点是统一画布中的参考、生成、采用与结果复用。片内保留等待剪辑说明，备选分支不冒称完成结果。

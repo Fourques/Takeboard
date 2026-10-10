@@ -89,6 +89,43 @@ test("matches all six native platform installers, rejects wrong CPU and hostile 
     }
   }
 });
+test("matches Tauri's published filenames on all six platform/architecture pairs", () => {
+  const tag = "v0.2.0-beta.20";
+  for (const [platform, arch, suffix] of [
+    ["darwin", "arm64", "aarch64.dmg"],
+    ["darwin", "x64", "x64.dmg"],
+    ["win32", "arm64", "arm64-setup.exe"],
+    ["win32", "x64", "x64-setup.exe"],
+    ["linux", "arm64", "arm64.deb"],
+    ["linux", "x64", "amd64.deb"],
+  ]) {
+    const name = `TakeBoard_${tag.slice(1)}_${suffix}`;
+    const item = {
+      ...release(tag),
+      assets: [
+        {
+          name,
+          state: "uploaded",
+          size: 512,
+          browser_download_url: `${repository}/releases/download/${tag}/${name}`,
+        },
+      ],
+    };
+    const result = selectRelease([item], {
+      ...context,
+      currentVersion: "0.2.0-beta.19",
+      platform,
+      arch,
+    });
+    assert.equal(result.status, "update", `${platform}/${arch}`);
+    assert.equal(result.release.filename, name);
+    assert.equal(
+      selectRelease([item], { ...context, platform, arch: arch === "arm64" ? "x64" : "arm64" })
+        .status,
+      "no_installer",
+    );
+  }
+});
 test("preferences survive process restarts, disabled automatic checks perform no request, manual checks override skip", async () => {
   const root = await mkdtemp(join(tmpdir(), "takeboard-updates-"));
   try {

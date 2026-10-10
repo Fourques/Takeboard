@@ -1014,6 +1014,8 @@ describe("real generation routes", () => {
             });
           }
           if (url.includes("/view?")) {
+            // Output download and persistence can outlive the first status request.
+            await new Promise((resolve) => setTimeout(resolve, 25));
             return new Response(new Uint8Array([0, 0, 0, 24, 102, 116, 121, 112]));
           }
           throw new Error(`Unexpected ComfyUI request: ${url}`);
@@ -1031,12 +1033,8 @@ describe("real generation routes", () => {
       });
       expect(submitted.statusCode, submitted.body).toBe(202);
 
-      const polled = await app.inject({
-        method: "GET",
-        url: `/api/projects/${key}/runs/${submitted.json().runId}`,
-      });
-      expect(polled.statusCode).toBe(200);
-      expect(polled.json()).toMatchObject({
+      const completed = await waitForRun(app, key, submitted.json().runId);
+      expect(completed).toMatchObject({
         status: "completed",
         snapshot: {
           runs: [expect.objectContaining({ status: "completed" })],

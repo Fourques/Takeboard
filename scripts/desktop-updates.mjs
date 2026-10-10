@@ -57,7 +57,9 @@ export function selectRelease(releases, { currentVersion, channel, platform, arc
   // Support both our friendly release names and Tauri's untouched signed filenames.
   const cpu =
     arch === "arm64"
-      ? "aarch64"
+      ? platform === "darwin"
+        ? "aarch64"
+        : "arm64"
       : arch === "x64"
         ? platform === "linux"
           ? "amd64"
