@@ -124,6 +124,29 @@ try {
     serverManifest.dependencies.fastify,
     "The installed runtime must contain the reviewed Fastify version, not a stale dependency",
   );
+  const { stdout: packagedMediaVersions } = await promisify(execFile)(
+    binary,
+    [
+      "-e",
+      `const { createRequire } = require("node:module");
+       const app = createRequire(process.argv[1]);
+       const multipart = createRequire(app.resolve("@fastify/multipart"));
+       console.log(JSON.stringify({ sharp: app("sharp").versions,
+         busboy: multipart("@fastify/busboy/package.json").version }));`,
+      join(resources, "app", "package.json"),
+    ],
+    { timeout: 6000, maxBuffer: 65536, windowsHide: true },
+  );
+  const mediaVersions = JSON.parse(packagedMediaVersions);
+  const atLeast = (actual, floor) => {
+    assert.match(actual ?? "", /^\d+\.\d+\.\d+$/);
+    const a = actual.split(".").map(Number);
+    const b = floor.split(".").map(Number);
+    return a[0] > b[0] || (a[0] === b[0] && (a[1] > b[1] || (a[1] === b[1] && a[2] >= b[2])));
+  };
+  assert.equal(mediaVersions.sharp.sharp, serverManifest.dependencies.sharp);
+  assert.ok(atLeast(mediaVersions.sharp.rsvg, "2.63.2"), "Packaged librsvg must be patched");
+  assert.ok(atLeast(mediaVersions.busboy, "3.2.2"), "Packaged multipart parser must be patched");
   const build = JSON.parse(await readFile(join(resources, "BUILD.json"), "utf8"));
   const preferencesFile = join(root, "client", "update-preferences.json");
   const updates = async (operation, input = {}) => {
@@ -222,7 +245,7 @@ try {
   assert.equal(list.projects[0].title, "Packaged runtime verification");
   await stop();
   console.log(
-    `PASS: packaged Fastify ${packagedFastifyVersion.trim()} matches the reviewed dependency; update preferences persist offline; runtime starts, remote helper reuses its actual port, project defaults and login survive restart, and the owned lease is released`,
+    `PASS: packaged Fastify ${packagedFastifyVersion.trim()}, sharp ${mediaVersions.sharp.sharp}, librsvg ${mediaVersions.sharp.rsvg} and busboy ${mediaVersions.busboy} match the security requirements; update preferences persist offline; runtime starts, remote helper reuses its actual port, project defaults and login survive restart, and the owned lease is released`,
   );
 } finally {
   await stop().catch(() => {

@@ -41,7 +41,53 @@ staging directory, rejects links and path traversal, verifies every declared siz
 and opens the database before publishing the project. Imported ComfyUI workflows are not executable
 until their bindings and dependencies have been explicitly inspected and trusted.
 
-## Fastify dependency review — 2026-10-02
+## Media and build dependency review — 2026-10-10
+
+The current source and lockfiles contain these security fixes:
+
+| Dependency | Fixed version | Advisory / reason |
+| --- | --- | --- |
+| sharp / bundled librsvg | 0.35.5 / 2.63.2 | [GHSA-wq5f-xc86-pv6w](https://github.com/lovell/sharp/security/advisories/GHSA-wq5f-xc86-pv6w): unsafe native SVG decoding |
+| @fastify/busboy | 3.2.2 | [GHSA-gxm5-99cw-xjw9](https://github.com/fastify/busboy/security/advisories/GHSA-gxm5-99cw-xjw9): multipart names can contain bare CR/LF |
+| source-map-js | 1.2.2 | [GHSA-68fv-2mgg-jv7q](https://github.com/advisories/GHSA-68fv-2mgg-jv7q): oversized indexed source maps can exhaust resources during builds |
+| tauri-utils / urlpattern | 2.10.1 / 0.6.0 | Removes five unmaintained `unic-*` dependencies without forcing an incompatible override |
+
+The two sharp Dependabot entries refer to the same issue in the package manifest and lockfile,
+not two independent vulnerabilities. Fastify remains at 5.12.5; the earlier brace-expansion and
+fast-uri security floors remain in effect. Security and installer publication workflows now audit
+**all Node.js dependencies**, including build tools, with no advisory suppressions and a low-severity
+failure threshold. The scheduled audit also scans the complete desktop lockfile against RustSec;
+new vulnerabilities and unreviewed memory-safety advisories fail the check. The existing bounded
+GTK exception remains visible, as do unmaintained-package warnings.
+
+Validation on 2026-10-10:
+
+- Full Node.js dependency audit: zero known vulnerabilities. Native sharp reports librsvg 2.63.2;
+  regression tests cover ordinary SVG/PNG/JPEG/WebP decoding, malformed multipart names and
+  oversized/nested source-map offsets in a memory- and time-bounded subprocess.
+- Lint, type checks, builds and all package/application/script tests passed. Browser functional
+  regressions passed 70 cases; one real-GPU case was skipped. Existing ComfyUI services were untouched.
+- An isolated production deployment passed the desktop runtime lifecycle gate, including loaded
+  sharp, librsvg and multipart versions. This is not a newly built native installer.
+- A full RustSec scan with cargo-audit 0.22.2, using the advisory database updated on 2026-10-09,
+  reported zero vulnerability entries and **two unresolved warnings**: `glib 0.18.5`
+  (RUSTSEC-2024-0429, unsoundness) and `proc-macro-error 1.0.4` (RUSTSEC-2024-0370, unmaintained).
+  Both remain in the Linux GTK3 chain. The latter is required by GTK3/glib proc macros;
+  it cannot be replaced by a different-major macro crate through a safe lockfile update.
+  A zero vulnerability count must not be presented as a warning-free Rust dependency tree.
+- The upgraded desktop passed Linux `cargo check` using isolated development libraries, with
+  deprecated URL-opening calls removed; all six native Rust unit tests passed, including URL and
+  native-action origin restrictions. Cross-platform native installer verification remains
+  part of the next installer build, not this source review.
+
+**Published beta.19 installers predate these media fixes and are not patched by a source push.**
+Desktop users need a newly built installer containing this change; source deployments must reinstall
+from the updated lockfile and restart, and container deployments must rebuild. Hosts using a system
+libvips/librsvg instead of sharp's bundled libraries must independently install librsvg 2.63.2 or later.
+The installed-runtime gate now checks the actual native SVG library and multipart parser so that
+stale packaged dependencies cannot pass merely because a source manifest has changed.
+
+## Fastify dependency review — 2026-10-02 (historical)
 
 Server (including the same-GPU gateway) and Portal now pin Fastify **5.12.5**. The shared lockfile
 contains that version. The upgrade covers the following upstream advisories:
@@ -87,7 +133,7 @@ through their normal service management. Updating a desktop app does not upgrade
 
 ## Known upstream advisory
 
-As of 2026-09-04, the **Linux desktop preview only** inherits
+Rechecked on 2026-10-10, the **Linux desktop preview only** still inherits
 [RUSTSEC-2024-0429 / GHSA-wrw7-89jp-8q8g](https://rustsec.org/advisories/RUSTSEC-2024-0429.html)
 through Tauri's `wry -> webkit2gtk/gtk -> glib 0.18.5` stack. The affected API is
 `glib::VariantStrIter`; TakeBoard does not call it, and a source-tree reachability search found no

@@ -1,6 +1,5 @@
 use tauri::{Manager, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
-use tauri_plugin_shell::ShellExt;
 
 pub const ACTION_CAPABILITY: &str =
     "window.__takeboardNativeActions = 2; window.__takeboardReportSave = true; window.__takeboardRemoteProjects = true;";
@@ -121,11 +120,8 @@ pub fn navigation(app: &tauri::AppHandle, source: &str, url: &tauri::Url) -> boo
             .find(|(key, _)| key == "url")
             .map(|(_, value)| value.into_owned())
             .unwrap_or_default();
-        let result = external_web_url(&target).and_then(|target| {
-            app.shell()
-                .open(target, None)
-                .map_err(|error| error.to_string())
-        });
+        let result = external_web_url(&target)
+            .and_then(|target| open::that_detached(target).map_err(|error| error.to_string()));
         acknowledge(app, source, &action_id, result.err());
         return false;
     }

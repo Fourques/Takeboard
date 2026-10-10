@@ -6,6 +6,10 @@ before moving production work to a newer minor version.
 
 ## Unreleased
 
+- Upgrade sharp to 0.35.5 (including patched librsvg 2.63.2), multipart's busboy to 3.2.2 and build-time source-map-js to 1.2.2. Cover native image decoding, multipart control characters and oversized source-map offsets with regression tests.
+- Audit build dependencies as well as runtime dependencies, including low-severity advisories, in security and installer workflows. Verify the installed runtime's sharp/native SVG library and multipart parser before accepting a newly built installer.
+- Upgrade tauri-utils to 2.10.1, replacing urlpattern's five unmaintained Unicode dependencies. Add a full RustSec lockfile scan that reports maintenance warnings and rejects new vulnerabilities or unreviewed memory-safety advisories; retain the existing time-limited Linux GTK exception. Replace deprecated native URL-opening calls without granting browser-side shell permissions.
+
 ## 0.2.0-beta.19 — 2026-10-02
 
 - Upgrade server and Portal from Fastify 5.12.1 to 5.12.5, fixing four high-severity validation/authentication advisories and the HTTP/2 trailer denial-of-service advisory.

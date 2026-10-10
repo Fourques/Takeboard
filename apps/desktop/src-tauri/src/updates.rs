@@ -141,8 +141,7 @@ pub async fn update_action(
             "notesUrl"
         };
         let url = value["release"][field].as_str().ok_or("请先检查更新")?;
-        #[allow(deprecated)]
-        app.shell().open(url, None).map_err(|e| e.to_string())?;
+        open::that_detached(url).map_err(|e| e.to_string())?;
         return Ok(json!({"opened":true}));
     }
     run(&app, &operation, input.unwrap_or(json!({}))).await

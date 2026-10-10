@@ -90,6 +90,8 @@ jobs:
         with:
           targets: ${{ matrix.rust_target }}
       - run: pnpm install --frozen-lockfile
+      - name: Audit runtime and build dependencies
+        run: pnpm audit --audit-level=low
       - name: Require Apple production credentials
         shell: bash
         env:
@@ -193,6 +195,8 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
       - run: pnpm install --frozen-lockfile
+      - name: Audit runtime and build dependencies
+        run: pnpm audit --audit-level=low
       - name: Require Azure Artifact Signing configuration
         shell: pwsh
         env:
