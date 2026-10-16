@@ -97,6 +97,10 @@ async function stopOwnedServer(server) {
 
 async function main() {
   const source = sourceState();
+  const deviceScaleFactor = Number(process.env.TAKEBOARD_DEMO_SCALE ?? "1");
+  if (![1, 2].includes(deviceScaleFactor)) {
+    throw new Error("TAKEBOARD_DEMO_SCALE must be 1 or 2");
+  }
   if (process.env.CI && (!source.commit || source.dirty !== false)) {
     throw new Error("CI 产品演示只能从绑定 40 位 Commit 的干净工作树录制");
   }
@@ -160,7 +164,7 @@ async function main() {
     browser = await chromium.launch(executablePath ? { executablePath } : undefined);
     const context = await browser.newContext({
       viewport: { width: 1440, height: 900 },
-      deviceScaleFactor: 1,
+      deviceScaleFactor,
       storageState: await api.storageState(),
       recordVideo: { dir: videoScratch, size: { width: 1440, height: 900 } },
       reducedMotion: "reduce",
@@ -236,7 +240,7 @@ async function main() {
       sourceCommit: source.commit,
       sourceDirty: source.dirty,
       recordedAt: new Date().toISOString(),
-      viewport: { width: 1440, height: 900 },
+      viewport: { width: 1440, height: 900, deviceScaleFactor },
       sequence: [
         "open_demo_project",
         "reset_deterministic_state",
