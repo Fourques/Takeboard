@@ -6,7 +6,7 @@ before moving production work to a newer minor version.
 
 ## 0.2.0-beta.21 — 2026-10-16
 
-- Run browser journeys in two isolated, internally serial CI shards without dropping coverage; isolate the three-project layout fixture from unrelated projects and retain all multi-workflow parameter assertions on shared runners.
+- Cancel deferred node click-toggles when the user starts editing canvas controls, so model changes and input focus cannot unexpectedly close the editor. A timed regression reproduces the race; browser CI runs in two isolated, internally serial shards without dropping coverage.
 - Validate AutoDL directory isolation using the host's path semantics, including Windows drive and UNC roots. Keep Unix permission assertions on systems that implement them, without skipping the cross-platform workflow-seeding tests.
 - Add the independently configured AutoDL cloud adapter and starter SDXL/Wan workflows. Keep model downloads under a Linux OS-backed lease inherited by transfer processes; serialize generation/lifecycle acceptance and recover submissions after lost acknowledgements without silently submitting another GPU job. Cloud image publication and cold-boot verification remain separate from source tests.
 - Verify content-addressed recommended templates against the native execution builder, and reject ignored native binding edits with an editable-copy recovery path.

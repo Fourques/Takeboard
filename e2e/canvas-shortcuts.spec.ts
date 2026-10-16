@@ -42,7 +42,12 @@ test("canvas shortcuts preserve input composition, duplicate, undo, redo and cut
     await node.locator(".shot-planning-surface").click();
     await expect(node.locator(".shot-inline-console")).toBeVisible();
     const width = page.getByLabel("画布宽度", { exact: true });
+    // Focusing a field during the node's double-click window must cancel its
+    // pending close, even without typing or another pointer event.
+    await node.locator(".shot-planning-surface").click();
     await width.focus();
+    await page.waitForTimeout(350);
+    await expect(width).toBeFocused();
     await width.dispatchEvent("keydown", { key: "Enter", isComposing: true, bubbles: true });
     await expect(width).toBeFocused();
     await width.press("ControlOrMeta+a");

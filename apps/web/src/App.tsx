@@ -2498,6 +2498,17 @@ export function App() {
           nodesDraggable={canEditProject}
           nodesConnectable={canEditProject}
           onNodeClick={onNodeClick}
+          // A second interaction must retire a deferred node toggle, including
+          // input events whose child handlers stop propagation in the bubble phase.
+          onPointerDownCapture={cancelNodeClick}
+          onChangeCapture={cancelNodeClick}
+          onFocusCapture={(event) => {
+            if (
+              event.target instanceof HTMLElement &&
+              event.target.closest("input, textarea, select, button, [contenteditable]")
+            )
+              cancelNodeClick();
+          }}
           onNodeDragStart={cancelNodeClick}
           onEdgeClick={(event, edge) => {
             cancelNodeClick();

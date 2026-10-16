@@ -4,9 +4,6 @@ test("image/video controls submit the chosen dimensions and keep shot intent abo
   page,
   request,
 }) => {
-  // This is a multi-workflow journey, not a latency benchmark. Shared CI runners
-  // must complete all transitions and assertions rather than time out during cleanup.
-  test.setTimeout(90_000);
   const title = `参数一致性 ${Date.now()}`;
   const created = await request.post("/api/projects", {
     data: { title, firstShotIntent: "清晨的海面" },
@@ -68,6 +65,9 @@ test("image/video controls submit the chosen dimensions and keep shot intent abo
     await node.click();
     await test.step("canvas controls follow the selected workflow", async () => {
       await page.getByLabel("画布生成方式").selectOption("text_to_image");
+      // Editing an already-visible console must invalidate the node's deferred
+      // click-toggle, even when the user acts within its double-click window.
+      await page.waitForTimeout(350);
       await expect(page.getByLabel("画布工作流")).toHaveValue("Kino/Kino_QwenImage2512_T2I.json");
       await page.getByLabel("画布生成比例").selectOption("9:16");
       const width = Number(await page.getByLabel("画布宽度").inputValue());
