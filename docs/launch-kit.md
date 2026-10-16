@@ -1,6 +1,6 @@
 # TakeBoard 推广入口
 
-更新时间：2026-10-10。当前公开安装版为全平台 [v0.2.0-beta.20](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.20)。
+更新时间：2026-10-16。当前公开安装版为全平台 [v0.2.0-beta.21](https://github.com/Fourques/Takeboard/releases/tag/v0.2.0-beta.21)。
 
 - [产品短片](https://fourques.github.io/Takeboard/zh/#demo) · [English film](https://fourques.github.io/Takeboard/#demo)：42 秒真实项目中的创作流程。
 - [渠道文案](outreach-2026-09.md)：定位、中英文社区帖、短帖与渠道规则。
