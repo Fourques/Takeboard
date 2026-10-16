@@ -9,6 +9,7 @@
       "!**/playwright-report",
       "!**/test-results",
       "!release",
+      "!output",
       "!**/src-tauri/binaries",
       "!**/src-tauri/resources",
       "!**/src-tauri/target",

@@ -4,8 +4,9 @@ TakeBoard follows [Semantic Versioning](https://semver.org/) from the first publ
 1.0, project packages and database migrations remain forward-oriented: always keep a verified backup
 before moving production work to a newer minor version.
 
-## Unreleased
+## 0.2.0-beta.21 — 2026-10-16
 
+- Validate AutoDL directory isolation using the host's path semantics, including Windows drive and UNC roots. Keep Unix permission assertions on systems that implement them, without skipping the cross-platform workflow-seeding tests.
 - Add the independently configured AutoDL cloud adapter and starter SDXL/Wan workflows. Keep model downloads under a Linux OS-backed lease inherited by transfer processes; serialize generation/lifecycle acceptance and recover submissions after lost acknowledgements without silently submitting another GPU job. Cloud image publication and cold-boot verification remain separate from source tests.
 - Verify content-addressed recommended templates against the native execution builder, and reject ignored native binding edits with an editable-copy recovery path.
 - Preserve structured workflow errors through generation feedback; route users to the appropriate recovery action without automatically resubmitting tasks.

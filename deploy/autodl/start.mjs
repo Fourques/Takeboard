@@ -2,27 +2,35 @@
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import paths, { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { seedWorkflows } from "./seed-workflows.mjs";
 
-export function cloudEnvironment(config, inherited = process.env) {
+// Validate path semantics on the host; Windows drive/UNC roots are not ordinary folders.
+export function validateCloudDirectories(config, path = paths) {
   const directories = ["appRoot", "webRoot", "comfyRoot", "python", "dataRoot"];
   for (const key of directories) {
-    if (typeof config[key] !== "string" || !isAbsolute(config[key]) || resolve(config[key]) === "/")
+    if (
+      typeof config[key] !== "string" ||
+      !path.isAbsolute(config[key]) ||
+      path.resolve(config[key]) === path.parse(path.resolve(config[key])).root
+    )
       throw new Error(`${key} 必须是明确的绝对路径`);
   }
-  const dataRoot = resolve(config.dataRoot);
+  const dataRoot = path.resolve(config.dataRoot);
+  const isOutside = (value) =>
+    path.isAbsolute(value) || value === ".." || value.startsWith(`..${path.sep}`);
   for (const key of ["appRoot", "webRoot", "comfyRoot"]) {
-    const distance = relative(resolve(config[key]), dataRoot);
-    const reverse = relative(dataRoot, resolve(config[key]));
-    if (
-      !distance ||
-      (!distance.startsWith("../") && !isAbsolute(distance)) ||
-      (!reverse.startsWith("../") && !isAbsolute(reverse))
-    )
+    const distance = path.relative(path.resolve(config[key]), dataRoot);
+    const reverse = path.relative(dataRoot, path.resolve(config[key]));
+    if (!isOutside(distance) || !isOutside(reverse))
       throw new Error("项目数据与程序目录必须相互独立");
   }
+  return dataRoot;
+}
+
+export function cloudEnvironment(config, inherited = process.env) {
+  const dataRoot = validateCloudDirectories(config);
   const mode = config.mode ?? "tunnel";
   if (!["tunnel", "https"].includes(mode)) throw new Error("mode 必须是 tunnel 或 https");
   const port = config.port ?? (mode === "https" ? 6006 : 48120);

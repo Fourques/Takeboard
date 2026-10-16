@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, posix, win32 } from "node:path";
 import { test } from "node:test";
-import { cloudEnvironment, hasCloudAdministrator, start } from "../deploy/autodl/start.mjs";
+import {
+  cloudEnvironment,
+  hasCloudAdministrator,
+  start,
+  validateCloudDirectories,
+} from "../deploy/autodl/start.mjs";
 
 const config = {
   appRoot: "/opt/takeboard/app",
@@ -12,6 +17,55 @@ const config = {
   python: "/opt/takeboard/env/bin/python",
   dataRoot: "/root/autodl-tmp/TakeBoard",
 };
+for (const [name, path, root] of [
+  ["POSIX", posix, "/sandbox"],
+  ["Windows", win32, "C:\\sandbox"],
+]) {
+  test(`${name} paths reject roots and nesting without rejecting independent siblings`, () => {
+    const fixture = {
+      appRoot: path.join(root, "app"),
+      webRoot: path.join(root, "web"),
+      comfyRoot: path.join(root, "ComfyUI"),
+      python: path.join(root, "env", "python"),
+      dataRoot: path.join(root, "data"),
+    };
+    assert.equal(validateCloudDirectories(fixture, path), fixture.dataRoot);
+    assert.equal(
+      validateCloudDirectories({ ...fixture, dataRoot: `${fixture.appRoot}-data` }, path),
+      `${fixture.appRoot}-data`,
+    );
+    for (const dataRoot of [
+      fixture.appRoot,
+      root,
+      path.join(fixture.appRoot, "data"),
+      path.join(fixture.appRoot, "..cache"),
+    ])
+      assert.throws(() => validateCloudDirectories({ ...fixture, dataRoot }, path), /相互独立/);
+    for (const key of Object.keys(fixture))
+      assert.throws(
+        () => validateCloudDirectories({ ...fixture, [key]: path.parse(root).root }, path),
+        /绝对路径/,
+      );
+    assert.throws(
+      () => validateCloudDirectories({ ...fixture, python: "python" }, path),
+      /绝对路径/,
+    );
+    if (path === win32) {
+      assert.equal(
+        validateCloudDirectories({ ...fixture, dataRoot: "D:\\projects" }, path),
+        "D:\\projects",
+      );
+      assert.throws(
+        () => validateCloudDirectories({ ...fixture, dataRoot: "c:\\SANDBOX\\APP\\data" }, path),
+        /相互独立/,
+      );
+      assert.throws(
+        () => validateCloudDirectories({ ...fixture, dataRoot: "\\\\server\\share\\" }, path),
+        /绝对路径/,
+      );
+    }
+  });
+}
 test("cloud starts privately, requires accounts, and does not inherit desktop settings", () => {
   const env = cloudEnvironment(config, {
     PATH: "/bin",

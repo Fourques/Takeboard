@@ -21,7 +21,8 @@ test("fresh data gets only fixed workflows, bindings and library entries; repeat
       assert.equal(binding.trusted, true);
       assert.match(binding.workflowHash, /^[a-f0-9]{64}$/);
       assert.equal(binding.workflowPath, recipe.path);
-      assert.equal((await stat(bindingFile)).mode & 0o777, 0o600);
+      // Windows mode bits do not represent a Unix access-control policy.
+      if (process.platform !== "win32") assert.equal((await stat(bindingFile)).mode & 0o777, 0o600);
       const library = join(userRoot, "takeboard", "library", key);
       await writeFile(library, JSON.stringify({ name: "My title", included: false }));
       await seedWorkflows(root);
