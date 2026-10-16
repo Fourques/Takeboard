@@ -5,6 +5,7 @@ import { ComfyClient } from "@takeboard/executor-comfy";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
 import { ProjectStore } from "../src/storage/project-store.js";
+import { recommendedArtifacts } from "../src/workflow-templates.js";
 import { waitForRun } from "./run-fixture.js";
 
 const cleanup: Array<() => Promise<void>> = [];
@@ -69,6 +70,33 @@ async function projectFixture(storage?: { inputRoot: string; outputRoot: string 
 }
 
 describe("real generation routes", () => {
+  it("rejects a modified maintained template before uploading, submitting or persisting a run", async () => {
+    const { app, key, shotId } = await projectFixture();
+    const artifact = recommendedArtifacts().find((item) => item.id === "h3-t2v");
+    if (!artifact) throw new Error("No H3 template");
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      if (url.pathname.startsWith("/api/userdata/"))
+        return Response.json({ ...artifact.prompt, changed: true });
+      if (url.pathname === "/object_info")
+        return Response.json(
+          objectInfo(Object.values(artifact.prompt).map((node) => node.class_type)),
+        );
+      throw new Error(`Unexpected ComfyUI request: ${url.pathname}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/projects/${key}/shots/${shotId}/generate`,
+      payload: { recipePath: artifact.path, prompt: "Integrity regression" },
+    });
+    expect(response.statusCode, response.body).toBe(422);
+    expect(response.json()).toMatchObject({ code: "WORKFLOW_TEMPLATE_CHANGED", retryable: false });
+    expect(fetchMock.mock.calls.some(([input]) => /\/prompt$|\/upload\//.test(String(input)))).toBe(
+      false,
+    );
+    expect((await app.inject(`/api/projects/${key}`)).json().snapshot.runs).toEqual([]);
+  });
   it("queues multiple jobs and keeps independent workers running without cross-cancellation", async () => {
     const release = vi.spyOn(ComfyClient.prototype, "freeResourcesIfIdle");
     const queues = new Map<string, string[]>();

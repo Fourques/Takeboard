@@ -3650,48 +3650,6 @@ button.save-status {
   background: color-mix(in srgb, var(--green) 10%, var(--surface-2));
 }
 
-.shot-preview {
-  position: relative;
-  height: 65px;
-  margin: 0 11px 8px;
-  overflow: hidden;
-  border: 1px solid #37413d;
-  background:
-    linear-gradient(90deg, rgb(10 14 13 / 65%), transparent 42%),
-    linear-gradient(155deg, #40544f, #899289 48%, #1e2826 49%, #15201e);
-}
-
-.shot-preview-2 {
-  background:
-    radial-gradient(circle at 65% 34%, #a5aaa0 0 5%, transparent 6%),
-    linear-gradient(155deg, #243633, #7e8880 48%, #1a2422 49%, #111816);
-}
-
-.shot-preview-3 {
-  background:
-    linear-gradient(25deg, transparent 45%, rgb(219 204 169 / 30%) 46% 60%, transparent 61%),
-    linear-gradient(155deg, #655a48, #929184 48%, #252d27 49%, #141a18);
-}
-
-.preview-frame {
-  position: absolute;
-  top: 5px;
-  right: 6px;
-  color: rgb(237 240 232 / 48%);
-  font-size: 6px;
-}
-
-.approved-stamp {
-  position: absolute;
-  right: 6px;
-  bottom: 5px;
-  padding: 3px 5px;
-  color: #a4dbb5;
-  background: rgb(20 49 31 / 78%);
-  font-size: 6px;
-  letter-spacing: 0.1em;
-}
-
 .shot-node p {
   margin-bottom: 9px;
   -webkit-line-clamp: 2;
@@ -4475,7 +4433,8 @@ button.save-status {
   color: var(--muted);
   font-weight: normal;
 }
-.inspector-model-picker select {
+.inspector-model-picker select,
+.result-preview select {
   width: 100%;
   min-width: 0;
   min-height: 40px;

@@ -3,6 +3,8 @@ import type { WorkflowSummary } from "./api";
 
 export function workflowCheckGuidance(check: Pick<WorkflowDiagnosticCheck, "code">) {
   switch (check.code) {
+    case "WORKFLOW_TEMPLATE_CHANGED":
+      return "推荐模板已修改或需要更新。创建可编辑副本使用自己的配置，或从可添加中添加当前版本。";
     case "TAKEBOARD_NATIVE_TEMPLATE_INCOMPATIBLE":
       return "推荐模板与当前生成设备不兼容。请检查 TakeBoard 与 ComfyUI 更新后重试，或选择其他模板。";
     case "COMFY_NODE_TYPES_MISSING":
@@ -56,6 +58,7 @@ export function workflowAvailability(workflow: WorkflowSummary): {
       label:
         blocked &&
         [
+          "WORKFLOW_TEMPLATE_CHANGED",
           "COMFY_REQUIRED_INPUTS_MISSING",
           "TAKEBOARD_NATIVE_TEMPLATE_INCOMPATIBLE",
           "TAKEBOARD_BINDING_INVALID",

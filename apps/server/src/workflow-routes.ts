@@ -31,6 +31,7 @@ import {
 } from "./workflow-bindings.js";
 import { workflowDefaults } from "./workflow-defaults.js";
 import { buildWorkflowDiagnostic } from "./workflow-diagnostics.js";
+import { WorkflowExecutionError } from "./workflow-errors.js";
 import { workflowFromUpload } from "./workflow-import.js";
 import {
   readWorkflowLibraryEntry,
@@ -567,6 +568,7 @@ export function registerWorkflowRoutes(
     );
     const diagnostic = buildWorkflowDiagnostic({
       executionSource: nativePrompt ? "native_prompt" : "source_workflow",
+      sourceWorkflow: workflow,
       path,
       workflowHash: inspected.workflowHash,
       prompt: inspected.prompt,
@@ -685,6 +687,7 @@ export function registerWorkflowRoutes(
                 : undefined,
             diagnostic: buildWorkflowDiagnostic({
               executionSource: nativeRecipePrompt(path) ? "native_prompt" : "source_workflow",
+              sourceWorkflow: workflow,
               path,
               workflowHash: inspected.workflowHash,
               prompt: inspected.prompt,
@@ -845,6 +848,16 @@ export function registerWorkflowRoutes(
   app.put<{ Querystring: { path?: string } }>("/api/workflows/binding", async (request, reply) => {
     const path = request.query.path;
     if (!isWorkflowPath(path)) return await reply.code(400).send({ error: "工作流路径无效" });
+    if (isNativeWorkflow(path))
+      return reply
+        .code(409)
+        .send(
+          new WorkflowExecutionError(
+            "WORKFLOW_TEMPLATE_CHANGED",
+            "内置模板使用固定执行配置。请创建可编辑副本，再保存自己的输入设置。",
+            path,
+          ).response(),
+        );
     const body =
       request.body && typeof request.body === "object"
         ? (request.body as Record<string, unknown>)
@@ -947,7 +960,14 @@ export function registerWorkflowRoutes(
       if (issues.length > 0) {
         return await reply
           .code(422)
-          .send({ error: `绑定预检失败：${issues.slice(0, 8).join("；")}` });
+          .send(
+            new WorkflowExecutionError(
+              "WORKFLOW_INPUTS_INCOMPATIBLE",
+              "工作流与当前节点配置不兼容，请检查输入设置与连线。",
+              path,
+              issues,
+            ).response(),
+          );
       }
       await writeWorkflowBinding(getComfyUrl(), path, binding);
       return { status: "ready", binding };

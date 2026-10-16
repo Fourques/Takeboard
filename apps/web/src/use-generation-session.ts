@@ -254,7 +254,7 @@ export function useGenerationSession(
         );
       } catch (cause) {
         if (generationTokenRef.current === token) {
-          setError(cause instanceof Error ? cause.message : "生成失败");
+          setError(cause instanceof Error ? cause : "生成失败");
         }
       } finally {
         if (generationTokenRef.current === token) {
@@ -392,7 +392,7 @@ export function useGenerationSession(
       );
     } catch (cause) {
       if (cancellationScope.current === token)
-        setError(cause instanceof Error ? cause.message : "停止生成失败");
+        setError(cause instanceof Error ? cause : "停止生成失败");
     } finally {
       if (cancellationScope.current === token) {
         stopping.current = false;
@@ -441,7 +441,7 @@ export function useGenerationSession(
         },
       });
     },
-    onError: (cause) => setError(cause instanceof Error ? cause.message : "后台任务状态同步失败"),
+    onError: (cause) => setError(cause instanceof Error ? cause : "后台任务状态同步失败"),
   });
   const requestShotGeneration = useCallback(
     async (shot: Shot, settingsOverride: Partial<GenerationSettings> = {}) => {
@@ -465,7 +465,7 @@ export function useGenerationSession(
         }
       } catch (cause) {
         if (token === generationTokenRef.current)
-          setError(cause instanceof Error ? cause.message : "生成失败");
+          setError(cause instanceof Error ? cause : "生成失败");
       } finally {
         if (token === generationTokenRef.current) setGenerationBusy(false);
       }

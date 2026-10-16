@@ -33,6 +33,82 @@ it("labels image editing inputs as source images and avoids duplicating port lab
 });
 
 describe("canvas measurement reconciliation", () => {
+  it("projects 500 mixed media/shot nodes without mutating media names or reusing stale indexes", () => {
+    const workflow = {
+      path: "custom/image.json",
+      capability: "image_to_image",
+      execution: "bound",
+      inputs: ["first_frame"],
+      name: "Custom image",
+    } as WorkflowSummary;
+    const assets = Array.from({ length: 300 }, (_, index) => ({
+      id: `asset-${index}`,
+      originalName: `ferry-${index}.webp`,
+      mediaType: "image",
+      mimeType: "image/webp",
+      width: 750,
+      height: 900,
+    }));
+    const shots = Array.from({ length: 200 }, (_, index) => ({
+      id: `shot-${index}`,
+      label: `镜头${index}`,
+      workflowPath: workflow.path,
+      approvedTakeId: `take-${index}`,
+      aspectRatio: "16:9",
+    }));
+    const mixed = {
+      assets,
+      shots,
+      entities: [],
+      textItems: [],
+      runs: [],
+      takes: shots.map((shot, index) => ({
+        id: `take-${index}`,
+        shotId: shot.id,
+        assetId: `asset-${index}`,
+        status: "approved",
+      })),
+      canvasItems: [
+        ...shots.map((shot, index) => ({
+          id: `shot-node-${index}`,
+          refId: shot.id,
+          refType: "shot",
+          x: index * 500,
+          y: 0,
+          width: 470,
+        })),
+        ...assets.map((asset, index) => ({
+          id: `asset-node-${index}`,
+          refId: asset.id,
+          refType: "asset",
+          x: index * 320,
+          y: 600,
+          width: 320,
+        })),
+      ],
+      canvasEdges: shots.map((_, index) => ({
+        sourceItemId: `asset-node-${index}`,
+        targetItemId: `shot-node-${index}`,
+        targetSlot: "first_frame",
+      })),
+    } as unknown as ProjectSnapshot;
+    const original = structuredClone(mixed);
+    const nodes = boardNodes(mixed, null, "mixed.takeboard", [workflow], null, null, null);
+    expect(nodes).toHaveLength(500);
+    expect(nodes[199]?.data).toMatchObject({
+      title: "镜头199",
+      mediaWidth: 750,
+      mediaHeight: 900,
+      inputSlots: [expect.objectContaining({ id: "first_frame", connectedCount: 1 })],
+    });
+    expect(nodes[200]?.data.title).toBe("ferry-0.webp");
+    expect(mixed).toEqual(original);
+    const changed = structuredClone(mixed);
+    if (changed.assets[0]) changed.assets[0].originalName = "用户改名.webp";
+    expect(boardNodes(changed, null, null, [workflow], null, null, null)[200]?.data.title).toBe(
+      "用户改名.webp",
+    );
+  });
   it("renders legacy resized items at stable widths without mutating stored dimensions", () => {
     const legacy = {
       canvasItems: [

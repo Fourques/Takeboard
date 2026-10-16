@@ -1,5 +1,28 @@
 import { resolve } from "node:path";
 import { type APIRequestContext, test as base, expect } from "@playwright/test";
+import type { WorkerDefinition } from "@takeboard/contracts";
+
+/** Explicit UI fixture; never depends on discovered hardware or earlier test mutations. */
+export function workerFixture(): WorkerDefinition {
+  const at = new Date().toISOString();
+  return {
+    id: "worker_00000000-0000-4000-8000-000000000001",
+    name: "测试生成设备",
+    endpoint: "http://127.0.0.1:1",
+    kind: "local",
+    transport: "loopback",
+    enabled: true,
+    allowSensitiveInputs: false,
+    qualityTier: "balanced",
+    priority: 50,
+    hourlyRate: null,
+    currency: "CNY",
+    estimatedJobSeconds: 300,
+    retiredAt: null,
+    createdAt: at,
+    updatedAt: at,
+  };
+}
 
 const authState = resolve("test-results/e2e-auth-state.json");
 

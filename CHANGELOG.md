@@ -6,6 +6,14 @@ before moving production work to a newer minor version.
 
 ## Unreleased
 
+- Add the independently configured AutoDL cloud adapter and starter SDXL/Wan workflows. Keep model downloads under a Linux OS-backed lease inherited by transfer processes; serialize generation/lifecycle acceptance and recover submissions after lost acknowledgements without silently submitting another GPU job. Cloud image publication and cold-boot verification remain separate from source tests.
+- Verify content-addressed recommended templates against the native execution builder, and reject ignored native binding edits with an editable-copy recovery path.
+- Preserve structured workflow errors through generation feedback; route users to the appropriate recovery action without automatically resubmitting tasks.
+- Keep IME composition separate from canvas shortcuts and numeric-input confirmation. Hide controls not exposed by the selected workflow and show Wan preview sampling as fixed at four steps.
+- Compare available results of the same media type side by side and load recorded prompts and parameters into the current draft without changing connections or adoption records.
+- Bind idle GPU cleanup to the current Worker client. Recheck ownership after queue inspection so reconnects and reused forwarding ports retire stale cleanup requests.
+- Index media, shot results and input counts during canvas projection, preserve user filenames, and remove unused placeholder-preview styles without raising bundle budgets.
+
 ## 0.2.0-beta.20 — 2026-10-10
 
 - Fix update checks for the actual Windows/Linux ARM64 installer filenames; regression tests cover all six native package names and reject the wrong architecture.

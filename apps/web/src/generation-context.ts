@@ -10,6 +10,6 @@ export type GenerationContext = {
   canEdit: boolean;
   readDocument: () => DemoPayload | null;
   acceptPayload: (payload: DemoPayload) => boolean;
-  onError: (message: string | null) => void;
+  onError: (message: string | Error | null) => void;
   onNotice: (message: string) => void;
 };

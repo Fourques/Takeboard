@@ -24,6 +24,13 @@ test("image/video controls submit the chosen dimensions and keep shot intent abo
       capabilityLabel: "文生视频",
       inputs: ["prompt", "resolution", "duration", "seed", "steps"],
     },
+    {
+      path: "TakeBoard/fixed-image.json",
+      name: "固定参数工作流",
+      capability: "text_to_image",
+      capabilityLabel: "文生图",
+      inputs: ["prompt"],
+    },
   ].map((item) => ({
     ...item,
     id: item.path,
@@ -31,7 +38,7 @@ test("image/video controls submit the chosen dimensions and keep shot intent abo
     nodeCount: 10,
     source: "comfyui",
     editorUrl: "http://127.0.0.1:1",
-    execution: "native",
+    execution: item.path.startsWith("Kino/") ? "native" : "bound",
     origin: "built_in",
     library: { included: true, favorite: false },
     diagnostic: { health: "ready", executable: true },
@@ -62,6 +69,12 @@ test("image/video controls submit the chosen dimensions and keep shot intent abo
     const height = Number(await page.getByLabel("画布高度").inputValue());
     expect(width).toBeLessThan(height);
     await expect(page.getByLabel("画布时长")).toHaveCount(0);
+    await page.getByLabel("画布工作流").selectOption("TakeBoard/fixed-image.json");
+    await expect(page.getByLabel("画布宽度")).toHaveCount(0);
+    await expect(page.getByLabel("画布高度")).toHaveCount(0);
+    await expect(page.getByLabel("画布 Seed")).toHaveCount(0);
+    await page.getByLabel("画布工作流").selectOption("Kino/Kino_QwenImage2512_T2I.json");
+    await page.getByLabel("画布生成比例").selectOption("9:16");
     await page.getByRole("button", { name: "详细设置", exact: true }).click();
     const inspector = page.getByLabel("镜头候选检查器");
     await expect(inspector.getByLabel("生成比例")).toHaveValue("9:16");

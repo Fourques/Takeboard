@@ -1,7 +1,7 @@
 import type { ProjectSnapshot } from "@takeboard/contracts";
 import type { WorkflowSummary } from "./api";
 import type { GenerationSettings } from "./generation-model";
-import type { modelProfile } from "./model-profiles";
+import { generationStepPolicy, type modelProfile } from "./model-profiles";
 import { workflowAvailability } from "./workflow-library";
 
 export function generationProblem({
@@ -64,20 +64,30 @@ export function generationProblem({
     (!Number.isFinite(generationSettings.denoise) ||
       generationSettings.denoise < 0.05 ||
       generationSettings.denoise > 1);
+  const stepPolicy = generationStepPolicy(selectedWorkflow);
+  const invalidResolution =
+    selectedWorkflow.inputs.includes("resolution") &&
+    (!Number.isFinite(generationSettings.width) ||
+      generationSettings.width < 256 ||
+      generationSettings.width > 2048 ||
+      !Number.isFinite(generationSettings.height) ||
+      generationSettings.height < 256 ||
+      generationSettings.height > 2048);
+  const invalidSeed =
+    selectedWorkflow.inputs.includes("seed") &&
+    (!Number.isSafeInteger(generationSettings.seed) || generationSettings.seed < 0);
+  const invalidSteps =
+    selectedWorkflow.inputs.includes("steps") &&
+    !stepPolicy.fixed &&
+    (!Number.isSafeInteger(generationSettings.steps) ||
+      generationSettings.steps < stepPolicy.min ||
+      generationSettings.steps > stepPolicy.max);
   if (
-    !Number.isFinite(generationSettings.width) ||
-    generationSettings.width < 256 ||
-    generationSettings.width > 2048 ||
-    !Number.isFinite(generationSettings.height) ||
-    generationSettings.height < 256 ||
-    generationSettings.height > 2048 ||
+    invalidResolution ||
     invalidVideoParameters ||
     invalidDenoise ||
-    !Number.isSafeInteger(generationSettings.seed) ||
-    generationSettings.seed < 0 ||
-    !Number.isSafeInteger(generationSettings.steps) ||
-    generationSettings.steps < 1 ||
-    generationSettings.steps > 100
+    invalidSeed ||
+    invalidSteps
   ) {
     return imageWorkflow
       ? "请检查分辨率、Steps、重绘强度和 Seed"

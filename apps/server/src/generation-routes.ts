@@ -26,6 +26,7 @@ import type { FastifyInstance } from "fastify";
 import { createImageProxy, inspectImage, inspectVideo } from "./asset-inspection.js";
 import { generatedAssetName } from "./generated-asset-name.js";
 import { IdleResourceCleaner } from "./idle-resource-cleaner.js";
+import { assertNativeWorkflowIntegrity } from "./native-workflow-integrity.js";
 import {
   cleanupInterruptedOutput,
   readMediaMetadata,
@@ -44,6 +45,7 @@ import {
 } from "./storage-capacity.js";
 import { type WorkerPool, WorkerSelectionError } from "./worker-pool.js";
 import { applyWorkflowBinding, loadExecutableWorkflow } from "./workflow-bindings.js";
+import { WorkflowExecutionError } from "./workflow-errors.js";
 
 const sha256 = (value: Uint8Array | string) => createHash("sha256").update(value).digest("hex");
 
@@ -147,6 +149,8 @@ export function registerGenerationRoutes(
 ) {
   const root = resolve(projectsRoot);
   const idleResources = new IdleResourceCleaner();
+  const trackIdleResources = (client: ComfyClient, workerId: string | null) =>
+    idleResources.track(client, () => workerPool.isCurrentClient(workerId, client));
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
   let idleFlight: Promise<void> | undefined;
   let idleClosing = false;
@@ -697,11 +701,15 @@ export function registerGenerationRoutes(
           ),
         ]);
         if (run.promptId) comfy.forgetProgress(run.promptId);
-        idleResources.track(comfy);
+        trackIdleResources(comfy, run.workerId);
         // Cancellation is already confirmed. A different job may still be running;
         // never hold this response open waiting for its resources. The idle cleaner
         // above will retry safely after the endpoint becomes idle.
-        const resourcesReleased = await comfy.freeResourcesIfIdle().catch(() => false);
+        const resourcesReleased =
+          workerPool.isCurrentClient(run.workerId, comfy) &&
+          (await comfy
+            .freeResourcesIfIdle(undefined, () => workerPool.isCurrentClient(run.workerId, comfy))
+            .catch(() => false));
         return {
           key,
           runId: run.id,
@@ -849,6 +857,8 @@ export function registerGenerationRoutes(
             if (!primaryEndpoint) throw new Error("没有配置默认执行端");
             boundWorkflow = await loadExecutableWorkflow(primaryEndpoint, recipePath);
           } catch (error) {
+            if (error instanceof WorkflowExecutionError)
+              return reply.code(422).send(error.response());
             return await reply.code(422).send({
               error:
                 error instanceof Error ? error.message : "该工作流需要先在工作流库中完成参数绑定",
@@ -1125,6 +1135,8 @@ export function registerGenerationRoutes(
         comfy = workerPool.client(selection.worker.id, process.env.NODE_ENV !== "test");
         selectedWorkerId = selection.worker.id;
         const selectedComfy = comfy;
+        if (nativeWorkflow && /^Kino\/TakeBoard\//.test(recipePath))
+          assertNativeWorkflowIntegrity(recipePath, await comfy.workflow(recipePath));
         if (boundWorkflow && selection.worker.id !== workerPool.defaultWorkerId) {
           boundWorkflow = await loadExecutableWorkflow(selection.worker.endpoint, recipePath);
         }
@@ -1282,9 +1294,16 @@ export function registerGenerationRoutes(
             shot.id,
             runId,
           );
-          return await reply.code(422).send({
-            error: `Recipe 预检失败：${preflightErrors.slice(0, 5).join("；")}`,
-          });
+          return await reply
+            .code(422)
+            .send(
+              new WorkflowExecutionError(
+                "WORKFLOW_INPUTS_INCOMPATIBLE",
+                "工作流与当前生成服务不兼容，请检查工作流配置。",
+                recipePath,
+                preflightErrors,
+              ).response(),
+            );
         }
         const recipeVersion = boundWorkflow
           ? `workflow-binding-v${boundWorkflow.binding.version}`
@@ -1520,6 +1539,7 @@ export function registerGenerationRoutes(
             // a later reconciliation attempt if failure persistence also fails.
           }
         }
+        if (error instanceof WorkflowExecutionError) return reply.code(422).send(error.response());
         return await reply.code(502).send({
           error: error instanceof Error ? error.message : "生成任务提交失败",
         });
@@ -1668,7 +1688,7 @@ export function registerGenerationRoutes(
           ),
         ]);
         comfy.forgetProgress(run.promptId);
-        idleResources.track(comfy);
+        trackIdleResources(comfy, run.workerId);
         return { key, runId: run.id, status: run.status, progress: null, ...saved };
       }
 
@@ -1717,7 +1737,7 @@ export function registerGenerationRoutes(
           ),
         ]);
         comfy.forgetProgress(run.promptId);
-        idleResources.track(comfy);
+        trackIdleResources(comfy, run.workerId);
         return { key, runId: run.id, status: run.status, progress: null, ...saved };
       }
       const plannedAssetId = run.parameters.outputAssetId;
@@ -1897,7 +1917,7 @@ export function registerGenerationRoutes(
       downloads.delete(`${key}:${run.id}`);
       transfers.delete(`${key}:${run.id}`);
       comfy.forgetProgress(run.promptId);
-      idleResources.track(comfy);
+      trackIdleResources(comfy, run.workerId);
       return { key, runId: run.id, status: run.status, progress: null, ...saved };
     } finally {
       store.close();

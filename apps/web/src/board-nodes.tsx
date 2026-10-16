@@ -48,6 +48,8 @@ export type BoardNodeData = {
     minDurationSeconds: number;
     resolutionOptions?: Array<{ label: string; width: number; height: number }>;
     supportsDuration?: boolean;
+    supportsResolution?: boolean;
+    supportsSeed?: boolean;
     mentionAliases: string[];
     busy: boolean;
     progress: {
@@ -307,20 +309,21 @@ function ShotNode({ data, id }: NodeProps<BoardNode>) {
       ) ?? [])
     : (data.inlineControls?.workflows ?? []);
   const draftParameterInvalid =
-    !numericDraftValidity.width ||
-    !numericDraftValidity.height ||
-    !numericDraftValidity.seed ||
+    (data.inlineControls?.supportsResolution !== false &&
+      (!numericDraftValidity.width || !numericDraftValidity.height)) ||
+    (data.inlineControls?.supportsSeed !== false && !numericDraftValidity.seed) ||
     (data.inlineControls?.outputLabel === "视频" &&
       data.inlineControls.supportsDuration !== false &&
       !numericDraftValidity.duration) ||
-    !Number.isFinite(settingsDraft.width) ||
-    settingsDraft.width < 256 ||
-    settingsDraft.width > 2048 ||
-    !Number.isFinite(settingsDraft.height) ||
-    settingsDraft.height < 256 ||
-    settingsDraft.height > 2048 ||
-    !Number.isSafeInteger(settingsDraft.seed) ||
-    settingsDraft.seed < 0 ||
+    (data.inlineControls?.supportsResolution !== false &&
+      (!Number.isFinite(settingsDraft.width) ||
+        settingsDraft.width < 256 ||
+        settingsDraft.width > 2048 ||
+        !Number.isFinite(settingsDraft.height) ||
+        settingsDraft.height < 256 ||
+        settingsDraft.height > 2048)) ||
+    (data.inlineControls?.supportsSeed !== false &&
+      (!Number.isSafeInteger(settingsDraft.seed) || settingsDraft.seed < 0)) ||
     (data.inlineControls?.outputLabel === "视频" &&
       data.inlineControls.supportsDuration !== false &&
       (!Number.isFinite(settingsDraft.durationSeconds) ||
@@ -566,36 +569,38 @@ function ShotNode({ data, id }: NodeProps<BoardNode>) {
             </div>
           ) : null}
           <div className="shot-inline-parameters">
-            <label htmlFor={`${quickSettingsId}-width`}>
-              <span>尺寸</span>
-              <div>
-                <NumericInput
-                  id={`${quickSettingsId}-width`}
-                  draftKey={`${id}:${data.inlineControls.workflowPath}:width`}
-                  aria-label="画布宽度"
-                  min={256}
-                  max={2048}
-                  step={32}
-                  value={settingsDraft.width}
-                  preserveEmptyOnBlur
-                  onDraftValidityChange={(valid) => updateNumericDraftValidity("width", valid)}
-                  onValueChange={(width) => updateSettingsDraft({ width })}
-                />
-                <i>×</i>
-                <NumericInput
-                  id={`${quickSettingsId}-height`}
-                  draftKey={`${id}:${data.inlineControls.workflowPath}:height`}
-                  aria-label="画布高度"
-                  min={256}
-                  max={2048}
-                  step={32}
-                  value={settingsDraft.height}
-                  preserveEmptyOnBlur
-                  onDraftValidityChange={(valid) => updateNumericDraftValidity("height", valid)}
-                  onValueChange={(height) => updateSettingsDraft({ height })}
-                />
-              </div>
-            </label>
+            {data.inlineControls.supportsResolution !== false ? (
+              <label htmlFor={`${quickSettingsId}-width`}>
+                <span>尺寸</span>
+                <div>
+                  <NumericInput
+                    id={`${quickSettingsId}-width`}
+                    draftKey={`${id}:${data.inlineControls.workflowPath}:width`}
+                    aria-label="画布宽度"
+                    min={256}
+                    max={2048}
+                    step={32}
+                    value={settingsDraft.width}
+                    preserveEmptyOnBlur
+                    onDraftValidityChange={(valid) => updateNumericDraftValidity("width", valid)}
+                    onValueChange={(width) => updateSettingsDraft({ width })}
+                  />
+                  <i>×</i>
+                  <NumericInput
+                    id={`${quickSettingsId}-height`}
+                    draftKey={`${id}:${data.inlineControls.workflowPath}:height`}
+                    aria-label="画布高度"
+                    min={256}
+                    max={2048}
+                    step={32}
+                    value={settingsDraft.height}
+                    preserveEmptyOnBlur
+                    onDraftValidityChange={(valid) => updateNumericDraftValidity("height", valid)}
+                    onValueChange={(height) => updateSettingsDraft({ height })}
+                  />
+                </div>
+              </label>
+            ) : null}
             {data.inlineControls.outputLabel === "视频" &&
             data.inlineControls.supportsDuration !== false ? (
               <label htmlFor={`${quickSettingsId}-duration`}>
@@ -614,21 +619,23 @@ function ShotNode({ data, id }: NodeProps<BoardNode>) {
                 />
               </label>
             ) : null}
-            <label htmlFor={`${quickSettingsId}-seed`}>
-              <span>Seed</span>
-              <NumericInput
-                id={`${quickSettingsId}-seed`}
-                draftKey={`${id}:${data.inlineControls.workflowPath}:seed`}
-                aria-label="画布 Seed"
-                min={0}
-                max={2_147_483_647}
-                step={1}
-                value={settingsDraft.seed}
-                preserveEmptyOnBlur
-                onDraftValidityChange={(valid) => updateNumericDraftValidity("seed", valid)}
-                onValueChange={(seed) => updateSettingsDraft({ seed })}
-              />
-            </label>
+            {data.inlineControls.supportsSeed !== false ? (
+              <label htmlFor={`${quickSettingsId}-seed`}>
+                <span>Seed</span>
+                <NumericInput
+                  id={`${quickSettingsId}-seed`}
+                  draftKey={`${id}:${data.inlineControls.workflowPath}:seed`}
+                  aria-label="画布 Seed"
+                  min={0}
+                  max={2_147_483_647}
+                  step={1}
+                  value={settingsDraft.seed}
+                  preserveEmptyOnBlur
+                  onDraftValidityChange={(valid) => updateNumericDraftValidity("seed", valid)}
+                  onValueChange={(seed) => updateSettingsDraft({ seed })}
+                />
+              </label>
+            ) : null}
           </div>
           <button
             className="shot-inline-generate"

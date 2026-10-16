@@ -265,6 +265,33 @@ test("real project results can be revoked and individually dragged or added with
     if (!initial) throw new Error("Missing snapshot");
     const shot = initial.snapshot.shots[0];
     if (!shot) throw new Error("Missing shot");
+    const recipePath = "Kino/Kino_QwenImage2512_T2I.json";
+    shot.workflowPath = recipePath;
+    await page.route("**/api/workflows", (route) =>
+      route.fulfill({
+        json: {
+          workflows: [
+            {
+              id: "reuse-fixture",
+              path: recipePath,
+              name: "参数复用测试",
+              capability: "text_to_image",
+              capabilityLabel: "文生图",
+              inputs: ["prompt", "resolution", "seed", "steps"],
+              models: [],
+              nodeCount: 1,
+              source: "comfyui",
+              execution: "native",
+              origin: "built_in",
+              library: { included: true, favorite: false },
+              modelStatus: "ready",
+              diagnostic: { health: "ready", executable: true, checks: [] },
+            },
+          ],
+          editorUrl: "http://127.0.0.1:1",
+        },
+      }),
+    );
     const at = new Date().toISOString();
     for (const [index, asset] of initial.snapshot.assets.entries()) {
       const run = runSchema.parse({
@@ -368,6 +395,31 @@ test("real project results can be revoked and individually dragged or added with
     }
     await page.setViewportSize({ width: 1600, height: 900 });
     await page.getByRole("button", { name: "选择候选 1" }).click();
+    const beforeReuse = (await (await request.get(`/api/projects/${key}`)).json()).snapshot;
+    await inspector.getByRole("button", { name: "对比结果", exact: true }).click();
+    await expect(inspector.getByRole("button", { name: "结束对比", exact: true })).toHaveCSS(
+      "white-space",
+      "nowrap",
+    );
+    await expect(inspector.getByLabel("结果预览").locator("img")).toHaveCount(2);
+    await expect(inspector.getByLabel("结果预览")).toContainText("Seed 4200");
+    await expect(inspector.getByLabel("结果预览")).toContainText("Seed 4201");
+    await page.screenshot({ path: "test-results/result-comparison.png", animations: "disabled" });
+    await inspector.getByRole("button", { name: "结束对比", exact: true }).click();
+    await inspector.getByRole("button", { name: "沿用提示词与参数", exact: true }).click();
+    await expect(inspector.getByRole("tab", { name: "生成", exact: true })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await expect(inspector.locator(".prompt-with-mentions textarea")).toHaveValue("柔和的晨光");
+    await expect(inspector.locator("#generation-width")).toHaveValue(
+      String(initial.snapshot.assets[0]?.width),
+    );
+    const afterReuse = (await (await request.get(`/api/projects/${key}`)).json()).snapshot;
+    expect(afterReuse.runs).toEqual(beforeReuse.runs);
+    expect(afterReuse.canvasEdges).toEqual(beforeReuse.canvasEdges);
+    expect(afterReuse.approvals).toEqual(beforeReuse.approvals);
+    await inspector.getByRole("tab", { name: /结果/ }).click();
     await page.getByRole("button", { name: "采用此结果" }).click();
     await page.getByRole("button", { name: "不采用", exact: true }).click();
     await page.getByRole("button", { name: "确认不采用" }).click();

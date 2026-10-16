@@ -150,6 +150,23 @@ describe("maintained template installation", () => {
       library: { included: true },
       diagnostic: { executable: true },
     });
+    const original = files.get(`workflows/${h3.path}`);
+    files.set(`workflows/${h3.path}`, { ...(original as object), changed: true });
+    const edited = (await app.inject("/api/workflows")).json().workflows[0];
+    expect(edited.diagnostic).toMatchObject({ executable: false, health: "blocked" });
+    expect(edited.diagnostic.checks).toContainEqual(
+      expect.objectContaining({ code: "WORKFLOW_TEMPLATE_CHANGED" }),
+    );
+    const inspect = await app.inject(`/api/workflows/inspect?path=${encodeURIComponent(h3.path)}`);
+    expect(inspect.statusCode, inspect.body).toBe(200);
+    expect(inspect.json().diagnostic.executable).toBe(false);
+    const bindNative = await app.inject({
+      method: "PUT",
+      url: `/api/workflows/binding?path=${encodeURIComponent(h3.path)}`,
+      payload: {},
+    });
+    expect(bindNative.statusCode, bindNative.body).toBe(409);
+    files.set(`workflows/${h3.path}`, original);
     info.SaveVideo = { input: { required: { incompatible_new_input: ["STRING"] } } };
     const changed = (await app.inject("/api/workflows")).json().workflows[0];
     expect(changed.diagnostic).toMatchObject({ executable: false, health: "blocked" });

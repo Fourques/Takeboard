@@ -6,6 +6,7 @@ import {
   inspectPromptInputs,
   type UiWorkflow,
 } from "@takeboard/executor-comfy";
+import { WorkflowExecutionError } from "./workflow-errors.js";
 
 export const workflowBindingVersion = 1 as const;
 
@@ -496,13 +497,28 @@ export function preflightPromptAgainstObjectInfo(prompt: ComfyPrompt, objectInfo
 
 export async function loadExecutableWorkflow(comfyUrl: string, path: string) {
   const binding = await readWorkflowBinding(comfyUrl, path);
-  if (!binding) throw new Error("该工作流尚未建立并信任 TakeBoard 参数绑定");
+  if (!binding)
+    throw new WorkflowExecutionError(
+      "WORKFLOW_BINDING_REQUIRED",
+      "请先在工作流设置中确认提示词与素材输入，再启用工作流。",
+      path,
+    );
   const inspected = await inspectWorkflowForBinding(comfyUrl, path);
   if (binding.workflowHash !== inspected.workflowHash) {
-    throw new Error("工作流内容已变化，原参数绑定已失效；请重新检查并确认");
+    throw new WorkflowExecutionError(
+      "WORKFLOW_BINDING_STALE",
+      "工作流内容已变化，请重新检查并确认输入设置。",
+      path,
+    );
   }
   const issues = validateWorkflowBinding(inspected.prompt, binding);
-  if (issues.length > 0) throw new Error(`工作流绑定无效：${issues.slice(0, 5).join("；")}`);
+  if (issues.length > 0)
+    throw new WorkflowExecutionError(
+      "WORKFLOW_BINDING_INVALID",
+      "工作流的输入位置已变化，请检查输入设置。",
+      path,
+      issues,
+    );
   return { ...inspected, binding };
 }
 

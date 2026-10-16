@@ -52,6 +52,7 @@ import {
 import { CommandConfirmation } from "./command-confirmation";
 import { DeviceIndicator } from "./device-indicator";
 import { findWorkflow } from "./generation-model";
+import { type OperationFailure, operationFailure } from "./operation-failure";
 import { RecoveryNotice } from "./recovery-notice";
 import { SettingsButton } from "./settings-center";
 import { openSettings } from "./settings-navigation";
@@ -164,7 +165,12 @@ export function App() {
   const [nodeEditDraft, setNodeEditDraft] = useState<NodeEditDraft | null>(null);
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<BoardNode> | null>(null);
   const [actionBusy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<OperationFailure | null>(null);
+  const error = failure?.message ?? null;
+  const setError = useCallback(
+    (value: string | Error | null) => setFailure(operationFailure(value)),
+    [],
+  );
   const [notice, setNotice] = useState<string | null>(null);
   const [resetArmed, setResetArmed] = useState(false);
   const [projectKey, setProjectKey] = useState<string | null>(null);
@@ -343,7 +349,7 @@ export function App() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [setError]);
 
   useEffect(() => {
     if (
@@ -416,7 +422,7 @@ export function App() {
     };
     window.addEventListener("takeboard:revision-conflict", recoverConflict);
     return () => window.removeEventListener("takeboard:revision-conflict", recoverConflict);
-  }, [acceptPayload, projectKey, projectMode]);
+  }, [acceptPayload, projectKey, projectMode, setError]);
 
   useEffect(() => {
     if (showHub || projectMode !== "demo" || !snapshot) return;
@@ -626,7 +632,7 @@ export function App() {
     } finally {
       setBusy(false);
     }
-  }, [acceptPayload, canEditProject, nodeEditDraft, projectKey]);
+  }, [acceptPayload, canEditProject, nodeEditDraft, projectKey, setError]);
 
   const removeCanvasItem = useCallback(
     async (itemId: string, preview: ProjectCommandPreview) => {
@@ -662,6 +668,7 @@ export function App() {
       projectMode,
       snapshot?.canvasItems,
       selection.dismissMenu,
+      setError,
     ],
   );
 
@@ -686,7 +693,7 @@ export function App() {
     } finally {
       setBusy(false);
     }
-  }, [activeScene, canEditProject, projectKey, projectMode, nodes]);
+  }, [activeScene, canEditProject, projectKey, projectMode, nodes, setError]);
 
   const confirmCanvasArrange = useCallback(async () => {
     if (
@@ -713,7 +720,15 @@ export function App() {
     } finally {
       setBusy(false);
     }
-  }, [acceptPayload, activeScene, canEditProject, pendingCanvasArrange, projectKey, projectMode]);
+  }, [
+    acceptPayload,
+    activeScene,
+    canEditProject,
+    pendingCanvasArrange,
+    projectKey,
+    projectMode,
+    setError,
+  ]);
 
   const deleteCanvasItem = useCallback(
     (itemId: string) => {
@@ -778,6 +793,7 @@ export function App() {
       snapshot,
       selection.dismissMenu,
       selectedCanvasItemIds,
+      setError,
     ],
   );
 
@@ -820,6 +836,7 @@ export function App() {
     projectKey,
     projectMode,
     selection.inspect,
+    setError,
   ]);
 
   const deleteCanvasEdge = useCallback(
@@ -861,6 +878,7 @@ export function App() {
       snapshot,
       selectedEdgeIdentity,
       selection.dismissMenu,
+      setError,
     ],
   );
 
@@ -924,6 +942,7 @@ export function App() {
       selection.dismissMenu,
       selectedCanvasItemIds,
       snapshot,
+      setError,
     ],
   );
 
@@ -1000,12 +1019,13 @@ export function App() {
       snapshot,
       selection.items,
       selection.dismissMenu,
+      setError,
     ],
   );
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || showHub) return;
+      if (event.defaultPrevented || event.isComposing || event.keyCode === 229 || showHub) return;
       const target = event.target;
       if (
         target instanceof HTMLElement &&
@@ -1298,7 +1318,7 @@ export function App() {
       setError(null);
       void connectCanvasItems(connection.source, connection.target, slot);
     },
-    [canEditProject, projectKey, projectMode, connectCanvasItems],
+    [canEditProject, projectKey, projectMode, connectCanvasItems, setError],
   );
 
   const connectAssetFromLibrary = useCallback(
@@ -1360,6 +1380,7 @@ export function App() {
       selectedShot,
       snapshot,
       connectCanvasItems,
+      setError,
     ],
   );
 
@@ -1471,6 +1492,7 @@ export function App() {
       selection.item,
       flowInstance,
       visibleCanvasPosition,
+      setError,
     ],
   );
 
@@ -1507,7 +1529,7 @@ export function App() {
         setBusy(false);
       }
     },
-    [acceptPayload, canEditProject, projectKey, projectMode],
+    [acceptPayload, canEditProject, projectKey, projectMode, setError],
   );
 
   const inspectHistoricalAssetMetadata = useCallback(async () => {
@@ -1535,7 +1557,7 @@ export function App() {
     } finally {
       setBusy(false);
     }
-  }, [acceptPayload, canEditProject, projectKey, projectMode]);
+  }, [acceptPayload, canEditProject, projectKey, projectMode, setError]);
 
   const setAssetCustomTags = useCallback(
     async (assetId: string, customTags: string[]) => {
@@ -1590,7 +1612,14 @@ export function App() {
         if (isCurrentNavigation(navigationTicket)) setBusy(false);
       }
     },
-    [activateDocument, beginNavigation, isCurrentNavigation, selection.activate, detachGeneration],
+    [
+      activateDocument,
+      beginNavigation,
+      isCurrentNavigation,
+      selection.activate,
+      detachGeneration,
+      setError,
+    ],
   );
 
   const createProject = useCallback(
@@ -1627,25 +1656,35 @@ export function App() {
         if (isCurrentNavigation(navigationTicket)) setBusy(false);
       }
     },
-    [activateDocument, beginNavigation, isCurrentNavigation, selection.activate, detachGeneration],
+    [
+      activateDocument,
+      beginNavigation,
+      isCurrentNavigation,
+      selection.activate,
+      detachGeneration,
+      setError,
+    ],
   );
 
-  const importProject = useCallback(async (file: File) => {
-    const catalogRequestId = ++projectCatalogRequestRef.current;
-    setBusy(true);
-    setError(null);
-    try {
-      const imported = await projectApi.importPackage(file);
-      const catalog = await projectApi.list();
-      if (projectCatalogRequestRef.current === catalogRequestId) setProjects(catalog.projects);
-      setNotice(`“${imported.title}”已完成校验并导入`);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "项目包导入失败");
-      throw cause;
-    } finally {
-      setBusy(false);
-    }
-  }, []);
+  const importProject = useCallback(
+    async (file: File) => {
+      const catalogRequestId = ++projectCatalogRequestRef.current;
+      setBusy(true);
+      setError(null);
+      try {
+        const imported = await projectApi.importPackage(file);
+        const catalog = await projectApi.list();
+        if (projectCatalogRequestRef.current === catalogRequestId) setProjects(catalog.projects);
+        setNotice(`“${imported.title}”已完成校验并导入`);
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "项目包导入失败");
+        throw cause;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [setError],
+  );
 
   const renameProject = useCallback(
     async (key: string, title: string) => {
@@ -1665,7 +1704,7 @@ export function App() {
         setBusy(false);
       }
     },
-    [acceptPayload, projectKey],
+    [acceptPayload, projectKey, setError],
   );
 
   const deleteProject = useCallback(
@@ -1690,28 +1729,31 @@ export function App() {
         setBusy(false);
       }
     },
-    [projectKey],
+    [projectKey, setError],
   );
 
-  const restoreProject = useCallback(async (trashKey: string) => {
-    const catalogRequestId = ++projectCatalogRequestRef.current;
-    setBusy(true);
-    setError(null);
-    try {
-      const restored = await projectApi.restore(trashKey);
-      const [catalog, trash] = await Promise.all([projectApi.list(), projectApi.trash()]);
-      if (projectCatalogRequestRef.current === catalogRequestId) {
-        setProjects(catalog.projects);
-        setTrashedProjects(trash.projects);
+  const restoreProject = useCallback(
+    async (trashKey: string) => {
+      const catalogRequestId = ++projectCatalogRequestRef.current;
+      setBusy(true);
+      setError(null);
+      try {
+        const restored = await projectApi.restore(trashKey);
+        const [catalog, trash] = await Promise.all([projectApi.list(), projectApi.trash()]);
+        if (projectCatalogRequestRef.current === catalogRequestId) {
+          setProjects(catalog.projects);
+          setTrashedProjects(trash.projects);
+        }
+        setNotice(`“${restored.title}”已恢复`);
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "项目恢复失败");
+        throw cause;
+      } finally {
+        setBusy(false);
       }
-      setNotice(`“${restored.title}”已恢复`);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "项目恢复失败");
-      throw cause;
-    } finally {
-      setBusy(false);
-    }
-  }, []);
+    },
+    [setError],
+  );
 
   const openDemo = useCallback(async () => {
     const navigationTicket = beginNavigation();
@@ -1739,6 +1781,7 @@ export function App() {
     isCurrentNavigation,
     selection.activate,
     detachGeneration,
+    setError,
   ]);
 
   useEffect(() => {
@@ -1767,7 +1810,15 @@ export function App() {
         setBusy(false);
       }
     },
-    [acceptPayload, canEditProject, projectKey, projectMode, selection.item, visibleCanvasPosition],
+    [
+      acceptPayload,
+      canEditProject,
+      projectKey,
+      projectMode,
+      selection.item,
+      visibleCanvasPosition,
+      setError,
+    ],
   );
 
   const createTextNode = useCallback(
@@ -1800,6 +1851,7 @@ export function App() {
       projectMode,
       selection.item,
       selection.dismissMenu,
+      setError,
     ],
   );
 
@@ -1839,7 +1891,7 @@ export function App() {
         setBusy(false);
       }
     },
-    [acceptPayload, canEditProject, projectKey, visibleCanvasPosition],
+    [acceptPayload, canEditProject, projectKey, visibleCanvasPosition, setError],
   );
 
   const runAction = useCallback(
@@ -1858,7 +1910,7 @@ export function App() {
         setBusy(false);
       }
     },
-    [acceptPayload],
+    [acceptPayload, setError],
   );
 
   useEffect(() => {
@@ -3296,6 +3348,7 @@ export function App() {
       {error ? (
         <RecoveryNotice
           message={error}
+          code={failure?.code ?? undefined}
           onDismiss={() => setError(null)}
           onAction={(action) => {
             if (action === "review") setError(null);

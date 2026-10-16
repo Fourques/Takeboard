@@ -1280,8 +1280,11 @@ export class ComfyClient {
     );
   }
 
-  async freeResourcesIfIdle(signal: AbortSignal = AbortSignal.timeout(3000)) {
-    if (!(await this.isIdle(signal))) return false;
+  async freeResourcesIfIdle(
+    signal: AbortSignal = AbortSignal.timeout(3000),
+    canRelease: () => boolean = () => true,
+  ) {
+    if (!(await this.isIdle(signal)) || !canRelease()) return false;
     const response = await fetch(`${this.baseUrl}/free`, {
       method: "POST",
       headers: { "content-type": "application/json" },

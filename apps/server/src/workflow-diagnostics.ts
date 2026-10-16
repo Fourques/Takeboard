@@ -1,5 +1,6 @@
 import type { WorkflowDiagnostic, WorkflowDiagnosticCheck } from "@takeboard/contracts";
 import type { ComfyObjectInfo, ComfyPrompt } from "@takeboard/executor-comfy";
+import { assertNativeWorkflowIntegrity } from "./native-workflow-integrity.js";
 import type {
   WorkflowBinding,
   WorkflowCapability,
@@ -19,6 +20,7 @@ type BuildWorkflowDiagnosticInput = {
   models: string[];
   inventory: Set<string> | null;
   executionSource?: "native_prompt" | "source_workflow";
+  sourceWorkflow?: unknown;
 };
 
 function check(
@@ -72,6 +74,23 @@ export function buildWorkflowDiagnostic(input: BuildWorkflowDiagnosticInput): Wo
         : "画布节点、子图和连线已转换为 ComfyUI 后端可接收的结构。",
     ),
   ];
+  if (checksNativePrompt && input.sourceWorkflow !== undefined) {
+    try {
+      assertNativeWorkflowIntegrity(input.path, input.sourceWorkflow);
+    } catch {
+      checks.push(
+        check(
+          "template.integrity",
+          "document",
+          "blocked",
+          "WORKFLOW_TEMPLATE_CHANGED",
+          "推荐模板已变化",
+          "保存的模板与当前原生执行配置不一致，未启用生成。",
+          "创建可编辑副本使用修改后的配置，或添加当前版本模板。",
+        ),
+      );
+    }
+  }
 
   const missingNodeEntries = Object.entries(input.prompt).filter(
     ([, node]) => !input.objectInfo[node.class_type],

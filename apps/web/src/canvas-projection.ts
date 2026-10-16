@@ -39,6 +39,30 @@ export function boardNodes(
   selectedShotId: string | null,
   controls: ShotCanvasControls | null,
 ): BoardNode[] {
+  // Rebuild indexes from the current immutable document; never retain stale media across projects.
+  const assets = new Map(snapshot.assets.map((asset) => [asset.id, asset]));
+  const texts = new Map(snapshot.textItems.map((text) => [text.id, text]));
+  const entities = new Map(snapshot.entities.map((entity) => [entity.id, entity]));
+  const shots = new Map(snapshot.shots.map((shot) => [shot.id, shot]));
+  const takesByShot = new Map<string, ProjectSnapshot["takes"]>();
+  for (const take of snapshot.takes) {
+    const group = takesByShot.get(take.shotId) ?? [];
+    group.push(take);
+    takesByShot.set(take.shotId, group);
+  }
+  const runPaths = new Map<string, string | null>();
+  for (const run of snapshot.runs)
+    runPaths.set(
+      run.shotId,
+      typeof run.parameters.recipePath === "string" ? run.parameters.recipePath : null,
+    );
+  const inputCounts = new Map<string, Map<string, number>>();
+  for (const edge of snapshot.canvasEdges) {
+    if (!edge.targetSlot) continue;
+    const counts = inputCounts.get(edge.targetItemId) ?? new Map<string, number>();
+    counts.set(edge.targetSlot, (counts.get(edge.targetSlot) ?? 0) + 1);
+    inputCounts.set(edge.targetItemId, counts);
+  }
   const projected = snapshot.canvasItems.map((item): BoardNode => {
     const common = {
       id: item.id,
@@ -50,7 +74,7 @@ export function boardNodes(
       selected: selectedCanvasItemId === item.id,
     };
     if (item.refType === "text") {
-      const text = snapshot.textItems.find((candidate) => candidate.id === item.refId);
+      const text = texts.get(item.refId);
       return {
         ...common,
         data: {
@@ -63,7 +87,7 @@ export function boardNodes(
       };
     }
     if (item.refType === "entity") {
-      const entity = snapshot.entities.find((candidate) => candidate.id === item.refId);
+      const entity = entities.get(item.refId);
       const referenceAsset = snapshot.assets.find((asset) =>
         entity?.referenceAssetIds.includes(asset.id),
       );
@@ -98,15 +122,13 @@ export function boardNodes(
       };
     }
     if (item.refType === "asset") {
-      const asset = snapshot.assets.find((candidate) => candidate.id === item.refId);
+      const asset = assets.get(item.refId);
       return {
         ...common,
         data: {
           kind: "asset",
           eyebrow: "LOCATION",
-          title: asset?.originalName.includes("ferry")
-            ? "雾港旧渡口"
-            : (asset?.originalName ?? "素材"),
+          title: asset?.originalName ?? "素材",
           body: "",
           selected: selectedCanvasItemId === item.id,
           mediaUrl: projectKey && asset ? projectApi.assetUrl(projectKey, asset.id) : undefined,
@@ -121,12 +143,12 @@ export function boardNodes(
       };
     }
 
-    const shot = snapshot.shots.find((candidate) => candidate.id === item.refId);
+    const shot = shots.get(item.refId);
     const workflow =
-      findWorkflow(shot?.workflowPath ?? runWorkflowPath(snapshot, item.refId), workflows) ??
+      findWorkflow(shot?.workflowPath ?? runPaths.get(item.refId), workflows) ??
       (item.refId === selectedShotId ? selectedWorkflow : null);
     const profile = modelProfile(workflow, shot?.aspectRatio ?? "16:9");
-    const takes = snapshot.takes.filter((take) => take.shotId === item.refId);
+    const takes = takesByShot.get(item.refId) ?? [];
     if (item.refType === "take_stack") {
       return {
         ...common,
@@ -145,7 +167,7 @@ export function boardNodes(
     const previewTake =
       takes.find((take) => take.id === shot?.approvedTakeId) ??
       [...takes].reverse().find((take) => take.status !== "rejected");
-    const previewAsset = snapshot.assets.find((asset) => asset.id === previewTake?.assetId);
+    const previewAsset = previewTake ? assets.get(previewTake.assetId) : undefined;
     return {
       ...common,
       style: {
@@ -182,9 +204,7 @@ export function boardNodes(
         inputSlots: profile.slots.map(({ id, label, maxCount, required, mediaType }) => ({
           id,
           label,
-          connectedCount: snapshot.canvasEdges.filter(
-            (edge) => edge.targetItemId === item.id && edge.targetSlot === id,
-          ).length,
+          connectedCount: inputCounts.get(item.id)?.get(id) ?? 0,
           maxCount,
           required,
           mediaType,
@@ -213,6 +233,8 @@ export function boardNodes(
                 outputLabel: profile.outputLabel,
                 minDurationSeconds: profile.family === "minimax_h3" ? 4 : 1,
                 supportsDuration: workflow?.inputs.includes("duration") ?? false,
+                supportsResolution: workflow?.inputs.includes("resolution") ?? false,
+                supportsSeed: workflow?.inputs.includes("seed") ?? false,
                 resolutionOptions: workflow?.inputs.includes("resolution")
                   ? resolutionPresets(
                       profile.defaults.width,

@@ -4,6 +4,25 @@ import { ComfyClient } from "../src/index.js";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("ComfyUI task ownership", () => {
+  it("rechecks release ownership after the queue response before posting /free", async () => {
+    let current = true;
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const path = new URL(String(input)).pathname;
+        calls.push(path);
+        if (path === "/queue") {
+          current = false;
+          return Response.json({ queue_running: [], queue_pending: [] });
+        }
+        return Response.json({});
+      }),
+    );
+    const client = new ComfyClient("http://comfy.test");
+    expect(await client.freeResourcesIfIdle(undefined, () => current)).toBe(false);
+    expect(calls).toEqual(["/queue"]);
+  });
   it.each([true, false])(
     "does not confuse acknowledgement with stopped execution (modern=%s)",
     async (modern) => {

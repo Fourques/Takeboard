@@ -352,6 +352,17 @@ export class WorkerPool {
     }
   }
 
+  /** A reconnect or edit retires old transports even if their port is later reused. */
+  isCurrentClient(workerId: string | null | undefined, client: ComfyClient) {
+    const id = workerId || this.defaultWorkerId;
+    const worker = this.definition(id);
+    return Boolean(
+      worker &&
+        !worker.retiredAt &&
+        (this.clients.get(`${id}:live`) === client || this.clients.get(`${id}:quiet`) === client),
+    );
+  }
+
   client(workerId: string | null | undefined, liveProgress = true) {
     const worker = this.definition(workerId || this.defaultWorkerId);
     if (!worker) throw new Error("没有可用的 ComfyUI 执行端");

@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test } from "./fixtures";
+import { expect, test, workerFixture } from "./fixtures";
 
 test("offline SSH service has a visible explicit start action and never reports a failed start as success", async ({
   page,
@@ -76,7 +76,7 @@ test("a disabled base device can be re-enabled in settings and media authorizati
   request,
 }) => {
   const pool = await (await request.get("/api/workers")).json();
-  let worker = { ...pool.workers[0].worker, enabled: false, allowSensitiveInputs: false };
+  let worker = { ...workerFixture(), enabled: false, allowSensitiveInputs: false };
   const updates: unknown[] = [];
   await page.route("**/api/generation/connection", (route) =>
     route.fulfill({

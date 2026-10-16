@@ -2,6 +2,17 @@ import { describe, expect, it } from "vitest";
 import { recoveryGuidance } from "./recovery-guidance";
 
 describe("user-facing recovery guidance", () => {
+  it("uses workflow error codes even when messages contain no technical keywords", () => {
+    for (const code of [
+      "WORKFLOW_BINDING_REQUIRED",
+      "WORKFLOW_BINDING_STALE",
+      "WORKFLOW_BINDING_INVALID",
+      "WORKFLOW_INPUTS_INCOMPATIBLE",
+      "WORKFLOW_TEMPLATE_CHANGED",
+    ])
+      expect(recoveryGuidance("请调整后再试", code).action).toBe("workflows");
+    expect(recoveryGuidance("92：缺少必需输入 codec").action).toBe("workflows");
+  });
   it("never suggests a blind retry for unknown submission or failed collection", () => {
     expect(recoveryGuidance("", "SUBMISSION_OUTCOME_UNKNOWN").action).toBe("tasks");
     expect(recoveryGuidance("", "OUTPUT_TRANSFER_FAILED").next).toContain("不必重新生成");

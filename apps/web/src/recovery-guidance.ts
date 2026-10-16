@@ -18,6 +18,15 @@ export type RecoveryGuidance = {
 // Presentation only: never infer permission to resubmit or change an execution state.
 export function recoveryGuidance(message: string, code = ""): RecoveryGuidance {
   const text = `${code} ${message}`;
+  if (
+    /^WORKFLOW_(BINDING_(REQUIRED|STALE|INVALID)|INPUTS_INCOMPATIBLE|TEMPLATE_CHANGED)$/.test(code)
+  )
+    return {
+      title: "工作流需要检查",
+      next: message || "打开工作流设置，检查当前模板与生成设备的兼容性。",
+      action: "workflows",
+      label: "检查工作流",
+    };
   if (/REVISION_CONFLICT|其他设备发生变化|版本冲突/i.test(text))
     return { title: "项目有新的修改", next: message, action: "review", label: "返回画布核对" };
   if (/ENOSPC|磁盘空间不足|存储空间不足/i.test(text))
@@ -60,7 +69,7 @@ export function recoveryGuidance(message: string, code = ""): RecoveryGuidance {
       label: "检查连接",
     };
   if (
-    /缺少.*模型|模型.*缺失|model.*not found|缺少.*节点|参数绑定|可用 Workflow|选择.*模型|选择.*工作流|工作流(?:不可用|需要更新)|NO_.*OUTPUT/i.test(
+    /缺少.*模型|模型.*缺失|model.*not found|缺少.*节点|缺少必需输入|Recipe 预检失败|绑定预检失败|参数绑定|可用 Workflow|选择.*模型|选择.*工作流|工作流(?:不可用|需要更新)|NO_.*OUTPUT/i.test(
       text,
     )
   )

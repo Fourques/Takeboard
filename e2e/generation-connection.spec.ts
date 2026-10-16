@@ -1,4 +1,4 @@
-import { expect, test } from "./fixtures";
+import { expect, test, workerFixture } from "./fixtures";
 
 // UI contract test with explicit connection mocks. SSH/HTTP execution is covered
 // separately by server tests and the real SSH smoke, not claimed by this fixture.
@@ -124,7 +124,7 @@ test("saved device editing keeps failed input, supports offline renaming and con
   const pool = await (await request.get("/api/workers")).json();
   let target = { kind: "url", name: "剪辑室", url: "https://studio.test" };
   const worker = {
-    ...pool.workers[0].worker,
+    ...workerFixture(),
     id: "saved-studio",
     endpoint: target.url,
     name: target.name,

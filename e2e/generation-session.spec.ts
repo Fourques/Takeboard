@@ -158,6 +158,36 @@ async function sessionFixture(
   };
 }
 
+test("structured workflow failures reach a real recovery destination without resubmission", async ({
+  page,
+  request,
+}) => {
+  const fixture = await sessionFixture(page, request, false);
+  let attempts = 0;
+  try {
+    await page.route(`**/api/projects/${fixture.key}/shots/*/generate`, (route) => {
+      attempts++;
+      return route.fulfill({
+        status: 422,
+        json: {
+          error: "请调整后再试",
+          code: "WORKFLOW_TEMPLATE_CHANGED",
+          retryable: false,
+        },
+      });
+    });
+    await page.getByRole("button", { name: "生成 1 个", exact: true }).click();
+    const notice = page.locator(".recovery-toast");
+    await expect(notice).toContainText("工作流需要检查");
+    await notice.getByRole("button", { name: "检查工作流" }).click();
+    await expect(page.getByRole("dialog", { name: "选择工作流" })).toBeVisible();
+    expect(attempts).toBe(1);
+    expect(fixture.submissions()).toBe(0);
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
 test("stop waits for the submitted identity and does not submit the rest of a batch", async ({
   page,
   request,

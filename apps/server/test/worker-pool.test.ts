@@ -36,6 +36,25 @@ function runtimeFetch(input: string | URL | Request) {
 }
 
 describe("WorkerPool", () => {
+  it("retires cached clients on reconnect even when the same forwarding port is reused", async () => {
+    const root = await mkdtemp(join(tmpdir(), "takeboard-client-identity-"));
+    cleanup.push(root);
+    const pool = new WorkerPool(
+      join(root, "workers.json"),
+      "http://127.0.0.1:8188",
+      runtimeFetch as typeof fetch,
+    );
+    const id = pool.defaultWorkerId;
+    const old = pool.client(id);
+    expect(pool.isCurrentClient(id, old)).toBe(true);
+    pool.setManagedEndpoint(id, "http://127.0.0.1:8188");
+    expect(pool.isCurrentClient(id, old)).toBe(false);
+    const replacement = pool.client(id);
+    expect(pool.isCurrentClient(id, replacement)).toBe(true);
+    expect(replacement).not.toBe(old);
+    pool.setManagedEndpoint(id, null);
+    expect(pool.isCurrentClient(id, replacement)).toBe(false);
+  });
   it("does not promote a guessed local port into a second device, but retains explicitly selected local hardware", async () => {
     const root = await mkdtemp(join(tmpdir(), "takeboard-candidate-"));
     cleanup.push(root);

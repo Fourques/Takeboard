@@ -1,5 +1,5 @@
 import { ComfyClient } from "@takeboard/executor-comfy";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { IdleResourceCleaner } from "../src/idle-resource-cleaner.js";
 
 class Client extends ComfyClient {
@@ -20,6 +20,37 @@ class Client extends ComfyClient {
   }
 }
 describe("idle model cache release", () => {
+  it("never probes or frees a retired transport, including on exit", async () => {
+    const cleaner = new IdleResourceCleaner(0);
+    const old = new Client();
+    const probe = vi.spyOn(old, "isIdle");
+    cleaner.track(old, () => false);
+    await cleaner.tick();
+    cleaner.track(old, () => false);
+    await cleaner.releaseOnExit();
+    expect(probe).not.toHaveBeenCalled();
+    expect(old.releases).toBe(0);
+  });
+  it("rechecks connection ownership and a newer grace period after an asynchronous idle probe", async () => {
+    for (const change of ["reconnect", "new-result"]) {
+      let now = 0;
+      let current = true;
+      const cleaner = new IdleResourceCleaner(120, () => now);
+      const client = new Client();
+      vi.spyOn(client, "isIdle").mockImplementationOnce(async () => {
+        if (change === "reconnect") current = false;
+        else cleaner.track(client, () => current);
+        return true;
+      });
+      cleaner.track(client, () => current);
+      now = 120;
+      await cleaner.tick();
+      expect(client.releases).toBe(0);
+      now = 240;
+      await cleaner.tick();
+      expect(client.releases).toBe(change === "reconnect" ? 0 : 1);
+    }
+  });
   it("releases tracked idle caches on exit but never interrupts a busy endpoint", async () => {
     const cleaner = new IdleResourceCleaner();
     const idle = new Client();

@@ -31,6 +31,17 @@ export type ModelProfile = {
 
 const portraitRatios = new Set<AspectRatio>(["9:16", "4:5"]);
 
+export function generationStepPolicy(workflow: WorkflowSummary | null) {
+  if (
+    workflow?.execution === "native" &&
+    /\/Kino_Wan22_(I2V|FLF2V)(_Preview)?\.json$/.test(workflow.path)
+  )
+    return workflow.path.endsWith("_Preview.json")
+      ? { min: 4, max: 4, fixed: true }
+      : { min: 8, max: 40, fixed: false };
+  return { min: 1, max: 100, fixed: false };
+}
+
 function orientedSize(landscapeWidth: number, landscapeHeight: number, ratio: AspectRatio) {
   return portraitRatios.has(ratio)
     ? { width: landscapeHeight, height: landscapeWidth }

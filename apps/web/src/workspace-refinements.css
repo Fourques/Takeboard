@@ -1,4 +1,24 @@
 /* Shared canvas/workspace surfaces: native-feeling drawers, restrained type and stable geometry. */
+.result-preview-media {
+  display: grid;
+}
+.result-preview .candidate-title-row {
+  gap: 8px;
+}
+.result-preview .candidate-title-row > button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.result-preview-media.is-comparing {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.result-preview-media figure {
+  margin: 0;
+  min-width: 0;
+}
+.result-preview-media.is-comparing .detail-media {
+  margin: 10px;
+}
 .recommended-templates {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));

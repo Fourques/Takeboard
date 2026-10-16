@@ -10,7 +10,7 @@ import {
   type PromptMention,
 } from "./generation-model";
 import { GenerationRecord } from "./generation-record";
-import { type ModelProfile, workflowInputSlots } from "./model-profiles";
+import { generationStepPolicy, type ModelProfile, workflowInputSlots } from "./model-profiles";
 import { NumericInput } from "./numeric-input";
 import { type RecoveryAction, recoveryGuidance } from "./recovery-guidance";
 import { RecoveryNotice } from "./recovery-notice";
@@ -19,6 +19,8 @@ import {
   generationResolutionPolicy,
   resolutionPresets,
 } from "./resolution-presets";
+import { ResultPreview } from "./result-preview";
+import { recordedSettings } from "./result-reuse";
 import { openSettings } from "./settings-navigation";
 import { VideoThumbnail } from "./video-preview";
 
@@ -580,6 +582,7 @@ export function Inspector({
     settings.width,
     settings.height,
   );
+  const stepPolicy = generationStepPolicy(workflow);
   const shotRuns = runs.filter((run) => run.shotId === shot.id);
   const latestBatchId = [...shotRuns]
     .reverse()
@@ -1037,10 +1040,11 @@ export function Inspector({
                         <span>采样步数</span>
                         <NumericInput
                           id="generation-steps"
-                          min={profile.family === "wan22" ? 8 : 1}
-                          max={profile.family === "wan22" ? 40 : 100}
+                          min={stepPolicy.min}
+                          max={stepPolicy.max}
+                          disabled={stepPolicy.fixed}
                           step={1}
-                          value={settings.steps}
+                          value={stepPolicy.fixed ? stepPolicy.min : settings.steps}
                           onValueChange={(steps) => onSettingsChange({ ...settings, steps })}
                         />
                       </label>
@@ -1161,11 +1165,35 @@ export function Inspector({
               {selectedTake ? (
                 <>
                   {selectedTake.status !== "media_missing" && selectedMediaUrl ? (
-                    <DetailMedia
-                      src={selectedMediaUrl}
-                      kind={mediaType(selectedTake.assetId) ?? "image"}
-                      label="当前生成结果"
-                    />
+                    projectKey ? (
+                      <ResultPreview
+                        selected={selectedTake}
+                        takes={takes}
+                        assets={assets}
+                        runs={runs}
+                        projectKey={projectKey}
+                      />
+                    ) : (
+                      <DetailMedia
+                        src={selectedMediaUrl}
+                        kind={mediaType(selectedTake.assetId) ?? "image"}
+                        label="当前生成结果"
+                      />
+                    )
+                  ) : null}
+                  {selectedTakeRun && !readOnly ? (
+                    <button
+                      type="button"
+                      className="take-to-canvas"
+                      title="载入提示词与参数，画布连线保持不变"
+                      disabled={busy}
+                      onClick={() => {
+                        onSettingsChange(recordedSettings(selectedTakeRun, settings));
+                        setInspectorTab("generate");
+                      }}
+                    >
+                      沿用提示词与参数
+                    </button>
                   ) : null}
                   <div className="decision-panel">
                     <div className="decision-id">
