@@ -34,8 +34,12 @@ jobs:
       - run: pnpm verify
 
   browser:
-    name: Production browser journey
+    name: Production browser journey (${{ matrix.shard }}/2)
     needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -49,12 +53,14 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm test:e2e:functional
+      # Each shard owns its own server/store; journeys within it remain serial.
+      - run: pnpm test:e2e:functional --shard=${{ matrix.shard }}/2
+        timeout-minutes: 12
       - name: Preserve browser failure diagnostics
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: browser-failure-diagnostics
+          name: browser-failure-diagnostics-${{ matrix.shard }}
           path: |
             test-results/**/trace.zip
             test-results/**/error-context.md

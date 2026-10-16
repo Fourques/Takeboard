@@ -4,6 +4,9 @@ test("image/video controls submit the chosen dimensions and keep shot intent abo
   page,
   request,
 }) => {
+  // This is a multi-workflow journey, not a latency benchmark. Shared CI runners
+  // must complete all transitions and assertions rather than time out during cleanup.
+  test.setTimeout(90_000);
   const title = `参数一致性 ${Date.now()}`;
   const created = await request.post("/api/projects", {
     data: { title, firstShotIntent: "清晨的海面" },
@@ -61,48 +64,54 @@ test("image/video controls submit the chosen dimensions and keep shot intent abo
       .getByRole("button", { name: /打开画板/ })
       .click();
     const node = page.locator(".react-flow__node-shot").first();
-    await node.click();
-    await page.getByLabel("画布生成方式").selectOption("text_to_image");
-    await expect(page.getByLabel("画布工作流")).toHaveValue("Kino/Kino_QwenImage2512_T2I.json");
-    await page.getByLabel("画布生成比例").selectOption("9:16");
-    const width = Number(await page.getByLabel("画布宽度").inputValue());
-    const height = Number(await page.getByLabel("画布高度").inputValue());
-    expect(width).toBeLessThan(height);
-    await expect(page.getByLabel("画布时长")).toHaveCount(0);
-    await page.getByLabel("画布工作流").selectOption("TakeBoard/fixed-image.json");
-    await expect(page.getByLabel("画布宽度")).toHaveCount(0);
-    await expect(page.getByLabel("画布高度")).toHaveCount(0);
-    await expect(page.getByLabel("画布 Seed")).toHaveCount(0);
-    await page.getByLabel("画布工作流").selectOption("Kino/Kino_QwenImage2512_T2I.json");
-    await page.getByLabel("画布生成比例").selectOption("9:16");
-    await page.getByRole("button", { name: "详细设置", exact: true }).click();
     const inspector = page.getByLabel("镜头候选检查器");
-    await expect(inspector.getByLabel("生成比例")).toHaveValue("9:16");
-    await expect(inspector.getByLabel("生成时长")).toHaveCount(0);
-    await expect(inspector.getByLabel("镜头画幅")).toHaveCount(0);
-    const intent = await inspector.getByLabel("镜头备注").boundingBox();
-    const tabs = await inspector.getByRole("tablist").boundingBox();
-    if (!intent || !tabs) throw new Error("Missing intent or tab layout");
-    expect(intent.y + intent.height).toBeLessThan(tabs.y);
-    await inspector.locator("#generation-width").fill("1024");
-    await inspector.locator("#generation-height").fill("768");
-    await inspector.getByRole("button", { name: "生成 1 个", exact: true }).click();
-    await expect.poll(() => submitted.length).toBe(1);
-    expect(submitted[0]).toMatchObject({
-      width: 1024,
-      height: 768,
-      recipePath: "Kino/Kino_QwenImage2512_T2I.json",
+    await node.click();
+    await test.step("canvas controls follow the selected workflow", async () => {
+      await page.getByLabel("画布生成方式").selectOption("text_to_image");
+      await expect(page.getByLabel("画布工作流")).toHaveValue("Kino/Kino_QwenImage2512_T2I.json");
+      await page.getByLabel("画布生成比例").selectOption("9:16");
+      const width = Number(await page.getByLabel("画布宽度").inputValue());
+      const height = Number(await page.getByLabel("画布高度").inputValue());
+      expect(width).toBeLessThan(height);
+      await expect(page.getByLabel("画布时长")).toHaveCount(0);
+      await page.getByLabel("画布工作流").selectOption("TakeBoard/fixed-image.json");
+      await expect(page.getByLabel("画布宽度")).toHaveCount(0);
+      await expect(page.getByLabel("画布高度")).toHaveCount(0);
+      await expect(page.getByLabel("画布 Seed")).toHaveCount(0);
+      await page.getByLabel("画布工作流").selectOption("Kino/Kino_QwenImage2512_T2I.json");
+      await page.getByLabel("画布生成比例").selectOption("9:16");
     });
-    await inspector.getByLabel("生成类型").selectOption("text_to_video");
-    await inspector.getByLabel("生成比例").selectOption("16:9");
-    await inspector.getByLabel("生成时长").fill("7");
-    await inspector.getByRole("button", { name: "生成 1 个", exact: true }).click();
-    await expect.poll(() => submitted.length).toBe(2);
-    expect(submitted[1]).toMatchObject({
-      durationSeconds: 7,
-      recipePath: "Kino/Kino_MinimaxH3_T2V.json",
+    await test.step("image parameters and shot intent remain consistent in details", async () => {
+      await page.getByRole("button", { name: "详细设置", exact: true }).click();
+      await expect(inspector.getByLabel("生成比例")).toHaveValue("9:16");
+      await expect(inspector.getByLabel("生成时长")).toHaveCount(0);
+      await expect(inspector.getByLabel("镜头画幅")).toHaveCount(0);
+      const intent = await inspector.getByLabel("镜头备注").boundingBox();
+      const tabs = await inspector.getByRole("tablist").boundingBox();
+      if (!intent || !tabs) throw new Error("Missing intent or tab layout");
+      expect(intent.y + intent.height).toBeLessThan(tabs.y);
+      await inspector.locator("#generation-width").fill("1024");
+      await inspector.locator("#generation-height").fill("768");
+      await inspector.getByRole("button", { name: "生成 1 个", exact: true }).click();
+      await expect.poll(() => submitted.length).toBe(1);
+      expect(submitted[0]).toMatchObject({
+        width: 1024,
+        height: 768,
+        recipePath: "Kino/Kino_QwenImage2512_T2I.json",
+      });
     });
-    expect(Number(submitted[1]?.width)).toBeGreaterThan(Number(submitted[1]?.height));
+    await test.step("switching to video submits its own duration and landscape dimensions", async () => {
+      await inspector.getByLabel("生成类型").selectOption("text_to_video");
+      await inspector.getByLabel("生成比例").selectOption("16:9");
+      await inspector.getByLabel("生成时长").fill("7");
+      await inspector.getByRole("button", { name: "生成 1 个", exact: true }).click();
+      await expect.poll(() => submitted.length).toBe(2);
+      expect(submitted[1]).toMatchObject({
+        durationSeconds: 7,
+        recipePath: "Kino/Kino_MinimaxH3_T2V.json",
+      });
+      expect(Number(submitted[1]?.width)).toBeGreaterThan(Number(submitted[1]?.height));
+    });
     await page.screenshot({
       path: "test-results/generation-parameters.png",
       animations: "disabled",

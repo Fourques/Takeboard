@@ -48,6 +48,23 @@ test("project hub presents a complete project overview", async ({ page, request 
     expect(response.ok()).toBeTruthy();
   }
 
+  // This layout case deliberately measures three real projects. Other journeys
+  // (including an interrupted test) must not change its library-size precondition.
+  await page.route("**/api/projects", async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    const response = await route.fetch();
+    const body = await response.json();
+    await route.fulfill({
+      response,
+      json: {
+        ...body,
+        projects: body.projects.filter((project: { title: string }) =>
+          fixtureTitles.has(project.title),
+        ),
+      },
+    });
+  });
+
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "从素材到成片，都在一张画布。" })).toBeVisible();
   await expect(page.locator(".project-card-managed")).toHaveCount(3);
