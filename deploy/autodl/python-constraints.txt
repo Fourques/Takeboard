@@ -1,0 +1,4 @@
+# Match the rented AutoDL PyTorch 2.8.0 / CUDA 12.8 base, not the developer machine.
+torch==2.8.0+cu128
+torchvision==0.23.0+cu128
+torchaudio==2.8.0+cu128

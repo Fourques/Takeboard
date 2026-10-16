@@ -4,6 +4,7 @@ coverage/
 playwright-report/
 test-results/
 release/
+output/
 .vite/
 .turbo/
 apps/desktop/src-tauri/binaries/

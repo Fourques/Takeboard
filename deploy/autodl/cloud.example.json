@@ -1,0 +1,9 @@
+{
+  "mode": "tunnel",
+  "port": 48120,
+  "appRoot": "/opt/takeboard/app",
+  "webRoot": "/opt/takeboard/web",
+  "comfyRoot": "/opt/takeboard/ComfyUI",
+  "python": "/opt/takeboard/comfy-venv/bin/python",
+  "dataRoot": "/root/autodl-tmp/TakeBoard"
+}
