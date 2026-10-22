@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import test from "node:test";
+import { pathToFileURL } from "node:url";
 
 const server = createRequire(new URL("../apps/server/package.json", import.meta.url));
 const web = createRequire(new URL("../apps/web/package.json", import.meta.url));
@@ -32,7 +33,9 @@ test("Vitest resolves the patched mocker rather than retaining the old lockfile 
 });
 
 test("manual mock URLs and export names remain data, not generated JavaScript", async () => {
-  const { createManualModuleSource } = await import(vitest.resolve("@vitest/mocker/node"));
+  const { createManualModuleSource } = await import(
+    pathToFileURL(vitest.resolve("@vitest/mocker/node")).href
+  );
   const url = 'asset"); throw new Error("URL was executed"); //';
   const name = 'result"with\\quotes';
   const seen = [];
