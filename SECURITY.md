@@ -41,6 +41,35 @@ staging directory, rejects links and path traversal, verifies every declared siz
 and opens the database before publishing the project. Imported ComfyUI workflows are not executable
 until their bindings and dependencies have been explicitly inspected and trusted.
 
+## Vite and Vitest dependency review — 2026-10-22
+
+Source dependencies now pin Vite **8.2.4** and Vitest **4.1.12**, including
+`@vitest/mocker 4.1.12`. The shared lockfile updates both the web application's Vite
+and the Vite resolved by Vitest. A scoped Vite override prevents a vulnerable 8.x
+version from remaining on the test dependency path; it does not suppress audit findings.
+
+This addresses the Vite editor-launch and development-server file-access advisories
+([upstream fixes](https://github.com/vitejs/vite/releases/tag/v8.2.4)), plus Vitest's
+[manual mock code injection](https://github.com/advisories/GHSA-qxg6-89mg-rqv8) and
+[Windows redirect traversal](https://github.com/advisories/GHSA-xp26-3454-mjgp).
+The fresh audit found eight distinct advisories across fourteen dependency-path findings,
+not just the six findings in the earlier failed workflow.
+
+Local validation: `pnpm install --frozen-lockfile`, `pnpm audit --audit-level=low`,
+all 33 dependency-security regression tests, and `pnpm verify` passed. The new regressions
+check the actual resolved versions on both Vite paths and execute the mock serializer
+with quoted URLs and export names; all four new cases failed against the old dependencies.
+No audit threshold, vulnerability suppression or Rust advisory exception was changed.
+The existing Linux GTK warning remains unresolved and subject to its existing review policy.
+The full RustSec scan also passed with zero vulnerability entries and five unresolved warnings:
+`glib 0.18.5` (the existing bounded unsoundness exception), plus maintenance warnings for
+`proc-macro-error 1.0.4`, `zbus_names 4.3.4`, `zvariant 5.15.0` and `zvariant_derive 5.15.0`.
+Passing the audit does not mean that this desktop dependency tree is warning-free.
+
+These are source and build/test-tool updates, not a new installer release. Source checkouts
+must reinstall from the updated lockfile. Vite and Vitest development services should not be
+exposed as public production servers. Published desktop packages are not updated by a Git commit.
+
 ## Media and build dependency review — 2026-10-10
 
 The current source and lockfiles contain these security fixes:
