@@ -2,9 +2,12 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import test from "node:test";
+import { pathToFileURL } from "node:url";
 
 const server = createRequire(new URL("../apps/server/package.json", import.meta.url));
 const web = createRequire(new URL("../apps/web/package.json", import.meta.url));
+const root = createRequire(new URL("../package.json", import.meta.url));
+const vitest = createRequire(root.resolve("vitest/package.json"));
 const multipart = createRequire(server.resolve("@fastify/multipart"));
 const postcss = createRequire(createRequire(web.resolve("vite")).resolve("postcss"));
 const atLeast = (actual, floor) => {
@@ -13,6 +16,49 @@ const atLeast = (actual, floor) => {
   assert.ok(a.length >= 3 && a.every(Number.isFinite), actual);
   return a[0] > b[0] || (a[0] === b[0] && (a[1] > b[1] || (a[1] === b[1] && a[2] >= b[2])));
 };
+
+for (const [label, resolveFrom] of [
+  ["web", web],
+  ["Vitest", vitest],
+]) {
+  test(`${label} resolves the patched Vite, including its transitive dependency path`, () => {
+    const version = resolveFrom("vite/package.json").version;
+    assert.ok(atLeast(version, "8.2.4"), `${label}: Vite ${version}`);
+  });
+}
+
+test("Vitest resolves the patched mocker rather than retaining the old lockfile entry", () => {
+  assert.ok(atLeast(root("vitest/package.json").version, "4.1.12"));
+  assert.ok(atLeast(vitest("@vitest/mocker/package.json").version, "4.1.12"));
+});
+
+test("manual mock URLs and export names remain data, not generated JavaScript", async () => {
+  const { createManualModuleSource } = await import(
+    pathToFileURL(vitest.resolve("@vitest/mocker/node")).href
+  );
+  const url = 'asset"); throw new Error("URL was executed"); //';
+  const name = 'result"with\\quotes';
+  const seen = [];
+  const accessor = "__takeboard_security_mocker__";
+  assert.equal(Object.hasOwn(globalThis, accessor), false);
+  globalThis[accessor] = {
+    async getFactoryModule(value) {
+      seen.push(value);
+      return { [name]: 42 };
+    },
+  };
+  try {
+    // GHSA-qxg6-89mg-rqv8: exercise the published serializer without a network server.
+    const source = createManualModuleSource(url, [name], JSON.stringify(accessor));
+    const module = await import(
+      `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`
+    );
+    assert.deepEqual(seen, [url]);
+    assert.equal(module[name], 42);
+  } finally {
+    delete globalThis[accessor];
+  }
+});
 
 test("sharp loads the patched native SVG library, not just an updated JS wrapper", async () => {
   const sharp = server("sharp");
