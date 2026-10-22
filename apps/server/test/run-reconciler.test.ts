@@ -230,8 +230,13 @@ describe("server-owned generation recovery", () => {
     expect(lost.snapshot.runs[0].errorCode).toBe("WORKER_TASK_MISSING");
     expect(lost.progress).toBeNull();
     f.complete();
-    expect((await f.poll()).json().status).toBe("completed");
+    // Output collection is asynchronous; a poll may legitimately observe it in flight.
+    await vi.waitFor(async () => expect((await f.poll()).json().status).toBe("completed"), {
+      timeout: 3_000,
+    });
     expect(f.inspect()?.snapshot.runs[0]?.errorCode).toBeNull();
+    expect(f.inspect()?.snapshot.takes).toHaveLength(1);
+    expect(f.downloads()).toBe(1);
   });
 
   it("does not declare a task lost when the worker is unreachable", async () => {
