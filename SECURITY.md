@@ -67,10 +67,17 @@ or resource-limit substitute.
 
 Local validation passed: frozen-lockfile installation, `pnpm audit --audit-level=low`, all
 75 dependency-security regressions, and `pnpm verify` (468 application/package tests and
-182 script tests). The complete RustSec scan passes with zero vulnerability entries and
+183 script tests). The complete RustSec scan passes with zero vulnerability entries and
 the same five unresolved maintenance/GTK warnings documented below; no audit threshold,
 scanner suppression or advisory exception was relaxed. Local native compilation is blocked
 by missing Linux D-Bus/GTK development libraries, so it is not recorded as passed.
+
+CI also exposed an unrelated runner migration: Ubuntu 26.04 no longer supplies the
+GTK3 WebKit driver used by the native smoke test. Native Linux validation and installer
+builds now explicitly use the Ubuntu 24.04 LTS baseline (including ARM64). Node verification
+remains on `ubuntu-latest`. Generation route fixtures provide a stable filesystem capacity
+probe; the real production capacity checks and the insufficient-space rejection test remain
+in place rather than depending on the shared runner's free disk space.
 
 This is a source fix, not an installer or cloud-image release. Existing desktop packages,
 containers and saved AutoDL images do not update themselves when the repository changes.

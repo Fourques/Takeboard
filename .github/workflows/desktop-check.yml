@@ -123,7 +123,8 @@ jobs:
 
   check:
     name: Native build and installed Linux lifecycle
-    runs-on: ubuntu-latest
+    # Keep the GTK3/WebKitGTK 4.1 driver and installer ABI on the supported LTS baseline.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
