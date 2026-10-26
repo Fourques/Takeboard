@@ -42,3 +42,27 @@ test("production manifest maps the embedded runtime to the native launcher's res
   );
   validateDesktopReleaseConfig(application.version, config);
 });
+
+test("native Linux checks and installers share the explicit GTK/WebKit LTS baseline", async () => {
+  const check = await readFile(
+    new URL("../.github/workflows/desktop-check.yml", import.meta.url),
+    "utf8",
+  );
+  const release = await readFile(
+    new URL("../.github/workflows/desktop-preview.yml", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    check,
+    /name: Native build and installed Linux lifecycle\n(?:\s*#.*\n)*\s*runs-on: ubuntu-24\.04\n/,
+  );
+  for (const [platform, os] of [
+    ["linux-x64", "ubuntu-24.04"],
+    ["linux-arm64", "ubuntu-24.04-arm"],
+  ]) {
+    assert.ok(
+      release.includes(`${JSON.stringify({ os, platform }).slice(0, -1)},`),
+      `${platform}: missing ${os} baseline`,
+    );
+  }
+});

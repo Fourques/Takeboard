@@ -3,16 +3,20 @@ import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import test from "node:test";
 
-// Resolve the packages Portal actually executes, not a separate test dependency.
+// Resolve the packages each application actually executes, not a test-only copy.
 const portalRequire = createRequire(new URL("../apps/portal/package.json", import.meta.url));
-function dependency(...chain) {
-  let requireFrom = portalRequire;
+function applicationDependency(application, ...chain) {
+  let requireFrom = createRequire(new URL(`../apps/${application}/package.json`, import.meta.url));
   let entry;
   for (const name of chain) {
     entry = requireFrom.resolve(name);
     requireFrom = createRequire(entry);
   }
-  return { entry, module: portalRequire(entry) };
+  return { entry, module: requireFrom(entry) };
+}
+
+function dependency(...chain) {
+  return applicationDependency("portal", ...chain);
 }
 
 const uriChains = [
@@ -21,6 +25,60 @@ const uriChains = [
   ["fastify", "fast-json-stringify", "fast-uri"],
   ["fastify", "fast-json-stringify", "ajv", "fast-uri"],
 ];
+
+for (const application of ["server", "portal"]) {
+  for (const chain of uriChains) {
+    const label = `${application}: ${chain.join(" > ")}`;
+    test(`encoded schemes are rejected rather than activated: ${label}`, () => {
+      const { module: uri } = applicationDependency(application, ...chain);
+      for (const value of ["%6Aavascript:alert(1)", "%u006Aavascript:alert(1)", "%68ttp://a/"]) {
+        assert.ok(uri.parse(value).error, value);
+      }
+      assert.equal(uri.equal("%68ttp://a/", "http://a/"), false);
+      assert.equal(
+        uri.normalize("https://example.test/asset.png"),
+        "https://example.test/asset.png",
+      );
+    });
+
+    test(`ambiguous hosts cannot be silently canonicalized: ${label}`, () => {
+      const { module: uri } = applicationDependency(application, ...chain);
+      for (const value of [
+        "http://a@b@evil.example/",
+        "https://exa\tmple.test/",
+        "https://exa\nmple.test/",
+        "https://exa\rmple.test/",
+      ]) {
+        assert.ok(uri.parse(value).error, JSON.stringify(value));
+      }
+      assert.equal(uri.parse("https://example.test:8443/path").host, "example.test");
+    });
+
+    test(`relative normalization preserves resolution: ${label}`, () => {
+      const { module: uri } = applicationDependency(application, ...chain);
+      const base = "https://example.test/project/inputs/";
+      for (const value of ["a/../b", "../x", "../../asset.png", "./a"]) {
+        assert.equal(uri.resolve(base, uri.normalize(value)), uri.resolve(base, value), value);
+      }
+      assert.equal(uri.equal("../x", "x"), false);
+    });
+
+    test(`suffix references cannot introduce a live scheme: ${label}`, () => {
+      const { module: uri } = applicationDependency(application, ...chain);
+      // With no authority, suffix mode must emit a path, not a scheme-bearing URI.
+      const options = { reference: "suffix", scheme: "x" };
+      for (const value of ["javascript:alert(1)", "data:text/plain,test", "vbscript:test"]) {
+        const normalized = uri.normalize(value, options);
+        assert.equal(uri.parse(normalized).scheme, undefined, normalized);
+        const serialized = uri.serialize({ path: value }, options);
+        assert.equal(uri.parse(serialized).scheme, undefined, serialized);
+      }
+      assert.equal(uri.normalize("javascript:alert(1)", options), "javascript%3Aalert(1)");
+      assert.equal(uri.normalize("path/to/file", options), "path/to/file");
+      assert.equal(uri.normalize("a/b:c", options), "a/b:c");
+    });
+  }
+}
 
 for (const chain of uriChains) {
   test(`host normalization is consistent: ${chain.join(" > ")}`, () => {

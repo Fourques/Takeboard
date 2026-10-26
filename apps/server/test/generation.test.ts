@@ -10,6 +10,25 @@ import { waitForRun } from "./run-fixture.js";
 
 const cleanup: Array<() => Promise<void>> = [];
 
+// Route tests exercise the real capacity guard against a stable filesystem
+// probe, not the changing free space of a shared CI runner. The insufficient
+// storage case below still exceeds this capacity and must reject submission.
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return {
+    ...actual,
+    statfs: vi.fn(async () => ({
+      type: 0n,
+      bsize: 4096n,
+      blocks: 26_214_400n,
+      bfree: 26_214_400n,
+      bavail: 26_214_400n,
+      files: 1_000_000n,
+      ffree: 1_000_000n,
+    })),
+  };
+});
+
 afterEach(async () => {
   delete process.env.TAKEBOARD_MIN_FREE_DISK_GB;
   vi.unstubAllGlobals();
@@ -956,6 +975,7 @@ describe("real generation routes", () => {
       url: `/api/projects/${key}/shots/${shotId}/generate`,
       payload: { recipePath: "Kino/Kino_MinimaxH3_T2V.json", prompt: "稍后重试取消" },
     });
+    expect(submitted.statusCode, submitted.body).toBe(202);
     const runId = submitted.json().runId as string;
     const projectId = submitted.json().snapshot.project.id as string;
     const temporaryInput = join(inputRoot, `takeboard_${runId}_frame.png`);

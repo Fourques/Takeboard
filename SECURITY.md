@@ -41,7 +41,51 @@ staging directory, rejects links and path traversal, verifies every declared siz
 and opens the database before publishing the project. Imported ComfyUI workflows are not executable
 until their bindings and dependencies have been explicitly inspected and trusted.
 
-## Vite and Vitest dependency review — 2026-10-22
+## Runtime dependency review — 2026-10-26
+
+The source and shared lockfiles now contain the following updates:
+
+| Dependency | Fixed version | Coverage |
+| --- | --- | --- |
+| Fastify | 5.12.6 | Server and Portal; [mixed-case `propertyNames` header validation](https://github.com/fastify/fastify/security/advisories/GHSA-389g-gv7q-r4x8) |
+| Zod | 4.6.6 | Contracts and Portal protocol; [oversized constrained collections](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5) |
+| fast-uri | 3.1.9 / 4.2.3 | Both applications' schema validators and serializers; [3.x](https://github.com/fastify/fast-uri/releases/tag/v3.1.9) and [4.x](https://github.com/fastify/fast-uri/releases/tag/v4.2.3) security releases |
+| Tokio | 1.53.3 | Desktop lockfile; [RUSTSEC-2026-0386](https://rustsec.org/advisories/RUSTSEC-2026-0386.html), unsafe file-descriptor registration |
+
+The Node audit initially reported ten findings across six distinct advisories. Updating
+only Contracts left Portal protocol's separate Zod dependency affected; both are updated.
+The fast-uri overrides retain separate 3.x and 4.x branches rather than forcing a major
+version change. The full RustSec scan then exposed the new Tokio advisory that the failed
+Node step had prevented CI from reaching; the patch updates Tokio without adding an exception.
+
+The security workflow now also tests the Zod resolved by each consuming package. Forty-two
+new regression cases cover header-name constraints, all four URI behaviors on both applications'
+actual dependency paths, and synchronous/asynchronous size-bound rejection for arrays, sets
+and maps. Small Zod fixtures count element validations instead of deliberately exhausting memory.
+Collection bounds still have to be declared by callers; the update is not a general request-size
+or resource-limit substitute.
+
+Local validation passed: frozen-lockfile installation, `pnpm audit --audit-level=low`, all
+75 dependency-security regressions, and `pnpm verify` (468 application/package tests and
+183 script tests). The complete RustSec scan passes with zero vulnerability entries and
+the same five unresolved maintenance/GTK warnings documented below; no audit threshold,
+scanner suppression or advisory exception was relaxed. Local native compilation is blocked
+by missing Linux D-Bus/GTK development libraries, so it is not recorded as passed.
+
+CI also exposed an unrelated runner migration: Ubuntu 26.04 no longer supplies the
+GTK3 WebKit driver used by the native smoke test. Native Linux validation and installer
+builds now explicitly use the Ubuntu 24.04 LTS baseline (including ARM64). Node verification
+remains on `ubuntu-latest`. Generation route fixtures provide a stable filesystem capacity
+probe; the real production capacity checks and the insufficient-space rejection test remain
+in place rather than depending on the shared runner's free disk space.
+
+This is a source fix, not an installer or cloud-image release. Existing desktop packages,
+containers and saved AutoDL images do not update themselves when the repository changes.
+Source users must reinstall from the updated lockfile and restart; other deployments require
+a rebuilt package or image. The dated reviews below preserve earlier evidence, not current
+dependency versions or a promise against future advisories.
+
+## Vite and Vitest dependency review — 2026-10-22 (historical)
 
 Source dependencies now pin Vite **8.2.4** and Vitest **4.1.12**, including
 `@vitest/mocker 4.1.12`. The shared lockfile updates both the web application's Vite
@@ -70,7 +114,7 @@ These are source and build/test-tool updates, not a new installer release. Sourc
 must reinstall from the updated lockfile. Vite and Vitest development services should not be
 exposed as public production servers. Published desktop packages are not updated by a Git commit.
 
-## Media and build dependency review — 2026-10-10
+## Media and build dependency review — 2026-10-10 (historical)
 
 The current source and lockfiles contain these security fixes:
 

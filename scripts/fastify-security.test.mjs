@@ -18,6 +18,41 @@ for (const name of ["server", "portal"]) {
   const require = createRequire(new URL(`../apps/${name}/package.json`, import.meta.url));
   const Fastify = require("fastify");
 
+  for (const constraint of ["enum", "const"]) {
+    test(`${name}: propertyNames ${constraint} cannot bypass header validation (GHSA-389g-gv7q-r4x8)`, async (t) => {
+      const app = Fastify();
+      t.after(() => app.close());
+      let calls = 0;
+      app.get(
+        "/header-names",
+        {
+          schema: {
+            headers: {
+              type: "object",
+              propertyNames: {
+                not: {
+                  [constraint]: constraint === "enum" ? ["X-Debug-Override"] : "X-Debug-Override",
+                },
+              },
+            },
+          },
+        },
+        async () => {
+          calls++;
+          return { ok: true };
+        },
+      );
+      for (const header of ["X-Debug-Override", "x-debug-override", "X-DEBUG-OVERRIDE"]) {
+        const blocked = await inject(app, { url: "/header-names", headers: { [header]: "1" } });
+        assert.equal(blocked.statusCode, 400, `${header}: ${blocked.body}`);
+      }
+      assert.equal(calls, 0);
+      const allowed = await inject(app, { url: "/header-names", headers: { "X-Trace": "ok" } });
+      assert.equal(allowed.statusCode, 200, allowed.body);
+      assert.equal(calls, 1);
+    });
+  }
+
   test(`${name}: mixed-case header dependencies cannot bypass validation (GHSA-9q9j-q6p8-xq58)`, async (t) => {
     const app = Fastify();
     t.after(() => app.close());

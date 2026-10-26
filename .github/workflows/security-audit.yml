@@ -21,6 +21,7 @@ on:
       - "scripts/check-rust-audit-report*.mjs"
       - "scripts/fastify-security.test.mjs"
       - "scripts/portal-dependency-security.test.mjs"
+      - "scripts/contracts-dependency-security.test.mjs"
       - "scripts/media-dependency-security.test.mjs"
       - ".github/workflows/security-audit.yml"
   push:
@@ -41,6 +42,7 @@ on:
       - "scripts/check-rust-audit-report*.mjs"
       - "scripts/fastify-security.test.mjs"
       - "scripts/portal-dependency-security.test.mjs"
+      - "scripts/contracts-dependency-security.test.mjs"
       - "scripts/media-dependency-security.test.mjs"
       - ".github/workflows/security-audit.yml"
 
@@ -69,7 +71,7 @@ jobs:
       - name: Reject known runtime and build Node.js vulnerabilities
         run: pnpm audit --audit-level=low
       - name: Verify dependency security regressions
-        run: node --test scripts/fastify-security.test.mjs scripts/portal-dependency-security.test.mjs scripts/media-dependency-security.test.mjs scripts/check-rust-audit-report.test.mjs
+        run: node --test scripts/fastify-security.test.mjs scripts/portal-dependency-security.test.mjs scripts/contracts-dependency-security.test.mjs scripts/media-dependency-security.test.mjs scripts/check-rust-audit-report.test.mjs
       - name: Enforce the bounded Linux GTK exception
         run: pnpm security:linux-desktop
       - name: Scan the full desktop lockfile against RustSec
