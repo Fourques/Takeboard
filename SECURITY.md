@@ -41,6 +41,38 @@ staging directory, rejects links and path traversal, verifies every declared siz
 and opens the database before publishing the project. Imported ComfyUI workflows are not executable
 until their bindings and dependencies have been explicitly inspected and trusted.
 
+## Portal glob dependency review — 2026-11-01
+
+The Portal's `@fastify/static` dependency now resolves `glob 14.0.2` and
+`minimatch 11.0.1`, addressing [cancelled traversal continuing in the background](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4)
+and [globstar-parent pattern amplification](https://github.com/advisories/GHSA-g3hv-75wg-m249).
+Upstream `@fastify/static 10.1.3` requests glob 13, so the override is restricted to
+that exact dependency edge. A separate minimatch 11 security floor prevents 11.0.0
+from returning. No audit threshold or exception is weakened.
+
+Glob 14 changes matching internals and depends on minimatch 11 and path-scurry 3.
+The regression tests resolve the actual Portal plugin dependency and cover both
+default wildcard static serving and glob-based route discovery (`wildcard: false`).
+Two bounded advisory regressions check pattern expansion limits and that cancellation
+stops filesystem reads; both fail against the previous lockfile. The current Portal
+configuration uses default wildcard serving and does not accept user-supplied glob
+patterns or a traversal signal. Dependency presence alone is not proof of a reachable
+remote exploit or of a compromised deployment.
+
+Validation on Linux with Node 24 and pnpm 10.15.1: frozen-lockfile installation,
+Node audit, 78 dependency-security regressions, and `pnpm verify` passed (471
+application/package tests and 166 script tests). Full RustSec scanning reported zero
+vulnerability entries and the same five maintenance/GTK warnings documented below.
+Server tests now fail closed on unmocked non-loopback fetch calls, including requests
+to placeholder hosts after teardown restores mocks. Three tests cover the guard
+and preserve loopback transport semantics; no business-network behavior changes.
+Tests use `TMPDIR` on a filesystem with sufficient free space for the existing
+storage guard; no storage checks or test assertions were relaxed. Cross-platform CI,
+browser journeys and native installer builds have not been run locally for this patch.
+
+This is a source/lockfile fix, not an installer release. Existing installations need
+updated dependencies and a restart, or rebuilt packages/images, to receive the fix.
+
 ## Runtime dependency review — 2026-10-26
 
 The source and shared lockfiles now contain the following updates:
