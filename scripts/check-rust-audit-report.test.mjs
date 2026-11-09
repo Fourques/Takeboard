@@ -65,3 +65,16 @@ test("rejects suppressed, incomplete and inconsistent reports", () => {
     assert.throws(() => reviewRustAudit(report, policy, now));
   }
 });
+
+test("rejects yanked packages without needing an advisory or allowing exceptions", () => {
+  const report = clean();
+  report.warnings.yanked = [
+    { kind: "yanked", package: { name: "example-crate", version: "1.2.3" } },
+  ];
+  assert.throws(
+    () => reviewRustAudit(report, policy, now),
+    /Yanked Rust dependency: example-crate 1\.2\.3; update the lockfile/,
+  );
+  report.warnings.yanked = [finding];
+  assert.throws(() => reviewRustAudit(report, policy, now), /Yanked Rust dependency: glib/);
+});

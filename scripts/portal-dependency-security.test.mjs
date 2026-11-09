@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import fs from "node:fs";
 import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 // Resolve the packages each application actually executes, not a test-only copy.
@@ -164,5 +167,92 @@ test("Fastify still validates and serializes referenced schemas after the URI up
     assert.equal(invalid.statusCode, 400, invalid.body);
   } finally {
     await app.close();
+  }
+});
+
+test("Portal's minimatch bounds globstar-parent pattern amplification", () => {
+  const { entry } = dependency("@fastify/static", "glob", "minimatch");
+  // GHSA-g3hv-75wg-m249: test the actual static plugin dependency in isolation.
+  const result = spawnSync(
+    process.execPath,
+    [
+      "--max-old-space-size=128",
+      "-e",
+      `
+    const assert = require('node:assert/strict');
+    const { Minimatch } = require(process.argv[1]);
+    const mm = new Minimatch(Array(10).fill('**/../a/b').join('/'), {
+      optimizationLevel: 2, braceExpandMax: 64,
+    });
+    assert.ok(mm.set.length <= 64);
+    assert.equal(new Minimatch('assets/**/*.js').match('assets/nested/app.js'), true);
+  `,
+      entry,
+    ],
+    { encoding: "utf8", timeout: 10000 },
+  );
+  assert.equal(result.error, undefined, result.error?.message);
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test("Portal's glob stops directory reads when traversal is cancelled", async () => {
+  const {
+    module: { glob },
+  } = dependency("@fastify/static", "glob");
+  const root = fs.mkdtempSync(join(tmpdir(), "takeboard-glob-abort-"));
+  try {
+    for (let i = 0; i < 8; i++) {
+      const directory = join(root, String(i), "nested");
+      fs.mkdirSync(directory, { recursive: true });
+      fs.writeFileSync(join(directory, "asset.js"), "asset");
+    }
+    const controller = new AbortController();
+    const reason = new Error("test traversal budget exceeded");
+    let reads = 0;
+    const countedFs = {
+      ...fs,
+      readdir(...args) {
+        if (++reads === 1) controller.abort(reason);
+        return fs.readdir(...args);
+      },
+    };
+    await assert.rejects(
+      glob("**", { cwd: root, signal: controller.signal, fs: countedFs }),
+      (error) => error === reason,
+    );
+    const readsAtReject = reads;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.equal(readsAtReject, 1);
+    assert.equal(reads, readsAtReject, "cancelled traversal must not continue in the background");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("Portal static plugin still serves assets with patched glob", async () => {
+  const root = fs.mkdtempSync(join(tmpdir(), "takeboard-static-"));
+  fs.mkdirSync(join(root, "nested"));
+  fs.writeFileSync(join(root, "nested", "asset.js"), "window.takeboard = true;");
+  try {
+    // Default wildcard is the production configuration. The non-wildcard path
+    // exercises the plugin's actual glob-based route discovery after a major update.
+    for (const wildcard of [true, false]) {
+      const app = portalRequire("fastify")();
+      try {
+        await app.register(portalRequire("@fastify/static"), {
+          root,
+          prefix: "/__portal/assets/",
+          wildcard,
+        });
+        const asset = await app.inject("/__portal/assets/nested/asset.js");
+        assert.equal(asset.statusCode, 200, asset.body);
+        assert.equal(asset.body, "window.takeboard = true;");
+        assert.equal((await app.inject("/__portal/assets/missing.js")).statusCode, 404);
+      } finally {
+        await app.close();
+      }
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
   }
 });
