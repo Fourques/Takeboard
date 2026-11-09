@@ -17,7 +17,10 @@ export function reviewRustAudit(report, policy, now = Date.now()) {
     for (const finding of findings) {
       const { id, title } = finding.advisory ?? {};
       const { name, version } = finding.package ?? {};
-      assert.ok(id && title && name && version, "Incomplete RustSec finding");
+      assert.ok(
+        id && title && name && version,
+        `Incomplete RustSec finding: ${kind}; package ${name ?? "<missing>"} ${version ?? "<missing>"}; advisory ${id ?? "<missing>"}`,
+      );
       if (kind !== "unmaintained" && kind !== "notice") {
         const exception = policy.exceptions?.find(
           (entry) => entry.advisoryId === id && entry.package === name,

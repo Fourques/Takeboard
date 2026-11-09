@@ -65,3 +65,14 @@ test("rejects suppressed, incomplete and inconsistent reports", () => {
     assert.throws(() => reviewRustAudit(report, policy, now));
   }
 });
+
+test("identifies an advisory-less warning while still rejecting it", () => {
+  const report = clean();
+  report.warnings.yanked = [
+    { kind: "yanked", package: { name: "example-crate", version: "1.2.3" } },
+  ];
+  assert.throws(
+    () => reviewRustAudit(report, policy, now),
+    /Incomplete RustSec finding: yanked; package example-crate 1\.2\.3; advisory <missing>/,
+  );
+});
