@@ -43,6 +43,14 @@ until their bindings and dependencies have been explicitly inspected and trusted
 
 ## Portal glob dependency review — 2026-11-01
 
+CI follow-up on 2026-11-09: the full Rust scan also found that `async-executor
+1.14.0` had been yanked. Cargo updates this transitive dependency to the non-yanked
+patch release `1.14.1`, without changing other Rust packages. The report checker
+continues to reject yanked packages, now identifying the package and version even
+when no RustSec advisory ID exists. A regression ensures the GTK exception cannot
+permit a yanked package. Existing vulnerability thresholds and the five documented
+maintenance/GTK warnings are unchanged.
+
 The Portal's `@fastify/static` dependency now resolves `glob 14.0.2` and
 `minimatch 11.0.1`, addressing [cancelled traversal continuing in the background](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4)
 and [globstar-parent pattern amplification](https://github.com/advisories/GHSA-g3hv-75wg-m249).

@@ -17,6 +17,11 @@ export function reviewRustAudit(report, policy, now = Date.now()) {
     for (const finding of findings) {
       const { id, title } = finding.advisory ?? {};
       const { name, version } = finding.package ?? {};
+      assert.notEqual(
+        kind,
+        "yanked",
+        `Yanked Rust dependency: ${name ?? "<missing>"} ${version ?? "<missing>"}; update the lockfile`,
+      );
       assert.ok(
         id && title && name && version,
         `Incomplete RustSec finding: ${kind}; package ${name ?? "<missing>"} ${version ?? "<missing>"}; advisory ${id ?? "<missing>"}`,
