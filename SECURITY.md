@@ -43,13 +43,21 @@ until their bindings and dependencies have been explicitly inspected and trusted
 
 ## Portal glob dependency review — 2026-11-01
 
+The 2026-11-25 RustSec follow-up updates the desktop lockfile to `cookie 0.18.3`,
+`url 2.5.9`, and `rustix 1.1.6`, addressing
+[RUSTSEC-2026-0594](https://rustsec.org/advisories/RUSTSEC-2026-0594.html),
+[RUSTSEC-2026-0592](https://rustsec.org/advisories/RUSTSEC-2026-0592.html), and
+[RUSTSEC-2026-0486](https://rustsec.org/advisories/RUSTSEC-2026-0486.html).
+Cargo also resolves `form_urlencoded 1.2.3` and reuses the existing `windows-sys 0.60.2`
+for four dependency edges. The current scan passes with no vulnerability entries, five
+maintenance notices, and the existing bounded GTK warning. The audit policy remains unchanged.
+
 CI follow-up on 2026-11-09: the full Rust scan also found that `async-executor
 1.14.0` had been yanked. Cargo updates this transitive dependency to the non-yanked
 patch release `1.14.1`, without changing other Rust packages. The report checker
 continues to reject yanked packages, now identifying the package and version even
 when no RustSec advisory ID exists. A regression ensures the GTK exception cannot
-permit a yanked package. Existing vulnerability thresholds and the five documented
-maintenance/GTK warnings are unchanged.
+permit a yanked package. That audit used the November 9 advisory database.
 
 The Portal's `@fastify/static` dependency now resolves `glob 14.0.2` and
 `minimatch 11.0.1`, addressing [cancelled traversal continuing in the background](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4)
